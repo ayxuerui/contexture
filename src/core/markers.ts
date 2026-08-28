@@ -1,0 +1,21 @@
+/**
+ * Marker strings for contexture's generated-region convention (context-store
+ * spec: "Marker-fenced generated regions"). Once shipped, marker text is a
+ * FOREVER compatibility surface — changing it orphans every existing store's
+ * fenced blocks — so it lives in exactly this one file, parameterized by
+ * region name, and is never inlined at a call site.
+ */
+export interface Fence {
+  start: string;
+  end: string;
+}
+
+/** `#`-comment-style fence, used by `.gitignore` in Phase 0. */
+export function commentFence(regionName: string): Fence {
+  return {
+    start: `# >>> contexture:${regionName} (managed — do not edit) >>>`,
+    end: `# <<< contexture:${regionName} <<<`,
+  };
+}
+
+export const DERIVED_GITIGNORE_FENCE: Fence = commentFence('derived');
