@@ -1,0 +1,10 @@
+layers:
+  - name: Services
+    path: services
+    description: Standing service definitions and ownership.
+  - name: Runbooks
+    path: runbooks
+    description: Operational procedures for known scenarios.
+  - name: Incidents
+    path: incidents
+    description: Post-incident records and timelines.

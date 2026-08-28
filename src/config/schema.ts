@@ -1,0 +1,59 @@
+import { z } from 'zod';
+
+/**
+ * store-lifecycle spec: schema_version versions STORE STATE (config shape +
+ * note frontmatter conventions) — a monotonic integer independent of the npm
+ * package version — not "what this CLI release happens to be."
+ */
+export const SUPPORTED_SCHEMA_VERSION = 1;
+
+export const TaxonomyLayerSchema = z.object({
+  name: z.string().min(1),
+  path: z.string().min(1),
+  description: z.string().min(1),
+});
+
+const TaxonomySchema = z.object({
+  /** A shipped profile id, or "custom" when a custom taxonomy definition was supplied. */
+  profile: z.string().min(1),
+  layers: z.array(TaxonomyLayerSchema),
+});
+
+/**
+ * Loose (passthrough), not strict: a later phase adding its own field key
+ * (e.g. audience tagging) must not force every existing store through a
+ * migration just to keep loading. schema_version bumps only on a genuinely
+ * incompatible change, never on an additive one.
+ */
+const FieldsSchema = z
+  .object({
+    visibility: z.string().min(1),
+  })
+  .passthrough();
+
+const VisibilitySchema = z.object({
+  default_context: z.string().min(1),
+  directory_defaults: z.record(z.string(), z.string()).default({}),
+});
+
+const DerivedSchema = z.object({
+  paths: z.array(z.string()),
+});
+
+const RetrievalSchema = z.object({
+  exclude_paths: z.array(z.string()),
+});
+
+export const StoreConfigSchema = z
+  .object({
+    schema_version: z.number().int().positive(),
+    taxonomy: TaxonomySchema,
+    fields: FieldsSchema,
+    visibility: VisibilitySchema,
+    derived: DerivedSchema,
+    retrieval: RetrievalSchema,
+  })
+  .passthrough();
+
+export type StoreConfig = z.infer<typeof StoreConfigSchema>;
+export type TaxonomyLayerConfig = z.infer<typeof TaxonomyLayerSchema>;

@@ -1,0 +1,21 @@
+# contexture store configuration (fixture: schema_version newer than supported)
+
+schema_version: 999
+taxonomy:
+  profile: para
+  layers:
+    - name: Projects
+      path: projects
+      description: Active work with a defined end state.
+fields:
+  visibility: scope
+visibility:
+  default_context: private
+  directory_defaults: {}
+derived:
+  paths:
+    - .contexture/
+retrieval:
+  exclude_paths:
+    - .contexture/
+    - identity/
