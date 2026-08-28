@@ -7,6 +7,7 @@ This is the founding change: it establishes the full core spec surface so the CL
 ## What Changes
 
 - Define a context store as a git repository governed by a single `contexture.yaml` (taxonomy, field keys, exclusion sets, branch prefixes, forge config) and a canonical harness-agnostic `AGENTS.md`.
+- Ship more than one built-in taxonomy profile (PARA, Zettelkasten, Diátaxis) with genuinely different structural shapes, and have `init` help the operator pick — prompting with each profile's description when run interactively, defaulting to PARA without blocking when run non-interactively.
 - Establish the code/judgment seam: agents read and synthesize directly against plain files; the CLI's sole job is exhaustive/byte-stable computation, validated writes, checks that fail, and git/session lifecycle. No capability may specify a check enforced only by an agent following an instruction.
 - Ship retrieval with two CLI-computed legs — a coverage-guaranteed catalog and a deterministic wikilink graph — plus direct content matching the agent performs itself against the store's plain, directly readable exclusion configuration. `contexture` has no search command and no search-adapter kind in v1; ranked/semantic search is deferred to v2 as a pair with the postponed visibility-field naming decision, so the stable per-note record this change does emit lets that engine be added later without re-deciding note identity.
 - Split visibility (pre-filter, fails closed, a property of a note) from disclosure (tri-state ALLOW/DENY/ASK, walls-before-allows, a property of an output) as two capabilities, because they have contradictory defaults.
@@ -30,7 +31,7 @@ This is the founding change: it establishes the full core spec surface so the CL
 - `context-organize`: note placement, archive as a single tracked rename, and a lint that reports without failing a build.
 - `agent-identity`: the always-injected identity/memory layer, its boundary against retrievable knowledge, and portable content with harness-owned wire formats.
 - `adapters`: the single contract — discovery, versioning, capability declaration, missing/incompatible behavior — governing the v1 harness-generation, identity-injection, and forge adapters. A search-adapter kind is deferred to v2.
-- `store-lifecycle`: idempotent `init`, a `schema_version` gate, and named/dry-runnable/resumable migrations.
+- `store-lifecycle`: idempotent `init`, a `schema_version` gate, named/dry-runnable/resumable migrations, and the shipped taxonomy profiles (PARA, Zettelkasten, Diátaxis) `init` offers with a description and an interactive prompt.
 - `store-integrity`: `doctor`, the machine-readable system-health check that fails on real invariant violations (staleness, drift, collisions, unlabeled notes, hook/adapter health).
 - `write-lifecycle`: the session-worktree write container, the default-branch guard enforced by version-controlled git hooks, the append-via-queue mechanism for shared append-only files, and atomic derived-artifact writes.
 
@@ -48,7 +49,8 @@ Deliberately not shipped, to keep the core contract honest about scope — see `
 
 - A plain-directory (non-git) store mode. Git is required substrate.
 - Ranked/semantic search, and any adapter mechanism to carry it. v1 ships no search command, no search-adapter kind, and no seam for either — deferred to v2, grouped with the postponed visibility-field naming decision (see `design.md` D2, D7) since both are best settled after v1's core has real usage behind it. Direct grep is the agent's only content-matching tool in v1.
-- A hardcoded PARA taxonomy, or any hardcoded set of visibility-context names. Both are configured defaults, not primitives.
+- A taxonomy of any kind (PARA or otherwise) hardcoded as normative in a requirement, or any hardcoded set of visibility-context names. Shipped taxonomy profiles are named data `init` writes, not product primitives — every other requirement treats the taxonomy as whatever `contexture.yaml` declares.
+- Shipped presets for every named taxonomy methodology. Only PARA, Zettelkasten, and Diátaxis ship in v1, chosen for structural variety (layered, flat, docs-shaped) rather than popularity; other methodologies (Johnny Decimal, GTD, entity-centric CRM/ITSM taxonomies) remain fully usable as custom taxonomy definitions, just not as a named preset yet.
 - The audience *registry* syntax (venture-namespaced values, marker-fenced registries validated at graph-build time) — v1 keeps the disclosure ladder's shape with a flat, user-defined value list.
 - Named relation-type vocabulary baked into a requirement (e.g. upstream/downstream/similar/opposing) — configurable, with defaults.
 - mtime-based staleness/"hotness" scoring as a requirement; at most an optional lint heuristic.

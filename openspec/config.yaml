@@ -3,15 +3,12 @@ schema: spec-driven
 context: |
   contexture is an open-source context store: it ingests, organizes, and retrieves
   context for any AI agent harness (Claude Code, Codex, Cursor, Cline, Gemini CLI,
-  cron jobs, a human at a terminal). It is a clean-room generalization of a mature
-  personal-knowledge-management vault at ~/workspace/pkm — read that vault's
-  AGENTS.md and openspec/specs/*/spec.md for design evidence and hard-won failure
-  records, but never copy code from it, and never modify it.
+  cron jobs, a human at a terminal).
 
   Tech stack: TypeScript / Node, npm-distributed CLI + library.
 
   Tenancy: single-owner context store, org-ready access model — visibility values
-  are user-defined named contexts, never hardcoded tiers (no "brightstar/personal"
+  are user-defined named contexts, never hardcoded tiers (no "team-a/personal"
   style enums in a requirement).
 
   Retrieval v1 has three legs and NO ranker: a curated catalog (derived structure +
@@ -57,12 +54,15 @@ rules:
        place: context-store reads it from contexture.yaml (fields.visibility) with
        a shipped default. No other spec may hardcode the key name."
     - "Scenarios use placeholder context names (ctx-a, ctx-b, work, personal-demo),
-       never a real person's or org's taxonomy — this is an OSS spec, not a record
-       of the source vault."
-    - "Do not hardcode PARA (Projects/Areas/Resources/Archives) as normative inside
-       a requirement. It is the shipped default taxonomy profile, configured, not
-       a product primitive — a store must be able to configure a different layer
-       set (e.g. for a codebase or team-runbook context store)."
+       never a real person's or organization's taxonomy — this is an OSS spec for
+       an unknown audience, not a record of any one deployment."
+    - "Shipped taxonomy profiles (PARA, Zettelkasten, Diátaxis, and any others
+       added later) are asserted as a requirement in exactly one place:
+       store-lifecycle's shipped-taxonomy-profiles requirement. No other
+       requirement may hardcode a profile's layer name — a store must be able to
+       configure a taxonomy that matches none of the shipped profiles (e.g. for a
+       codebase or team-runbook context store), and every other requirement must
+       keep treating the taxonomy as whatever contexture.yaml declares."
     - "Every requirement that claims something is enforced must name the mechanism
        that enforces it (a hook, a check that exits non-zero, a pre-filter) and
        must not rely on an agent following an instruction. If the only enforcement
@@ -75,8 +75,9 @@ rules:
        one fails closed silently, another fails open pending human review) is two
        capabilities, not one — split it."
   proposal:
-    - "Include an explicit Non-goals section naming what pkm has that contexture
-       v1 deliberately does not ship (see design.md Risks for the list)."
+    - "Include an explicit Non-goals section naming capabilities or behaviors
+       deliberately excluded from this change, with the reason, not just the
+       list (see design.md Risks for how to phrase a mitigation)."
   tasks:
     - "Every phase must end in a runnable command with an observable exit
        code or output — never a task whose done-condition is a prose assertion."

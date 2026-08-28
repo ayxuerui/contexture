@@ -39,3 +39,34 @@ No contexture command or library function SHALL contain a hardcoded taxonomy lay
 #### Scenario: A renamed taxonomy layer requires no code change
 - **WHEN** an operator renames a taxonomy layer in `contexture.yaml` and runs the corresponding migration
 - **THEN** every command that references that layer continues to function correctly using the new name, with no contexture code modified
+
+### Requirement: contexture ships multiple named taxonomy profiles, with PARA as the default
+`contexture init` SHALL offer more than one named, built-in taxonomy profile for the operator to select from, each with a short description of the kind of context store it suits and a structural shape distinct from the others. This is the only place in this specification set where a shipped profile's layer names are asserted; every other requirement continues to treat the taxonomy as whatever `contexture.yaml` declares, per this capability's and the context-store capability's no-hardcoding requirements. When the operator selects no profile and supplies no custom taxonomy definition, `init` SHALL write the PARA profile.
+
+Shipped profiles SHALL include, at minimum:
+- **PARA** (default) — layers Projects, Areas, Resources, Archives; suited to a personal or team knowledge base organized around ongoing responsibilities and active work.
+- **Zettelkasten** — no top-level layers; suited to a store whose structure should emerge entirely from links between notes rather than from folders.
+- **Diátaxis** — layers Tutorials, How-to guides, Reference, Explanation; suited to a store whose content is documentation.
+
+#### Scenario: A fresh store gets PARA out of the box with no interaction
+- **WHEN** `contexture init` runs non-interactively with no profile selected and no custom taxonomy supplied
+- **THEN** the generated `contexture.yaml` declares the PARA profile's layers, with no further configuration required
+
+#### Scenario: An operator selects a different shipped profile
+- **WHEN** `contexture init` is given an explicit selection of the Zettelkasten or Diátaxis profile
+- **THEN** the generated `contexture.yaml` declares that profile's layers instead (none, in Zettelkasten's case), and none of PARA's layer names are written
+
+#### Scenario: A custom taxonomy definition overrides every shipped profile
+- **WHEN** `contexture init` runs with an alternate taxonomy definition supplied
+- **THEN** the generated `contexture.yaml` declares that taxonomy instead, and no shipped profile's layer names are written
+
+### Requirement: `init` helps the operator choose a taxonomy profile
+When `contexture init` runs interactively (a terminal capable of prompting) with no profile or custom taxonomy already specified, it SHALL present the shipped profiles together with their descriptions and prompt the operator to choose one before writing `contexture.yaml`, rather than silently applying the default. When `init` runs non-interactively (no terminal to prompt) with no selection made, it SHALL apply the PARA default without prompting or blocking.
+
+#### Scenario: Interactive init prompts before writing a default
+- **WHEN** `contexture init` runs in an interactive terminal with no profile or custom taxonomy specified
+- **THEN** it presents each shipped profile's name and description and waits for a selection before writing `contexture.yaml`
+
+#### Scenario: Non-interactive init never blocks waiting for input
+- **WHEN** `contexture init` runs with no terminal available to prompt (for example, in a script or CI job) and no profile or custom taxonomy specified
+- **THEN** it writes the PARA default immediately, without prompting or blocking
