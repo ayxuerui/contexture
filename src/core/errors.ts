@@ -81,6 +81,17 @@ export class InvalidConfigError extends ContextureError {
   }
 }
 
+export class InvalidNoteFrontmatterError extends ContextureError {
+  constructor(notePath: string, detail: string) {
+    super(ExitCode.Usage, {
+      code: 'note.invalid_frontmatter',
+      severity: 'error',
+      message: `"${notePath}" has a frontmatter block that is not valid: ${detail}.`,
+      subject: notePath,
+    });
+  }
+}
+
 export class MarkerMismatchError extends ContextureError {
   constructor(filePath: string, detail: string) {
     super(ExitCode.Usage, {

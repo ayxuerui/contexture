@@ -90,6 +90,15 @@ export async function hasStagedChanges(git: GitRunner, cwd: string): Promise<boo
   return result.exitCode === 1; // git diff --quiet: 0 = no differences, 1 = differences found
 }
 
+/**
+ * context-store spec: relocating a note is a single tracked rename, not
+ * delete+create — this is what makes `git log --follow` on the new path
+ * return the note's full prior history. Used by archive (Phase 7).
+ */
+export async function movePath(git: GitRunner, cwd: string, from: string, to: string): Promise<void> {
+  await git.run(['mv', from, to], { cwd });
+}
+
 /** Skips the commit (returns null) when nothing is staged — what makes re-init idempotent. */
 export async function commitIfStaged(
   git: GitRunner,

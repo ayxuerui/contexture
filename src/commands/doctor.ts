@@ -25,15 +25,19 @@ export interface DoctorData {
 export async function execute(store: Store): Promise<CommandOutcome<DoctorData>> {
   const ctx: CheckContext = {
     storeRoot: store.root,
+    config: store.config,
     scope: 'store',
     notes: () => listNotes(store.root),
     graph: async () => undefined,
     catalog: async () => undefined,
   };
 
-  // Phase 0 ships with zero checks registered (task 0.8); later phases
-  // extend CHECKS, never this dispatch.
-  const reports = await runChecks(CHECKS, ctx, { scope: 'store' });
+  // doctor runs only `invariant` checks — `observation` checks (lint's,
+  // Phase 7) are registered in the same manifest but never affect doctor's
+  // exit code. This is what makes "no condition double-counted as both a
+  // lint finding and a doctor failure" (task 9.4) a type-level fact instead
+  // of a later audit.
+  const reports = await runChecks(CHECKS, ctx, { scope: 'store', severity: 'invariant' });
 
   const summary = {
     pass: reports.filter((r) => r.result.status === 'pass').length,

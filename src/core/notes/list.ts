@@ -17,7 +17,11 @@ export interface NoteQuery {
 }
 
 export interface Note {
+  /** Path relative to the store root, forward-slash separated. */
   path: string;
+  /** Raw frontmatter object, or undefined when the note has no frontmatter block. */
+  frontmatter: Record<string, unknown> | undefined;
+  body: string;
 }
 
 /** Phase 0: no note parsing exists yet. Always returns []. */

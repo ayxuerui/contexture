@@ -1,3 +1,4 @@
+import type { StoreConfig } from '../../config/schema.js';
 import type { Finding } from '../envelope.js';
 import type { Note } from '../notes/list.js';
 
@@ -36,6 +37,7 @@ export interface CheckResult {
  */
 export interface CheckContext {
   readonly storeRoot: string;
+  readonly config: StoreConfig;
   readonly scope: CheckScope;
   notes(): Promise<readonly Note[]>;
   graph(): Promise<unknown>;

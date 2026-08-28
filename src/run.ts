@@ -1,6 +1,7 @@
 import { Command } from 'commander';
 import * as doctorCommand from './commands/doctor.js';
 import * as initCommand from './commands/init.js';
+import * as noteResolveCommand from './commands/note-resolve.js';
 import type { CommandOutcome } from './core/command.js';
 import type { Finding } from './core/envelope.js';
 import { buildEnvelope } from './core/envelope.js';
@@ -12,12 +13,18 @@ import { openStore } from './core/store.js';
 import { CLI_VERSION } from './version.js';
 
 /**
- * Every registered command name, for tests to iterate over — so a later
- * phase's command automatically gets json-envelope-conformance coverage the
- * moment it's added here, rather than needing someone to remember to add a
- * new test file for it.
+ * Every registered top-level command name (excluding subcommand groups like
+ * `note`), for tests to iterate over — so a later phase's command
+ * automatically gets json-envelope-conformance coverage the moment it's
+ * added here.
  */
 export const COMMAND_NAMES = ['init', 'doctor'] as const;
+
+interface GlobalOpts {
+  root?: string;
+  json?: boolean;
+  input?: boolean;
+}
 
 interface CommanderErrorLike {
   code: string;
@@ -25,6 +32,14 @@ interface CommanderErrorLike {
 
 function isCommanderError(err: unknown): err is CommanderErrorLike {
   return typeof err === 'object' && err !== null && 'code' in err && typeof (err as CommanderErrorLike).code === 'string';
+}
+
+/** Merges parent-command globals (--root/--json/--no-input) with the current command's own RunEnv. */
+function deriveRunEnv(env: RunEnv, cmd: Command): { runEnv: RunEnv; jsonMode: boolean; root: string | undefined } {
+  const globalOpts = cmd.optsWithGlobals<GlobalOpts>();
+  const jsonMode = Boolean(globalOpts.json);
+  const runEnv: RunEnv = { ...env, noInput: env.noInput || globalOpts.input === false || jsonMode };
+  return { runEnv, jsonMode, root: globalOpts.root };
 }
 
 /**
@@ -110,11 +125,9 @@ export async function run(argv: readonly string[], env: RunEnv): Promise<ExitCod
     .option('--profile <id>', 'shipped taxonomy profile id (para, zettelkasten, diataxis)')
     .option('--taxonomy <path>', 'path to a custom taxonomy definition file')
     .action(async (cmdOpts: { profile?: string; taxonomy?: string }, cmd: Command) => {
-      const globalOpts = cmd.optsWithGlobals<{ root?: string; json?: boolean; input?: boolean }>();
-      const jsonMode = Boolean(globalOpts.json);
-      const runEnv: RunEnv = { ...env, noInput: env.noInput || globalOpts.input === false || jsonMode };
+      const { runEnv, jsonMode, root } = deriveRunEnv(env, cmd);
       result = await runCommand('init', runEnv, jsonMode, () =>
-        initCommand.execute(runEnv, { root: globalOpts.root, profile: cmdOpts.profile, taxonomy: cmdOpts.taxonomy }),
+        initCommand.execute(runEnv, { root, profile: cmdOpts.profile, taxonomy: cmdOpts.taxonomy }),
       );
     });
 
@@ -122,12 +135,22 @@ export async function run(argv: readonly string[], env: RunEnv): Promise<ExitCod
     .command('doctor')
     .description('check the store for real invariant violations')
     .action(async (_cmdOpts: object, cmd: Command) => {
-      const globalOpts = cmd.optsWithGlobals<{ root?: string; json?: boolean; input?: boolean }>();
-      const jsonMode = Boolean(globalOpts.json);
-      const runEnv: RunEnv = { ...env, noInput: env.noInput || globalOpts.input === false || jsonMode };
+      const { runEnv, jsonMode, root } = deriveRunEnv(env, cmd);
       result = await runCommand('doctor', runEnv, jsonMode, async () => {
-        const store = await openStore(runEnv, { root: globalOpts.root });
+        const store = await openStore(runEnv, { root });
         return doctorCommand.execute(store);
+      });
+    });
+
+  const noteCommand = program.command('note').description('inspect a single note');
+  noteCommand
+    .command('resolve <path>')
+    .description("resolve a note's visibility field and report why")
+    .action(async (notePath: string, _cmdOpts: object, cmd: Command) => {
+      const { runEnv, jsonMode, root } = deriveRunEnv(env, cmd);
+      result = await runCommand('note.resolve', runEnv, jsonMode, async () => {
+        const store = await openStore(runEnv, { root });
+        return noteResolveCommand.execute(runEnv, store, { path: notePath });
       });
     });
 

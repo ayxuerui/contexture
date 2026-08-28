@@ -2,27 +2,27 @@
 
 Closes: `context-store` (config, git-repository requirements), `harness-portability` (root resolution), `store-lifecycle` (schema version, idempotent init)
 
-- [ ] 0.1 Initialize the TypeScript/Node package (`package.json`, `tsconfig.json`, CLI entrypoint, test runner)
-- [ ] 0.2 Implement root resolution: `--root` → `CONTEXTURE_ROOT` → walk-up from cwd for `contexture.yaml` → fail loud naming what's missing; no alias env var or flag
-- [ ] 0.3 Define the `contexture.yaml` schema: `schema_version`, taxonomy (layers + defaults), `fields.visibility` (default key + shipped default value), derived-path declarations, retrieval exclusion paths
-- [ ] 0.4 Define the three shipped taxonomy profiles as data (name, description, layer set): PARA (Projects/Areas/Resources/Archives), Zettelkasten (no layers), Diátaxis (Tutorials/How-to guides/Reference/Explanation)
-- [ ] 0.5 Implement `contexture init`'s taxonomy selection: an explicit profile name or a custom taxonomy definition, if supplied, is written as-is; interactive terminal with neither supplied prompts with each shipped profile's name and description before writing; non-interactive with neither supplied writes PARA immediately with no prompt
-- [ ] 0.6 Implement `contexture init`'s remaining scaffold: creates the git repo if absent, writes `contexture.yaml` with schema_version and the resolved taxonomy (from 0.5), writes `.gitignore` entries for every declared derived path, is idempotent on re-run
-- [ ] 0.7 Implement the schema-version gate: every command reads `schema_version` before operating and refuses (naming the mismatch) if the store's version is newer than supported, or if the field is absent entirely
-- [ ] 0.8 Implement `contexture doctor` skeleton (enumerates checks with pass/fail/skip; starts with zero checks registered, extended in later phases)
-- [ ] 0.9 Verify: `CONTEXTURE_ROOT=$(mktemp -d) contexture init </dev/null && contexture doctor` (non-interactive stdin) exits 0, with a git repo and a `contexture.yaml` declaring PARA's layers and no prompt printed; running `init` in a pseudo-tty with no profile piped in prints all three shipped profiles with descriptions and blocks on input; selecting Zettelkasten writes a taxonomy with no layers; passing a custom taxonomy definition writes that instead with no shipped profile's layer names present; a command run in an empty directory with no `--root`/`CONTEXTURE_ROOT` exits non-zero naming that no store root was found
+- [x] 0.1 Initialize the TypeScript/Node package (`package.json`, `tsconfig.json`, CLI entrypoint, test runner)
+- [x] 0.2 Implement root resolution: `--root` → `CONTEXTURE_ROOT` → walk-up from cwd for `contexture.yaml` → fail loud naming what's missing; no alias env var or flag
+- [x] 0.3 Define the `contexture.yaml` schema: `schema_version`, taxonomy (layers + defaults), `fields.visibility` (default key + shipped default value), derived-path declarations, retrieval exclusion paths
+- [x] 0.4 Define the three shipped taxonomy profiles as data (name, description, layer set): PARA (Projects/Areas/Resources/Archives), Zettelkasten (no layers), Diátaxis (Tutorials/How-to guides/Reference/Explanation)
+- [x] 0.5 Implement `contexture init`'s taxonomy selection: an explicit profile name or a custom taxonomy definition, if supplied, is written as-is; interactive terminal with neither supplied prompts with each shipped profile's name and description before writing; non-interactive with neither supplied writes PARA immediately with no prompt
+- [x] 0.6 Implement `contexture init`'s remaining scaffold: creates the git repo if absent, writes `contexture.yaml` with schema_version and the resolved taxonomy (from 0.5), writes `.gitignore` entries for every declared derived path, is idempotent on re-run
+- [x] 0.7 Implement the schema-version gate: every command reads `schema_version` before operating and refuses (naming the mismatch) if the store's version is newer than supported, or if the field is absent entirely
+- [x] 0.8 Implement `contexture doctor` skeleton (enumerates checks with pass/fail/skip; starts with zero checks registered, extended in later phases)
+- [x] 0.9 Verify: `CONTEXTURE_ROOT=$(mktemp -d) contexture init </dev/null && contexture doctor` (non-interactive stdin) exits 0, with a git repo and a `contexture.yaml` declaring PARA's layers and no prompt printed; running `init` in a pseudo-tty with no profile piped in prints all three shipped profiles with descriptions and blocks on input; selecting Zettelkasten writes a taxonomy with no layers; passing a custom taxonomy definition writes that instead with no shipped profile's layer names present; a command run in an empty directory with no `--root`/`CONTEXTURE_ROOT` exits non-zero naming that no store root was found
 
 ## 1. Note schema, visibility resolution, exclusions, generated regions
 
 Closes: `context-store` (frontmatter schema, marker fences, relocation-as-rename), `context-visibility` (resolution order)
 
-- [ ] 1.1 Implement note frontmatter parsing (optional YAML frontmatter; a note with none is valid; no auto-added frontmatter)
-- [ ] 1.2 Implement visibility resolution: explicit field → directory default (from `contexture.yaml`) → configured fail-closed default, each with a reported resolution reason
-- [ ] 1.3 Implement the marker-fenced generated-region primitive: locate a fenced region by start/end markers, preserve everything outside it, abort with zero bytes written on a mismatched marker count
-- [ ] 1.4 Implement `contexture note resolve <path> --json`: prints resolved visibility and resolution reason
-- [ ] 1.5 Implement the single tracked-rename relocation helper (used later by archive)
-- [ ] 1.6 Register the "unresolvable/fail-closed visibility" check as a `lint` finding (not a `doctor` failure yet — that's wired in Phase 5)
-- [ ] 1.7 Verify: `contexture note resolve fixtures/no-frontmatter.md --json` reports the fail-closed default with reason `"fail-closed default"`; a fixture with an explicit field reports reason `"explicit"`
+- [x] 1.1 Implement note frontmatter parsing (optional YAML frontmatter; a note with none is valid; no auto-added frontmatter)
+- [x] 1.2 Implement visibility resolution: explicit field → directory default (from `contexture.yaml`) → configured fail-closed default, each with a reported resolution reason
+- [x] 1.3 Implement the marker-fenced generated-region primitive: locate a fenced region by start/end markers, preserve everything outside it, abort with zero bytes written on a mismatched marker count
+- [x] 1.4 Implement `contexture note resolve <path> --json`: prints resolved visibility and resolution reason
+- [x] 1.5 Implement the single tracked-rename relocation helper (used later by archive)
+- [x] 1.6 Register the "unresolvable/fail-closed visibility" check as a `lint` finding (not a `doctor` failure yet — that's wired in Phase 5)
+- [x] 1.7 Verify: `contexture note resolve fixtures/no-frontmatter.md --json` reports the fail-closed default with reason `"fail-closed default"`; a fixture with an explicit field reports reason `"explicit"`
 
 ## 2. Write lifecycle: sessions, hooks, review-gated PRs
 
