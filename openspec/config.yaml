@@ -1,32 +1,96 @@
 schema: spec-driven
 
-# Project context (optional)
-# This is shown to AI when creating artifacts.
-# Add your tech stack, conventions, style guides, domain knowledge, etc.
-# Example:
-#   context: |
-#     Tech stack: TypeScript, React, Node.js
-#     We use conventional commits
-#     Domain: e-commerce platform
+context: |
+  contexture is an open-source context store: it ingests, organizes, and retrieves
+  context for any AI agent harness (Claude Code, Codex, Cursor, Cline, Gemini CLI,
+  cron jobs, a human at a terminal).
 
-# Per-artifact rules (optional)
-# Add custom rules for specific artifacts.
-# Example:
-#   rules:
-#     proposal:
-#       - Keep proposals under 500 words
-#       - Always include a "Non-goals" section
-#     tasks:
-#       - Break tasks into chunks of max 2 hours
+  Tech stack: TypeScript / Node, npm-distributed CLI + library.
 
-# Per-operation guidance (optional)
-# Add advisory guidance for how apply and archive work should be conducted.
-# This is separate from artifact rules above.
-# Example:
-#   operations:
-#     apply:
-#       guidance:
-#         - Keep test summaries concise
-#     archive:
-#       guidance:
-#         - Summarize the archive outcome before finishing
+  Tenancy: single-owner context store, org-ready access model — visibility values
+  are user-defined named contexts, never hardcoded tiers (no "team-a/personal"
+  style enums in a requirement).
+
+  Retrieval v1 has three legs and NO ranker: a curated catalog (derived structure +
+  authored glosses), a deterministic wikilink graph (enumerates structure, ranks
+  nothing), and ripgrep content matching. A documented adapter seam allows a
+  ranked/semantic engine later; v1 ships none.
+
+  Code/judgment seam: agents read (grep, cluster reading, synthesis, placement,
+  ingest orchestration are procedure markdown, never CLI); the CLI computes
+  (byte-stable derivation), writes (idempotent, fence-validated, always onto a
+  branch), verifies (checks that fail, not instructions that decay), and owns
+  session lifecycle (worktrees) and git. No store operation may require the CLI to
+  be *read* — the store stays operable by an agent with Read/Write/Grep and the
+  conventions alone. The write path is the opposite: git is required substrate,
+  nothing commits to the default branch, every write lands via a session worktree
+  and a reviewed PR.
+
+  Enforcement is a gate, not a cage: contexture cannot prevent an agent from
+  editing a file directly, and hooks are bypassable with --no-verify. The only
+  guarantee that may be asserted is "nothing reaches the default branch un-gated."
+  Never write a requirement of the form "the agent shall not edit files directly" —
+  it is unenforceable.
+
+  Naming is deliberately postponed: the visibility field key (scope: vs lens:) and
+  the store's root noun are not yet chosen. See the spec-authoring rules below —
+  they exist specifically so this rename later is a config change plus a
+  migration, not a spec rewrite.
+
+  If this context and a spec disagree, this context wins and the disagreement is a
+  bug — report it.
+
+rules:
+  specs:
+    - "Name capabilities and spec directories for the CONCEPT, never for a field
+       name or a delivery vehicle (e.g. `context-visibility`, never
+       `scope-visibility` or `cli-visibility`). A spec directory name is the most
+       expensive thing to rename later."
+    - "Bind the provisional field name exactly once, in the spec's Purpose/Why
+       section: state that the frontmatter key is `scope:` (provisional).
+       Every requirement and scenario after that must say 'the visibility field',
+       never the literal key — so a rename touches one line, not the whole spec."
+    - "The visibility field's key name is asserted as a requirement in exactly one
+       place: context-store reads it from contexture.yaml (fields.visibility) with
+       a shipped default. No other spec may hardcode the key name."
+    - "Scenarios use placeholder context names (ctx-a, ctx-b, work, personal-demo),
+       never a real person's or organization's taxonomy — this is an OSS spec for
+       an unknown audience, not a record of any one deployment."
+    - "Shipped taxonomy profiles (PARA, Zettelkasten, Diátaxis, and any others
+       added later) are asserted as a requirement in exactly one place:
+       store-lifecycle's shipped-taxonomy-profiles requirement. No other
+       requirement may hardcode a profile's layer name — a store must be able to
+       configure a taxonomy that matches none of the shipped profiles (e.g. for a
+       codebase or team-runbook context store), and every other requirement must
+       keep treating the taxonomy as whatever contexture.yaml declares."
+    - "Every requirement that claims something is enforced must name the mechanism
+       that enforces it (a hook, a check that exits non-zero, a pre-filter) and
+       must not rely on an agent following an instruction. If the only enforcement
+       is 'the agent is told to', it is a procedure-markdown convention, not a
+       requirement."
+    - "Fail-closed language must name what it fails closed TO, sourced from
+       config, not a hardcoded literal (e.g. 'the configured default visibility
+       context', not 'personal')."
+    - "A capability that has two requirements with contradictory defaults (e.g.
+       one fails closed silently, another fails open pending human review) is two
+       capabilities, not one — split it."
+  proposal:
+    - "Include an explicit Non-goals section naming capabilities or behaviors
+       deliberately excluded from this change, with the reason, not just the
+       list (see design.md Risks for how to phrase a mitigation)."
+  tasks:
+    - "Every phase must end in a runnable command with an observable exit
+       code or output — never a task whose done-condition is a prose assertion."
+    - "Sequence the write-lifecycle capability before the first phase that writes
+       anything, and sequence visibility enforcement before retrieval — a
+       pre-filter cannot be safely retrofitted from a post-filter."
+
+operations:
+  apply:
+    guidance:
+      - "Verify claims by running the actual command in tasks.md and reporting
+         its real output — never assert a check passed without having run it."
+  archive:
+    guidance:
+      - "Confirm no requirement anywhere in the archived specs names the
+         visibility field's literal key outside context-store, before archiving."
