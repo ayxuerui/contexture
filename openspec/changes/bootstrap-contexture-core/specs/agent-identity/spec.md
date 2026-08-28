@@ -5,11 +5,7 @@ Provides a place for durable context an agent should carry into every session â€
 ## ADDED Requirements
 
 ### Requirement: Identity content is excluded from retrieval
-Identity files (agent posture and durable memory) SHALL live under a path declared in the store's retrieval exclusion configuration. No retrieval leg (catalog, graph, content matching) SHALL surface identity content as a search result.
-
-#### Scenario: Identity content does not appear in search
-- **WHEN** `contexture search` is run with a term that also appears in an identity file
-- **THEN** the identity file does not appear among the results
+Identity files (agent posture and durable memory) SHALL live under a path declared in the store's retrieval exclusion configuration. No CLI-computed retrieval leg (catalog or graph) SHALL surface identity content as a result.
 
 #### Scenario: Identity content does not appear in the catalog or graph
 - **WHEN** `catalog build` or `graph build` runs over a store containing identity files

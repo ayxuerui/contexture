@@ -1,22 +1,18 @@
 ## Purpose
 
-Defines one contract governing every extension point where contexture's core behavior is augmented by pluggable, optional code — search ranking, harness-specific file generation, identity injection, and forge (PR-hosting) integration — so core never assumes any particular plugin is installed.
+Defines one contract governing every extension point where contexture's core behavior is augmented by pluggable, optional code — harness-specific file generation, identity injection, and forge (PR-hosting) integration — so core never assumes any particular plugin is installed. A fourth kind, for ranked/semantic search, is deferred to v2 (see design.md) and is out of scope here.
 
 ## ADDED Requirements
 
 ### Requirement: One contract for every adapter kind
-An adapter, regardless of kind (search, harness generation, identity injection, forge), SHALL be discoverable via a declared registration mechanism, SHALL declare which capability interface(s) it implements and at which version, and SHALL be independently addable, removable, and upgradable without modifying core contexture code.
+An adapter, regardless of kind (harness generation, identity injection, forge), SHALL be discoverable via a declared registration mechanism, SHALL declare which capability interface(s) it implements and at which version, and SHALL be independently addable, removable, and upgradable without modifying core contexture code.
 
 #### Scenario: Two adapter kinds share the same discovery mechanism
-- **WHEN** a search adapter and a forge adapter are both registered in `contexture.yaml`
+- **WHEN** a harness-generation adapter and a forge adapter are both registered in `contexture.yaml`
 - **THEN** both are discovered and validated using the same underlying discovery mechanism, not two separate ones
 
 ### Requirement: Core never depends on an adapter being present
 Every core command SHALL define and document its behavior when no adapter of a relevant kind is configured, and that behavior SHALL be a documented degradation, not a crash or a silent no-op.
-
-#### Scenario: No search adapter configured
-- **WHEN** no search adapter is configured
-- **THEN** `contexture search` uses the built-in content-matching leg and functions correctly; it does not fail merely because no ranked-search adapter is present
 
 #### Scenario: No forge adapter configured
 - **WHEN** no forge adapter is configured

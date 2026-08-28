@@ -49,23 +49,22 @@ Closes: `context-catalog` (entire capability)
 - [ ] 3.6 Implement `contexture catalog check --stale`: gloss-rot detection via canonicalized content hash (shared primitive built in Phase 6, stub/inline here if Phase 6 hasn't landed — reconcile in 6.4)
 - [ ] 3.7 Verify: running `catalog build` twice in a row produces byte-identical output; deleting a note and re-running `catalog check` exits non-zero naming it; adding it back and rebuilding makes `catalog check` exit 0
 
-## 4. Retrieval: graph and content matching
+## 4. Retrieval: graph, and direct-content-matching guidance
 
 Closes: `context-retrieval` (entire capability)
 
 - [ ] 4.1 Implement `contexture graph build`: path-derived node identity, typed/untyped edge extraction from wikilinks, atomic temp+rename write (via 2.9)
 - [ ] 4.2 Implement dangling-link reporting (non-fatal) and identity-collision detection (fatal, non-zero exit, no artifact written)
 - [ ] 4.3 Implement `contexture graph query` surface: `neighbors`, `path`, `subgraph`, `hubs`, `orphans` (unfiltered baseline; `--as` filtering added in Phase 5)
-- [ ] 4.4 Implement `contexture search <term>`: applies the exclusion set from `contexture.yaml`, refuses above a configured triage limit naming the match count and limit
-- [ ] 4.5 Implement `--emit-records`: stable per-note record `{id, path, visibility, gloss, hash}` from graph/catalog build
-- [ ] 4.6 Write the retrieval leg-routing guidance into the store's procedure documentation (structural → graph, literal → search, conceptual → catalog then scoped search)
-- [ ] 4.7 Verify: two fixture notes with identical filenames in different directories produce two distinct nodes in `graph build --json`; a fixture with a genuine identity collision makes `graph build` exit non-zero and write no artifact; a fixture with a dangling link makes `graph build` exit 0 while reporting the dangling link; `search` on a fixture set with an over-limit match count exits non-zero
+- [ ] 4.4 Implement `--emit-records`: stable per-note record `{id, path, visibility, gloss, hash}` from graph/catalog build
+- [ ] 4.5 Write the retrieval leg-routing guidance into `AGENTS.md`/procedure docs: name the catalog and the graph as contexture-built-and-maintained tools to consult first; route literal/entity questions to the agent's own direct content matching, scoped by the exclusion paths declared in `contexture.yaml`. No `contexture search` command exists — ranked/semantic search is deferred to v2 (design.md D2) and is out of scope for this change.
+- [ ] 4.6 Verify: two fixture notes with identical filenames in different directories produce two distinct nodes in `graph build --json`; a fixture with a genuine identity collision makes `graph build` exit non-zero and write no artifact; a fixture with a dangling link makes `graph build` exit 0 while reporting the dangling link; the generated `AGENTS.md` states the exclusion paths and the leg-routing rule naming catalog/graph/direct-grep; the CLI's command surface contains no `search` command
 
 ## 5. Visibility enforcement and disclosure policy
 
 Closes: `context-visibility` (enforcement requirement), `disclosure-policy` (entire capability)
 
-- [ ] 5.1 Wire `--as <context>` into `graph query` and `search`: exclude notes by resolved visibility before traversal/matching, not after
+- [ ] 5.1 Wire `--as <context>` into `graph query`: exclude notes by resolved visibility before traversal, not after
 - [ ] 5.2 Wire the fail-closed visibility check into `doctor` as a failing (not merely lint) check
 - [ ] 5.3 Implement the disclosure ladder: hard walls → explicit audience tag → internal-audience-from-visibility → external default, each rung short-circuiting
 - [ ] 5.4 Implement `contexture check <note> --audience <audience>`: tri-state ALLOW/DENY/ASK with distinct documented exit codes, printing the deciding rung
@@ -97,14 +96,14 @@ Closes: `context-organize` (entire capability)
 
 Closes: `agent-identity` (entire capability), `adapters` (entire capability), `harness-portability` (procedures, adapters, portability test)
 
-- [ ] 8.1 Define the canonical identity file locations (agent posture, durable world facts, durable user facts) under the store's retrieval-exclusion path; confirm catalog/graph/search never surface them (regression tests against Phases 3–4)
-- [ ] 8.2 Implement the adapter discovery/registration mechanism shared by all four adapter kinds (search, harness-generation, identity-injection, forge), including capability-interface version declaration and the version-mismatch refusal
+- [ ] 8.1 Define the canonical identity file locations (agent posture, durable world facts, durable user facts) under the store's retrieval-exclusion path; confirm catalog and graph never surface them (regression tests against Phases 3–4)
+- [ ] 8.2 Implement the adapter discovery/registration mechanism shared by the three v1 adapter kinds (harness-generation, identity-injection, forge), including capability-interface version declaration and the version-mismatch refusal
 - [ ] 8.3 Implement `contexture adapters generate`: produces harness-specific files (e.g. a Claude-Code-style entry file that only imports `AGENTS.md` plus harness extras) and the harness's identity-injection mechanism, without duplicating canonical content
 - [ ] 8.4 Implement the harness permission-config generator: for harnesses that support it, emit rules denying Write outside the active session worktree and denying raw `git push`/`git commit`
 - [ ] 8.5 Write `AGENTS.md`'s canonical template: root-resolution rule, frontmatter schema pointer, write-path rule, and the procedure index
 - [ ] 8.6 Write the portable procedure-markdown pack referenced by `AGENTS.md` for the judgment-side operations named throughout (ingest orchestration, placement, connection-finding, organize audit) — these are documentation, not code
 - [ ] 8.7 Implement `contexture verify --portable`: runs a retrieval query, a derived-artifact build, and follows one procedure via the `AGENTS.md` index, from an environment scrubbed of harness-specific state; exits non-zero naming the first failing operation
-- [ ] 8.8 Verify: `adapters generate` run twice in a row produces byte-identical harness files; `verify --portable` exits 0 in a freshly cloned worktree with no harness state present; deleting the store's `AGENTS.md` procedure index entry for one operation makes `verify --portable` fail naming that operation; a search over a fixture store containing identity files returns no identity-file results
+- [ ] 8.8 Verify: `adapters generate` run twice in a row produces byte-identical harness files; `verify --portable` exits 0 in a freshly cloned worktree with no harness state present; deleting the store's `AGENTS.md` procedure index entry for one operation makes `verify --portable` fail naming that operation; the adapter registry accepts a harness-generation, an identity-injection, and a forge adapter, and rejects a fixture adapter declaring an unsupported interface version
 
 ## 9. Store lifecycle and integrity
 
