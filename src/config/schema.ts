@@ -96,6 +96,30 @@ const OrganizeSchema = z.object({
   archive_path: z.string().min(1),
 });
 
+/** agent-identity spec: canonical identity files live here, excluded from every retrieval leg. */
+const IdentitySchema = z.object({
+  path: z.string().min(1),
+});
+
+/** harness-portability spec: the portable procedure-markdown pack AGENTS.md's index points into. */
+const HarnessSchema = z.object({
+  procedures_path: z.string().min(1),
+});
+
+/**
+ * adapters spec: the one declared-registration mechanism shared by every
+ * adapter kind. `module` is reserved for a future third-party-loading path;
+ * v1 resolves every entry against the built-in adapter registry by
+ * (kind, id).
+ */
+const AdapterKindSchema = z.enum(['harness-generation', 'identity-injection', 'forge']);
+
+const AdapterDeclarationSchema = z.object({
+  id: z.string().min(1),
+  kind: AdapterKindSchema,
+  module: z.string().min(1).optional(),
+});
+
 export const StoreConfigSchema = z
   .object({
     schema_version: z.number().int().positive(),
@@ -111,9 +135,13 @@ export const StoreConfigSchema = z
     disclosure: DisclosureSchema,
     ingest: IngestSchema,
     organize: OrganizeSchema,
+    identity: IdentitySchema,
+    harness: HarnessSchema,
+    adapters: z.array(AdapterDeclarationSchema),
   })
   .passthrough();
 
 export type StoreConfig = z.infer<typeof StoreConfigSchema>;
 export type TaxonomyLayerConfig = z.infer<typeof TaxonomyLayerSchema>;
 export type HardWallConfig = z.infer<typeof HardWallSchema>;
+export type AdapterDeclaration = z.infer<typeof AdapterDeclarationSchema>;

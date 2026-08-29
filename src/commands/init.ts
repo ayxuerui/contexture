@@ -5,6 +5,7 @@ import { parse as parseYaml } from 'yaml';
 import { z } from 'zod';
 import type { CommandOutcome, CommandRequires } from '../core/command.js';
 import {
+  DEFAULT_ADAPTERS,
   DEFAULT_ARCHIVE_PATH,
   DEFAULT_CATALOG_PATH,
   DEFAULT_CATALOG_SECTION_MAX_BYTES,
@@ -12,8 +13,10 @@ import {
   DEFAULT_DIFF_SIZE_CEILING_LINES,
   DEFAULT_EXCLUDE_PATHS,
   DEFAULT_HARD_WALLS,
+  DEFAULT_IDENTITY_PATH,
   DEFAULT_INBOX_PATH,
   DEFAULT_INTERNAL_AUDIENCES,
+  DEFAULT_PROCEDURES_PATH,
   DEFAULT_SESSION_BRANCH_PREFIX,
   DEFAULT_VISIBILITY_CONTEXT,
   DEFAULT_VISIBILITY_FIELD_KEY,
@@ -22,7 +25,15 @@ import {
 import { configPathFor, readConfig } from '../config/load.js';
 import { renderStoreConfig } from '../config/render.js';
 import { SUPPORTED_SCHEMA_VERSION, TaxonomyLayerSchema, type StoreConfig, type TaxonomyLayerConfig } from '../config/schema.js';
-import { buildAgentsCaptureSection, buildAgentsLegRoutingSection, buildAgentsPlacementSection, agentsMdPath } from '../core/agents-doc.js';
+import {
+  buildAgentsCanonicalSection,
+  buildAgentsCaptureSection,
+  buildAgentsLegRoutingSection,
+  buildAgentsPlacementSection,
+  agentsMdPath,
+} from '../core/agents-doc.js';
+import { ensureIdentityFiles } from '../core/identity.js';
+import { ensureProcedureFiles } from '../core/procedures.js';
 import type { Finding } from '../core/envelope.js';
 import { isInteractive, type RunEnv } from '../core/env.js';
 import {
@@ -141,6 +152,9 @@ async function runInitCore(env: RunEnv, flags: InitFlags): Promise<RunInitResult
     await buildAgentsLegRoutingSection(root, config);
     await buildAgentsCaptureSection(root, config);
     await buildAgentsPlacementSection(root, config);
+    await ensureIdentityFiles(root, config);
+    await ensureProcedureFiles(root, config);
+    await buildAgentsCanonicalSection(root, config);
     return {
       data: {
         root,
@@ -203,6 +217,9 @@ async function runInitCore(env: RunEnv, flags: InitFlags): Promise<RunInitResult
     disclosure: { internal_audiences: [...DEFAULT_INTERNAL_AUDIENCES], hard_walls: [...DEFAULT_HARD_WALLS] },
     ingest: { inbox_path: DEFAULT_INBOX_PATH },
     organize: { archive_path: DEFAULT_ARCHIVE_PATH },
+    identity: { path: DEFAULT_IDENTITY_PATH },
+    harness: { procedures_path: DEFAULT_PROCEDURES_PATH },
+    adapters: [...DEFAULT_ADAPTERS],
   };
   // Round-trips through the schema internally; throws before any byte is written if it doesn't.
   const configText = renderStoreConfig(config);
@@ -214,6 +231,9 @@ async function runInitCore(env: RunEnv, flags: InitFlags): Promise<RunInitResult
   await buildAgentsLegRoutingSection(root, config);
   await buildAgentsCaptureSection(root, config);
   await buildAgentsPlacementSection(root, config);
+  const identityFilesCreated = await ensureIdentityFiles(root, config);
+  const procedureFilesCreated = await ensureProcedureFiles(root, config);
+  await buildAgentsCanonicalSection(root, config);
 
   // One directory per configured layer with a .gitkeep — makes Zettelkasten's
   // zero-layer shape visibly different from PARA's at a glance. This is a
@@ -234,7 +254,7 @@ async function runInitCore(env: RunEnv, flags: InitFlags): Promise<RunInitResult
   await configureHooksPath(env.git, root);
 
   const relConfigPath = path.relative(root, configPath);
-  await addPaths(env.git, root, [relConfigPath, '.gitignore', path.relative(root, agentsMdPath(root)), ...layerGitkeeps, ...hookFiles]);
+  await addPaths(env.git, root, [relConfigPath, '.gitignore', path.relative(root, agentsMdPath(root)), ...layerGitkeeps, ...identityFilesCreated, ...procedureFilesCreated, ...hookFiles]);
 
   const commitSha = await commitIfStaged(env.git, root, { kind: 'bootstrap' }, 'chore: initialize contexture store');
 
@@ -242,7 +262,7 @@ async function runInitCore(env: RunEnv, flags: InitFlags): Promise<RunInitResult
     data: {
       root,
       already_initialized: false,
-      created: [relConfigPath, '.gitignore', path.relative(root, agentsMdPath(root)), ...layerGitkeeps, ...hookFiles],
+      created: [relConfigPath, '.gitignore', path.relative(root, agentsMdPath(root)), ...layerGitkeeps, ...identityFilesCreated, ...procedureFilesCreated, ...hookFiles],
       unchanged: [],
       git: { repository_created: !repositoryAlreadyExists, commit: commitSha, default_branch: defaultBranch },
       taxonomy: {

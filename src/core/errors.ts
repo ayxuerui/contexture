@@ -190,6 +190,30 @@ export class ArchiveDestinationExistsError extends ContextureError {
   }
 }
 
+export class AdapterNotFoundError extends ContextureError {
+  constructor(kind: string, id: string) {
+    super(ExitCode.Usage, {
+      code: 'adapter.not_found',
+      severity: 'error',
+      message: `Configured adapter "${id}" (kind: ${kind}) is not a known adapter.`,
+      subject: id,
+      details: { kind },
+    });
+  }
+}
+
+export class AdapterVersionMismatchError extends ContextureError {
+  constructor(kind: string, id: string, declaredVersion: number, supportedVersion: number) {
+    super(ExitCode.Usage, {
+      code: 'adapter.version_mismatch',
+      severity: 'error',
+      message: `Adapter "${id}" (kind: ${kind}) declares interface version ${declaredVersion}, but this contexture release supports version ${supportedVersion}.`,
+      subject: id,
+      details: { kind, declaredVersion, supportedVersion },
+    });
+  }
+}
+
 export class GraphNotBuiltError extends ContextureError {
   constructor() {
     super(ExitCode.Usage, {

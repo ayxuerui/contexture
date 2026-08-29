@@ -1,3 +1,5 @@
+import type { Adapter } from '../types.js';
+
 /**
  * write-lifecycle/adapters spec: the forge adapter interface — one of the
  * three v1 adapter kinds. `isAvailable` is what lets `session submit`
@@ -17,8 +19,7 @@ export interface OpenPullRequestResult {
   number: number | null;
 }
 
-export interface ForgeAdapter {
-  id: string;
+export interface ForgeAdapter extends Adapter<'forge'> {
   isAvailable(cwd: string): Promise<boolean>;
   openPullRequest(input: OpenPullRequestInput): Promise<OpenPullRequestResult>;
 }

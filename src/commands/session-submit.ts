@@ -1,4 +1,4 @@
-import { githubForgeAdapter } from '../adapters/forge/github.js';
+import { configuredAdapters } from '../adapters/registry.js';
 import type { OpenPullRequestResult } from '../adapters/forge/types.js';
 import { CHECKS } from '../core/checks/manifest.js';
 import { overallStatus, runChecks } from '../core/checks/registry.js';
@@ -73,9 +73,12 @@ export async function execute(
 
   let pr: OpenPullRequestResult | null = null;
   let manualPrInstructions: string | null = null;
-  const forgeAvailable = await githubForgeAdapter.isAvailable(store.root);
-  if (forgeAvailable) {
-    pr = await githubForgeAdapter.openPullRequest({
+  // adapters spec: "No forge adapter configured" is a documented degradation,
+  // not a crash — the commit-and-push above still completed either way.
+  const [forgeAdapter] = configuredAdapters(store.config, 'forge');
+  const forgeAvailable = forgeAdapter ? await forgeAdapter.isAvailable(store.root) : false;
+  if (forgeAdapter && forgeAvailable) {
+    pr = await forgeAdapter.openPullRequest({
       cwd: store.root,
       branch,
       baseBranch: store.config.git.default_branch,

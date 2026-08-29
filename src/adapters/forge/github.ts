@@ -14,6 +14,8 @@ const PR_NUMBER_RE = /\/pull\/(\d+)/;
  */
 export const githubForgeAdapter: ForgeAdapter = {
   id: 'github',
+  kind: 'forge',
+  interfaceVersion: 1,
 
   async isAvailable(cwd) {
     try {

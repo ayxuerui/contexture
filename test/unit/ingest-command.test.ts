@@ -26,6 +26,9 @@ function makeConfig(): StoreConfig {
     disclosure: { internal_audiences: [], hard_walls: [] },
     ingest: { inbox_path: 'inbox/' },
     organize: { archive_path: 'archive/' },
+    identity: { path: 'identity/' },
+    harness: { procedures_path: 'procedures/' },
+    adapters: [],
   };
 }
 

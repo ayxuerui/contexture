@@ -25,6 +25,9 @@ function makeStore(root: string, disclosure: StoreConfig['disclosure'] = { inter
     disclosure,
     ingest: { inbox_path: 'inbox/' },
     organize: { archive_path: 'archive/' },
+    identity: { path: 'identity/' },
+    harness: { procedures_path: 'procedures/' },
+    adapters: [],
   };
   return { root, config };
 }

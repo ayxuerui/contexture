@@ -1,6 +1,8 @@
 import path from 'node:path';
 import type { StoreConfig } from '../config/schema.js';
+import { CONFIG_FILE_NAME } from './root.js';
 import { excludedPrefixesFor } from './notes/list.js';
+import { procedurePaths, PROCEDURES } from './procedures.js';
 import { upsertFencedRegionInFile } from './fs/fenced-region.js';
 import { htmlCommentFence } from './markers.js';
 
@@ -123,4 +125,53 @@ export function renderPlacementSection(config: StoreConfig): string[] {
 
 export async function buildAgentsPlacementSection(root: string, config: StoreConfig): Promise<{ changed: boolean }> {
   return upsertFencedRegionInFile(agentsMdPath(root), AGENTS_MD_PLACEMENT_FENCE, renderPlacementSection(config));
+}
+
+/**
+ * harness-portability spec (task 8.5): the canonical template's four
+ * required pieces — root-resolution rule, frontmatter schema pointer,
+ * write-path rule, and a procedure index — so an agent that has read only
+ * this file, with no harness-specific context, has everything it needs
+ * (the spec's own "Reading only AGENTS.md is sufficient" scenario).
+ */
+export const AGENTS_MD_CANONICAL_FENCE = htmlCommentFence('canonical');
+
+export function renderCanonicalSection(config: StoreConfig): string[] {
+  const lines = [
+    '## Store fundamentals',
+    '',
+    '### Root resolution',
+    '',
+    `Every contexture command resolves the store root in this order: an explicit `+
+      '`--root <path>` flag; the `CONTEXTURE_ROOT` environment variable; walking up from the current directory ' +
+      `looking for \`${CONFIG_FILE_NAME}\`. No other flag or environment variable selects the root.`,
+    '',
+    '### Frontmatter schema',
+    '',
+    `- Visibility field: \`${config.fields.visibility}:\` — resolves explicit value, then directory default, then the ` +
+      `configured fail-closed default (\`${config.visibility.default_context}\`). See \`contexture note resolve <path>\`.`,
+    '- Source-identity fields (assigned only by `contexture ingest`, never hand-written): `source_type`, `source_id`, `source_hash`, `ingested`.',
+    '- Disclosure audience tags (optional, hand-written): `audience: [<name>, ...]`.',
+    '',
+    '### Write path',
+    '',
+    'Every write to this store happens inside a session worktree, never directly on the default branch: `contexture ' +
+      'session start` creates one, then `contexture session submit` validates, commits, pushes, and opens (or ' +
+      'reports how to open) a pull request. Do not edit files in the store root directly.',
+    '',
+    '### Procedure index',
+    '',
+    'Judgment-driven operations, documented as portable markdown under ' +
+      `\`${config.harness.procedures_path}\` — read one directly, no harness-specific discovery required:`,
+    '',
+  ];
+  const paths = procedurePaths(config);
+  PROCEDURES.forEach((procedure, i) => {
+    lines.push(`- [${procedure.name}](${paths[i]})`);
+  });
+  return lines;
+}
+
+export async function buildAgentsCanonicalSection(root: string, config: StoreConfig): Promise<{ changed: boolean }> {
+  return upsertFencedRegionInFile(agentsMdPath(root), AGENTS_MD_CANONICAL_FENCE, renderCanonicalSection(config));
 }

@@ -3,11 +3,14 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import type { StoreConfig } from '../../src/config/schema.js';
 import {
+  AGENTS_MD_CANONICAL_FENCE,
   AGENTS_MD_CAPTURE_FENCE,
   AGENTS_MD_LEG_ROUTING_FENCE,
   agentsMdPath,
+  buildAgentsCanonicalSection,
   buildAgentsCaptureSection,
   buildAgentsLegRoutingSection,
+  renderCanonicalSection,
   renderCaptureSection,
   renderLegRoutingSection,
 } from '../../src/core/agents-doc.js';
@@ -28,6 +31,9 @@ function makeConfig(overrides: Partial<StoreConfig> = {}): StoreConfig {
     disclosure: { internal_audiences: [], hard_walls: [] },
     ingest: { inbox_path: 'inbox/' },
     organize: { archive_path: 'archive/' },
+    identity: { path: 'identity/' },
+    harness: { procedures_path: 'procedures/' },
+    adapters: [],
     ...overrides,
   };
 }
@@ -138,6 +144,49 @@ describe('buildAgentsCaptureSection', () => {
       const content = await readFile(agentsMdPath(tmp.root), 'utf8');
       expect(content).toContain(AGENTS_MD_LEG_ROUTING_FENCE.start);
       expect(content).toContain(AGENTS_MD_CAPTURE_FENCE.start);
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+});
+
+describe('renderCanonicalSection', () => {
+  it('states the root-resolution rule naming --root and CONTEXTURE_ROOT', () => {
+    const lines = renderCanonicalSection(makeConfig()).join('\n');
+    expect(lines).toContain('--root');
+    expect(lines).toContain('CONTEXTURE_ROOT');
+    expect(lines).toContain('contexture.yaml');
+  });
+
+  it('points at the configured visibility field key, not a hardcoded one', () => {
+    const lines = renderCanonicalSection(makeConfig({ fields: { visibility: 'lens' } })).join('\n');
+    expect(lines).toContain('`lens:`');
+  });
+
+  it('states the write-path rule naming session start and session submit', () => {
+    const lines = renderCanonicalSection(makeConfig()).join('\n');
+    expect(lines).toMatch(/session start/);
+    expect(lines).toMatch(/session submit/);
+  });
+
+  it('indexes every procedure by name and path', () => {
+    const lines = renderCanonicalSection(makeConfig()).join('\n');
+    expect(lines).toContain('[Ingest orchestration](procedures/ingest-orchestration.md)');
+    expect(lines).toContain('[Placement](procedures/placement.md)');
+    expect(lines).toContain('[Connection finding](procedures/connection-finding.md)');
+    expect(lines).toContain('[Organize audit](procedures/organize-audit.md)');
+  });
+});
+
+describe('buildAgentsCanonicalSection', () => {
+  it('writes a fenced section distinct from the other three AGENTS.md sections', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      await buildAgentsLegRoutingSection(tmp.root, makeConfig());
+      await buildAgentsCanonicalSection(tmp.root, makeConfig());
+      const content = await readFile(agentsMdPath(tmp.root), 'utf8');
+      expect(content).toContain(AGENTS_MD_LEG_ROUTING_FENCE.start);
+      expect(content).toContain(AGENTS_MD_CANONICAL_FENCE.start);
     } finally {
       await tmp.cleanup();
     }

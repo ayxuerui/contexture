@@ -3,6 +3,7 @@ import * as catalogBuildCommand from './commands/catalog-build.js';
 import * as catalogCheckCommand from './commands/catalog-check.js';
 import * as catalogShowCommand from './commands/catalog-show.js';
 import * as checkCommand from './commands/check.js';
+import * as adaptersGenerateCommand from './commands/adapters-generate.js';
 import * as archiveCommand from './commands/archive.js';
 import * as doctorCommand from './commands/doctor.js';
 import * as ingestCommand from './commands/ingest.js';
@@ -28,6 +29,7 @@ import { ContextureError } from './core/errors.js';
 import { ExitCode } from './core/exit-codes.js';
 import { createReporter } from './core/reporter.js';
 import { openStore } from './core/store.js';
+import * as verifyCommand from './commands/verify.js';
 import { CLI_VERSION } from './version.js';
 
 /**
@@ -399,6 +401,31 @@ export async function run(argv: readonly string[], env: RunEnv): Promise<ExitCod
       result = await runCommand('rollup.write', runEnv, jsonMode, async () => {
         const store = await openStore(runEnv, { root });
         return rollupWriteCommand.execute(runEnv, store, { entity, contentFile: cmdOpts.contentFile });
+      });
+    });
+
+  const adaptersCommand = program.command('adapters').description('harness-generation, identity-injection, and forge adapters');
+
+  adaptersCommand
+    .command('generate')
+    .description('(re)generate every configured harness-generation and identity-injection adapter\'s output')
+    .action(async (_cmdOpts: object, cmd: Command) => {
+      const { runEnv, jsonMode, root } = deriveRunEnv(env, cmd);
+      result = await runCommand('adapters.generate', runEnv, jsonMode, async () => {
+        const store = await openStore(runEnv, { root });
+        return adaptersGenerateCommand.execute(store);
+      });
+    });
+
+  program
+    .command('verify')
+    .description('exercise core store operations end to end, from an environment with no harness-specific state')
+    .option('--portable', 'the portability test: a retrieval query, a derived-artifact build, and following one procedure')
+    .action(async (cmdOpts: { portable?: boolean }, cmd: Command) => {
+      const { runEnv, jsonMode, root } = deriveRunEnv(env, cmd);
+      result = await runCommand('verify', runEnv, jsonMode, async () => {
+        const store = await openStore(runEnv, { root });
+        return verifyCommand.execute(store, { portable: cmdOpts.portable });
       });
     });
 

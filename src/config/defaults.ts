@@ -1,4 +1,4 @@
-import type { HardWallConfig } from './schema.js';
+import type { AdapterDeclaration, HardWallConfig } from './schema.js';
 
 /**
  * context-store spec: "The visibility field's frontmatter key is configurable
@@ -20,8 +20,14 @@ export const DEFAULT_VISIBILITY_CONTEXT = 'private';
 /** context-store spec: derived paths declared in contexture.yaml, gitignored by init. */
 export const DEFAULT_DERIVED_PATHS = ['.contexture/'] as const;
 
+/** agent-identity spec: canonical identity files live here, excluded from every retrieval leg. */
+export const DEFAULT_IDENTITY_PATH = 'identity/';
+
+/** harness-portability spec: the portable procedure-markdown pack, excluded from retrieval (infra, not knowledge). */
+export const DEFAULT_PROCEDURES_PATH = 'procedures/';
+
 /** Paths excluded from every retrieval leg by default. */
-export const DEFAULT_EXCLUDE_PATHS = ['.contexture/', 'identity/'] as const;
+export const DEFAULT_EXCLUDE_PATHS = ['.contexture/', DEFAULT_IDENTITY_PATH, DEFAULT_PROCEDURES_PATH] as const;
 
 /** write-lifecycle spec: session worktrees live under a configured, gitignored path. */
 export const DEFAULT_WORKTREES_PATH = '.worktrees/';
@@ -47,4 +53,16 @@ export const DEFAULT_INBOX_PATH = 'inbox/';
 
 /** context-organize spec: archive's destination, decoupled from any taxonomy layer name. */
 export const DEFAULT_ARCHIVE_PATH = 'archive/';
+
+/**
+ * adapters spec: init registers all three shipped builtins by default, so
+ * out-of-the-box UX (a PR opened on session submit, a generated CLAUDE.md)
+ * keeps working without the operator hand-writing config — each is just as
+ * removable from this list as it was addable.
+ */
+export const DEFAULT_ADAPTERS: readonly AdapterDeclaration[] = [
+  { id: 'github', kind: 'forge' },
+  { id: 'claude-code', kind: 'harness-generation' },
+  { id: 'claude-code', kind: 'identity-injection' },
+];
 

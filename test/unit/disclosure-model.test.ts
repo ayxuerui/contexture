@@ -18,6 +18,9 @@ function makeConfig(overrides: Partial<StoreConfig['disclosure']> = {}): StoreCo
     disclosure: { internal_audiences: [], hard_walls: [], ...overrides },
     ingest: { inbox_path: 'inbox/' },
     organize: { archive_path: 'archive/' },
+    identity: { path: 'identity/' },
+    harness: { procedures_path: 'procedures/' },
+    adapters: [],
   };
 }
 

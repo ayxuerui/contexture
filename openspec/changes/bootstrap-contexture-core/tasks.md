@@ -98,14 +98,14 @@ Closes: `context-organize` (entire capability)
 
 Closes: `agent-identity` (entire capability), `adapters` (entire capability), `harness-portability` (procedures, adapters, portability test)
 
-- [ ] 8.1 Define the canonical identity file locations (agent posture, durable world facts, durable user facts) under the store's retrieval-exclusion path; confirm catalog and graph never surface them (regression tests against Phases 3–4)
-- [ ] 8.2 Implement the adapter discovery/registration mechanism shared by the three v1 adapter kinds (harness-generation, identity-injection, forge), including capability-interface version declaration and the version-mismatch refusal
-- [ ] 8.3 Implement `contexture adapters generate`: produces harness-specific files (e.g. a Claude-Code-style entry file that only imports `AGENTS.md` plus harness extras) and the harness's identity-injection mechanism, without duplicating canonical content
-- [ ] 8.4 Implement the harness permission-config generator: for harnesses that support it, emit rules denying Write outside the active session worktree and denying raw `git push`/`git commit`
-- [ ] 8.5 Write `AGENTS.md`'s canonical template: root-resolution rule, frontmatter schema pointer, write-path rule, and the procedure index
-- [ ] 8.6 Write the portable procedure-markdown pack referenced by `AGENTS.md` for the judgment-side operations named throughout (ingest orchestration, placement, connection-finding, organize audit) — these are documentation, not code
-- [ ] 8.7 Implement `contexture verify --portable`: runs a retrieval query, a derived-artifact build, and follows one procedure via the `AGENTS.md` index, from an environment scrubbed of harness-specific state; exits non-zero naming the first failing operation
-- [ ] 8.8 Verify: `adapters generate` run twice in a row produces byte-identical harness files; `verify --portable` exits 0 in a freshly cloned worktree with no harness state present; deleting the store's `AGENTS.md` procedure index entry for one operation makes `verify --portable` fail naming that operation; the adapter registry accepts a harness-generation, an identity-injection, and a forge adapter, and rejects a fixture adapter declaring an unsupported interface version
+- [x] 8.1 Define the canonical identity file locations (agent posture, durable world facts, durable user facts) under the store's retrieval-exclusion path; confirm catalog and graph never surface them (regression tests against Phases 3–4)
+- [x] 8.2 Implement the adapter discovery/registration mechanism shared by the three v1 adapter kinds (harness-generation, identity-injection, forge), including capability-interface version declaration and the version-mismatch refusal
+- [x] 8.3 Implement `contexture adapters generate`: produces harness-specific files (e.g. a Claude-Code-style entry file that only imports `AGENTS.md` plus harness extras) and the harness's identity-injection mechanism, without duplicating canonical content
+- [x] 8.4 Implement the harness permission-config generator: for harnesses that support it, emit rules denying Write outside the active session worktree and denying raw `git push`/`git commit`
+- [x] 8.5 Write `AGENTS.md`'s canonical template: root-resolution rule, frontmatter schema pointer, write-path rule, and the procedure index
+- [x] 8.6 Write the portable procedure-markdown pack referenced by `AGENTS.md` for the judgment-side operations named throughout (ingest orchestration, placement, connection-finding, organize audit) — these are documentation, not code
+- [x] 8.7 Implement `contexture verify --portable`: runs a retrieval query, a derived-artifact build, and follows one procedure via the `AGENTS.md` index, from an environment scrubbed of harness-specific state; exits non-zero naming the first failing operation
+- [x] 8.8 Verify: `adapters generate` run twice in a row produces byte-identical harness files; `verify --portable` exits 0 in a freshly cloned worktree with no harness state present; deleting the store's `AGENTS.md` procedure index entry for one operation makes `verify --portable` fail naming that operation; the adapter registry accepts a harness-generation, an identity-injection, and a forge adapter, and rejects a fixture adapter declaring an unsupported interface version
 
 ## 9. Store lifecycle and integrity
 
