@@ -3,6 +3,8 @@ import * as catalogBuildCommand from './commands/catalog-build.js';
 import * as catalogCheckCommand from './commands/catalog-check.js';
 import * as catalogShowCommand from './commands/catalog-show.js';
 import * as doctorCommand from './commands/doctor.js';
+import * as graphBuildCommand from './commands/graph-build.js';
+import * as graphQueryCommand from './commands/graph-query.js';
 import * as initCommand from './commands/init.js';
 import * as noteResolveCommand from './commands/note-resolve.js';
 import * as sessionAbandonCommand from './commands/session-abandon.js';
@@ -198,6 +200,80 @@ export async function run(argv: readonly string[], env: RunEnv): Promise<ExitCod
       result = await runCommand('catalog.show', runEnv, jsonMode, async () => {
         const store = await openStore(runEnv, { root });
         return catalogShowCommand.execute(store, { section: cmdOpts.section, as: cmdOpts.as });
+      });
+    });
+
+  const graphCommand = program.command('graph').description('the wikilink graph derived from the store');
+
+  graphCommand
+    .command('build')
+    .description('rebuild the graph artifact from every retrievable note')
+    .option('--emit-records', 'also emit a stable per-note record list {id, path, visibility, gloss, hash}')
+    .action(async (cmdOpts: { emitRecords?: boolean }, cmd: Command) => {
+      const { runEnv, jsonMode, root } = deriveRunEnv(env, cmd);
+      result = await runCommand('graph.build', runEnv, jsonMode, async () => {
+        const store = await openStore(runEnv, { root });
+        return graphBuildCommand.execute(store, { emitRecords: cmdOpts.emitRecords });
+      });
+    });
+
+  const graphQueryCommandGroup = graphCommand.command('query').description('query the built graph');
+
+  graphQueryCommandGroup
+    .command('neighbors <node>')
+    .description('list nodes reachable from <node> within --depth hops')
+    .option('--depth <n>', 'hop count', (v) => Number.parseInt(v, 10), 1)
+    .option('--direction <dir>', 'in, out, or both', 'both')
+    .action(async (node: string, cmdOpts: { depth: number; direction: 'in' | 'out' | 'both' }, cmd: Command) => {
+      const { runEnv, jsonMode, root } = deriveRunEnv(env, cmd);
+      result = await runCommand('graph.query.neighbors', runEnv, jsonMode, async () => {
+        const store = await openStore(runEnv, { root });
+        return graphQueryCommand.executeNeighbors(store, { node, depth: cmdOpts.depth, direction: cmdOpts.direction });
+      });
+    });
+
+  graphQueryCommandGroup
+    .command('path <from> <to>')
+    .description('shortest path between two nodes, if one exists')
+    .action(async (from: string, to: string, _cmdOpts: object, cmd: Command) => {
+      const { runEnv, jsonMode, root } = deriveRunEnv(env, cmd);
+      result = await runCommand('graph.query.path', runEnv, jsonMode, async () => {
+        const store = await openStore(runEnv, { root });
+        return graphQueryCommand.executePath(store, { from, to });
+      });
+    });
+
+  graphQueryCommandGroup
+    .command('subgraph <ids...>')
+    .description('the induced subgraph over the given node ids')
+    .action(async (ids: string[], _cmdOpts: object, cmd: Command) => {
+      const { runEnv, jsonMode, root } = deriveRunEnv(env, cmd);
+      result = await runCommand('graph.query.subgraph', runEnv, jsonMode, async () => {
+        const store = await openStore(runEnv, { root });
+        return graphQueryCommand.executeSubgraph(store, { ids });
+      });
+    });
+
+  graphQueryCommandGroup
+    .command('hubs')
+    .description('nodes with the most backlinks')
+    .option('--top <n>', 'how many to list', (v) => Number.parseInt(v, 10), 10)
+    .action(async (cmdOpts: { top: number }, cmd: Command) => {
+      const { runEnv, jsonMode, root } = deriveRunEnv(env, cmd);
+      result = await runCommand('graph.query.hubs', runEnv, jsonMode, async () => {
+        const store = await openStore(runEnv, { root });
+        return graphQueryCommand.executeHubs(store, { top: cmdOpts.top });
+      });
+    });
+
+  graphQueryCommandGroup
+    .command('orphans')
+    .description('nodes with no links in or out')
+    .action(async (_cmdOpts: object, cmd: Command) => {
+      const { runEnv, jsonMode, root } = deriveRunEnv(env, cmd);
+      result = await runCommand('graph.query.orphans', runEnv, jsonMode, async () => {
+        const store = await openStore(runEnv, { root });
+        return graphQueryCommand.executeOrphans(store);
       });
     });
 

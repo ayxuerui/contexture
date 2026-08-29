@@ -135,6 +135,38 @@ export class CatalogSectionNotFoundError extends ContextureError {
   }
 }
 
+export class GraphIdentityCollisionError extends ContextureError {
+  constructor(ids: readonly string[]) {
+    super(ExitCode.CheckFailed, {
+      code: 'graph.identity_collision',
+      severity: 'error',
+      message: `Two or more notes resolve to the same graph node identity: ${ids.join(', ')}. No graph artifact was written.`,
+      details: { ids },
+    });
+  }
+}
+
+export class GraphNotBuiltError extends ContextureError {
+  constructor() {
+    super(ExitCode.Usage, {
+      code: 'graph.not_built',
+      severity: 'error',
+      message: 'No graph artifact exists yet. Run "contexture graph build" first.',
+    });
+  }
+}
+
+export class GraphNodeNotFoundError extends ContextureError {
+  constructor(nodeId: string) {
+    super(ExitCode.Usage, {
+      code: 'graph.node_not_found',
+      severity: 'error',
+      message: `"${nodeId}" is not a node in the graph.`,
+      subject: nodeId,
+    });
+  }
+}
+
 export class MarkerMismatchError extends ContextureError {
   constructor(filePath: string, detail: string) {
     super(ExitCode.Usage, {

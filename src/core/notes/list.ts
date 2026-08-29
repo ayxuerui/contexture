@@ -29,6 +29,14 @@ export interface Note {
 /** Infrastructure directories intrinsic to contexture itself — never configurable content locations. */
 const ALWAYS_SKIP_DIRS = new Set(['.git', '.githooks', '.queue']);
 
+/**
+ * Filenames intrinsic to contexture itself, never user content — same
+ * status as ALWAYS_SKIP_DIRS. AGENTS.md is a CLI-generated procedure
+ * document (task 4.5), not a note; without this it would otherwise be
+ * picked up as one, since it lives at the store root as a plain .md file.
+ */
+const ALWAYS_SKIP_FILES = new Set(['AGENTS.md']);
+
 function isUnderAnyPrefix(relativePath: string, prefixes: readonly string[]): boolean {
   return prefixes.some((prefix) => {
     const trimmed = prefix.replace(/\/+$/, '');
@@ -36,7 +44,7 @@ function isUnderAnyPrefix(relativePath: string, prefixes: readonly string[]): bo
   });
 }
 
-function excludedPrefixesFor(config: StoreConfig): string[] {
+export function excludedPrefixesFor(config: StoreConfig): string[] {
   return [...config.retrieval.exclude_paths, ...config.derived.paths, config.session.worktrees_path, config.catalog.path];
 }
 
@@ -58,6 +66,7 @@ async function walk(dir: string, root: string, excludePrefixes: readonly string[
       if (isUnderAnyPrefix(relativePath, excludePrefixes)) continue;
       await walk(fullPath, root, excludePrefixes, results);
     } else if (entry.isFile() && entry.name.endsWith('.md')) {
+      if (ALWAYS_SKIP_FILES.has(entry.name)) continue;
       if (isUnderAnyPrefix(relativePath, excludePrefixes)) continue;
       results.push(relativePath);
     }

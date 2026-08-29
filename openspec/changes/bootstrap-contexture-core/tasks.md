@@ -55,12 +55,12 @@ Closes: `context-catalog` (entire capability)
 
 Closes: `context-retrieval` (entire capability)
 
-- [ ] 4.1 Implement `contexture graph build`: path-derived node identity, typed/untyped edge extraction from wikilinks, atomic temp+rename write (via 2.9)
-- [ ] 4.2 Implement dangling-link reporting (non-fatal) and identity-collision detection (fatal, non-zero exit, no artifact written)
-- [ ] 4.3 Implement `contexture graph query` surface: `neighbors`, `path`, `subgraph`, `hubs`, `orphans` (unfiltered baseline; `--as` filtering added in Phase 5)
-- [ ] 4.4 Implement `--emit-records`: stable per-note record `{id, path, visibility, gloss, hash}` from graph/catalog build
-- [ ] 4.5 Write the retrieval leg-routing guidance into `AGENTS.md`/procedure docs: name the catalog and the graph as contexture-built-and-maintained tools to consult first; route literal/entity questions to the agent's own direct content matching, scoped by the exclusion paths declared in `contexture.yaml`. No `contexture search` command exists — ranked/semantic search is deferred to v2 (design.md D2) and is out of scope for this change.
-- [ ] 4.6 Verify: two fixture notes with identical filenames in different directories produce two distinct nodes in `graph build --json`; a fixture with a genuine identity collision makes `graph build` exit non-zero and write no artifact; a fixture with a dangling link makes `graph build` exit 0 while reporting the dangling link; the generated `AGENTS.md` states the exclusion paths and the leg-routing rule naming catalog/graph/direct-grep; the CLI's command surface contains no `search` command
+- [x] 4.1 Implement `contexture graph build`: path-derived node identity, typed/untyped edge extraction from wikilinks, atomic temp+rename write (via 2.9)
+- [x] 4.2 Implement dangling-link reporting (non-fatal) and identity-collision detection (fatal, non-zero exit, no artifact written)
+- [x] 4.3 Implement `contexture graph query` surface: `neighbors`, `path`, `subgraph`, `hubs`, `orphans` (unfiltered baseline; `--as` filtering added in Phase 5)
+- [x] 4.4 Implement `--emit-records`: stable per-note record `{id, path, visibility, gloss, hash}` from graph/catalog build
+- [x] 4.5 Write the retrieval leg-routing guidance into `AGENTS.md`/procedure docs: name the catalog and the graph as contexture-built-and-maintained tools to consult first; route literal/entity questions to the agent's own direct content matching, scoped by the exclusion paths declared in `contexture.yaml`. No `contexture search` command exists — ranked/semantic search is deferred to v2 (design.md D2) and is out of scope for this change.
+- [x] 4.6 Verify: two fixture notes with identical filenames in different directories produce two distinct nodes in `graph build --json`; a fixture with a genuine identity collision makes `graph build` exit non-zero and write no artifact; a fixture with a dangling link makes `graph build` exit 0 while reporting the dangling link; the generated `AGENTS.md` states the exclusion paths and the leg-routing rule naming catalog/graph/direct-grep; the CLI's command surface contains no `search` command
 
 ## 5. Visibility enforcement and disclosure policy
 

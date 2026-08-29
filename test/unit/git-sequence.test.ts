@@ -42,6 +42,7 @@ describe('init git call sequence', () => {
           '--',
           'contexture.yaml',
           '.gitignore',
+          'AGENTS.md',
           'projects/.gitkeep',
           'areas/.gitkeep',
           'resources/.gitkeep',

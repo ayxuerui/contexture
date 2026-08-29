@@ -18,6 +18,7 @@ import {
 import { configPathFor, readConfig } from '../config/load.js';
 import { renderStoreConfig } from '../config/render.js';
 import { SUPPORTED_SCHEMA_VERSION, TaxonomyLayerSchema, type StoreConfig, type TaxonomyLayerConfig } from '../config/schema.js';
+import { buildAgentsLegRoutingSection, agentsMdPath } from '../core/agents-doc.js';
 import type { Finding } from '../core/envelope.js';
 import { isInteractive, type RunEnv } from '../core/env.js';
 import {
@@ -133,6 +134,7 @@ async function runInitCore(env: RunEnv, flags: InitFlags): Promise<RunInitResult
     const gitignorePath = path.join(root, '.gitignore');
     await upsertFencedRegionInFile(gitignorePath, DERIVED_GITIGNORE_FENCE, config.derived.paths);
     await upsertFencedRegionInFile(gitignorePath, WORKTREES_GITIGNORE_FENCE, [config.session.worktrees_path]);
+    await buildAgentsLegRoutingSection(root, config);
     return {
       data: {
         root,
@@ -200,6 +202,7 @@ async function runInitCore(env: RunEnv, flags: InitFlags): Promise<RunInitResult
   const gitignorePath = path.join(root, '.gitignore');
   await upsertFencedRegionInFile(gitignorePath, DERIVED_GITIGNORE_FENCE, config.derived.paths);
   await upsertFencedRegionInFile(gitignorePath, WORKTREES_GITIGNORE_FENCE, [config.session.worktrees_path]);
+  await buildAgentsLegRoutingSection(root, config);
 
   // One directory per configured layer with a .gitkeep — makes Zettelkasten's
   // zero-layer shape visibly different from PARA's at a glance. This is a
@@ -220,7 +223,7 @@ async function runInitCore(env: RunEnv, flags: InitFlags): Promise<RunInitResult
   await configureHooksPath(env.git, root);
 
   const relConfigPath = path.relative(root, configPath);
-  await addPaths(env.git, root, [relConfigPath, '.gitignore', ...layerGitkeeps, ...hookFiles]);
+  await addPaths(env.git, root, [relConfigPath, '.gitignore', path.relative(root, agentsMdPath(root)), ...layerGitkeeps, ...hookFiles]);
 
   const commitSha = await commitIfStaged(env.git, root, { kind: 'bootstrap' }, 'chore: initialize contexture store');
 
@@ -228,7 +231,7 @@ async function runInitCore(env: RunEnv, flags: InitFlags): Promise<RunInitResult
     data: {
       root,
       already_initialized: false,
-      created: [relConfigPath, '.gitignore', ...layerGitkeeps, ...hookFiles],
+      created: [relConfigPath, '.gitignore', path.relative(root, agentsMdPath(root)), ...layerGitkeeps, ...hookFiles],
       unchanged: [],
       git: { repository_created: !repositoryAlreadyExists, commit: commitSha, default_branch: defaultBranch },
       taxonomy: {
