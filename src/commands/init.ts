@@ -28,6 +28,7 @@ import { SUPPORTED_SCHEMA_VERSION, TaxonomyLayerSchema, type StoreConfig, type T
 import {
   buildAgentsCanonicalSection,
   buildAgentsCaptureSection,
+  buildAgentsIdentitySection,
   buildAgentsLegRoutingSection,
   buildAgentsPlacementSection,
   agentsMdPath,
@@ -155,6 +156,7 @@ async function runInitCore(env: RunEnv, flags: InitFlags): Promise<RunInitResult
     await ensureIdentityFiles(root, config);
     await ensureProcedureFiles(root, config);
     await buildAgentsCanonicalSection(root, config);
+    await buildAgentsIdentitySection(root, config);
     return {
       data: {
         root,
@@ -234,6 +236,7 @@ async function runInitCore(env: RunEnv, flags: InitFlags): Promise<RunInitResult
   const identityFilesCreated = await ensureIdentityFiles(root, config);
   const procedureFilesCreated = await ensureProcedureFiles(root, config);
   await buildAgentsCanonicalSection(root, config);
+  await buildAgentsIdentitySection(root, config);
 
   // One directory per configured layer with a .gitkeep — makes Zettelkasten's
   // zero-layer shape visibly different from PARA's at a glance. This is a

@@ -4,7 +4,11 @@ import { configuredAdapters } from '../adapters/registry.js';
 import { agentsMdPath } from '../core/agents-doc.js';
 import { ExitCode } from '../core/exit-codes.js';
 import { upsertFencedRegionInFile } from '../core/fs/fenced-region.js';
+import { readFile } from 'node:fs/promises';
+import { mkdir } from 'node:fs/promises';
 import { identityFilePaths } from '../core/identity.js';
+import { writeFileAtomic } from '../core/fs/atomic.js';
+import { procedurePaths, PROCEDURES } from '../core/procedures.js';
 import { mergeJsonArrayLists } from '../core/json-config-merge.js';
 import { htmlCommentFence, type Fence } from '../core/markers.js';
 import type { Store } from '../core/store.js';
@@ -57,6 +61,30 @@ export async function execute(store: Store): Promise<CommandOutcome<AdaptersGene
         rules as Record<string, Record<string, readonly string[]>>,
       );
       files.push({ path: adapter.permissionConfig.path, changed: permChanged });
+    }
+
+    if (adapter.renderSkills) {
+      const paths = procedurePaths(store.config);
+      const procedures = PROCEDURES.map((procedure, i) => ({
+        name: procedure.name,
+        path: paths[i]!,
+        description: procedure.description,
+      }));
+      for (const skill of adapter.renderSkills(procedures)) {
+        const skillPath = path.join(store.root, skill.path);
+        let existing: string | undefined;
+        try {
+          existing = await readFile(skillPath, 'utf8');
+        } catch {
+          existing = undefined;
+        }
+        const changed = existing !== skill.content;
+        if (changed) {
+          await mkdir(path.dirname(skillPath), { recursive: true });
+          await writeFileAtomic(skillPath, skill.content);
+        }
+        files.push({ path: skill.path, changed });
+      }
     }
   }
 

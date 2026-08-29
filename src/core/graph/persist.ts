@@ -4,9 +4,9 @@ import { writeFileAtomic } from '../fs/atomic.js';
 import type { Store } from '../store.js';
 import type { GraphBuildResult } from './model.js';
 
-/** A derived artifact, atomically written, under the store's conventional derived-paths location. */
+/** A derived artifact, atomically written, under the home directory's cache subpath (the default derived path). */
 export function graphFilePath(store: Store): string {
-  return path.join(store.root, '.contexture', 'graph.json');
+  return path.join(store.root, '.contexture', 'cache', 'graph.json');
 }
 
 export async function writeGraph(store: Store, graph: GraphBuildResult): Promise<void> {

@@ -4,14 +4,17 @@ import { describe, expect, it } from 'vitest';
 import type { StoreConfig } from '../../src/config/schema.js';
 import {
   AGENTS_MD_CANONICAL_FENCE,
+  AGENTS_MD_IDENTITY_FENCE,
   AGENTS_MD_CAPTURE_FENCE,
   AGENTS_MD_LEG_ROUTING_FENCE,
   agentsMdPath,
   buildAgentsCanonicalSection,
   buildAgentsCaptureSection,
+  buildAgentsIdentitySection,
   buildAgentsLegRoutingSection,
   renderCanonicalSection,
   renderCaptureSection,
+  renderIdentitySection,
   renderLegRoutingSection,
 } from '../../src/core/agents-doc.js';
 import { makeTmpDir } from '../helpers/tmp-store.js';
@@ -187,6 +190,39 @@ describe('buildAgentsCanonicalSection', () => {
       const content = await readFile(agentsMdPath(tmp.root), 'utf8');
       expect(content).toContain(AGENTS_MD_LEG_ROUTING_FENCE.start);
       expect(content).toContain(AGENTS_MD_CANONICAL_FENCE.start);
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+});
+
+describe('renderIdentitySection (open-box identity)', () => {
+  it('names all three identity file paths with a load-at-session-start instruction', () => {
+    const lines = renderIdentitySection(makeConfig({ identity: { path: '.contexture/identity/' } })).join('\n');
+    expect(lines).toContain('`.contexture/identity/posture.md`');
+    expect(lines).toContain('`.contexture/identity/world-facts.md`');
+    expect(lines).toContain('`.contexture/identity/user-facts.md`');
+    expect(lines).toMatch(/session start/i);
+  });
+
+  it('references by path only — no identity file content is inlined', () => {
+    const lines = renderIdentitySection(makeConfig()).join('\n');
+    expect(lines).not.toMatch(/Agent posture|Durable world facts|Durable user facts/);
+  });
+
+  it('regenerates against a custom identity path', () => {
+    const lines = renderIdentitySection(makeConfig({ identity: { path: 'twin/' } })).join('\n');
+    expect(lines).toContain('`twin/posture.md`');
+  });
+
+  it('writes its own fenced section alongside the others', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      await buildAgentsCanonicalSection(tmp.root, makeConfig());
+      await buildAgentsIdentitySection(tmp.root, makeConfig());
+      const content = await readFile(agentsMdPath(tmp.root), 'utf8');
+      expect(content).toContain(AGENTS_MD_CANONICAL_FENCE.start);
+      expect(content).toContain(AGENTS_MD_IDENTITY_FENCE.start);
     } finally {
       await tmp.cleanup();
     }

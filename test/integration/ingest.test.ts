@@ -161,7 +161,7 @@ describe('contexture ingest / source (real CLI)', () => {
 
       // catalog build freezes the confirmed hash the first time a gloss becomes non-empty.
       const { readFile, writeFile: write } = await import('node:fs/promises');
-      const catalogPath = path.join(tmp.root, 'catalog', 'projects.md');
+      const catalogPath = path.join(tmp.root, '.contexture/catalog', 'projects.md');
       const withGloss = (await readFile(catalogPath, 'utf8')).replace(') — ', ') — a gloss');
       await write(catalogPath, withGloss);
       await runCli(['catalog', 'build'], { cwd: tmp.root, env });

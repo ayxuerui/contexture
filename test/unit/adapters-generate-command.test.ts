@@ -117,3 +117,54 @@ describe('adapters generate command', () => {
     }
   });
 });
+
+describe('skill generation (contexture-home-layout)', () => {
+  it('generates one SKILL.md per canonical procedure, pointing at (not copying) the procedure file', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const store: Store = { root: tmp.root, config: makeConfig([{ id: 'claude-code', kind: 'harness-generation' }]) };
+      await execute(store);
+
+      const skill = await readFile(
+        path.join(tmp.root, '.claude/skills/contexture-placement/SKILL.md'),
+        'utf8',
+      );
+      expect(skill).toContain('name: contexture-placement');
+      expect(skill).toContain('description:');
+      expect(skill).toContain('procedures/placement.md');
+      // pointer, not a copy: none of the procedure's own step text appears
+      expect(skill).not.toContain('taxonomy layers');
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('skill generation is byte-stable across two runs', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const store: Store = { root: tmp.root, config: makeConfig([{ id: 'claude-code', kind: 'harness-generation' }]) };
+      await execute(store);
+      const skillPath = path.join(tmp.root, '.claude/skills/contexture-organize-audit/SKILL.md');
+      const before = await readFile(skillPath, 'utf8');
+
+      const second = await execute(store);
+      const after = await readFile(skillPath, 'utf8');
+      expect(after).toBe(before);
+      expect(second.data?.files.filter((f) => f.path.includes('skills/')).every((f) => !f.changed)).toBe(true);
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('no skills are generated when no harness-generation adapter is configured', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const store: Store = { root: tmp.root, config: makeConfig([{ id: 'claude-code', kind: 'identity-injection' }]) };
+      await execute(store);
+      const { existsSync } = await import('node:fs');
+      expect(existsSync(path.join(tmp.root, '.claude/skills'))).toBe(false);
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+});

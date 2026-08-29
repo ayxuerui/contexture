@@ -110,7 +110,7 @@ describe('agent identity and adapters (real CLI)', () => {
 
       const agentsMdPath = path.join(tmp.root, 'AGENTS.md');
       const content = await readFile(agentsMdPath, 'utf8');
-      await writeFile(agentsMdPath, content.replace('- [Connection finding](procedures/connection-finding.md)\n', ''));
+      await writeFile(agentsMdPath, content.replace('- [Connection finding](.contexture/procedures/connection-finding.md)\n', ''));
 
       const result = await runCli(['verify', '--portable', '--json'], { cwd: tmp.root, env });
       expect(result.exitCode).not.toBe(0);

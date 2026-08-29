@@ -80,7 +80,7 @@ describe('migrate and doctor aggregation (real CLI)', () => {
       await runCli(['graph', 'build'], { cwd: tmp.root, env });
 
       // Oversized catalog section: pad well past the default 32KiB budget.
-      const catalogPath = path.join(tmp.root, 'catalog', 'projects.md');
+      const catalogPath = path.join(tmp.root, '.contexture/catalog', 'projects.md');
       const catalogContent = await readFile(catalogPath, 'utf8');
       await writeFile(catalogPath, catalogContent + '\n' + 'x'.repeat(40_000));
 

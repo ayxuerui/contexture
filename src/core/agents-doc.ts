@@ -2,6 +2,7 @@ import path from 'node:path';
 import type { StoreConfig } from '../config/schema.js';
 import { CONFIG_FILE_NAME } from './root.js';
 import { excludedPrefixesFor } from './notes/list.js';
+import { identityFilePaths } from './identity.js';
 import { procedurePaths, PROCEDURES } from './procedures.js';
 import { upsertFencedRegionInFile } from './fs/fenced-region.js';
 import { htmlCommentFence } from './markers.js';
@@ -174,4 +175,32 @@ export function renderCanonicalSection(config: StoreConfig): string[] {
 
 export async function buildAgentsCanonicalSection(root: string, config: StoreConfig): Promise<{ changed: boolean }> {
   return upsertFencedRegionInFile(agentsMdPath(root), AGENTS_MD_CANONICAL_FENCE, renderCanonicalSection(config));
+}
+
+/**
+ * agent-identity spec (contexture-home-layout): identity reachable open-box
+ * — a harness with no identity-injection adapter that reads only AGENTS.md
+ * still learns which files carry identity and that they load at session
+ * start. References by path only, never inlined content, so editing an
+ * identity file never requires regenerating this section.
+ */
+export const AGENTS_MD_IDENTITY_FENCE = htmlCommentFence('agent-identity');
+
+export function renderIdentitySection(config: StoreConfig): string[] {
+  const paths = identityFilePaths(config);
+  return [
+    '## Agent identity — load at session start',
+    '',
+    'This store carries durable agent identity as plain files. Before doing anything else in a session,',
+    'read all three (harnesses with a native injection mechanism may already have loaded them for you):',
+    '',
+    ...paths.map((p) => `- \`${p}\``),
+    '',
+    'They are identity, not knowledge: excluded from every retrieval leg, and never edited as part of',
+    'ordinary note work.',
+  ];
+}
+
+export async function buildAgentsIdentitySection(root: string, config: StoreConfig): Promise<{ changed: boolean }> {
+  return upsertFencedRegionInFile(agentsMdPath(root), AGENTS_MD_IDENTITY_FENCE, renderIdentitySection(config));
 }

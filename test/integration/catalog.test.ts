@@ -22,11 +22,11 @@ describe('contexture catalog (real CLI)', () => {
 
       const first = await runCli(['catalog', 'build'], { cwd: tmp.root, env });
       expect(first.exitCode).toBe(0);
-      const contentBefore = await readFile(path.join(tmp.root, 'catalog', 'projects.md'), 'utf8');
+      const contentBefore = await readFile(path.join(tmp.root, '.contexture/catalog', 'projects.md'), 'utf8');
 
       const second = await runCli(['catalog', 'build'], { cwd: tmp.root, env });
       expect(second.exitCode).toBe(0);
-      const contentAfter = await readFile(path.join(tmp.root, 'catalog', 'projects.md'), 'utf8');
+      const contentAfter = await readFile(path.join(tmp.root, '.contexture/catalog', 'projects.md'), 'utf8');
 
       expect(contentAfter).toBe(contentBefore);
     } finally {

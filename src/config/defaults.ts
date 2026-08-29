@@ -26,17 +26,22 @@ export const SCHEMA_V1_VISIBILITY_FIELD_KEY = 'scope';
 /** context-visibility spec rung 3: what a note's visibility fails closed to. */
 export const DEFAULT_VISIBILITY_CONTEXT = 'private';
 
-/** context-store spec: derived paths declared in contexture.yaml, gitignored by init. */
-export const DEFAULT_DERIVED_PATHS = ['.contexture/'] as const;
+/**
+ * context-store spec (contexture-home-layout): `.contexture/` is the tool's
+ * home directory. Only its cache subpath is derived/gitignored — the
+ * catalog, identity, and procedure subdirectories are authored-but-tool-
+ * owned and stay tracked.
+ */
+export const DEFAULT_DERIVED_PATHS = ['.contexture/cache/'] as const;
 
 /** agent-identity spec: canonical identity files live here, excluded from every retrieval leg. */
-export const DEFAULT_IDENTITY_PATH = 'identity/';
+export const DEFAULT_IDENTITY_PATH = '.contexture/identity/';
 
 /** harness-portability spec: the portable procedure-markdown pack, excluded from retrieval (infra, not knowledge). */
-export const DEFAULT_PROCEDURES_PATH = 'procedures/';
+export const DEFAULT_PROCEDURES_PATH = '.contexture/procedures/';
 
 /** Paths excluded from every retrieval leg by default. */
-export const DEFAULT_EXCLUDE_PATHS = ['.contexture/', DEFAULT_IDENTITY_PATH, DEFAULT_PROCEDURES_PATH] as const;
+export const DEFAULT_EXCLUDE_PATHS = ['.contexture/'] as const;
 
 /** write-lifecycle spec: session worktrees live under a configured, gitignored path. */
 export const DEFAULT_WORKTREES_PATH = '.worktrees/';
@@ -48,7 +53,7 @@ export const DEFAULT_SESSION_BRANCH_PREFIX = 'session/';
 export const DEFAULT_DIFF_SIZE_CEILING_LINES = 2000;
 
 /** context-catalog spec: where per-section catalog files live — tracked (never gitignored), since glosses are authored. */
-export const DEFAULT_CATALOG_PATH = 'catalog/';
+export const DEFAULT_CATALOG_PATH = '.contexture/catalog/';
 
 /** context-catalog spec: a section exceeding this triggers a failing doctor check, not a silent slowdown. */
 export const DEFAULT_CATALOG_SECTION_MAX_BYTES = 32 * 1024;
