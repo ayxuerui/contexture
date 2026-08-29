@@ -72,7 +72,7 @@ describe('verify --portable', () => {
       const store = await setUpStore(tmp.root);
       const agentsMdPath = path.join(tmp.root, 'AGENTS.md');
       const content = await readFile(agentsMdPath, 'utf8');
-      await writeFile(agentsMdPath, content.replace('- [Placement](procedures/placement.md)\n', ''));
+      await writeFile(agentsMdPath, content.replace(/^- \[Placement\]\(procedures\/placement\.md\).*\n/m, ''));
 
       const outcome = await execute(store, { portable: true });
       expect(outcome.exitCode).toBe(ExitCode.CheckFailed);
@@ -89,7 +89,7 @@ describe('verify --portable', () => {
       const store = await setUpStore(tmp.root);
       const agentsMdPath = path.join(tmp.root, 'AGENTS.md');
       const content = await readFile(agentsMdPath, 'utf8');
-      await writeFile(agentsMdPath, content.replace('- [Ingest orchestration](procedures/ingest-orchestration.md)\n', ''));
+      await writeFile(agentsMdPath, content.replace(/^- \[Ingest orchestration\]\(procedures\/ingest-orchestration\.md\).*\n/m, ''));
 
       const outcome = await execute(store, { portable: true });
       // Only the retrieval query, the derived-artifact build, and the one failing

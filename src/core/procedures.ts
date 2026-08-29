@@ -28,7 +28,12 @@ export const PROCEDURES: readonly Procedure[] = [
     file: 'ingest-orchestration.md',
     name: 'Ingest orchestration',
     description: 'Capture raw material into the inbox, run the dedupe check, and ingest it with source identity via the contexture CLI.',
-    content: `# Ingest orchestration
+    content: `---
+title: Ingest orchestration
+description: Capture raw material into the inbox, run the dedupe check, and ingest it with source identity via the contexture CLI.
+---
+
+# Ingest orchestration
 
 1. Capture: write a plain markdown file directly into the inbox (see AGENTS.md's capture section) — no source-identity frontmatter.
 2. Check: run \`contexture source check <path> --source-id <id>\` and read the verdict — \`new\`, \`already_ingested\`, \`alternate_source_match\`, or \`multiple_matches\`.
@@ -41,7 +46,12 @@ export const PROCEDURES: readonly Procedure[] = [
     file: 'placement.md',
     name: 'Placement',
     description: 'Choose the right taxonomy layer for a new or relocated note in this contexture store.',
-    content: `# Placement
+    content: `---
+title: Placement
+description: Choose the right taxonomy layer for a new or relocated note in this contexture store.
+---
+
+# Placement
 
 1. Read AGENTS.md's "Placing a new note" section for this store's configured taxonomy layers (or lack thereof).
 2. Choose the layer whose description best matches the note; if none fits, use the catch-all location.
@@ -53,7 +63,12 @@ export const PROCEDURES: readonly Procedure[] = [
     file: 'connection-finding.md',
     name: 'Connection finding',
     description: 'Find related notes via the contexture graph (neighbors, paths, hubs) and write rollups from gathered sources.',
-    content: `# Connection finding
+    content: `---
+title: Connection finding
+description: Find related notes via the contexture graph (neighbors, paths, hubs) and write rollups from gathered sources.
+---
+
+# Connection finding
 
 1. Run \`contexture graph build\` to refresh the wikilink graph from the store's current notes.
 2. To find what a note connects to or from, run \`contexture graph query neighbors <path>\` (add \`--depth\` for further hops, \`--direction in|out|both\`).
@@ -66,7 +81,12 @@ export const PROCEDURES: readonly Procedure[] = [
     file: 'organize-audit.md',
     name: 'Organize audit',
     description: 'Audit store health with contexture lint (observations) and doctor (blocking invariants).',
-    content: `# Organize audit
+    content: `---
+title: Organize audit
+description: Audit store health with contexture lint (observations) and doctor (blocking invariants).
+---
+
+# Organize audit
 
 1. Run \`contexture lint\` for a full health report — orphan notes, broken links, uningested inbox material, and catalog gaps. It always exits 0; read its findings, it never blocks anything.
 2. Run \`contexture doctor\` to check the invariants that DO block: catalog coverage, fail-closed visibility, hook health, and more.
