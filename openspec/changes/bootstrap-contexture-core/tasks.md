@@ -76,13 +76,13 @@ Closes: `context-visibility` (enforcement requirement), `disclosure-policy` (ent
 
 Closes: `context-ingest` (entire capability)
 
-- [ ] 6.1 Implement the canonicalization primitive (single shared module: strip frontmatter, normalize line endings, trim, collapse trailing blanks) and its content-hash function
-- [ ] 6.2 Reconcile Phase 3.6's gloss-rot check to import this shared primitive rather than duplicating it
-- [ ] 6.3 Implement capture: writes to the inbox with no source-identity fields
-- [ ] 6.4 Implement `contexture source hash` and `contexture source check`: two-stage verdicts (already-ingested / alternate-source-match / multi-match-stop / new), using the shared canonicalization primitive
-- [ ] 6.5 Implement ingest's identity assignment: source-type/source-id/source-hash/ingested written once, at ingest, never recomputed from the live body afterward
-- [ ] 6.6 Wire the post-ingest condition: a successful ingest leaves `catalog check` green for the new note (either ingest calls `catalog build` itself, or the procedure documentation requires it as the next step — decide and document which)
-- [ ] 6.7 Verify: ingesting the same fixture source twice yields `SKIP`/already-ingested on the second run with zero additional writes; two independent fixture notes with genuinely different source-ids but identical canonicalized content are reported as an alternate-source match, not silently merged; editing a note's body after ingest and re-ingesting the same original source does not report content drift
+- [x] 6.1 Implement the canonicalization primitive (single shared module: strip frontmatter, normalize line endings, trim, collapse trailing blanks) and its content-hash function
+- [x] 6.2 Reconcile Phase 3.6's gloss-rot check to import this shared primitive rather than duplicating it
+- [x] 6.3 Implement capture: writes to the inbox with no source-identity fields
+- [x] 6.4 Implement `contexture source hash` and `contexture source check`: two-stage verdicts (already-ingested / alternate-source-match / multi-match-stop / new), using the shared canonicalization primitive
+- [x] 6.5 Implement ingest's identity assignment: source-type/source-id/source-hash/ingested written once, at ingest, never recomputed from the live body afterward
+- [x] 6.6 Wire the post-ingest condition: a successful ingest leaves `catalog check` green for the new note (either ingest calls `catalog build` itself, or the procedure documentation requires it as the next step — decide and document which)
+- [x] 6.7 Verify: ingesting the same fixture source twice yields `SKIP`/already-ingested on the second run with zero additional writes; two independent fixture notes with genuinely different source-ids but identical canonicalized content are reported as an alternate-source match, not silently merged; editing a note's body after ingest and re-ingesting the same original source does not report content drift
 
 ## 7. Organize
 

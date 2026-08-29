@@ -157,6 +157,17 @@ export class NoteNotFoundError extends ContextureError {
   }
 }
 
+export class AlreadyIngestedError extends ContextureError {
+  constructor(notePath: string) {
+    super(ExitCode.Usage, {
+      code: 'ingest.already_ingested',
+      severity: 'error',
+      message: `"${notePath}" already carries source-identity fields; ingest never re-stamps an already-ingested file.`,
+      subject: notePath,
+    });
+  }
+}
+
 export class GraphNotBuiltError extends ContextureError {
   constructor() {
     super(ExitCode.Usage, {

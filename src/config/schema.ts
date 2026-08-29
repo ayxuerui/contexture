@@ -86,6 +86,11 @@ const DisclosureSchema = z.object({
   hard_walls: z.array(HardWallSchema),
 });
 
+/** context-ingest spec: where capture lands raw material before ingest stamps identity onto it. */
+const IngestSchema = z.object({
+  inbox_path: z.string().min(1),
+});
+
 export const StoreConfigSchema = z
   .object({
     schema_version: z.number().int().positive(),
@@ -99,6 +104,7 @@ export const StoreConfigSchema = z
     write_lifecycle: WriteLifecycleSchema,
     catalog: CatalogSchema,
     disclosure: DisclosureSchema,
+    ingest: IngestSchema,
   })
   .passthrough();
 

@@ -3,9 +3,12 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import type { StoreConfig } from '../../src/config/schema.js';
 import {
+  AGENTS_MD_CAPTURE_FENCE,
   AGENTS_MD_LEG_ROUTING_FENCE,
   agentsMdPath,
+  buildAgentsCaptureSection,
   buildAgentsLegRoutingSection,
+  renderCaptureSection,
   renderLegRoutingSection,
 } from '../../src/core/agents-doc.js';
 import { makeTmpDir } from '../helpers/tmp-store.js';
@@ -23,6 +26,7 @@ function makeConfig(overrides: Partial<StoreConfig> = {}): StoreConfig {
     write_lifecycle: { diff_size_ceiling_lines: 2000 },
     catalog: { path: 'catalog/', section_max_bytes: 32768 },
     disclosure: { internal_audiences: [], hard_walls: [] },
+    ingest: { inbox_path: 'inbox/' },
     ...overrides,
   };
 }
@@ -102,6 +106,37 @@ describe('buildAgentsLegRoutingSection', () => {
       const content = await readFile(agentsMdPath(tmp.root), 'utf8');
       expect(content).toContain('Some hand-written intro.');
       expect(content).toContain(AGENTS_MD_LEG_ROUTING_FENCE.start);
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+});
+
+describe('renderCaptureSection', () => {
+  it('names the configured inbox path and the four source-identity fields', () => {
+    const lines = renderCaptureSection(makeConfig()).join('\n');
+    expect(lines).toContain('`inbox/`');
+    expect(lines).toContain('`source_type`');
+    expect(lines).toContain('`source_id`');
+    expect(lines).toContain('`source_hash`');
+    expect(lines).toContain('`ingested`');
+  });
+
+  it('reflects a non-default inbox path', () => {
+    const lines = renderCaptureSection(makeConfig({ ingest: { inbox_path: 'incoming/' } })).join('\n');
+    expect(lines).toContain('`incoming/`');
+  });
+});
+
+describe('buildAgentsCaptureSection', () => {
+  it('writes a fenced section into AGENTS.md distinct from the leg-routing section', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      await buildAgentsLegRoutingSection(tmp.root, makeConfig());
+      await buildAgentsCaptureSection(tmp.root, makeConfig());
+      const content = await readFile(agentsMdPath(tmp.root), 'utf8');
+      expect(content).toContain(AGENTS_MD_LEG_ROUTING_FENCE.start);
+      expect(content).toContain(AGENTS_MD_CAPTURE_FENCE.start);
     } finally {
       await tmp.cleanup();
     }

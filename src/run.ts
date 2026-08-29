@@ -4,6 +4,7 @@ import * as catalogCheckCommand from './commands/catalog-check.js';
 import * as catalogShowCommand from './commands/catalog-show.js';
 import * as checkCommand from './commands/check.js';
 import * as doctorCommand from './commands/doctor.js';
+import * as ingestCommand from './commands/ingest.js';
 import * as graphBuildCommand from './commands/graph-build.js';
 import * as graphQueryCommand from './commands/graph-query.js';
 import * as initCommand from './commands/init.js';
@@ -13,6 +14,8 @@ import * as sessionListCommand from './commands/session-list.js';
 import * as sessionReapCommand from './commands/session-reap.js';
 import * as sessionStartCommand from './commands/session-start.js';
 import * as sessionSubmitCommand from './commands/session-submit.js';
+import * as sourceCheckCommand from './commands/source-check.js';
+import * as sourceHashCommand from './commands/source-hash.js';
 import type { CommandOutcome } from './core/command.js';
 import type { Finding } from './core/envelope.js';
 import { buildEnvelope } from './core/envelope.js';
@@ -303,6 +306,48 @@ export async function run(argv: readonly string[], env: RunEnv): Promise<ExitCod
       result = await runCommand('graph.query.orphans', runEnv, jsonMode, async () => {
         const store = await openStore(runEnv, { root });
         return graphQueryCommand.executeOrphans(store, { as: cmdOpts.as });
+      });
+    });
+
+  program
+    .command('ingest <path>')
+    .description('stamp source-identity fields onto an inbox file, turning it into a note')
+    .requiredOption('--source-type <type>', 'the kind of source this material came from')
+    .requiredOption('--source-id <id>', 'a stable identifier for this specific source')
+    .action(async (notePath: string, cmdOpts: { sourceType: string; sourceId: string }, cmd: Command) => {
+      const { runEnv, jsonMode, root } = deriveRunEnv(env, cmd);
+      result = await runCommand('ingest', runEnv, jsonMode, async () => {
+        const store = await openStore(runEnv, { root });
+        return ingestCommand.execute(runEnv, store, {
+          path: notePath,
+          sourceType: cmdOpts.sourceType,
+          sourceId: cmdOpts.sourceId,
+        });
+      });
+    });
+
+  const sourceCommand = program.command('source').description('source-identity dedupe, ahead of ingest');
+
+  sourceCommand
+    .command('hash <path>')
+    .description('the canonicalized-content hash of a file')
+    .action(async (notePath: string, _cmdOpts: object, cmd: Command) => {
+      const { runEnv, jsonMode, root } = deriveRunEnv(env, cmd);
+      result = await runCommand('source.hash', runEnv, jsonMode, async () => {
+        const store = await openStore(runEnv, { root });
+        return sourceHashCommand.execute(runEnv, store, { path: notePath });
+      });
+    });
+
+  sourceCommand
+    .command('check <path>')
+    .description('two-stage dedupe verdict: already-ingested, alternate-source-match, multiple-matches, or new')
+    .requiredOption('--source-id <id>', "the candidate material's source identifier")
+    .action(async (notePath: string, cmdOpts: { sourceId: string }, cmd: Command) => {
+      const { runEnv, jsonMode, root } = deriveRunEnv(env, cmd);
+      result = await runCommand('source.check', runEnv, jsonMode, async () => {
+        const store = await openStore(runEnv, { root });
+        return sourceCheckCommand.execute(runEnv, store, { path: notePath, sourceId: cmdOpts.sourceId });
       });
     });
 

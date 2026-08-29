@@ -42,3 +42,6 @@ export const DEFAULT_CATALOG_SECTION_MAX_BYTES = 32 * 1024;
 export const DEFAULT_INTERNAL_AUDIENCES: readonly string[] = [];
 export const DEFAULT_HARD_WALLS: readonly HardWallConfig[] = [];
 
+/** context-ingest spec: capture's landing zone — a normal, retrievable directory, not an exclusion. */
+export const DEFAULT_INBOX_PATH = 'inbox/';
+

@@ -21,6 +21,7 @@ function makeStore(root: string): Store {
     write_lifecycle: { diff_size_ceiling_lines: 2000 },
     catalog: { path: 'catalog/', section_max_bytes: 32768 },
     disclosure: { internal_audiences: [], hard_walls: [] },
+    ingest: { inbox_path: 'inbox/' },
   };
   return { root, config };
 }

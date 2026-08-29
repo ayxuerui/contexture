@@ -23,6 +23,7 @@ function makeStore(root: string, disclosure: StoreConfig['disclosure'] = { inter
     write_lifecycle: { diff_size_ceiling_lines: 2000 },
     catalog: { path: 'catalog/', section_max_bytes: 32768 },
     disclosure,
+    ingest: { inbox_path: 'inbox/' },
   };
   return { root, config };
 }
