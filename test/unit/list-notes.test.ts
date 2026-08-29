@@ -134,3 +134,39 @@ describe('listNotes', () => {
     }
   });
 });
+
+describe('listNotes and harness entry files (entry-doc-generation D4)', () => {
+  it('skips a configured harness-generation adapter\'s root-level entry file — it is a pointer, not a note', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      await writeNote(tmp.root, 'CLAUDE.md', '@AGENTS.md\n');
+      await writeNote(tmp.root, 'projects/a.md');
+      const notes = await listNotes(tmp.root, makeConfig({ adapters: [{ id: 'claude-code', kind: 'harness-generation' }] }));
+      expect(notes.map((n) => n.path)).toEqual(['projects/a.md']);
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('still treats a same-named file as a note when no such adapter is configured', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      await writeNote(tmp.root, 'CLAUDE.md', 'Just a note here.\n');
+      const notes = await listNotes(tmp.root, makeConfig());
+      expect(notes.map((n) => n.path)).toEqual(['CLAUDE.md']);
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('does not fail enumeration when a declared adapter cannot be resolved', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      await writeNote(tmp.root, 'projects/a.md');
+      const notes = await listNotes(tmp.root, makeConfig({ adapters: [{ id: 'nonexistent', kind: 'harness-generation' }] }));
+      expect(notes.map((n) => n.path)).toEqual(['projects/a.md']);
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+});

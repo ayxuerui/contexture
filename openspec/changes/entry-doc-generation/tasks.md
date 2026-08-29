@@ -6,6 +6,7 @@
 ## 2. Consumers
 
 - [x] 2.1 `verify --portable` checks every scanned procedure's index entry; `adapters generate` renders skills for the scanned set
+- [x] 2.2 Entry file = AGENTS.md import only: remove the shipped claude-code identity-injection adapter (D4); note enumeration skips configured harness entry files at the root
 
 ## 3. Verify
 

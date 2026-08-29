@@ -1,5 +1,6 @@
 import { readdir } from 'node:fs/promises';
 import path from 'node:path';
+import { configuredAdapters } from '../../adapters/registry.js';
 import type { StoreConfig } from '../../config/schema.js';
 import { parseNote } from './parse.js';
 
@@ -37,6 +38,20 @@ const ALWAYS_SKIP_DIRS = new Set(['.git', '.githooks', '.queue']);
  */
 const ALWAYS_SKIP_FILES = new Set(['AGENTS.md']);
 
+/**
+ * Root-level files owned by configured harness-generation adapters (e.g.
+ * CLAUDE.md) are tool-owned pointers, never notes. A misconfigured adapter
+ * is doctor's problem to report (adapters.compatibility) — enumeration
+ * must not fail because of it, so resolution errors just skip nothing extra.
+ */
+function harnessEntryFiles(config: StoreConfig): Set<string> {
+  try {
+    return new Set(configuredAdapters(config, 'harness-generation').map((a) => a.entryFileName));
+  } catch {
+    return new Set();
+  }
+}
+
 function isUnderAnyPrefix(relativePath: string, prefixes: readonly string[]): boolean {
   return prefixes.some((prefix) => {
     const trimmed = prefix.replace(/\/+$/, '');
@@ -48,7 +63,13 @@ export function excludedPrefixesFor(config: StoreConfig): string[] {
   return [...config.retrieval.exclude_paths, ...config.derived.paths, config.session.worktrees_path, config.catalog.path];
 }
 
-async function walk(dir: string, root: string, excludePrefixes: readonly string[], results: string[]): Promise<void> {
+async function walk(
+  dir: string,
+  root: string,
+  excludePrefixes: readonly string[],
+  skipRootFiles: ReadonlySet<string>,
+  results: string[],
+): Promise<void> {
   let entries;
   try {
     entries = await readdir(dir, { withFileTypes: true });
@@ -64,9 +85,10 @@ async function walk(dir: string, root: string, excludePrefixes: readonly string[
     if (entry.isDirectory()) {
       if (ALWAYS_SKIP_DIRS.has(entry.name)) continue;
       if (isUnderAnyPrefix(relativePath, excludePrefixes)) continue;
-      await walk(fullPath, root, excludePrefixes, results);
+      await walk(fullPath, root, excludePrefixes, skipRootFiles, results);
     } else if (entry.isFile() && entry.name.endsWith('.md')) {
       if (ALWAYS_SKIP_FILES.has(entry.name)) continue;
+      if (relativePath === entry.name && skipRootFiles.has(entry.name)) continue;
       if (isUnderAnyPrefix(relativePath, excludePrefixes)) continue;
       results.push(relativePath);
     }
@@ -76,7 +98,7 @@ async function walk(dir: string, root: string, excludePrefixes: readonly string[
 /** Every retrievable note in the store: everything under a .md path, minus every declared exclusion. */
 export async function listNotes(storeRoot: string, config: StoreConfig, query: NoteQuery = {}): Promise<Note[]> {
   const relativePaths: string[] = [];
-  await walk(storeRoot, storeRoot, excludedPrefixesFor(config), relativePaths);
+  await walk(storeRoot, storeRoot, excludedPrefixesFor(config), harnessEntryFiles(config), relativePaths);
   relativePaths.sort();
 
   const scoped = query.underPrefix ? relativePaths.filter((p) => isUnderAnyPrefix(p, [query.underPrefix!])) : relativePaths;

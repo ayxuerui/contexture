@@ -68,7 +68,6 @@ describe('configuredAdapters', () => {
     const config = makeConfig([
       { id: 'claude-code', kind: 'harness-generation' },
       { id: 'github', kind: 'forge' },
-      { id: 'claude-code', kind: 'identity-injection' },
     ]);
     const forgeAdapters = configuredAdapters(config, 'forge');
     expect(forgeAdapters).toHaveLength(1);

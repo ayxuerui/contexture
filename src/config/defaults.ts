@@ -72,7 +72,7 @@ export const DEFAULT_INBOX_PATH = 'inbox/';
 export const DEFAULT_ARCHIVE_PATH = 'archive/';
 
 /**
- * adapters spec: init registers all three shipped builtins by default, so
+ * adapters spec: init registers both shipped builtins by default, so
  * out-of-the-box UX (a PR opened on session submit, a generated CLAUDE.md)
  * keeps working without the operator hand-writing config — each is just as
  * removable from this list as it was addable.
@@ -80,6 +80,5 @@ export const DEFAULT_ARCHIVE_PATH = 'archive/';
 export const DEFAULT_ADAPTERS: readonly AdapterDeclaration[] = [
   { id: 'github', kind: 'forge' },
   { id: 'claude-code', kind: 'harness-generation' },
-  { id: 'claude-code', kind: 'identity-injection' },
 ];
 

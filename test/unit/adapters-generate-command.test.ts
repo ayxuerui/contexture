@@ -30,22 +30,17 @@ function makeConfig(adapters: AdapterDeclaration[]): StoreConfig {
 }
 
 describe('adapters generate command', () => {
-  it('writes the harness entry file and identity-injection region when both are configured', async () => {
+  it('writes a harness entry file whose managed content is the AGENTS.md import and nothing else', async () => {
     const tmp = await makeTmpDir();
     try {
-      const store: Store = {
-        root: tmp.root,
-        config: makeConfig([
-          { id: 'claude-code', kind: 'harness-generation' },
-          { id: 'claude-code', kind: 'identity-injection' },
-        ]),
-      };
+      const store: Store = { root: tmp.root, config: makeConfig([{ id: 'claude-code', kind: 'harness-generation' }]) };
       const outcome = await execute(store);
       expect(outcome.exitCode).toBe(ExitCode.Ok);
 
       const content = await readFile(path.join(tmp.root, 'CLAUDE.md'), 'utf8');
-      expect(content).toContain('@AGENTS.md');
-      expect(content).toContain('@identity/posture.md');
+      const managed = content.split('\n').filter((l) => l.trim() && !l.startsWith('<!--'));
+      expect(managed).toEqual(['@AGENTS.md']);
+      expect(content).not.toContain('identity/');
     } finally {
       await tmp.cleanup();
     }
@@ -67,13 +62,7 @@ describe('adapters generate command', () => {
   it('running generate twice in a row produces byte-identical output (task 8.8)', async () => {
     const tmp = await makeTmpDir();
     try {
-      const store: Store = {
-        root: tmp.root,
-        config: makeConfig([
-          { id: 'claude-code', kind: 'harness-generation' },
-          { id: 'claude-code', kind: 'identity-injection' },
-        ]),
-      };
+      const store: Store = { root: tmp.root, config: makeConfig([{ id: 'claude-code', kind: 'harness-generation' }]) };
       await execute(store);
       const claudeMdBefore = await readFile(path.join(tmp.root, 'CLAUDE.md'), 'utf8');
       const settingsBefore = await readFile(path.join(tmp.root, '.claude/settings.json'), 'utf8');
@@ -162,7 +151,7 @@ describe('skill generation (contexture-home-layout)', () => {
   it('no skills are generated when no harness-generation adapter is configured', async () => {
     const tmp = await makeTmpDir();
     try {
-      const store: Store = { root: tmp.root, config: makeConfig([{ id: 'claude-code', kind: 'identity-injection' }]) };
+      const store: Store = { root: tmp.root, config: makeConfig([{ id: 'github', kind: 'forge' }]) };
       await execute(store);
       const { existsSync } = await import('node:fs');
       expect(existsSync(path.join(tmp.root, '.claude/skills'))).toBe(false);
