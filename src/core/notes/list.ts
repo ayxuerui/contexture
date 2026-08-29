@@ -60,7 +60,15 @@ function isUnderAnyPrefix(relativePath: string, prefixes: readonly string[]): bo
 }
 
 export function excludedPrefixesFor(config: StoreConfig): string[] {
-  return [...config.retrieval.exclude_paths, ...config.derived.paths, config.session.worktrees_path, config.catalog.path];
+  return [
+    ...config.retrieval.exclude_paths,
+    ...config.derived.paths,
+    config.session.worktrees_path,
+    config.catalog.path,
+    // Tool-owned instruction docs (skills, conventions) are never notes, wherever they live.
+    config.harness.procedures_path,
+    config.harness.conventions_path,
+  ];
 }
 
 async function walk(

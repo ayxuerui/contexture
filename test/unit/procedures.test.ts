@@ -2,7 +2,7 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import type { StoreConfig } from '../../src/config/schema.js';
-import { ensureProcedureFiles, procedurePaths, PROCEDURES } from '../../src/core/procedures.js';
+import { MANAGED_SKILL_HEADER, procedurePaths, PROCEDURES, syncShippedSkills } from '../../src/core/procedures.js';
 import { makeTmpDir } from '../helpers/tmp-store.js';
 
 function makeConfig(): StoreConfig {
@@ -37,33 +37,56 @@ describe('PROCEDURES', () => {
   });
 });
 
-describe('ensureProcedureFiles', () => {
-  it('creates every procedure file with non-empty content', async () => {
+describe('syncShippedSkills', () => {
+  it('writes every contexture-owned skill as <slug>/SKILL.md with name/description frontmatter and the managed header', async () => {
     const tmp = await makeTmpDir();
     try {
-      const created = await ensureProcedureFiles(tmp.root, makeConfig());
-      expect(created.sort()).toEqual(procedurePaths(makeConfig()).sort());
-      for (const relPath of created) {
-        const content = await readFile(path.join(tmp.root, relPath), 'utf8');
-        expect(content.length).toBeGreaterThan(0);
-      }
+      const written = await syncShippedSkills(tmp.root, makeConfig());
+      expect(written.sort()).toEqual(procedurePaths(makeConfig()).sort());
+      const placement = await readFile(path.join(tmp.root, 'procedures/contexture-placement/SKILL.md'), 'utf8');
+      expect(placement).toContain('name: contexture-placement');
+      expect(placement).toContain('description:');
+      expect(placement).toContain(MANAGED_SKILL_HEADER);
     } finally {
       await tmp.cleanup();
     }
   });
 
-  it('never overwrites an existing (possibly customized) procedure file', async () => {
+  it('is byte-stable: a second sync writes nothing', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      await syncShippedSkills(tmp.root, makeConfig());
+      expect(await syncShippedSkills(tmp.root, makeConfig())).toEqual([]);
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('OVERWRITES a drifted contexture-owned copy (they are owned by contexture, refreshed by update)', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      await syncShippedSkills(tmp.root, makeConfig());
+      const skillPath = path.join(tmp.root, 'procedures/contexture-placement/SKILL.md');
+      const { writeFile } = await import('node:fs/promises');
+      await writeFile(skillPath, 'hand-edited\n');
+
+      const written = await syncShippedSkills(tmp.root, makeConfig());
+      expect(written).toEqual(['procedures/contexture-placement/SKILL.md']);
+      expect(await readFile(skillPath, 'utf8')).not.toBe('hand-edited\n');
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('never touches an operator-authored skill alongside', async () => {
     const tmp = await makeTmpDir();
     try {
       const { mkdir, writeFile } = await import('node:fs/promises');
-      await mkdir(path.join(tmp.root, 'procedures'), { recursive: true });
-      await writeFile(path.join(tmp.root, 'procedures', 'placement.md'), 'customized\n');
+      await mkdir(path.join(tmp.root, 'procedures/my-skill'), { recursive: true });
+      await writeFile(path.join(tmp.root, 'procedures/my-skill/SKILL.md'), '---\nname: my-skill\n---\nmine\n');
 
-      const created = await ensureProcedureFiles(tmp.root, makeConfig());
-      expect(created).not.toContain('procedures/placement.md');
-
-      const content = await readFile(path.join(tmp.root, 'procedures/placement.md'), 'utf8');
-      expect(content).toBe('customized\n');
+      await syncShippedSkills(tmp.root, makeConfig());
+      expect(await readFile(path.join(tmp.root, 'procedures/my-skill/SKILL.md'), 'utf8')).toBe('---\nname: my-skill\n---\nmine\n');
     } finally {
       await tmp.cleanup();
     }

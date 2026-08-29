@@ -4,11 +4,7 @@ import { configuredAdapters } from '../adapters/registry.js';
 import { agentsMdPath } from '../core/agents-doc.js';
 import { ExitCode } from '../core/exit-codes.js';
 import { upsertFencedRegionInFile } from '../core/fs/fenced-region.js';
-import { readFile } from 'node:fs/promises';
-import { mkdir } from 'node:fs/promises';
 import { identityFilePaths } from '../core/identity.js';
-import { writeFileAtomic } from '../core/fs/atomic.js';
-import { scanProcedures } from '../core/procedures.js';
 import { mergeJsonArrayLists } from '../core/json-config-merge.js';
 import { htmlCommentFence, type Fence } from '../core/markers.js';
 import type { Store } from '../core/store.js';
@@ -41,7 +37,8 @@ function identityInjectionFence(adapterId: string): Fence {
  * same physical file (the common case: one harness's own entry file) never
  * collide, because each owns a distinctly-named fence.
  */
-export async function execute(store: Store): Promise<CommandOutcome<AdaptersGenerateData>> {
+/** The generation itself, shared with `ctxr update`. */
+export async function generateAdapterOutputs(store: Store): Promise<AdaptersGenerateFileResult[]> {
   const files: AdaptersGenerateFileResult[] = [];
 
   for (const adapter of configuredAdapters(store.config, 'harness-generation')) {
@@ -63,29 +60,6 @@ export async function execute(store: Store): Promise<CommandOutcome<AdaptersGene
       files.push({ path: adapter.permissionConfig.path, changed: permChanged });
     }
 
-    if (adapter.renderSkills) {
-      const scanned = await scanProcedures(store.root, store.config);
-      const procedures = scanned.map((procedure) => ({
-        name: procedure.title,
-        path: procedure.path,
-        description: procedure.description ?? `Follow the "${procedure.title}" procedure for this contexture store.`,
-      }));
-      for (const skill of adapter.renderSkills(procedures)) {
-        const skillPath = path.join(store.root, skill.path);
-        let existing: string | undefined;
-        try {
-          existing = await readFile(skillPath, 'utf8');
-        } catch {
-          existing = undefined;
-        }
-        const changed = existing !== skill.content;
-        if (changed) {
-          await mkdir(path.dirname(skillPath), { recursive: true });
-          await writeFileAtomic(skillPath, skill.content);
-        }
-        files.push({ path: skill.path, changed });
-      }
-    }
   }
 
   const identityPaths = identityFilePaths(store.config);
@@ -99,6 +73,11 @@ export async function execute(store: Store): Promise<CommandOutcome<AdaptersGene
     files.push({ path: adapter.entryFileName, changed });
   }
 
+  return files;
+}
+
+export async function execute(store: Store): Promise<CommandOutcome<AdaptersGenerateData>> {
+  const files = await generateAdapterOutputs(store);
   const changedCount = files.filter((f) => f.changed).length;
   return {
     exitCode: ExitCode.Ok,

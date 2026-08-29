@@ -9,14 +9,6 @@ import { makeTmpDir } from '../helpers/tmp-store.js';
 const STALE_INVOCATION =
   /contexture (init|doctor|check|adapters|archive|catalog|graph|ingest|lint|migrate|note|rollup|session|source|verify|search)\b/;
 
-async function readAllMarkdown(dir: string): Promise<Map<string, string>> {
-  const out = new Map<string, string>();
-  for (const name of await readdir(dir)) {
-    if (name.endsWith('.md')) out.set(name, await readFile(path.join(dir, name), 'utf8'));
-  }
-  return out;
-}
-
 /** cli-contract (cli-distribution-identity): every shipped instruction to run a command names `ctxr`. */
 describe('cli-contract: shipped instructions name ctxr (real CLI)', () => {
   it('a freshly initialized store carries no stale invocation', async () => {
@@ -31,16 +23,12 @@ describe('cli-contract: shipped instructions name ctxr (real CLI)', () => {
       for (const hook of ['pre-commit', 'pre-push']) {
         surfaces.set(`.githooks/${hook}`, await readFile(path.join(tmp.root, '.githooks', hook), 'utf8'));
       }
-      for (const [name, content] of await readAllMarkdown(path.join(tmp.root, '.contexture', 'procedures'))) {
-        surfaces.set(`procedures/${name}`, content);
-      }
       const skillsDir = path.join(tmp.root, '.claude', 'skills');
       for (const dir of await readdir(skillsDir)) {
         surfaces.set(`skills/${dir}`, await readFile(path.join(skillsDir, dir, 'SKILL.md'), 'utf8'));
       }
 
       // Sanity: we actually gathered every kind of surface the spec names.
-      expect([...surfaces.keys()].some((k) => k.startsWith('procedures/'))).toBe(true);
       expect([...surfaces.keys()].some((k) => k.startsWith('skills/'))).toBe(true);
 
       for (const [name, content] of surfaces) {
@@ -50,7 +38,7 @@ describe('cli-contract: shipped instructions name ctxr (real CLI)', () => {
       expect(surfaces.get('.githooks/pre-push')).toContain("'ctxr session submit'");
       expect(surfaces.get('.githooks/pre-commit')).toContain('re-run `ctxr init` or `ctxr doctor`');
       const [skill] = [...surfaces.entries()].filter(([k]) => k.startsWith('skills/')).map(([, v]) => v);
-      expect(skill).toContain('`ctxr adapters generate`');
+      expect(skill).toContain('`ctxr update`');
     } finally {
       await tmp.cleanup();
     }

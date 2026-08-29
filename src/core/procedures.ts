@@ -1,37 +1,46 @@
-import { existsSync } from 'node:fs';
+import { readFile } from 'node:fs/promises';
 import { mkdir } from 'node:fs/promises';
 import path from 'node:path';
 import type { StoreConfig } from '../config/schema.js';
-import { scanDocsDir, type ScannedDoc } from './conventions.js';
+import { scanDocsDir, SKILL_FILE_NAME, type ScannedDoc } from './conventions.js';
 import { writeFileAtomic } from './fs/atomic.js';
 
 /**
- * harness-portability spec (task 8.6): reusable store procedures as
- * portable markdown, reachable by path independent of any harness's
- * auto-discovery mechanism — a non-auto-discovering harness can be handed
- * one of these paths directly and follow it. These are documentation, not
- * code: each names the real CLI commands built in earlier phases, in the
- * order a judgment-driven operation actually uses them.
+ * harness-portability spec (task 8.6, revised by entry-doc-generation D5):
+ * reusable store procedures ship as contexture-OWNED skills. The canonical
+ * content is this module (versioned with the package); a store carries a
+ * full copy at `<procedures_path>/contexture-<slug>/SKILL.md` — written by
+ * `ctxr init`, refreshed by `ctxr update`, never hand-edited. The default
+ * location is the directory harnesses with skill auto-discovery read, so
+ * there is no wrapper and no extra hop; any other harness reaches the same
+ * file by path from AGENTS.md. Operator-authored skills live alongside,
+ * untouched by sync. Each seed names the real CLI commands built in
+ * earlier phases, in the order a judgment-driven operation uses them.
  */
 export interface Procedure {
-  /** Filename under config.harness.procedures_path. */
+  /** Skill directory slug under config.harness.procedures_path (file is `<slug>/SKILL.md`). */
   file: string;
-  /** The name AGENTS.md's procedure index and `verify --portable` both use to refer to this operation. */
+  /** The human title (the H1 in the skill body). */
   name: string;
-  /** One line for harness skill-discovery metadata (contexture-home-layout spec). */
+  /** One line for skill-discovery metadata and the AGENTS.md index. */
   description: string;
   content: string;
 }
 
+export const MANAGED_SKILL_HEADER =
+  '<!-- Owned by contexture — written by `ctxr init`, refreshed by `ctxr update`. Do not edit; add your own skills alongside. -->';
+
 export const PROCEDURES: readonly Procedure[] = [
   {
-    file: 'ingest-orchestration.md',
+    file: 'contexture-ingest-orchestration',
     name: 'Ingest orchestration',
     description: 'Capture raw material into the inbox, run the dedupe check, and ingest it with source identity via the contexture CLI.',
     content: `---
-title: Ingest orchestration
+name: contexture-ingest-orchestration
 description: Capture raw material into the inbox, run the dedupe check, and ingest it with source identity via the contexture CLI.
 ---
+
+${MANAGED_SKILL_HEADER}
 
 # Ingest orchestration
 
@@ -43,13 +52,15 @@ description: Capture raw material into the inbox, run the dedupe check, and inge
 `,
   },
   {
-    file: 'placement.md',
+    file: 'contexture-placement',
     name: 'Placement',
     description: 'Choose the right taxonomy layer for a new or relocated note in this contexture store.',
     content: `---
-title: Placement
+name: contexture-placement
 description: Choose the right taxonomy layer for a new or relocated note in this contexture store.
 ---
+
+${MANAGED_SKILL_HEADER}
 
 # Placement
 
@@ -60,13 +71,15 @@ description: Choose the right taxonomy layer for a new or relocated note in this
 `,
   },
   {
-    file: 'connection-finding.md',
+    file: 'contexture-connection-finding',
     name: 'Connection finding',
     description: 'Find related notes via the wikilink graph of the store (neighbors, paths, hubs) and write rollups from gathered sources.',
     content: `---
-title: Connection finding
+name: contexture-connection-finding
 description: Find related notes via the wikilink graph of the store (neighbors, paths, hubs) and write rollups from gathered sources.
 ---
+
+${MANAGED_SKILL_HEADER}
 
 # Connection finding
 
@@ -78,13 +91,15 @@ description: Find related notes via the wikilink graph of the store (neighbors, 
 `,
   },
   {
-    file: 'organize-audit.md',
+    file: 'contexture-organize-audit',
     name: 'Organize audit',
     description: 'Audit store health with ctxr lint (observations) and ctxr doctor (blocking invariants).',
     content: `---
-title: Organize audit
+name: contexture-organize-audit
 description: Audit store health with ctxr lint (observations) and ctxr doctor (blocking invariants).
 ---
+
+${MANAGED_SKILL_HEADER}
 
 # Organize audit
 
@@ -96,32 +111,44 @@ description: Audit store health with ctxr lint (observations) and ctxr doctor (b
 ];
 
 /**
- * entry-doc-generation spec: every procedure file actually on disk — the
- * shipped seeds plus any operator-added ones. This is what the AGENTS.md
- * index, skill generation, and verify --portable all consume; the static
- * PROCEDURES const remains only the seed content ensureProcedureFiles
- * writes. Shipped seeds carry no frontmatter, so their metadata falls back
- * to the first heading (which matches their PROCEDURES name).
+ * entry-doc-generation spec: every skill actually on disk — the contexture-
+ * owned ones plus any operator-authored ones. This is what the AGENTS.md
+ * index and verify --portable consume; the static PROCEDURES const is only
+ * the canonical content syncShippedSkills writes.
  */
 export function scanProcedures(root: string, config: StoreConfig): Promise<ScannedDoc[]> {
   return scanDocsDir(root, config.harness.procedures_path);
 }
 
 export function procedurePaths(config: StoreConfig): string[] {
-  return PROCEDURES.map((p) => path.join(config.harness.procedures_path, p.file).split(path.sep).join('/'));
+  return PROCEDURES.map((p) => path.join(config.harness.procedures_path, p.file, SKILL_FILE_NAME).split(path.sep).join('/'));
 }
 
-/** Creates any procedure-pack file that doesn't exist yet — never overwrites an existing (possibly customized) one. */
-export async function ensureProcedureFiles(root: string, config: StoreConfig): Promise<string[]> {
-  const created: string[] = [];
+/**
+ * Brings every contexture-owned skill copy to the installed package's
+ * content: written when missing, rewritten when different (byte-stable —
+ * an up-to-date copy is not touched), and only ever the `contexture-*`
+ * directories this module owns. Returns the paths it wrote.
+ */
+export async function syncShippedSkills(root: string, config: StoreConfig): Promise<string[]> {
+  const changed: string[] = [];
   for (const procedure of PROCEDURES) {
-    const relativePath = path.join(config.harness.procedures_path, procedure.file).split(path.sep).join('/');
+    const relativePath = path
+      .join(config.harness.procedures_path, procedure.file, SKILL_FILE_NAME)
+      .split(path.sep)
+      .join('/');
     const absolutePath = path.join(root, relativePath);
-    if (!existsSync(absolutePath)) {
+    let existing: string | undefined;
+    try {
+      existing = await readFile(absolutePath, 'utf8');
+    } catch {
+      existing = undefined;
+    }
+    if (existing !== procedure.content) {
       await mkdir(path.dirname(absolutePath), { recursive: true });
       await writeFileAtomic(absolutePath, procedure.content);
-      created.push(relativePath);
+      changed.push(relativePath);
     }
   }
-  return created;
+  return changed;
 }

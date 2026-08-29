@@ -2,7 +2,6 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { execute } from '../../src/commands/adapters-generate.js';
-import { ensureProcedureFiles } from '../../src/core/procedures.js';
 import type { AdapterDeclaration, StoreConfig } from '../../src/config/schema.js';
 import { ExitCode } from '../../src/core/exit-codes.js';
 import type { Store } from '../../src/core/store.js';
@@ -102,84 +101,6 @@ describe('adapters generate command', () => {
       const content = await readFile(path.join(tmp.root, 'CLAUDE.md'), 'utf8');
       expect(content).toContain('Some hand-written text.');
       expect(content).toContain('@AGENTS.md');
-    } finally {
-      await tmp.cleanup();
-    }
-  });
-});
-
-describe('skill generation (contexture-home-layout)', () => {
-  it('generates one SKILL.md per canonical procedure, pointing at (not copying) the procedure file', async () => {
-    const tmp = await makeTmpDir();
-    try {
-      const store: Store = { root: tmp.root, config: makeConfig([{ id: 'claude-code', kind: 'harness-generation' }]) };
-      await ensureProcedureFiles(tmp.root, store.config);
-      await execute(store);
-
-      const skill = await readFile(
-        path.join(tmp.root, '.claude/skills/contexture-placement/SKILL.md'),
-        'utf8',
-      );
-      expect(skill).toContain('name: contexture-placement');
-      expect(skill).toContain('description:');
-      expect(skill).toContain('procedures/placement.md');
-      // pointer, not a copy: none of the procedure's own step text appears
-      expect(skill).not.toContain('taxonomy layers');
-    } finally {
-      await tmp.cleanup();
-    }
-  });
-
-  it('skill generation is byte-stable across two runs', async () => {
-    const tmp = await makeTmpDir();
-    try {
-      const store: Store = { root: tmp.root, config: makeConfig([{ id: 'claude-code', kind: 'harness-generation' }]) };
-      await ensureProcedureFiles(tmp.root, store.config);
-      await execute(store);
-      const skillPath = path.join(tmp.root, '.claude/skills/contexture-organize-audit/SKILL.md');
-      const before = await readFile(skillPath, 'utf8');
-
-      const second = await execute(store);
-      const after = await readFile(skillPath, 'utf8');
-      expect(after).toBe(before);
-      expect(second.data?.files.filter((f) => f.path.includes('skills/')).every((f) => !f.changed)).toBe(true);
-    } finally {
-      await tmp.cleanup();
-    }
-  });
-
-  it('no skills are generated when no harness-generation adapter is configured', async () => {
-    const tmp = await makeTmpDir();
-    try {
-      const store: Store = { root: tmp.root, config: makeConfig([{ id: 'github', kind: 'forge' }]) };
-      await execute(store);
-      const { existsSync } = await import('node:fs');
-      expect(existsSync(path.join(tmp.root, '.claude/skills'))).toBe(false);
-    } finally {
-      await tmp.cleanup();
-    }
-  });
-});
-
-describe('scan-based skill generation (entry-doc-generation)', () => {
-  it('an operator-added procedure gains a skill wrapper identically to a shipped one', async () => {
-    const tmp = await makeTmpDir();
-    try {
-      const store: Store = { root: tmp.root, config: makeConfig([{ id: 'claude-code', kind: 'harness-generation' }]) };
-      await ensureProcedureFiles(tmp.root, store.config);
-      const { mkdir, writeFile } = await import('node:fs/promises');
-      await mkdir(path.join(tmp.root, 'procedures'), { recursive: true });
-      await writeFile(
-        path.join(tmp.root, 'procedures/weekly-review.md'),
-        '---\ntitle: Weekly review\ndescription: Walk the store health checks weekly.\n---\n\nSteps here.\n',
-      );
-
-      await execute(store);
-      const skill = await readFile(path.join(tmp.root, '.claude/skills/contexture-weekly-review/SKILL.md'), 'utf8');
-      expect(skill).toContain('name: contexture-weekly-review');
-      expect(skill).toContain('description: Walk the store health checks weekly.');
-      expect(skill).toContain('procedures/weekly-review.md');
-      expect(skill).not.toContain('Steps here');
     } finally {
       await tmp.cleanup();
     }

@@ -3,7 +3,7 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { buildAgentsCanonicalSection } from '../../src/core/agents-doc.js';
 import { execute } from '../../src/commands/verify.js';
-import { ensureProcedureFiles } from '../../src/core/procedures.js';
+import { syncShippedSkills } from '../../src/core/procedures.js';
 import type { StoreConfig } from '../../src/config/schema.js';
 import { ExitCode } from '../../src/core/exit-codes.js';
 import type { Store } from '../../src/core/store.js';
@@ -32,7 +32,7 @@ function makeConfig(): StoreConfig {
 
 async function setUpStore(root: string): Promise<Store> {
   const config = makeConfig();
-  await ensureProcedureFiles(root, config);
+  await syncShippedSkills(root, config);
   await buildAgentsCanonicalSection(root, config);
   return { root, config };
 }
@@ -72,12 +72,12 @@ describe('verify --portable', () => {
       const store = await setUpStore(tmp.root);
       const agentsMdPath = path.join(tmp.root, 'AGENTS.md');
       const content = await readFile(agentsMdPath, 'utf8');
-      await writeFile(agentsMdPath, content.replace(/^- \[Placement\]\(procedures\/placement\.md\).*\n/m, ''));
+      await writeFile(agentsMdPath, content.replace(/^- \[contexture-placement\]\(procedures\/contexture-placement\/SKILL\.md\).*\n/m, ''));
 
       const outcome = await execute(store, { portable: true });
       expect(outcome.exitCode).toBe(ExitCode.CheckFailed);
       const failed = outcome.data?.steps.find((s) => s.status === 'fail');
-      expect(failed?.operation).toContain('Placement');
+      expect(failed?.operation).toContain('contexture-placement');
     } finally {
       await tmp.cleanup();
     }
@@ -89,7 +89,7 @@ describe('verify --portable', () => {
       const store = await setUpStore(tmp.root);
       const agentsMdPath = path.join(tmp.root, 'AGENTS.md');
       const content = await readFile(agentsMdPath, 'utf8');
-      await writeFile(agentsMdPath, content.replace(/^- \[Ingest orchestration\]\(procedures\/ingest-orchestration\.md\).*\n/m, ''));
+      await writeFile(agentsMdPath, content.replace(/^- \[contexture-ingest-orchestration\]\(procedures\/contexture-ingest-orchestration\/SKILL\.md\).*\n/m, ''));
 
       const outcome = await execute(store, { portable: true });
       // Only the retrieval query, the derived-artifact build, and the one failing

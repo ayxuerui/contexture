@@ -92,7 +92,7 @@ describe('agent identity and adapters (real CLI)', () => {
 
       const { existsSync } = await import('node:fs');
       expect(existsSync(path.join(worktree, 'CLAUDE.md'))).toBe(false);
-      expect(existsSync(path.join(worktree, '.claude'))).toBe(false);
+      expect(existsSync(path.join(worktree, '.claude/settings.json'))).toBe(false);
 
       const result = await runCli(['verify', '--portable', '--json'], { cwd: worktree, env });
       expect(result.exitCode).toBe(0);
@@ -110,12 +110,12 @@ describe('agent identity and adapters (real CLI)', () => {
 
       const agentsMdPath = path.join(tmp.root, 'AGENTS.md');
       const content = await readFile(agentsMdPath, 'utf8');
-      await writeFile(agentsMdPath, content.replace(/^- \[Connection finding\]\(\.contexture\/procedures\/connection-finding\.md\).*\n/m, ''));
+      await writeFile(agentsMdPath, content.replace(/^- \[contexture-connection-finding\]\(\.claude\/skills\/contexture-connection-finding\/SKILL\.md\).*\n/m, ''));
 
       const result = await runCli(['verify', '--portable', '--json'], { cwd: tmp.root, env });
       expect(result.exitCode).not.toBe(0);
       const data = JSON.parse(result.stdout);
-      expect(data.findings[0].message).toContain('Connection finding');
+      expect(data.findings[0].message).toContain('contexture-connection-finding');
     } finally {
       await tmp.cleanup();
     }
@@ -150,7 +150,7 @@ describe('agent identity and adapters (real CLI)', () => {
 
 /** entry-doc-generation task 3.2. */
 describe('entry-doc generation (real CLI)', () => {
-  it('a convention file and an operator procedure both get indexed on re-init, and the procedure gains a skill', async () => {
+  it('a convention file and an operator-authored skill both get indexed on re-init', async () => {
     const tmp = await makeTmpDir();
     try {
       const env = hermeticGitEnv();
@@ -163,8 +163,8 @@ describe('entry-doc generation (real CLI)', () => {
       );
       await writeNote(
         tmp.root,
-        '.contexture/procedures/weekly-review.md',
-        '---\ntitle: Weekly review\ndescription: Walk the health checks weekly.\n---\n\nSteps.\n',
+        '.claude/skills/weekly-review/SKILL.md',
+        '---\nname: weekly-review\ndescription: Walk the health checks weekly.\n---\n\nSteps.\n',
       );
 
       await runCli(['init'], { cwd: tmp.root, env }); // idempotent path regenerates the indexes
@@ -172,11 +172,9 @@ describe('entry-doc generation (real CLI)', () => {
 
       const agentsMd = await readFile(path.join(tmp.root, 'AGENTS.md'), 'utf8');
       expect(agentsMd).toContain('[House style](.contexture/conventions/house-style.md) — How notes are written here.');
-      expect(agentsMd).toContain('[Weekly review](.contexture/procedures/weekly-review.md) — Walk the health checks weekly.');
+      expect(agentsMd).toContain('[weekly-review](.claude/skills/weekly-review/SKILL.md) — Walk the health checks weekly.');
       expect(agentsMd).not.toContain('Bullet points, always.'); // referenced, never inlined
-
-      const skill = await readFile(path.join(tmp.root, '.claude/skills/contexture-weekly-review/SKILL.md'), 'utf8');
-      expect(skill).toContain('name: contexture-weekly-review');
+      expect(agentsMd).not.toContain('Steps.'); // the skill body is not inlined either
 
       const verifyResult = await runCli(['verify', '--portable', '--json'], { cwd: tmp.root, env });
       expect(verifyResult.exitCode).toBe(0);
@@ -191,7 +189,7 @@ describe('entry-doc generation (real CLI)', () => {
       const env = hermeticGitEnv();
       await runCli(['init'], { cwd: tmp.root, env });
       // Added but never re-indexed: scan sees it, AGENTS.md does not.
-      await writeNote(tmp.root, '.contexture/procedures/unindexed.md', '# Unindexed procedure\n\nSteps.\n');
+      await writeNote(tmp.root, '.claude/skills/unindexed/SKILL.md', '# Unindexed procedure\n\nSteps.\n');
 
       const result = await runCli(['verify', '--portable', '--json'], { cwd: tmp.root, env });
       expect(result.exitCode).not.toBe(0);

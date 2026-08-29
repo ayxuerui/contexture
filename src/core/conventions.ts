@@ -19,6 +19,9 @@ export interface ScannedDoc {
 
 const HEADING_RE = /^#\s+(.+)$/m;
 
+/** The skill-layout filename: `<slug>/SKILL.md` — what harnesses with skill auto-discovery read. */
+export const SKILL_FILE_NAME = 'SKILL.md';
+
 export function extractDocMetadata(raw: string, relativePath: string): ScannedDoc {
   let frontmatter: Record<string, unknown> | undefined;
   let body = raw;
@@ -31,16 +34,19 @@ export function extractDocMetadata(raw: string, relativePath: string): ScannedDo
     // are instructions, not notes; indexing must not fail loud on them.
   }
 
-  const fmTitle = frontmatter?.title;
+  const fmTitle = frontmatter?.title ?? frontmatter?.name; // SKILL.md files declare `name`
   const fmDescription = frontmatter?.description;
   const heading = HEADING_RE.exec(body)?.[1]?.trim();
+  // A `<slug>/SKILL.md` file's natural fallback name is its directory, not "SKILL".
+  const fallback =
+    path.basename(relativePath) === SKILL_FILE_NAME ? path.basename(path.dirname(relativePath)) : path.basename(relativePath, '.md');
 
   return {
     path: relativePath,
     title:
       (typeof fmTitle === 'string' && fmTitle.length > 0 ? fmTitle : undefined) ??
       (heading && heading.length > 0 ? heading : undefined) ??
-      path.basename(relativePath, '.md'),
+      fallback,
     description: typeof fmDescription === 'string' && fmDescription.length > 0 ? fmDescription : null,
   };
 }
@@ -55,10 +61,25 @@ export async function scanDocsDir(root: string, dirRelativePath: string): Promis
     throw err;
   }
 
+  // Two layouts, both indexed: flat `<name>.md` files, and the skill layout
+  // `<slug>/SKILL.md` (the format harnesses with skill auto-discovery read).
   const docs: ScannedDoc[] = [];
-  for (const entry of entries.filter((e) => e.isFile() && e.name.endsWith('.md')).sort((a, b) => a.name.localeCompare(b.name))) {
-    const relativePath = path.join(dirRelativePath, entry.name).split(path.sep).join('/');
-    const raw = await readFile(path.join(dir, entry.name), 'utf8');
+  for (const entry of [...entries].sort((a, b) => a.name.localeCompare(b.name))) {
+    let fileRelativePath: string | undefined;
+    if (entry.isFile() && entry.name.endsWith('.md')) {
+      fileRelativePath = path.join(dirRelativePath, entry.name);
+    } else if (entry.isDirectory()) {
+      const candidate = path.join(dir, entry.name, SKILL_FILE_NAME);
+      try {
+        await readFile(candidate, 'utf8');
+        fileRelativePath = path.join(dirRelativePath, entry.name, SKILL_FILE_NAME);
+      } catch {
+        continue;
+      }
+    }
+    if (!fileRelativePath) continue;
+    const relativePath = fileRelativePath.split(path.sep).join('/');
+    const raw = await readFile(path.join(root, relativePath), 'utf8');
     docs.push(extractDocMetadata(raw, relativePath));
   }
   return docs;

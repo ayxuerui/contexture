@@ -30,6 +30,7 @@ import { ContextureError } from './core/errors.js';
 import { ExitCode } from './core/exit-codes.js';
 import { createReporter } from './core/reporter.js';
 import { openStore } from './core/store.js';
+import * as updateCommand from './commands/update.js';
 import * as verifyCommand from './commands/verify.js';
 import { CLI_VERSION } from './version.js';
 
@@ -415,6 +416,17 @@ export async function run(argv: readonly string[], env: RunEnv): Promise<ExitCod
       result = await runCommand('adapters.generate', runEnv, jsonMode, async () => {
         const store = await openStore(runEnv, { root });
         return adaptersGenerateCommand.execute(store);
+      });
+    });
+
+  program
+    .command('update')
+    .description('bring every contexture-owned file in the store up to the installed version (docs, skills, hooks, adapter outputs)')
+    .action(async (_cmdOpts: object, cmd: Command) => {
+      const { runEnv, jsonMode, root } = deriveRunEnv(env, cmd);
+      result = await runCommand('update', runEnv, jsonMode, async () => {
+        const store = await openStore(runEnv, { root });
+        return updateCommand.execute(runEnv, store);
       });
     });
 

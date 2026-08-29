@@ -35,12 +35,6 @@ export const SUPPORTED_ADAPTER_INTERFACE_VERSION: Record<AdapterKind, number> = 
  * placed inside contexture's managed fenced region in that file — never the
  * whole file, so a hand-authored preamble outside the fence survives.
  */
-export interface GeneratedSkillFile {
-  /** Path relative to the store root (e.g. ".claude/skills/contexture-placement/SKILL.md"). */
-  path: string;
-  content: string;
-}
-
 export interface HarnessGenerationAdapter extends Adapter<'harness-generation'> {
   /** The harness-specific file this adapter writes, relative to the store root (e.g. "CLAUDE.md"). */
   entryFileName: string;
@@ -51,13 +45,6 @@ export interface HarnessGenerationAdapter extends Adapter<'harness-generation'> 
     path: string;
     render(config: { worktreesPath: string }): Record<string, unknown>;
   };
-  /**
-   * Optional (contexture-home-layout spec): harnesses with native skill
-   * auto-discovery get one generated wrapper per canonical procedure —
-   * discovery metadata plus a pointer to the procedure file, never a copy
-   * of its content.
-   */
-  renderSkills?(procedures: readonly { name: string; path: string; description: string }[]): GeneratedSkillFile[];
 }
 
 /**
