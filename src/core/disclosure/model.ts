@@ -1,6 +1,6 @@
 import type { HardWallConfig, StoreConfig } from '../../config/schema.js';
 import type { Note } from '../notes/list.js';
-import { resolveVisibility } from '../notes/visibility.js';
+import { canSee, resolveVisibility } from '../notes/visibility.js';
 
 export type DisclosureVerdict = 'allow' | 'deny' | 'ask';
 
@@ -22,7 +22,8 @@ export interface DisclosureResult {
 const AUDIENCE_FIELD_KEY = 'audience';
 
 function matchesWall(wall: HardWallConfig, note: Note, audience: string): boolean {
-  if (wall.audience !== audience) return false;
+  if (wall.audience !== '*' && wall.audience !== audience) return false;
+  if (wall.except?.includes(audience)) return false;
   if (!wall.note_path_prefix) return true;
   const prefix = wall.note_path_prefix.endsWith('/') ? wall.note_path_prefix : `${wall.note_path_prefix}/`;
   return note.path === wall.note_path_prefix || note.path.startsWith(prefix);
@@ -50,7 +51,7 @@ export function evaluateDisclosure(config: StoreConfig, note: Note, audience: st
 
   if (config.disclosure.internal_audiences.includes(audience)) {
     const resolved = resolveVisibility(config, note);
-    return { verdict: resolved.value === audience ? 'allow' : 'deny', rung: 'internal_visibility' };
+    return { verdict: canSee(config, audience, resolved.value) ? 'allow' : 'deny', rung: 'internal_visibility' };
   }
 
   return { verdict: 'ask', rung: 'external_default' };

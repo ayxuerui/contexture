@@ -8,7 +8,7 @@ function makeConfig(overrides: Partial<StoreConfig['disclosure']> = {}): StoreCo
     schema_version: 1,
     taxonomy: { profile: 'para', layers: [] },
     fields: { visibility: 'scope' },
-    visibility: { default_context: 'private', directory_defaults: {} },
+    visibility: { default_context: 'private', directory_defaults: {}, contexts: {} },
     derived: { paths: [] },
     retrieval: { exclude_paths: [] },
     git: { default_branch: 'main' },
@@ -93,5 +93,64 @@ describe('evaluateDisclosure', () => {
     });
     const result = evaluateDisclosure(config, note('projects/a.md', { scope: 'ctx-a' }), 'ctx-a');
     expect(result).toEqual({ verdict: 'deny', rung: 'hard_wall' });
+  });
+});
+
+describe('evaluateDisclosure with a context mapping (visibility.contexts)', () => {
+  function withContexts(
+    config: StoreConfig,
+    contexts: Record<string, string[]>,
+  ): StoreConfig {
+    return { ...config, visibility: { ...config.visibility, contexts } };
+  }
+
+  it('rung 3 allows a shared visibility value for every internal audience mapped to it', () => {
+    const config = withContexts(makeConfig({ internal_audiences: ['ctx-a', 'ctx-b'] }), {
+      'ctx-a': ['ctx-a', 'ctx-shared'],
+      'ctx-b': ['ctx-b', 'ctx-shared'],
+    });
+    const shared = note('projects/n.md', { scope: 'ctx-shared' });
+    expect(evaluateDisclosure(config, shared, 'ctx-a')).toEqual({ verdict: 'allow', rung: 'internal_visibility' });
+    expect(evaluateDisclosure(config, shared, 'ctx-b')).toEqual({ verdict: 'allow', rung: 'internal_visibility' });
+  });
+
+  it('rung 3 still denies a value outside the mapped list', () => {
+    const config = withContexts(makeConfig({ internal_audiences: ['ctx-a'] }), { 'ctx-a': ['ctx-a', 'ctx-shared'] });
+    const other = note('projects/n.md', { scope: 'ctx-b' });
+    expect(evaluateDisclosure(config, other, 'ctx-a')).toEqual({ verdict: 'deny', rung: 'internal_visibility' });
+  });
+});
+
+describe('hard walls: wildcard, except, and ask', () => {
+  it('a wildcard ASK wall asks for every audience', () => {
+    const config = makeConfig({ hard_walls: [{ audience: '*', note_path_prefix: 'walled/', verdict: 'ask' }] });
+    const walled = note('walled/n.md');
+    expect(evaluateDisclosure(config, walled, 'ctx-x')).toEqual({ verdict: 'ask', rung: 'hard_wall' });
+    expect(evaluateDisclosure(config, walled, 'ctx-y')).toEqual({ verdict: 'ask', rung: 'hard_wall' });
+  });
+
+  it('an exempted audience passes the wall and reaches later rungs', () => {
+    const config = makeConfig({
+      hard_walls: [{ audience: '*', note_path_prefix: 'walled/', except: ['ctx-a'], verdict: 'ask' }],
+    });
+    const walled = note('walled/n.md');
+    // Non-exempt audience hits the wall.
+    expect(evaluateDisclosure(config, walled, 'ctx-b')).toEqual({ verdict: 'ask', rung: 'hard_wall' });
+    // Exempt audience falls through — untagged + external here, so the default rung answers.
+    expect(evaluateDisclosure(config, walled, 'ctx-a')).toEqual({ verdict: 'ask', rung: 'external_default' });
+  });
+
+  it('an ASK wall short-circuits an explicit tag that would otherwise allow', () => {
+    const config = makeConfig({ hard_walls: [{ audience: '*', note_path_prefix: 'walled/', verdict: 'ask' }] });
+    const tagged = note('walled/n.md', { audience: ['ctx-b'] });
+    expect(evaluateDisclosure(config, tagged, 'ctx-b')).toEqual({ verdict: 'ask', rung: 'hard_wall' });
+  });
+
+  it('an exempted audience with a matching explicit tag is allowed at the tag rung', () => {
+    const config = makeConfig({
+      hard_walls: [{ audience: '*', note_path_prefix: 'walled/', except: ['ctx-a'], verdict: 'ask' }],
+    });
+    const tagged = note('walled/n.md', { audience: ['ctx-a'] });
+    expect(evaluateDisclosure(config, tagged, 'ctx-a')).toEqual({ verdict: 'allow', rung: 'explicit_tag' });
   });
 });

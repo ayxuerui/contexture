@@ -8,7 +8,7 @@ function makeConfig(excludePaths: string[], identityPath = 'identity/'): StoreCo
     schema_version: 1,
     taxonomy: { profile: 'para', layers: [] },
     fields: { visibility: 'scope' },
-    visibility: { default_context: 'private', directory_defaults: {} },
+    visibility: { default_context: 'private', directory_defaults: {}, contexts: {} },
     derived: { paths: [] },
     retrieval: { exclude_paths: excludePaths },
     git: { default_branch: 'main' },

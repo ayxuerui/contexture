@@ -129,3 +129,71 @@ describe('contexture check / graph --as (real CLI)', () => {
     }
   });
 });
+
+/** visibility-contexts-and-wall-verdicts task 3.2. */
+describe('context mapping and richer walls (real CLI)', () => {
+  async function setVisibilityContexts(root: string, yamlBlock: string): Promise<void> {
+    const configPath = path.join(root, 'contexture.yaml');
+    const text = await readFile(configPath, 'utf8');
+    // Replace the rendered empty mapping with the test's mapping.
+    await writeFile(configPath, text.replace('  contexts: {}\n', yamlBlock));
+  }
+
+  it('a shared visibility value appears under graph query --as for BOTH mapped contexts, and an unmapped value stays hidden', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const env = hermeticGitEnv();
+      await runCli(['init'], { cwd: tmp.root, env });
+      await setVisibilityContexts(
+        tmp.root,
+        '  contexts:\n    ctx-a: [ctx-a, ctx-shared]\n    ctx-b: [ctx-b, ctx-shared]\n',
+      );
+      await writeNote(tmp.root, 'projects/a.md', '---\nlens: ctx-a\n---\nLinks to [[shared]] and [[b]].\n');
+      await writeNote(tmp.root, 'projects/shared.md', '---\nlens: ctx-shared\n---\nShared note.\n');
+      await writeNote(tmp.root, 'projects/b.md', '---\nlens: ctx-b\n---\nOther context.\n');
+      await runCli(['graph', 'build'], { cwd: tmp.root, env });
+
+      const asA = await runCli(['graph', 'query', 'neighbors', 'projects/a.md', '--as', 'ctx-a', '--json'], {
+        cwd: tmp.root,
+        env,
+      });
+      expect(asA.exitCode).toBe(0);
+      expect(JSON.parse(asA.stdout).data.neighbors).toEqual(['projects/shared.md']); // shared visible, ctx-b hidden
+
+      const orphansAsB = await runCli(['graph', 'query', 'orphans', '--as', 'ctx-b', '--json'], { cwd: tmp.root, env });
+      const orphans = JSON.parse(orphansAsB.stdout).data.orphans;
+      expect(orphans).toContain('projects/shared.md'); // visible to ctx-b too (orphaned since a.md is filtered out)
+      expect(orphans).not.toContain('projects/a.md');
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('a wildcard ASK wall returns exit 5 for a non-exempt audience and falls through for the exempted one', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const env = hermeticGitEnv();
+      await runCli(['init'], { cwd: tmp.root, env });
+      await setDisclosureConfig(
+        tmp.root,
+        'disclosure:\n  internal_audiences: []\n  hard_walls:\n    - audience: "*"\n      note_path_prefix: walled/\n      except: [ctx-a]\n      verdict: ask\n',
+      );
+      await writeNote(tmp.root, 'walled/n.md', '---\nlens: shared\naudience: [ctx-a, ctx-b]\n---\nWalled.\n');
+
+      const nonExempt = await runCli(['check', 'walled/n.md', '--audience', 'ctx-b', '--json'], { cwd: tmp.root, env });
+      expect(nonExempt.exitCode).toBe(5);
+      expect(JSON.parse(nonExempt.stdout).data).toEqual({
+        path: 'walled/n.md',
+        audience: 'ctx-b',
+        verdict: 'ask',
+        rung: 'hard_wall',
+      });
+
+      const exempt = await runCli(['check', 'walled/n.md', '--audience', 'ctx-a', '--json'], { cwd: tmp.root, env });
+      expect(exempt.exitCode).toBe(0);
+      expect(JSON.parse(exempt.stdout).data.rung).toBe('explicit_tag');
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+});

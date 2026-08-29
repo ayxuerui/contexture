@@ -41,6 +41,14 @@ const FieldsSchema = z
 const VisibilitySchema = z.object({
   default_context: z.string().min(1),
   directory_defaults: z.record(z.string(), z.string()).default({}),
+  /**
+   * context-visibility spec (visibility-contexts-and-wall-verdicts): which
+   * visibility VALUES each named context can see. A context with no entry
+   * sees exactly its own value (identity default) — so an unconfigured
+   * store behaves byte-identically to the equality matching this replaced,
+   * and an unknown context fails closed to that same identity match.
+   */
+  contexts: z.record(z.string(), z.array(z.string())).default({}),
 });
 
 const DerivedSchema = z.object({
@@ -82,10 +90,13 @@ const CatalogSchema = z.object({
  * list of hard-wall rules evaluated before any tag or visibility rung.
  */
 const HardWallSchema = z.object({
+  /** A named audience, or "*" to match every audience. */
   audience: z.string().min(1),
   /** Omitted means the wall applies to every note. */
   note_path_prefix: z.string().min(1).optional(),
-  verdict: z.enum(['allow', 'deny']),
+  /** Audiences this wall does NOT apply to — evaluation falls through to later rungs for them. */
+  except: z.array(z.string()).optional(),
+  verdict: z.enum(['allow', 'deny', 'ask']),
 });
 
 const DisclosureSchema = z.object({

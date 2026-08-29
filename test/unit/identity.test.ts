@@ -10,7 +10,7 @@ function makeConfig(identityPath = 'identity/'): StoreConfig {
     schema_version: 1,
     taxonomy: { profile: 'para', layers: [] },
     fields: { visibility: 'scope' },
-    visibility: { default_context: 'private', directory_defaults: {} },
+    visibility: { default_context: 'private', directory_defaults: {}, contexts: {} },
     derived: { paths: [] },
     retrieval: { exclude_paths: [identityPath] },
     git: { default_branch: 'main' },

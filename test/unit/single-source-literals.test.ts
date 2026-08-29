@@ -67,7 +67,7 @@ describe('single-source-literals guard', () => {
       schema_version: SUPPORTED_SCHEMA_VERSION,
       taxonomy: { profile: 'para', layers: [] },
       fields: { visibility: DEFAULT_VISIBILITY_FIELD_KEY },
-      visibility: { default_context: 'private', directory_defaults: {} },
+      visibility: { default_context: 'private', directory_defaults: {}, contexts: {} },
       derived: { paths: [] },
       retrieval: { exclude_paths: [] },
       git: { default_branch: 'main' },

@@ -22,7 +22,7 @@ function makeConfig(overrides: Partial<StoreConfig> = {}): StoreConfig {
       ],
     },
     fields: { visibility: 'scope' },
-    visibility: { default_context: 'private', directory_defaults: {} },
+    visibility: { default_context: 'private', directory_defaults: {}, contexts: {} },
     derived: { paths: [] },
     retrieval: { exclude_paths: [] },
     git: { default_branch: 'main' },

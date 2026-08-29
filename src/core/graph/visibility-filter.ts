@@ -1,5 +1,5 @@
 import { listNotes } from '../notes/list.js';
-import { resolveVisibility } from '../notes/visibility.js';
+import { canSee, resolveVisibility } from '../notes/visibility.js';
 import type { Store } from '../store.js';
 import type { GraphBuildResult } from './model.js';
 import { subgraph } from './query.js';
@@ -25,7 +25,7 @@ export async function filterGraphByAudience(
     .filter((node) => {
       const note = byPath.get(node.path);
       if (!note) return false;
-      return resolveVisibility(store.config, note).value === audience;
+      return canSee(store.config, audience, resolveVisibility(store.config, note).value);
     })
     .map((node) => node.id);
 

@@ -207,7 +207,7 @@ async function runInitCore(env: RunEnv, flags: InitFlags): Promise<RunInitResult
     schema_version: SUPPORTED_SCHEMA_VERSION,
     taxonomy: { profile: taxonomy.profileId, layers: taxonomy.layers },
     fields: { visibility: DEFAULT_VISIBILITY_FIELD_KEY },
-    visibility: { default_context: DEFAULT_VISIBILITY_CONTEXT, directory_defaults: {} },
+    visibility: { default_context: DEFAULT_VISIBILITY_CONTEXT, directory_defaults: {}, contexts: {} },
     derived: { paths: [...DEFAULT_DERIVED_PATHS] },
     retrieval: { exclude_paths: [...DEFAULT_EXCLUDE_PATHS] },
     git: { default_branch: defaultBranch },

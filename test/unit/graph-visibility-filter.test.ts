@@ -12,7 +12,7 @@ function makeConfig(): StoreConfig {
     schema_version: 1,
     taxonomy: { profile: 'para', layers: [{ name: 'Projects', path: 'projects', description: '' }] },
     fields: { visibility: 'scope' },
-    visibility: { default_context: 'private', directory_defaults: {} },
+    visibility: { default_context: 'private', directory_defaults: {}, contexts: {} },
     derived: { paths: [] },
     retrieval: { exclude_paths: [] },
     git: { default_branch: 'main' },
@@ -90,6 +90,35 @@ describe('filterGraphByAudience', () => {
 
       const filtered = await filterGraphByAudience(store, graph, 'ctx-a');
       expect(filtered.nodes).toEqual([]);
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+});
+
+describe('filterGraphByAudience with a context mapping', () => {
+  it('includes a note whose shared visibility value is in the requesting context\'s mapped list', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const config = makeConfig();
+      config.visibility.contexts = { 'ctx-a': ['ctx-a', 'ctx-shared'] };
+      const store: Store = { root: tmp.root, config };
+      await writeNote(tmp.root, 'projects/own.md', '---\nscope: ctx-a\n---\n');
+      await writeNote(tmp.root, 'projects/shared.md', '---\nscope: ctx-shared\n---\n');
+      await writeNote(tmp.root, 'projects/other.md', '---\nscope: ctx-b\n---\n');
+
+      const graph: GraphBuildResult = {
+        nodes: [
+          { id: 'projects/own.md', path: 'projects/own.md' },
+          { id: 'projects/shared.md', path: 'projects/shared.md' },
+          { id: 'projects/other.md', path: 'projects/other.md' },
+        ],
+        edges: [],
+        dangling: [],
+      };
+
+      const filtered = await filterGraphByAudience(store, graph, 'ctx-a');
+      expect(filtered.nodes.map((n) => n.id).sort()).toEqual(['projects/own.md', 'projects/shared.md']);
     } finally {
       await tmp.cleanup();
     }

@@ -1,14 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import type { StoreConfig } from '../../src/config/schema.js';
 import type { Note } from '../../src/core/notes/list.js';
-import { resolveVisibility } from '../../src/core/notes/visibility.js';
+import { canSee, resolveVisibility, visibleValuesFor } from '../../src/core/notes/visibility.js';
 
 function makeConfig(overrides: Partial<StoreConfig['visibility']> = {}): StoreConfig {
   return {
     schema_version: 1,
     taxonomy: { profile: 'para', layers: [] },
     fields: { visibility: 'scope' },
-    visibility: { default_context: 'private', directory_defaults: {}, ...overrides },
+    visibility: { default_context: 'private', directory_defaults: {}, contexts: {}, ...overrides },
     derived: { paths: [] },
     retrieval: { exclude_paths: [] },
     git: { default_branch: 'main' },
@@ -77,5 +77,34 @@ describe('resolveVisibility', () => {
     const config = makeConfig({ directory_defaults: { a: 'shared' } });
     const result = resolveVisibility(config, note('a/x.md', { scope: '' }));
     expect(result.reason).toBe('directory default');
+  });
+});
+
+describe('visibleValuesFor / canSee (context mapping)', () => {
+  it('identity default: an unconfigured context sees exactly its own value', () => {
+    const config = makeConfig();
+    expect(visibleValuesFor(config, 'ctx-a')).toEqual(['ctx-a']);
+    expect(canSee(config, 'ctx-a', 'ctx-a')).toBe(true);
+    expect(canSee(config, 'ctx-a', 'ctx-shared')).toBe(false);
+  });
+
+  it('a configured shared value is visible to every context that lists it', () => {
+    const config = makeConfig({ contexts: { 'ctx-a': ['ctx-a', 'ctx-shared'], 'ctx-b': ['ctx-b', 'ctx-shared'] } });
+    expect(canSee(config, 'ctx-a', 'ctx-shared')).toBe(true);
+    expect(canSee(config, 'ctx-b', 'ctx-shared')).toBe(true);
+    expect(canSee(config, 'ctx-a', 'ctx-b')).toBe(false);
+  });
+
+  it('an unknown context fails closed to the identity match, never to a default visible set', () => {
+    const config = makeConfig({ contexts: { 'ctx-a': ['ctx-a', 'ctx-shared'] } });
+    expect(visibleValuesFor(config, 'ctx-unknown')).toEqual(['ctx-unknown']);
+    expect(canSee(config, 'ctx-unknown', 'ctx-shared')).toBe(false);
+  });
+
+  it('a configured list REPLACES the identity default rather than extending it', () => {
+    // Explicit config is authoritative: a context configured without its own value does not see it.
+    const config = makeConfig({ contexts: { 'ctx-a': ['ctx-shared'] } });
+    expect(canSee(config, 'ctx-a', 'ctx-a')).toBe(false);
+    expect(canSee(config, 'ctx-a', 'ctx-shared')).toBe(true);
   });
 });
