@@ -39,7 +39,7 @@ export async function execute(env: RunEnv, store: Store, flags: DoctorFlags = {}
     scope,
     git: env.git,
     staged,
-    notes: () => listNotes(store.root),
+    notes: () => listNotes(store.root, store.config),
     graph: async () => undefined,
     catalog: async () => undefined,
   };

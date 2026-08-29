@@ -29,3 +29,9 @@ export const DEFAULT_SESSION_BRANCH_PREFIX = 'session/';
 
 /** write-lifecycle spec: pre-commit's diff-size ceiling, in total changed lines. */
 export const DEFAULT_DIFF_SIZE_CEILING_LINES = 2000;
+
+/** context-catalog spec: where per-section catalog files live — tracked (never gitignored), since glosses are authored. */
+export const DEFAULT_CATALOG_PATH = 'catalog/';
+
+/** context-catalog spec: a section exceeding this triggers a failing doctor check, not a silent slowdown. */
+export const DEFAULT_CATALOG_SECTION_MAX_BYTES = 32 * 1024;

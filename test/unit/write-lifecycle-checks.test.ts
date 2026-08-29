@@ -25,6 +25,7 @@ function makeConfig(overrides: Partial<StoreConfig> = {}): StoreConfig {
     git: { default_branch: 'main' },
     session: { branch_prefix: 'session/', worktrees_path: '.worktrees/' },
     write_lifecycle: { diff_size_ceiling_lines: 100 },
+    catalog: { path: 'catalog/', section_max_bytes: 32768 },
     ...overrides,
   };
 }

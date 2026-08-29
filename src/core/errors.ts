@@ -124,6 +124,17 @@ export class NoRemoteConfiguredError extends ContextureError {
   }
 }
 
+export class CatalogSectionNotFoundError extends ContextureError {
+  constructor(sectionId: string) {
+    super(ExitCode.Usage, {
+      code: 'catalog.section_not_found',
+      severity: 'error',
+      message: `No catalog section named "${sectionId}".`,
+      subject: sectionId,
+    });
+  }
+}
+
 export class MarkerMismatchError extends ContextureError {
   constructor(filePath: string, detail: string) {
     super(ExitCode.Usage, {

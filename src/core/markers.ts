@@ -19,3 +19,11 @@ export function commentFence(regionName: string): Fence {
 }
 
 export const DERIVED_GITIGNORE_FENCE: Fence = commentFence('derived');
+
+/** HTML-comment-style fence, used by markdown files (catalog sections, notes) so the markers render sensibly. */
+export function htmlCommentFence(regionName: string): Fence {
+  return {
+    start: `<!-- >>> contexture:${regionName} (managed — do not edit) >>> -->`,
+    end: `<!-- <<< contexture:${regionName} <<< -->`,
+  };
+}

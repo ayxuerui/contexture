@@ -1,4 +1,7 @@
 import { Command } from 'commander';
+import * as catalogBuildCommand from './commands/catalog-build.js';
+import * as catalogCheckCommand from './commands/catalog-check.js';
+import * as catalogShowCommand from './commands/catalog-show.js';
 import * as doctorCommand from './commands/doctor.js';
 import * as initCommand from './commands/init.js';
 import * as noteResolveCommand from './commands/note-resolve.js';
@@ -157,6 +160,44 @@ export async function run(argv: readonly string[], env: RunEnv): Promise<ExitCod
       result = await runCommand('note.resolve', runEnv, jsonMode, async () => {
         const store = await openStore(runEnv, { root });
         return noteResolveCommand.execute(runEnv, store, { path: notePath });
+      });
+    });
+
+  const catalogCommand = program.command('catalog').description('the curated, coverage-guaranteed note catalog');
+
+  catalogCommand
+    .command('build')
+    .description('regenerate every catalog section, preserving authored glosses')
+    .action(async (_cmdOpts: object, cmd: Command) => {
+      const { runEnv, jsonMode, root } = deriveRunEnv(env, cmd);
+      result = await runCommand('catalog.build', runEnv, jsonMode, async () => {
+        const store = await openStore(runEnv, { root });
+        return catalogBuildCommand.execute(store);
+      });
+    });
+
+  catalogCommand
+    .command('check')
+    .description('verify catalog coverage (and, with --stale, flag entries needing gloss review)')
+    .option('--stale', 'also report entries whose note has changed since the gloss was confirmed')
+    .action(async (cmdOpts: { stale?: boolean }, cmd: Command) => {
+      const { runEnv, jsonMode, root } = deriveRunEnv(env, cmd);
+      result = await runCommand('catalog.check', runEnv, jsonMode, async () => {
+        const store = await openStore(runEnv, { root });
+        return catalogCheckCommand.execute(store, { stale: cmdOpts.stale });
+      });
+    });
+
+  catalogCommand
+    .command('show')
+    .description('print one catalog section')
+    .requiredOption('--section <id>', 'the section id to print')
+    .option('--as <context>', 'filter by resolved visibility (wired in Phase 5)')
+    .action(async (cmdOpts: { section: string; as?: string }, cmd: Command) => {
+      const { runEnv, jsonMode, root } = deriveRunEnv(env, cmd);
+      result = await runCommand('catalog.show', runEnv, jsonMode, async () => {
+        const store = await openStore(runEnv, { root });
+        return catalogShowCommand.execute(store, { section: cmdOpts.section, as: cmdOpts.as });
       });
     });
 

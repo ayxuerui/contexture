@@ -5,6 +5,8 @@ import { parse as parseYaml } from 'yaml';
 import { z } from 'zod';
 import type { CommandOutcome, CommandRequires } from '../core/command.js';
 import {
+  DEFAULT_CATALOG_PATH,
+  DEFAULT_CATALOG_SECTION_MAX_BYTES,
   DEFAULT_DERIVED_PATHS,
   DEFAULT_DIFF_SIZE_CEILING_LINES,
   DEFAULT_EXCLUDE_PATHS,
@@ -189,6 +191,7 @@ async function runInitCore(env: RunEnv, flags: InitFlags): Promise<RunInitResult
     git: { default_branch: defaultBranch },
     session: { branch_prefix: DEFAULT_SESSION_BRANCH_PREFIX, worktrees_path: DEFAULT_WORKTREES_PATH },
     write_lifecycle: { diff_size_ceiling_lines: DEFAULT_DIFF_SIZE_CEILING_LINES },
+    catalog: { path: DEFAULT_CATALOG_PATH, section_max_bytes: DEFAULT_CATALOG_SECTION_MAX_BYTES },
   };
   // Round-trips through the schema internally; throws before any byte is written if it doesn't.
   const configText = renderStoreConfig(config);

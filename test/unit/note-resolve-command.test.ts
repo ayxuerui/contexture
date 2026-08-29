@@ -19,6 +19,7 @@ function makeStore(root: string): Store {
     git: { default_branch: 'main' },
     session: { branch_prefix: 'session/', worktrees_path: '.worktrees/' },
     write_lifecycle: { diff_size_ceiling_lines: 2000 },
+    catalog: { path: 'catalog/', section_max_bytes: 32768 },
   };
   return { root, config };
 }

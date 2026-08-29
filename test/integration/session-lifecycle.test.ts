@@ -66,7 +66,11 @@ describe('session lifecycle (real git, real CLI)', () => {
 
       await mkdir(path.join(worktree, 'projects'), { recursive: true });
       await writeFile(path.join(worktree, 'projects', 'new.md'), '# New note\n');
-      await execFileAsync('git', ['add', 'projects/new.md'], { cwd: worktree, env });
+      // Full validation includes catalog coverage, so a realistic session
+      // updates the catalog before submitting — same as it would commit any
+      // other consequence of the change it's making.
+      await runCli(['catalog', 'build'], { cwd: worktree, env });
+      await execFileAsync('git', ['add', '.'], { cwd: worktree, env });
 
       const submit = await runCli(['session', 'submit', '--json'], { cwd: worktree, env });
       expect(submit.exitCode).toBe(0);

@@ -63,6 +63,11 @@ const WriteLifecycleSchema = z.object({
   diff_size_ceiling_lines: z.number().int().positive(),
 });
 
+const CatalogSchema = z.object({
+  path: z.string().min(1),
+  section_max_bytes: z.number().int().positive(),
+});
+
 export const StoreConfigSchema = z
   .object({
     schema_version: z.number().int().positive(),
@@ -74,6 +79,7 @@ export const StoreConfigSchema = z
     git: GitSchema,
     session: SessionSchema,
     write_lifecycle: WriteLifecycleSchema,
+    catalog: CatalogSchema,
   })
   .passthrough();
 

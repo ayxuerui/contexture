@@ -48,7 +48,7 @@ export async function execute(
     config: store.config,
     scope: 'store',
     git: env.git,
-    notes: () => listNotes(store.root),
+    notes: () => listNotes(store.root, store.config),
     graph: async () => undefined,
     catalog: async () => undefined,
   };

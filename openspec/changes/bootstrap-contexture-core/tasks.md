@@ -43,13 +43,13 @@ Closes: `write-lifecycle` (entire capability) — sequenced before any phase bel
 
 Closes: `context-catalog` (entire capability)
 
-- [ ] 3.1 Implement `contexture catalog build`: generates each retrievable note's fenced identity/path entry via the Phase 1 generated-region primitive, preserving any existing authored gloss
-- [ ] 3.2 Implement per-section catalog files or addressable sections per the store's configured taxonomy
-- [ ] 3.3 Implement `contexture catalog check`: exits non-zero naming every retrievable note absent from the catalog; wire this into `doctor`
-- [ ] 3.4 Implement `contexture catalog show --section <prefix> [--as <context>]`: sectioned read, filtered by resolved visibility when `--as` is given
-- [ ] 3.5 Implement the size-budget check: configured max per section in `contexture.yaml`, `doctor` fails naming the oversized section
-- [ ] 3.6 Implement `contexture catalog check --stale`: gloss-rot detection via canonicalized content hash (shared primitive built in Phase 6, stub/inline here if Phase 6 hasn't landed — reconcile in 6.4)
-- [ ] 3.7 Verify: running `catalog build` twice in a row produces byte-identical output; deleting a note and re-running `catalog check` exits non-zero naming it; adding it back and rebuilding makes `catalog check` exit 0
+- [x] 3.1 Implement `contexture catalog build`: generates each retrievable note's fenced identity/path entry via the Phase 1 generated-region primitive, preserving any existing authored gloss
+- [x] 3.2 Implement per-section catalog files or addressable sections per the store's configured taxonomy
+- [x] 3.3 Implement `contexture catalog check`: exits non-zero naming every retrievable note absent from the catalog; wire this into `doctor`
+- [x] 3.4 Implement `contexture catalog show --section <prefix> [--as <context>]`: sectioned read, filtered by resolved visibility when `--as` is given
+- [x] 3.5 Implement the size-budget check: configured max per section in `contexture.yaml`, `doctor` fails naming the oversized section
+- [x] 3.6 Implement `contexture catalog check --stale`: gloss-rot detection via canonicalized content hash (shared primitive built in Phase 6, stub/inline here if Phase 6 hasn't landed — reconcile in 6.4)
+- [x] 3.7 Verify: running `catalog build` twice in a row produces byte-identical output; deleting a note and re-running `catalog check` exits non-zero naming it; adding it back and rebuilding makes `catalog check` exit 0
 
 ## 4. Retrieval: graph, and direct-content-matching guidance
 
