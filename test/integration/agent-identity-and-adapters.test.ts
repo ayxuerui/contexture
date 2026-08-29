@@ -30,7 +30,7 @@ describe('agent identity and adapters (real CLI)', () => {
     try {
       const env = hermeticGitEnv();
       await runCli(['init'], { cwd: tmp.root, env });
-      await writeNote(tmp.root, 'projects/a.md', '---\nscope: shared\n---\nOrdinary content.\n');
+      await writeNote(tmp.root, 'projects/a.md', '---\nlens: shared\n---\nOrdinary content.\n');
 
       await runCli(['catalog', 'build'], { cwd: tmp.root, env });
       const graphResult = await runCli(['graph', 'build', '--json'], { cwd: tmp.root, env });
@@ -132,7 +132,7 @@ describe('agent identity and adapters (real CLI)', () => {
 
       const start = JSON.parse((await runCli(['session', 'start', '--json'], { cwd: tmp.root, env })).stdout);
       const worktree: string = start.data.worktree;
-      await writeNote(worktree, 'projects/a.md', '---\nscope: private\n---\nContent.\n');
+      await writeNote(worktree, 'projects/a.md', '---\nlens: private\n---\nContent.\n');
       await runCli(['catalog', 'build'], { cwd: worktree, env });
       await execFileAsync('git', ['add', '.'], { cwd: worktree, env });
 

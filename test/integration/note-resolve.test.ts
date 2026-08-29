@@ -36,7 +36,7 @@ describe('contexture note resolve', () => {
       await mkdir(path.join(tmp.root, 'projects'), { recursive: true });
       await writeFile(
         path.join(tmp.root, 'projects', 'explicit.md'),
-        '---\nscope: shared\n---\n# Explicit\n',
+        '---\nlens: shared\n---\n# Explicit\n',
       );
 
       const result = await runCli(['note', 'resolve', 'projects/explicit.md', '--json'], {

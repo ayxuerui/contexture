@@ -65,7 +65,7 @@ describe('session lifecycle (real git, real CLI)', () => {
       const branch: string = start.data.branch;
 
       await mkdir(path.join(worktree, 'projects'), { recursive: true });
-      await writeFile(path.join(worktree, 'projects', 'new.md'), '---\nscope: private\n---\n# New note\n');
+      await writeFile(path.join(worktree, 'projects', 'new.md'), '---\nlens: private\n---\n# New note\n');
       // Full validation includes catalog coverage and the fail-closed
       // visibility invariant, so a realistic session gives the note an
       // explicit visibility and updates the catalog before submitting —

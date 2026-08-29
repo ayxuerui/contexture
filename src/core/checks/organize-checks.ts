@@ -26,7 +26,7 @@ export const orphanNotesCheck = defineCheck({
   },
 });
 
-/** context-organize spec: "broken links" — the graph's dangling links (not_found or ambiguous), reported not failed. */
+/** context-organize spec: "broken links" — the graph's dangling links (not_found or ambiguous), reported not failed. Shares detection with the doctor-facing invariant checks/integrity-checks.ts:graphDanglingLinksCheck under a different id (task 9.4: two ids, two severity lanes, one condition, never double-counted within a single run). */
 export const brokenLinksCheck = defineCheck({
   id: 'organize.broken_links',
   title: 'Notes with dangling wikilinks',

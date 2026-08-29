@@ -5,7 +5,14 @@ import { z } from 'zod';
  * note frontmatter conventions) — a monotonic integer independent of the npm
  * package version — not "what this CLI release happens to be."
  */
-export const SUPPORTED_SCHEMA_VERSION = 1;
+/**
+ * Bumped to 2 by the visibility-field key rename migration (store-lifecycle
+ * spec task 9.2) — proof that renaming DEFAULT_VISIBILITY_FIELD_KEY really
+ * is "a config-default change plus a migration, never a spec or code
+ * rewrite" (design.md D7): every consumer already reads
+ * config.fields.visibility, never a literal key, so nothing else changed.
+ */
+export const SUPPORTED_SCHEMA_VERSION = 2;
 
 export const TaxonomyLayerSchema = z.object({
   name: z.string().min(1),

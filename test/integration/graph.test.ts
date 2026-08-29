@@ -137,7 +137,7 @@ describe('contexture graph (real CLI)', () => {
     try {
       const env = hermeticGitEnv();
       await runCli(['init'], { cwd: tmp.root, env });
-      await writeNote(tmp.root, 'projects/a.md', '---\nscope: shared\n---\nHello.\n');
+      await writeNote(tmp.root, 'projects/a.md', '---\nlens: shared\n---\nHello.\n');
       const result = await runCli(['graph', 'build', '--emit-records', '--json'], { cwd: tmp.root, env });
       expect(result.exitCode).toBe(0);
       const records = JSON.parse(result.stdout).data.records;

@@ -8,6 +8,7 @@ import * as archiveCommand from './commands/archive.js';
 import * as doctorCommand from './commands/doctor.js';
 import * as ingestCommand from './commands/ingest.js';
 import * as lintCommand from './commands/lint.js';
+import * as migrateCommand from './commands/migrate.js';
 import * as graphBuildCommand from './commands/graph-build.js';
 import * as graphQueryCommand from './commands/graph-query.js';
 import * as initCommand from './commands/init.js';
@@ -426,6 +427,18 @@ export async function run(argv: readonly string[], env: RunEnv): Promise<ExitCod
       result = await runCommand('verify', runEnv, jsonMode, async () => {
         const store = await openStore(runEnv, { root });
         return verifyCommand.execute(store, { portable: cmdOpts.portable });
+      });
+    });
+
+  program
+    .command('migrate')
+    .description('apply every pending schema migration, bringing the store up to the current schema_version')
+    .option('--dry-run', 'report the exact changes each pending migration would make, without applying them')
+    .action(async (cmdOpts: { dryRun?: boolean }, cmd: Command) => {
+      const { runEnv, jsonMode, root } = deriveRunEnv(env, cmd);
+      result = await runCommand('migrate', runEnv, jsonMode, async () => {
+        const store = await openStore(runEnv, { root });
+        return migrateCommand.execute(store, { dryRun: cmdOpts.dryRun });
       });
     });
 

@@ -29,7 +29,7 @@ describe('contexture check / graph --as (real CLI)', () => {
         tmp.root,
         'disclosure:\n  internal_audiences: []\n  hard_walls:\n    - audience: external\n      note_path_prefix: secrets/\n      verdict: deny\n',
       );
-      await writeNote(tmp.root, 'secrets/wall.md', '---\nscope: shared\naudience: [external]\n---\nSensitive.\n');
+      await writeNote(tmp.root, 'secrets/wall.md', '---\nlens: shared\naudience: [external]\n---\nSensitive.\n');
 
       const result = await runCli(['check', 'secrets/wall.md', '--audience', 'external', '--json'], {
         cwd: tmp.root,
@@ -48,7 +48,7 @@ describe('contexture check / graph --as (real CLI)', () => {
     try {
       const env = hermeticGitEnv();
       await runCli(['init'], { cwd: tmp.root, env });
-      await writeNote(tmp.root, 'projects/plain.md', '---\nscope: shared\n---\nNothing special.\n');
+      await writeNote(tmp.root, 'projects/plain.md', '---\nlens: shared\n---\nNothing special.\n');
 
       const result = await runCli(['check', 'projects/plain.md', '--audience', 'external', '--json'], {
         cwd: tmp.root,
@@ -70,7 +70,7 @@ describe('contexture check / graph --as (real CLI)', () => {
     try {
       const env = hermeticGitEnv();
       await runCli(['init'], { cwd: tmp.root, env });
-      await writeNote(tmp.root, 'projects/tagged.md', '---\nscope: shared\naudience: [external]\n---\nShareable.\n');
+      await writeNote(tmp.root, 'projects/tagged.md', '---\nlens: shared\naudience: [external]\n---\nShareable.\n');
 
       const result = await runCli(['check', 'projects/tagged.md', '--audience', 'external', '--json'], {
         cwd: tmp.root,
@@ -88,8 +88,8 @@ describe('contexture check / graph --as (real CLI)', () => {
     try {
       const env = hermeticGitEnv();
       await runCli(['init'], { cwd: tmp.root, env });
-      await writeNote(tmp.root, 'projects/a.md', '---\nscope: ctx-a\n---\nLinks to [[b]].\n');
-      await writeNote(tmp.root, 'projects/b.md', '---\nscope: ctx-b\n---\nNot visible to ctx-a.\n');
+      await writeNote(tmp.root, 'projects/a.md', '---\nlens: ctx-a\n---\nLinks to [[b]].\n');
+      await writeNote(tmp.root, 'projects/b.md', '---\nlens: ctx-b\n---\nNot visible to ctx-a.\n');
       await runCli(['graph', 'build'], { cwd: tmp.root, env });
 
       const unfiltered = await runCli(['graph', 'query', 'neighbors', 'projects/a.md', '--json'], {

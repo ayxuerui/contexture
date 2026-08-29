@@ -22,9 +22,9 @@ describe('contexture archive / rollup / lint (real CLI)', () => {
     try {
       const env = hermeticGitEnv();
       await runCli(['init'], { cwd: tmp.root, env });
-      await writeNote(tmp.root, 'projects/target.md', '---\nscope: shared\n---\nThe target note.\n');
-      await writeNote(tmp.root, 'projects/a.md', '---\nscope: shared\n---\nLinks to [[target]].\n');
-      await writeNote(tmp.root, 'projects/b.md', '---\nscope: shared\n---\nAlso links to [[target]].\n');
+      await writeNote(tmp.root, 'projects/target.md', '---\nlens: shared\n---\nThe target note.\n');
+      await writeNote(tmp.root, 'projects/a.md', '---\nlens: shared\n---\nLinks to [[target]].\n');
+      await writeNote(tmp.root, 'projects/b.md', '---\nlens: shared\n---\nAlso links to [[target]].\n');
       await execFileAsync('git', ['add', '-A'], { cwd: tmp.root, env });
       await execFileAsync('git', ['commit', '-m', 'add notes'], { cwd: tmp.root, env });
 
@@ -50,13 +50,13 @@ describe('contexture archive / rollup / lint (real CLI)', () => {
     try {
       const env = hermeticGitEnv();
       await runCli(['init'], { cwd: tmp.root, env });
-      await writeNote(tmp.root, 'projects/a.md', '---\nscope: ctx-a\n---\nContent.\n');
+      await writeNote(tmp.root, 'projects/a.md', '---\nlens: ctx-a\n---\nContent.\n');
       await execFileAsync('git', ['add', '-A'], { cwd: tmp.root, env });
       await execFileAsync('git', ['commit', '-m', 'add note'], { cwd: tmp.root, env });
 
       await runCli(['archive', 'projects/a.md', '--json'], { cwd: tmp.root, env });
       const content = await readFile(path.join(tmp.root, 'archive/a.md'), 'utf8');
-      expect(content).toContain('scope: ctx-a');
+      expect(content).toContain('lens: ctx-a');
     } finally {
       await tmp.cleanup();
     }
@@ -122,8 +122,8 @@ describe('contexture archive / rollup / lint (real CLI)', () => {
     try {
       const env = hermeticGitEnv();
       await runCli(['init'], { cwd: tmp.root, env });
-      await writeNote(tmp.root, 'projects/orphan.md', '---\nscope: shared\n---\nNo links at all.\n');
-      await writeNote(tmp.root, 'projects/broken.md', '---\nscope: shared\n---\nLinks to [[missing-note]].\n');
+      await writeNote(tmp.root, 'projects/orphan.md', '---\nlens: shared\n---\nNo links at all.\n');
+      await writeNote(tmp.root, 'projects/broken.md', '---\nlens: shared\n---\nLinks to [[missing-note]].\n');
       await runCli(['catalog', 'build'], { cwd: tmp.root, env });
       await runCli(['graph', 'build'], { cwd: tmp.root, env });
 

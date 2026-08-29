@@ -12,7 +12,16 @@ import type { AdapterDeclaration, HardWallConfig } from './schema.js';
  * is meant to be a config-default change plus a migration, never a spec or
  * code rewrite. Do not let this constant's value leak into any other file.
  */
-export const DEFAULT_VISIBILITY_FIELD_KEY = 'scope';
+export const DEFAULT_VISIBILITY_FIELD_KEY = 'lens';
+
+/**
+ * The visibility field key every store created before schema_version 2
+ * used. Named here, once, purely as history for the rename migration
+ * (core/migrations/rename-visibility-field.ts) to read from — this is the
+ * one sanctioned place a superseded key value is allowed to live once it's
+ * no longer the shipped default.
+ */
+export const SCHEMA_V1_VISIBILITY_FIELD_KEY = 'scope';
 
 /** context-visibility spec rung 3: what a note's visibility fails closed to. */
 export const DEFAULT_VISIBILITY_CONTEXT = 'private';
