@@ -58,7 +58,7 @@ describe('contexture graph (real CLI)', () => {
       expect(content).toMatch(/grep/i);
       expect(content).toMatch(/`\.contexture\/`/);
       expect(content).toMatch(/`\.worktrees\/`/);
-      expect(content).toMatch(/no `contexture search` command/i);
+      expect(content).toMatch(/no `ctxr search` command/i);
     } finally {
       await tmp.cleanup();
     }

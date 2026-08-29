@@ -128,7 +128,7 @@ async function runCommand<TData>(
 export async function run(argv: readonly string[], env: RunEnv): Promise<ExitCode> {
   const program = new Command();
   program
-    .name('contexture')
+    .name('ctxr')
     .exitOverride()
     .configureOutput({
       writeOut: (str: string) => env.io.stderr.write(str),

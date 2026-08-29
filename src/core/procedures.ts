@@ -36,9 +36,9 @@ description: Capture raw material into the inbox, run the dedupe check, and inge
 # Ingest orchestration
 
 1. Capture: write a plain markdown file directly into the inbox (see AGENTS.md's capture section) — no source-identity frontmatter.
-2. Check: run \`contexture source check <path> --source-id <id>\` and read the verdict — \`new\`, \`already_ingested\`, \`alternate_source_match\`, or \`multiple_matches\`.
+2. Check: run \`ctxr source check <path> --source-id <id>\` and read the verdict — \`new\`, \`already_ingested\`, \`alternate_source_match\`, or \`multiple_matches\`.
 3. On \`multiple_matches\`, stop and resolve the ambiguity yourself; do not guess which existing note it is.
-4. On \`new\` (or a deliberate decision to ingest anyway despite an \`alternate_source_match\`), run \`contexture ingest <path> --source-type <type> --source-id <id>\`.
+4. On \`new\` (or a deliberate decision to ingest anyway despite an \`alternate_source_match\`), run \`ctxr ingest <path> --source-type <type> --source-id <id>\`.
 5. The result already has a catalog entry — no separate catalog step is needed.
 `,
   },
@@ -55,41 +55,41 @@ description: Choose the right taxonomy layer for a new or relocated note in this
 
 1. Read AGENTS.md's "Placing a new note" section for this store's configured taxonomy layers (or lack thereof).
 2. Choose the layer whose description best matches the note; if none fits, use the catch-all location.
-3. To relocate a note that already exists (not a first placement), use \`contexture archive <path>\` if it is being retired, or a plain tracked \`git mv\` for an ordinary re-placement — either way, the note's frontmatter (including its visibility field) is left untouched.
-4. Run \`contexture lint\` afterward; "uningested inbox material" and "no catalog entry" findings will surface anything left unplaced.
+3. To relocate a note that already exists (not a first placement), use \`ctxr archive <path>\` if it is being retired, or a plain tracked \`git mv\` for an ordinary re-placement — either way, the note's frontmatter (including its visibility field) is left untouched.
+4. Run \`ctxr lint\` afterward; "uningested inbox material" and "no catalog entry" findings will surface anything left unplaced.
 `,
   },
   {
     file: 'connection-finding.md',
     name: 'Connection finding',
-    description: 'Find related notes via the contexture graph (neighbors, paths, hubs) and write rollups from gathered sources.',
+    description: 'Find related notes via the wikilink graph of the store (neighbors, paths, hubs) and write rollups from gathered sources.',
     content: `---
 title: Connection finding
-description: Find related notes via the contexture graph (neighbors, paths, hubs) and write rollups from gathered sources.
+description: Find related notes via the wikilink graph of the store (neighbors, paths, hubs) and write rollups from gathered sources.
 ---
 
 # Connection finding
 
-1. Run \`contexture graph build\` to refresh the wikilink graph from the store's current notes.
-2. To find what a note connects to or from, run \`contexture graph query neighbors <path>\` (add \`--depth\` for further hops, \`--direction in|out|both\`).
-3. To find a path between two notes, run \`contexture graph query path <from> <to>\`.
-4. To find the most-referenced notes, run \`contexture graph query hubs\`.
-5. Before writing a rollup for an entity, run \`contexture rollup gather <entity>\` to enumerate candidate source notes — read those, then commit your synthesis with \`contexture rollup write <entity> --content-file <path>\`.
+1. Run \`ctxr graph build\` to refresh the wikilink graph from the store's current notes.
+2. To find what a note connects to or from, run \`ctxr graph query neighbors <path>\` (add \`--depth\` for further hops, \`--direction in|out|both\`).
+3. To find a path between two notes, run \`ctxr graph query path <from> <to>\`.
+4. To find the most-referenced notes, run \`ctxr graph query hubs\`.
+5. Before writing a rollup for an entity, run \`ctxr rollup gather <entity>\` to enumerate candidate source notes — read those, then commit your synthesis with \`ctxr rollup write <entity> --content-file <path>\`.
 `,
   },
   {
     file: 'organize-audit.md',
     name: 'Organize audit',
-    description: 'Audit store health with contexture lint (observations) and doctor (blocking invariants).',
+    description: 'Audit store health with ctxr lint (observations) and ctxr doctor (blocking invariants).',
     content: `---
 title: Organize audit
-description: Audit store health with contexture lint (observations) and doctor (blocking invariants).
+description: Audit store health with ctxr lint (observations) and ctxr doctor (blocking invariants).
 ---
 
 # Organize audit
 
-1. Run \`contexture lint\` for a full health report — orphan notes, broken links, uningested inbox material, and catalog gaps. It always exits 0; read its findings, it never blocks anything.
-2. Run \`contexture doctor\` to check the invariants that DO block: catalog coverage, fail-closed visibility, hook health, and more.
+1. Run \`ctxr lint\` for a full health report — orphan notes, broken links, uningested inbox material, and catalog gaps. It always exits 0; read its findings, it never blocks anything.
+2. Run \`ctxr doctor\` to check the invariants that DO block: catalog coverage, fail-closed visibility, hook health, and more.
 3. Address doctor's failures before submitting a session; lint's findings are a judgment call for whoever is doing the audit.
 `,
   },

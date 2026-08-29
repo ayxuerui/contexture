@@ -4,7 +4,7 @@ import { orphans } from '../graph/query.js';
 import { hasSourceIdentity } from '../ingest/identity.js';
 import { defineCheck } from './types.js';
 
-const GRAPH_SKIP_REASON = 'graph has not been built yet — run `contexture graph build`';
+const GRAPH_SKIP_REASON = 'graph has not been built yet — run `ctxr graph build`';
 
 /** context-organize spec: "orphaned notes" — reported by lint, never failed by doctor. */
 export const orphanNotesCheck = defineCheck({

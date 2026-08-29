@@ -44,7 +44,7 @@ export function resolveExistingRoot(env: RunEnv, flags: RootFlags): string {
 /**
  * Root resolution for `init` only: --root -> CONTEXTURE_ROOT -> cwd.
  * Deliberately never walks up — unlike every other command, init CREATES a
- * store rather than finding one, and walking up would let `contexture init`
+ * store rather than finding one, and walking up would let `ctxr init`
  * run in a subdirectory silently re-target and reinitialize a parent store.
  */
 export function resolveRootForInit(env: RunEnv, flags: RootFlags): string {

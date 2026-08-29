@@ -40,7 +40,7 @@ export const derivedArtifactStalenessCheck = defineCheck({
         findings.push({
           code: 'derived_artifacts.graph_stale',
           severity: 'error',
-          message: 'The persisted graph does not match what a rebuild would produce from the store\'s current notes. Run `contexture graph build`.',
+          message: 'The persisted graph does not match what a rebuild would produce from the store\'s current notes. Run `ctxr graph build`.',
         });
       }
     }
@@ -67,7 +67,7 @@ export const graphDanglingLinksCheck = defineCheck({
   async run(ctx) {
     const graph = await ctx.graph();
     if (!graph) {
-      return { status: 'skip', skipReason: 'graph has not been built yet — run `contexture graph build`', findings: [] };
+      return { status: 'skip', skipReason: 'graph has not been built yet — run `ctxr graph build`', findings: [] };
     }
     const findings: Finding[] = graph.dangling.map((d) => ({
       code: 'graph.dangling_link',
@@ -97,7 +97,7 @@ export const schemaVersionCurrencyCheck = defineCheck({
         {
           code: 'store.schema_version_behind',
           severity: 'error',
-          message: `The store is at schema_version ${ctx.config.schema_version}, behind the supported version ${SUPPORTED_SCHEMA_VERSION}. Run \`contexture migrate\`.`,
+          message: `The store is at schema_version ${ctx.config.schema_version}, behind the supported version ${SUPPORTED_SCHEMA_VERSION}. Run \`ctxr migrate\`.`,
           details: { current: ctx.config.schema_version, supported: SUPPORTED_SCHEMA_VERSION },
         },
       ],

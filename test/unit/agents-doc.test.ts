@@ -51,7 +51,7 @@ describe('renderLegRoutingSection', () => {
 
   it('states plainly that no search command exists', () => {
     const lines = renderLegRoutingSection(makeConfig()).join('\n');
-    expect(lines).toMatch(/no `contexture search` command/i);
+    expect(lines).toMatch(/no `ctxr search` command/i);
   });
 
   it('lists every declared exclusion path exactly once', () => {
@@ -70,7 +70,7 @@ describe('buildAgentsLegRoutingSection', () => {
       const content = await readFile(agentsMdPath(tmp.root), 'utf8');
       expect(content).toContain(AGENTS_MD_LEG_ROUTING_FENCE.start);
       expect(content).toContain(AGENTS_MD_LEG_ROUTING_FENCE.end);
-      expect(content).toMatch(/no `contexture search` command/i);
+      expect(content).toMatch(/no `ctxr search` command/i);
     } finally {
       await tmp.cleanup();
     }
