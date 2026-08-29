@@ -44,6 +44,25 @@ const RetrievalSchema = z.object({
   exclude_paths: z.array(z.string()),
 });
 
+/**
+ * Recorded once, at init, from whatever branch `git init` actually created
+ * (never hardcoded to "main") — this is what lets the pre-push hook refuse
+ * a push to the default branch without re-deriving it from a possibly
+ * network-dependent `git remote show` at hook time.
+ */
+const GitSchema = z.object({
+  default_branch: z.string().min(1),
+});
+
+const SessionSchema = z.object({
+  branch_prefix: z.string().min(1),
+  worktrees_path: z.string().min(1),
+});
+
+const WriteLifecycleSchema = z.object({
+  diff_size_ceiling_lines: z.number().int().positive(),
+});
+
 export const StoreConfigSchema = z
   .object({
     schema_version: z.number().int().positive(),
@@ -52,6 +71,9 @@ export const StoreConfigSchema = z
     visibility: VisibilitySchema,
     derived: DerivedSchema,
     retrieval: RetrievalSchema,
+    git: GitSchema,
+    session: SessionSchema,
+    write_lifecycle: WriteLifecycleSchema,
   })
   .passthrough();
 

@@ -2,11 +2,21 @@ import { existsSync } from 'node:fs';
 import { mkdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { parse as parseYaml } from 'yaml';
+import { z } from 'zod';
 import type { CommandOutcome, CommandRequires } from '../core/command.js';
-import { DEFAULT_DERIVED_PATHS, DEFAULT_EXCLUDE_PATHS, DEFAULT_VISIBILITY_CONTEXT, DEFAULT_VISIBILITY_FIELD_KEY } from '../config/defaults.js';
+import {
+  DEFAULT_DERIVED_PATHS,
+  DEFAULT_DIFF_SIZE_CEILING_LINES,
+  DEFAULT_EXCLUDE_PATHS,
+  DEFAULT_SESSION_BRANCH_PREFIX,
+  DEFAULT_VISIBILITY_CONTEXT,
+  DEFAULT_VISIBILITY_FIELD_KEY,
+  DEFAULT_WORKTREES_PATH,
+} from '../config/defaults.js';
 import { configPathFor, readConfig } from '../config/load.js';
 import { renderStoreConfig } from '../config/render.js';
 import { SUPPORTED_SCHEMA_VERSION, TaxonomyLayerSchema, type StoreConfig, type TaxonomyLayerConfig } from '../config/schema.js';
+import type { Finding } from '../core/envelope.js';
 import { isInteractive, type RunEnv } from '../core/env.js';
 import {
   GitIdentityMissingError,
@@ -15,14 +25,13 @@ import {
   UnknownTaxonomyProfileError,
 } from '../core/errors.js';
 import { ExitCode } from '../core/exit-codes.js';
-import type { Finding } from '../core/envelope.js';
 import { writeFileAtomic } from '../core/fs/atomic.js';
 import { upsertFencedRegionInFile } from '../core/fs/fenced-region.js';
 import { addPaths, commitIfStaged, currentBranch, findToplevel, gitInit, hasGitIdentity } from '../core/git/repo.js';
-import { DERIVED_GITIGNORE_FENCE } from '../core/markers.js';
+import { configureHooksPath, installHooks } from '../core/hooks.js';
+import { commentFence, DERIVED_GITIGNORE_FENCE } from '../core/markers.js';
 import { resolveRootForInit } from '../core/root.js';
-import { defaultProfile, profileById, SHIPPED_PROFILES, DEFAULT_PROFILE_ID } from '../taxonomy/profiles.js';
-import { z } from 'zod';
+import { defaultProfile, DEFAULT_PROFILE_ID, profileById, SHIPPED_PROFILES } from '../taxonomy/profiles.js';
 
 export const requires: CommandRequires = { store: 'absent' };
 
@@ -42,6 +51,8 @@ export interface InitData {
   taxonomy: { profile: string | null; layers: TaxonomyLayerConfig[] };
   schema_version: number;
 }
+
+const WORKTREES_GITIGNORE_FENCE = commentFence('worktrees');
 
 const CustomTaxonomyFileSchema = z.object({ layers: z.array(TaxonomyLayerSchema) });
 
@@ -119,6 +130,7 @@ async function runInitCore(env: RunEnv, flags: InitFlags): Promise<RunInitResult
     const config = await readConfig(root); // validates + gates schema_version
     const gitignorePath = path.join(root, '.gitignore');
     await upsertFencedRegionInFile(gitignorePath, DERIVED_GITIGNORE_FENCE, config.derived.paths);
+    await upsertFencedRegionInFile(gitignorePath, WORKTREES_GITIGNORE_FENCE, [config.session.worktrees_path]);
     return {
       data: {
         root,
@@ -128,7 +140,7 @@ async function runInitCore(env: RunEnv, flags: InitFlags): Promise<RunInitResult
         git: {
           repository_created: false,
           commit: null,
-          default_branch: await safeCurrentBranch(env, root),
+          default_branch: config.git.default_branch,
         },
         taxonomy: {
           profile: config.taxonomy.profile === 'custom' ? null : config.taxonomy.profile,
@@ -142,17 +154,6 @@ async function runInitCore(env: RunEnv, flags: InitFlags): Promise<RunInitResult
 
   // --- Resolve taxonomy in memory, no writes yet -------------------------
   const taxonomy = await resolveTaxonomy(env, flags);
-
-  const config: StoreConfig = {
-    schema_version: SUPPORTED_SCHEMA_VERSION,
-    taxonomy: { profile: taxonomy.profileId, layers: taxonomy.layers },
-    fields: { visibility: DEFAULT_VISIBILITY_FIELD_KEY },
-    visibility: { default_context: DEFAULT_VISIBILITY_CONTEXT, directory_defaults: {} },
-    derived: { paths: [...DEFAULT_DERIVED_PATHS] },
-    retrieval: { exclude_paths: [...DEFAULT_EXCLUDE_PATHS] },
-  };
-  // Round-trips through the schema internally; throws before any byte is written if it doesn't.
-  const configText = renderStoreConfig(config);
 
   // --- Git preflight, still no writes -------------------------------------
   const toplevel = await findToplevel(env.git, root);
@@ -170,15 +171,32 @@ async function runInitCore(env: RunEnv, flags: InitFlags): Promise<RunInitResult
     throw new GitIdentityMissingError();
   }
 
-  // --- Mutate --------------------------------------------------------------
+  // --- Mutate: create the repo so we can learn its default branch name ----
   const repositoryAlreadyExists = toplevel.kind === 'this-dir';
   if (!repositoryAlreadyExists) {
     await gitInit(env.git, root);
   }
+  // Works even pre-commit: git init leaves HEAD pointing at an unborn branch.
+  const defaultBranch = (await safeCurrentBranch(env, root)) ?? 'main';
+
+  const config: StoreConfig = {
+    schema_version: SUPPORTED_SCHEMA_VERSION,
+    taxonomy: { profile: taxonomy.profileId, layers: taxonomy.layers },
+    fields: { visibility: DEFAULT_VISIBILITY_FIELD_KEY },
+    visibility: { default_context: DEFAULT_VISIBILITY_CONTEXT, directory_defaults: {} },
+    derived: { paths: [...DEFAULT_DERIVED_PATHS] },
+    retrieval: { exclude_paths: [...DEFAULT_EXCLUDE_PATHS] },
+    git: { default_branch: defaultBranch },
+    session: { branch_prefix: DEFAULT_SESSION_BRANCH_PREFIX, worktrees_path: DEFAULT_WORKTREES_PATH },
+    write_lifecycle: { diff_size_ceiling_lines: DEFAULT_DIFF_SIZE_CEILING_LINES },
+  };
+  // Round-trips through the schema internally; throws before any byte is written if it doesn't.
+  const configText = renderStoreConfig(config);
 
   await writeFileAtomic(configPath, configText);
   const gitignorePath = path.join(root, '.gitignore');
   await upsertFencedRegionInFile(gitignorePath, DERIVED_GITIGNORE_FENCE, config.derived.paths);
+  await upsertFencedRegionInFile(gitignorePath, WORKTREES_GITIGNORE_FENCE, [config.session.worktrees_path]);
 
   // One directory per configured layer with a .gitkeep — makes Zettelkasten's
   // zero-layer shape visibly different from PARA's at a glance. This is a
@@ -193,19 +211,23 @@ async function runInitCore(env: RunEnv, flags: InitFlags): Promise<RunInitResult
     layerGitkeeps.push(path.join(layer.path, '.gitkeep'));
   }
 
+  // Version-controlled hooks (write-lifecycle spec): generated now, staged
+  // and committed below alongside the rest of the scaffold.
+  const { changed: hookFiles } = await installHooks(root, defaultBranch);
+  await configureHooksPath(env.git, root);
+
   const relConfigPath = path.relative(root, configPath);
-  await addPaths(env.git, root, [relConfigPath, '.gitignore', ...layerGitkeeps]);
+  await addPaths(env.git, root, [relConfigPath, '.gitignore', ...layerGitkeeps, ...hookFiles]);
 
   const commitSha = await commitIfStaged(env.git, root, { kind: 'bootstrap' }, 'chore: initialize contexture store');
-  const branch = await safeCurrentBranch(env, root);
 
   return {
     data: {
       root,
       already_initialized: false,
-      created: [relConfigPath, '.gitignore', ...layerGitkeeps],
+      created: [relConfigPath, '.gitignore', ...layerGitkeeps, ...hookFiles],
       unchanged: [],
-      git: { repository_created: !repositoryAlreadyExists, commit: commitSha, default_branch: branch },
+      git: { repository_created: !repositoryAlreadyExists, commit: commitSha, default_branch: defaultBranch },
       taxonomy: {
         profile: config.taxonomy.profile === 'custom' ? null : config.taxonomy.profile,
         layers: config.taxonomy.layers,

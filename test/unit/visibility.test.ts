@@ -11,7 +11,10 @@ function makeConfig(overrides: Partial<StoreConfig['visibility']> = {}): StoreCo
     visibility: { default_context: 'private', directory_defaults: {}, ...overrides },
     derived: { paths: [] },
     retrieval: { exclude_paths: [] },
-  } as StoreConfig;
+    git: { default_branch: 'main' },
+    session: { branch_prefix: 'session/', worktrees_path: '.worktrees/' },
+    write_lifecycle: { diff_size_ceiling_lines: 2000 },
+  };
 }
 
 function note(path: string, frontmatter?: Record<string, unknown>): Note {

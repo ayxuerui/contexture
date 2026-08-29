@@ -37,7 +37,11 @@ describe('non-interactive init', () => {
       expect(doctorResult.exitCode).toBe(0);
       const doctorEnvelope = JSON.parse(doctorResult.stdout);
       expect(doctorEnvelope.status).toBe('ok');
-      expect(doctorEnvelope.data).toEqual({ checks: [], summary: { pass: 0, fail: 0, skip: 0 } });
+      expect(doctorEnvelope.data.summary.fail).toBe(0);
+      // A fresh, non-interactive init has no notes, so the only check that
+      // can fire against an empty store is hook health — and init just
+      // installed correct hooks, so it should pass.
+      expect(doctorEnvelope.data.checks.every((c: { result: string }) => c.result !== 'fail')).toBe(true);
     } finally {
       await tmp.cleanup();
     }

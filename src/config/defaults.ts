@@ -20,3 +20,12 @@ export const DEFAULT_DERIVED_PATHS = ['.contexture/'] as const;
 
 /** Paths excluded from every retrieval leg by default. */
 export const DEFAULT_EXCLUDE_PATHS = ['.contexture/', 'identity/'] as const;
+
+/** write-lifecycle spec: session worktrees live under a configured, gitignored path. */
+export const DEFAULT_WORKTREES_PATH = '.worktrees/';
+
+/** Branch names for session worktrees are prefixed so they're recognizable and sweep-safe. */
+export const DEFAULT_SESSION_BRANCH_PREFIX = 'session/';
+
+/** write-lifecycle spec: pre-commit's diff-size ceiling, in total changed lines. */
+export const DEFAULT_DIFF_SIZE_CEILING_LINES = 2000;

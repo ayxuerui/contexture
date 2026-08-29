@@ -114,3 +114,14 @@ export async function commitIfStaged(
   const result = await git.run(['rev-parse', 'HEAD'], { cwd });
   return result.stdout.trim();
 }
+
+/** Pushes a session branch to the remote — never the default branch, which the installed hook refuses anyway. */
+export async function pushBranch(git: GitRunner, cwd: string, branch: string, remote = 'origin'): Promise<void> {
+  await git.run(['push', '--set-upstream', remote, branch], { cwd });
+}
+
+/** Whole-tree dirty check (staged AND unstaged) — distinct from hasStagedChanges, used by session reap. */
+export async function isWorkingTreeClean(git: GitRunner, cwd: string): Promise<boolean> {
+  const result = await git.run(['status', '--porcelain'], { cwd });
+  return result.stdout.trim().length === 0;
+}

@@ -35,11 +35,23 @@ describe('init git call sequence', () => {
       expect(calls).toEqual([
         ['rev-parse', '--show-toplevel'],
         ['init'],
-        ['add', '--', 'contexture.yaml', '.gitignore', 'projects/.gitkeep', 'areas/.gitkeep', 'resources/.gitkeep', 'archives/.gitkeep'],
+        ['symbolic-ref', '--short', 'HEAD'], // learn the branch name right after creating the repo
+        ['config', 'core.hooksPath', '.githooks'],
+        [
+          'add',
+          '--',
+          'contexture.yaml',
+          '.gitignore',
+          'projects/.gitkeep',
+          'areas/.gitkeep',
+          'resources/.gitkeep',
+          'archives/.gitkeep',
+          '.githooks/pre-commit',
+          '.githooks/pre-push',
+        ],
         ['diff', '--cached', '--quiet'],
         ['commit', '-m', 'chore: initialize contexture store'],
         ['rev-parse', 'HEAD'],
-        ['symbolic-ref', '--short', 'HEAD'],
       ]);
     } finally {
       await tmp.cleanup();

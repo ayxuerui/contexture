@@ -2,6 +2,11 @@ import { Command } from 'commander';
 import * as doctorCommand from './commands/doctor.js';
 import * as initCommand from './commands/init.js';
 import * as noteResolveCommand from './commands/note-resolve.js';
+import * as sessionAbandonCommand from './commands/session-abandon.js';
+import * as sessionListCommand from './commands/session-list.js';
+import * as sessionReapCommand from './commands/session-reap.js';
+import * as sessionStartCommand from './commands/session-start.js';
+import * as sessionSubmitCommand from './commands/session-submit.js';
 import type { CommandOutcome } from './core/command.js';
 import type { Finding } from './core/envelope.js';
 import { buildEnvelope } from './core/envelope.js';
@@ -134,11 +139,12 @@ export async function run(argv: readonly string[], env: RunEnv): Promise<ExitCod
   program
     .command('doctor')
     .description('check the store for real invariant violations')
-    .action(async (_cmdOpts: object, cmd: Command) => {
+    .option('--staged', 'check staged changes only (used by the pre-commit hook)')
+    .action(async (cmdOpts: { staged?: boolean }, cmd: Command) => {
       const { runEnv, jsonMode, root } = deriveRunEnv(env, cmd);
       result = await runCommand('doctor', runEnv, jsonMode, async () => {
         const store = await openStore(runEnv, { root });
-        return doctorCommand.execute(store);
+        return doctorCommand.execute(runEnv, store, { staged: cmdOpts.staged });
       });
     });
 
@@ -151,6 +157,66 @@ export async function run(argv: readonly string[], env: RunEnv): Promise<ExitCod
       result = await runCommand('note.resolve', runEnv, jsonMode, async () => {
         const store = await openStore(runEnv, { root });
         return noteResolveCommand.execute(runEnv, store, { path: notePath });
+      });
+    });
+
+  const sessionCommand = program.command('session').description('manage session worktrees');
+
+  sessionCommand
+    .command('start')
+    .description('create a new session worktree off a freshly fetched default branch')
+    .action(async (_cmdOpts: object, cmd: Command) => {
+      const { runEnv, jsonMode, root } = deriveRunEnv(env, cmd);
+      result = await runCommand('session.start', runEnv, jsonMode, async () => {
+        const store = await openStore(runEnv, { root });
+        return sessionStartCommand.execute(runEnv, store);
+      });
+    });
+
+  sessionCommand
+    .command('submit')
+    .description('validate, commit, push, and open a pull request for the current session')
+    .option('--message <text>', 'commit message for any remaining staged changes')
+    .option('--title <text>', 'pull request title')
+    .option('--body <text>', 'pull request body')
+    .action(async (cmdOpts: { message?: string; title?: string; body?: string }, cmd: Command) => {
+      const { runEnv, jsonMode, root } = deriveRunEnv(env, cmd);
+      result = await runCommand('session.submit', runEnv, jsonMode, async () => {
+        const store = await openStore(runEnv, { root });
+        return sessionSubmitCommand.execute(runEnv, store, cmdOpts);
+      });
+    });
+
+  sessionCommand
+    .command('abandon <branch>')
+    .description('discard a session: remove its worktree and delete its branch')
+    .action(async (branch: string, _cmdOpts: object, cmd: Command) => {
+      const { runEnv, jsonMode, root } = deriveRunEnv(env, cmd);
+      result = await runCommand('session.abandon', runEnv, jsonMode, async () => {
+        const store = await openStore(runEnv, { root });
+        return sessionAbandonCommand.execute(runEnv, store, { branch });
+      });
+    });
+
+  sessionCommand
+    .command('list')
+    .description('list active session worktrees')
+    .action(async (_cmdOpts: object, cmd: Command) => {
+      const { runEnv, jsonMode, root } = deriveRunEnv(env, cmd);
+      result = await runCommand('session.list', runEnv, jsonMode, async () => {
+        const store = await openStore(runEnv, { root });
+        return sessionListCommand.execute(runEnv, store);
+      });
+    });
+
+  sessionCommand
+    .command('reap')
+    .description('reclaim merged, clean session worktrees')
+    .action(async (_cmdOpts: object, cmd: Command) => {
+      const { runEnv, jsonMode, root } = deriveRunEnv(env, cmd);
+      result = await runCommand('session.reap', runEnv, jsonMode, async () => {
+        const store = await openStore(runEnv, { root });
+        return sessionReapCommand.execute(runEnv, store);
       });
     });
 

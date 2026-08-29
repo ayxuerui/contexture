@@ -28,16 +28,16 @@ Closes: `context-store` (frontmatter schema, marker fences, relocation-as-rename
 
 Closes: `write-lifecycle` (entire capability) — sequenced before any phase below that writes, per the sequencing rule
 
-- [ ] 2.1 Implement `contexture session start`: creates an isolated git worktree off a freshly fetched default branch, on a new branch, and prints the worktree path
-- [ ] 2.2 Implement the version-controlled `pre-commit` hook: runs `doctor --staged` (schema conformance, fence integrity, secret-pattern scan, path allowlist, diff-size ceiling), refuses the commit naming the violation on failure
-- [ ] 2.3 Implement the version-controlled `pre-push` hook: refuses any push targeting the default branch's remote ref
-- [ ] 2.4 Wire hook installation into `contexture init`, and hook detection/reinstallation into `contexture doctor`
-- [ ] 2.5 Implement the forge adapter interface and a reference GitHub adapter (open PR, given a pushed branch); document the no-adapter-configured degradation (report manual-PR instructions instead of failing)
-- [ ] 2.6 Implement `contexture session submit`: runs full validation, commits, pushes the branch, opens a PR via the configured forge adapter (or degrades per 2.5); refuses to run if validation fails
-- [ ] 2.7 Implement `contexture session abandon` and `contexture session list|reap`
-- [ ] 2.8 Implement the append-via-queue mechanism: a uniquely named intent file format, and a reconciling operation that applies queued appends to a target shared file in order
-- [ ] 2.9 Implement the atomic temp+rename writer used by every derived-artifact writer in later phases
-- [ ] 2.10 Verify: `session start` yields a worktree; a direct `git push origin main` from it is refused by the installed hook; a staged note with an unresolvable schema violation is refused at commit; `session submit` on a valid change opens a PR (or reports the manual-PR fallback with no forge configured); two `session start` invocations in a row both succeed with distinct worktrees; two queued appends to one fixture file both survive reconciliation
+- [x] 2.1 Implement `contexture session start`: creates an isolated git worktree off a freshly fetched default branch, on a new branch, and prints the worktree path
+- [x] 2.2 Implement the version-controlled `pre-commit` hook: runs `doctor --staged` (schema conformance, fence integrity, secret-pattern scan, path allowlist, diff-size ceiling), refuses the commit naming the violation on failure
+- [x] 2.3 Implement the version-controlled `pre-push` hook: refuses any push targeting the default branch's remote ref
+- [x] 2.4 Wire hook installation into `contexture init`, and hook detection/reinstallation into `contexture doctor`
+- [x] 2.5 Implement the forge adapter interface and a reference GitHub adapter (open PR, given a pushed branch); document the no-adapter-configured degradation (report manual-PR instructions instead of failing)
+- [x] 2.6 Implement `contexture session submit`: runs full validation, commits, pushes the branch, opens a PR via the configured forge adapter (or degrades per 2.5); refuses to run if validation fails
+- [x] 2.7 Implement `contexture session abandon` and `contexture session list|reap`
+- [x] 2.8 Implement the append-via-queue mechanism: a uniquely named intent file format, and a reconciling operation that applies queued appends to a target shared file in order
+- [x] 2.9 Implement the atomic temp+rename writer used by every derived-artifact writer in later phases
+- [x] 2.10 Verify: `session start` yields a worktree; a direct `git push origin main` from it is refused by the installed hook; a staged note with an unresolvable schema violation is refused at commit; `session submit` on a valid change opens a PR (or reports the manual-PR fallback with no forge configured); two `session start` invocations in a row both succeed with distinct worktrees; two queued appends to one fixture file both survive reconciliation
 
 ## 3. Catalog
 

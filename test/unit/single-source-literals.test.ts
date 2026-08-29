@@ -70,6 +70,9 @@ describe('single-source-literals guard', () => {
       visibility: { default_context: 'private', directory_defaults: {} },
       derived: { paths: [] },
       retrieval: { exclude_paths: [] },
+      git: { default_branch: 'main' },
+      session: { branch_prefix: 'session/', worktrees_path: '.worktrees/' },
+      write_lifecycle: { diff_size_ceiling_lines: 2000 },
     });
     expect(rendered).toContain(`visibility: ${DEFAULT_VISIBILITY_FIELD_KEY}`);
   });
@@ -91,10 +94,17 @@ describe('single-source-literals guard', () => {
     expect(filesContainingSubstring('process.stdout', ['core/reporter.ts', 'core/env.ts'])).toEqual([]);
   });
 
-  it('no file outside core/git/exec.ts spawns a child process', () => {
+  it('each external CLI tool has exactly one call site that spawns it', () => {
+    // git and gh are two different external tools with two different single
+    // homes — core/git/exec.ts for git (behind the GitRunner interface every
+    // other module depends on instead), adapters/forge/github.ts for gh
+    // (the forge adapter's own single-purpose module). The invariant this
+    // guards is "no ad hoc, scattered subprocess spawning," not "only one
+    // file in the whole codebase may ever spawn anything."
+    const allow = ['core/git/exec.ts', 'adapters/forge/github.ts'];
     const hits = new Set([
-      ...filesContainingSubstring("'node:child_process'", ['core/git/exec.ts']),
-      ...filesContainingSubstring('"node:child_process"', ['core/git/exec.ts']),
+      ...filesContainingSubstring("'node:child_process'", allow),
+      ...filesContainingSubstring('"node:child_process"', allow),
     ]);
     expect([...hits]).toEqual([]);
   });

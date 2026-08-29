@@ -114,3 +114,41 @@ export async function upsertFencedRegionInFile(
   }
   return { changed: result.changed };
 }
+
+const GENERIC_START_RE = />>>\s*contexture:(\S+)/;
+const GENERIC_END_RE = /<<<\s*contexture:(\S+)/;
+
+/**
+ * Pure validation, comment-syntax-agnostic (matches the `contexture:<region>`
+ * token regardless of whether it's wrapped in `#`, `<!-- -->`, or anything
+ * else) — used by the pre-commit `fence_integrity` check to reject a staged
+ * file with an unpaired or duplicated marker, without needing to know or
+ * reconstruct the region's intended body content.
+ */
+export function validateFenceIntegrity(text: string): string[] {
+  const counts = new Map<string, { start: number; end: number }>();
+  for (const line of text.split('\n')) {
+    const startMatch = GENERIC_START_RE.exec(line);
+    if (startMatch) {
+      const region = startMatch[1]!;
+      const entry = counts.get(region) ?? { start: 0, end: 0 };
+      entry.start += 1;
+      counts.set(region, entry);
+    }
+    const endMatch = GENERIC_END_RE.exec(line);
+    if (endMatch) {
+      const region = endMatch[1]!;
+      const entry = counts.get(region) ?? { start: 0, end: 0 };
+      entry.end += 1;
+      counts.set(region, entry);
+    }
+  }
+
+  const problems: string[] = [];
+  for (const [region, { start, end }] of counts) {
+    if (start !== 1 || end !== 1) {
+      problems.push(`region "${region}": found ${start} start marker(s) and ${end} end marker(s)`);
+    }
+  }
+  return problems;
+}

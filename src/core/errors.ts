@@ -92,6 +92,38 @@ export class InvalidNoteFrontmatterError extends ContextureError {
   }
 }
 
+export class SessionNotFoundError extends ContextureError {
+  constructor(branch: string) {
+    super(ExitCode.Usage, {
+      code: 'session.not_found',
+      severity: 'error',
+      message: `No session found for branch "${branch}".`,
+      subject: branch,
+    });
+  }
+}
+
+export class SessionValidationFailedError extends ContextureError {
+  constructor(findings: Finding[]) {
+    super(ExitCode.CheckFailed, {
+      code: 'session.validation_failed',
+      severity: 'error',
+      message: `Session validation failed: ${findings.map((f) => f.message).join('; ')}`,
+      details: { findings },
+    });
+  }
+}
+
+export class NoRemoteConfiguredError extends ContextureError {
+  constructor() {
+    super(ExitCode.Usage, {
+      code: 'session.no_remote',
+      severity: 'error',
+      message: 'No "origin" remote is configured; add one before submitting a session.',
+    });
+  }
+}
+
 export class MarkerMismatchError extends ContextureError {
   constructor(filePath: string, detail: string) {
     super(ExitCode.Usage, {

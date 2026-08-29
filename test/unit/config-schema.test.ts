@@ -52,6 +52,9 @@ describe('readConfig', () => {
         'visibility: { default_context: private, directory_defaults: {} }',
         'derived: { paths: [] }',
         'retrieval: { exclude_paths: [] }',
+        'git: { default_branch: main }',
+        'session: { branch_prefix: session/, worktrees_path: .worktrees/ }',
+        'write_lifecycle: { diff_size_ceiling_lines: 2000 }',
         'a_future_section: { anything: true }',
         '',
       ].join('\n');
