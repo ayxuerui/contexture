@@ -19,6 +19,7 @@ function makeConfig(): StoreConfig {
     catalog: { path: 'catalog/', section_max_bytes: 32768 },
     disclosure: { internal_audiences: [], hard_walls: [] },
     ingest: { inbox_path: 'inbox/' },
+    organize: { archive_path: 'archive/' },
   };
 }
 
@@ -29,7 +30,7 @@ function makeCtx(notes: Note[], config: StoreConfig = makeConfig()): CheckContex
     scope: 'store',
     git: { run: async () => ({ stdout: '', stderr: '', exitCode: 0 }) },
     notes: async () => notes,
-    graph: async () => undefined,
+    graph: async () => null,
     catalog: async () => undefined,
   };
 }

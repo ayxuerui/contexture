@@ -6,6 +6,7 @@ import type { RunEnv } from '../core/env.js';
 import type { Finding } from '../core/envelope.js';
 import { ExitCode } from '../core/exit-codes.js';
 import { getStagedFiles } from '../core/git/staged.js';
+import { readGraph } from '../core/graph/persist.js';
 import { listNotes } from '../core/notes/list.js';
 import type { Store } from '../core/store.js';
 
@@ -40,7 +41,7 @@ export async function execute(env: RunEnv, store: Store, flags: DoctorFlags = {}
     git: env.git,
     staged,
     notes: () => listNotes(store.root, store.config),
-    graph: async () => undefined,
+    graph: () => readGraph(store),
     catalog: async () => undefined,
   };
 

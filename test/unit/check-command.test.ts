@@ -24,6 +24,7 @@ function makeStore(root: string, disclosure: StoreConfig['disclosure'] = { inter
     catalog: { path: 'catalog/', section_max_bytes: 32768 },
     disclosure,
     ingest: { inbox_path: 'inbox/' },
+    organize: { archive_path: 'archive/' },
   };
   return { root, config };
 }

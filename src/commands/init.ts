@@ -5,6 +5,7 @@ import { parse as parseYaml } from 'yaml';
 import { z } from 'zod';
 import type { CommandOutcome, CommandRequires } from '../core/command.js';
 import {
+  DEFAULT_ARCHIVE_PATH,
   DEFAULT_CATALOG_PATH,
   DEFAULT_CATALOG_SECTION_MAX_BYTES,
   DEFAULT_DERIVED_PATHS,
@@ -21,7 +22,7 @@ import {
 import { configPathFor, readConfig } from '../config/load.js';
 import { renderStoreConfig } from '../config/render.js';
 import { SUPPORTED_SCHEMA_VERSION, TaxonomyLayerSchema, type StoreConfig, type TaxonomyLayerConfig } from '../config/schema.js';
-import { buildAgentsCaptureSection, buildAgentsLegRoutingSection, agentsMdPath } from '../core/agents-doc.js';
+import { buildAgentsCaptureSection, buildAgentsLegRoutingSection, buildAgentsPlacementSection, agentsMdPath } from '../core/agents-doc.js';
 import type { Finding } from '../core/envelope.js';
 import { isInteractive, type RunEnv } from '../core/env.js';
 import {
@@ -139,6 +140,7 @@ async function runInitCore(env: RunEnv, flags: InitFlags): Promise<RunInitResult
     await upsertFencedRegionInFile(gitignorePath, WORKTREES_GITIGNORE_FENCE, [config.session.worktrees_path]);
     await buildAgentsLegRoutingSection(root, config);
     await buildAgentsCaptureSection(root, config);
+    await buildAgentsPlacementSection(root, config);
     return {
       data: {
         root,
@@ -200,6 +202,7 @@ async function runInitCore(env: RunEnv, flags: InitFlags): Promise<RunInitResult
     catalog: { path: DEFAULT_CATALOG_PATH, section_max_bytes: DEFAULT_CATALOG_SECTION_MAX_BYTES },
     disclosure: { internal_audiences: [...DEFAULT_INTERNAL_AUDIENCES], hard_walls: [...DEFAULT_HARD_WALLS] },
     ingest: { inbox_path: DEFAULT_INBOX_PATH },
+    organize: { archive_path: DEFAULT_ARCHIVE_PATH },
   };
   // Round-trips through the schema internally; throws before any byte is written if it doesn't.
   const configText = renderStoreConfig(config);
@@ -210,6 +213,7 @@ async function runInitCore(env: RunEnv, flags: InitFlags): Promise<RunInitResult
   await upsertFencedRegionInFile(gitignorePath, WORKTREES_GITIGNORE_FENCE, [config.session.worktrees_path]);
   await buildAgentsLegRoutingSection(root, config);
   await buildAgentsCaptureSection(root, config);
+  await buildAgentsPlacementSection(root, config);
 
   // One directory per configured layer with a .gitkeep — makes Zettelkasten's
   // zero-layer shape visibly different from PARA's at a glance. This is a

@@ -9,6 +9,7 @@ import { NoRemoteConfiguredError, SessionValidationFailedError } from '../core/e
 import { ExitCode } from '../core/exit-codes.js';
 import { commitIfStaged, currentBranch, pushBranch } from '../core/git/repo.js';
 import { hasRemote } from '../core/git/worktree.js';
+import { readGraph } from '../core/graph/persist.js';
 import { listNotes } from '../core/notes/list.js';
 import type { Store } from '../core/store.js';
 
@@ -49,7 +50,7 @@ export async function execute(
     scope: 'store',
     git: env.git,
     notes: () => listNotes(store.root, store.config),
-    graph: async () => undefined,
+    graph: () => readGraph(store),
     catalog: async () => undefined,
   };
   const reports = await runChecks(CHECKS, ctx, { scope: 'store', severity: 'invariant' });

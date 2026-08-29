@@ -88,11 +88,11 @@ Closes: `context-ingest` (entire capability)
 
 Closes: `context-organize` (entire capability)
 
-- [ ] 7.1 Implement the placement procedure as documentation driven entirely by `contexture.yaml`'s configured taxonomy (no hardcoded layer names in code)
-- [ ] 7.2 Implement `contexture archive <note>`: single tracked rename (via 1.5), visibility field unchanged, reports every other note whose link now points at the moved path
-- [ ] 7.3 Implement `contexture rollup gather <entity>` (agent-facing: enumerates candidate source notes) and `contexture rollup write <entity>` (idempotent fenced write via the Phase 1 primitive, aborts with zero bytes written on marker mismatch)
-- [ ] 7.4 Implement `contexture lint`: orphan notes, broken links, uningested inbox material, catalog gaps (cross-referencing Phase 3); always exits 0 regardless of findings
-- [ ] 7.5 Verify: `archive` on a fixture note with two inbound links reports both linking notes and preserves `git log --follow` history on the new path; running `rollup write` twice with no new sources is a no-op producing byte-identical output; a fixture with a mismatched fence marker makes `rollup write` exit non-zero having written zero bytes; `lint` on a fixture store with known orphans and broken links still exits 0
+- [x] 7.1 Implement the placement procedure as documentation driven entirely by `contexture.yaml`'s configured taxonomy (no hardcoded layer names in code)
+- [x] 7.2 Implement `contexture archive <note>`: single tracked rename (via 1.5), visibility field unchanged, reports every other note whose link now points at the moved path
+- [x] 7.3 Implement `contexture rollup gather <entity>` (agent-facing: enumerates candidate source notes) and `contexture rollup write <entity>` (idempotent fenced write via the Phase 1 primitive, aborts with zero bytes written on marker mismatch)
+- [x] 7.4 Implement `contexture lint`: orphan notes, broken links, uningested inbox material, catalog gaps (cross-referencing Phase 3); always exits 0 regardless of findings
+- [x] 7.5 Verify: `archive` on a fixture note with two inbound links reports both linking notes and preserves `git log --follow` history on the new path; running `rollup write` twice with no new sources is a no-op producing byte-identical output; a fixture with a mismatched fence marker makes `rollup write` exit non-zero having written zero bytes; `lint` on a fixture store with known orphans and broken links still exits 0
 
 ## 8. Agent identity, adapters, and harness portability
 

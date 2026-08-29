@@ -35,7 +35,7 @@ export interface GraphBuildResult {
 
 const WIKILINK_RE = /\[\[([^\]|#]+)/g;
 
-function extractLinkTargets(body: string): string[] {
+export function extractLinkTargets(body: string): string[] {
   const targets: string[] = [];
   let match: RegExpExecArray | null;
   WIKILINK_RE.lastIndex = 0;

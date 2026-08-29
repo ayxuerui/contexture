@@ -91,6 +91,11 @@ const IngestSchema = z.object({
   inbox_path: z.string().min(1),
 });
 
+/** context-organize spec: archive's destination — independent of taxonomy layers, so it works under any profile. */
+const OrganizeSchema = z.object({
+  archive_path: z.string().min(1),
+});
+
 export const StoreConfigSchema = z
   .object({
     schema_version: z.number().int().positive(),
@@ -105,6 +110,7 @@ export const StoreConfigSchema = z
     catalog: CatalogSchema,
     disclosure: DisclosureSchema,
     ingest: IngestSchema,
+    organize: OrganizeSchema,
   })
   .passthrough();
 

@@ -168,6 +168,28 @@ export class AlreadyIngestedError extends ContextureError {
   }
 }
 
+export class NoteNotTrackedError extends ContextureError {
+  constructor(notePath: string) {
+    super(ExitCode.Usage, {
+      code: 'archive.not_tracked',
+      severity: 'error',
+      message: `Cannot archive "${notePath}": it is not yet tracked by git. Commit it first, then archive.`,
+      subject: notePath,
+    });
+  }
+}
+
+export class ArchiveDestinationExistsError extends ContextureError {
+  constructor(destinationPath: string) {
+    super(ExitCode.Usage, {
+      code: 'archive.destination_exists',
+      severity: 'error',
+      message: `Cannot archive: "${destinationPath}" already exists.`,
+      subject: destinationPath,
+    });
+  }
+}
+
 export class GraphNotBuiltError extends ContextureError {
   constructor() {
     super(ExitCode.Usage, {

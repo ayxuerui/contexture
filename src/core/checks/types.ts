@@ -1,6 +1,7 @@
 import type { StoreConfig } from '../../config/schema.js';
 import type { Finding } from '../envelope.js';
 import type { GitRunner } from '../git/exec.js';
+import type { GraphBuildResult } from '../graph/model.js';
 import type { Note } from '../notes/list.js';
 
 /**
@@ -53,7 +54,7 @@ export interface CheckContext {
   /** Populated only when scope === 'staged'. */
   readonly staged?: readonly StagedFile[];
   notes(): Promise<readonly Note[]>;
-  graph(): Promise<unknown>;
+  graph(): Promise<GraphBuildResult | null>;
   catalog(): Promise<unknown>;
 }
 

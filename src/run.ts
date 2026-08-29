@@ -3,8 +3,10 @@ import * as catalogBuildCommand from './commands/catalog-build.js';
 import * as catalogCheckCommand from './commands/catalog-check.js';
 import * as catalogShowCommand from './commands/catalog-show.js';
 import * as checkCommand from './commands/check.js';
+import * as archiveCommand from './commands/archive.js';
 import * as doctorCommand from './commands/doctor.js';
 import * as ingestCommand from './commands/ingest.js';
+import * as lintCommand from './commands/lint.js';
 import * as graphBuildCommand from './commands/graph-build.js';
 import * as graphQueryCommand from './commands/graph-query.js';
 import * as initCommand from './commands/init.js';
@@ -13,6 +15,8 @@ import * as sessionAbandonCommand from './commands/session-abandon.js';
 import * as sessionListCommand from './commands/session-list.js';
 import * as sessionReapCommand from './commands/session-reap.js';
 import * as sessionStartCommand from './commands/session-start.js';
+import * as rollupGatherCommand from './commands/rollup-gather.js';
+import * as rollupWriteCommand from './commands/rollup-write.js';
 import * as sessionSubmitCommand from './commands/session-submit.js';
 import * as sourceCheckCommand from './commands/source-check.js';
 import * as sourceHashCommand from './commands/source-hash.js';
@@ -348,6 +352,53 @@ export async function run(argv: readonly string[], env: RunEnv): Promise<ExitCod
       result = await runCommand('source.check', runEnv, jsonMode, async () => {
         const store = await openStore(runEnv, { root });
         return sourceCheckCommand.execute(runEnv, store, { path: notePath, sourceId: cmdOpts.sourceId });
+      });
+    });
+
+  program
+    .command('lint')
+    .description('health observations that never fail the run: orphans, broken links, uningested inbox material, catalog gaps')
+    .action(async (_cmdOpts: object, cmd: Command) => {
+      const { runEnv, jsonMode, root } = deriveRunEnv(env, cmd);
+      result = await runCommand('lint', runEnv, jsonMode, async () => {
+        const store = await openStore(runEnv, { root });
+        return lintCommand.execute(runEnv, store);
+      });
+    });
+
+  program
+    .command('archive <path>')
+    .description('retire a note via a single tracked rename, reporting every note that links to it')
+    .action(async (notePath: string, _cmdOpts: object, cmd: Command) => {
+      const { runEnv, jsonMode, root } = deriveRunEnv(env, cmd);
+      result = await runCommand('archive', runEnv, jsonMode, async () => {
+        const store = await openStore(runEnv, { root });
+        return archiveCommand.execute(runEnv, store, { path: notePath });
+      });
+    });
+
+  const rollupCommand = program.command('rollup').description('agent-facing gather, then a deterministic fenced write');
+
+  rollupCommand
+    .command('gather <entity>')
+    .description('enumerate candidate source notes (notes linking to <entity>) for a rollup')
+    .action(async (entity: string, _cmdOpts: object, cmd: Command) => {
+      const { runEnv, jsonMode, root } = deriveRunEnv(env, cmd);
+      result = await runCommand('rollup.gather', runEnv, jsonMode, async () => {
+        const store = await openStore(runEnv, { root });
+        return rollupGatherCommand.execute(runEnv, store, { entity });
+      });
+    });
+
+  rollupCommand
+    .command('write <entity>')
+    .description('write agent-authored rollup content into a fenced region on <entity>')
+    .requiredOption('--content-file <path>', 'a file containing the rollup text to write')
+    .action(async (entity: string, cmdOpts: { contentFile: string }, cmd: Command) => {
+      const { runEnv, jsonMode, root } = deriveRunEnv(env, cmd);
+      result = await runCommand('rollup.write', runEnv, jsonMode, async () => {
+        const store = await openStore(runEnv, { root });
+        return rollupWriteCommand.execute(runEnv, store, { entity, contentFile: cmdOpts.contentFile });
       });
     });
 

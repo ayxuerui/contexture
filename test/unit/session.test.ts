@@ -21,6 +21,7 @@ function makeConfig(overrides: Partial<StoreConfig['session']> = {}): StoreConfi
     catalog: { path: 'catalog/', section_max_bytes: 32768 },
     disclosure: { internal_audiences: [], hard_walls: [] },
     ingest: { inbox_path: 'inbox/' },
+    organize: { archive_path: 'archive/' },
   };
 }
 

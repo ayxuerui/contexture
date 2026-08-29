@@ -45,3 +45,6 @@ export const DEFAULT_HARD_WALLS: readonly HardWallConfig[] = [];
 /** context-ingest spec: capture's landing zone — a normal, retrievable directory, not an exclusion. */
 export const DEFAULT_INBOX_PATH = 'inbox/';
 
+/** context-organize spec: archive's destination, decoupled from any taxonomy layer name. */
+export const DEFAULT_ARCHIVE_PATH = 'archive/';
+

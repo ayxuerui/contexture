@@ -28,6 +28,7 @@ function makeConfig(overrides: Partial<StoreConfig> = {}): StoreConfig {
     catalog: { path: 'catalog/', section_max_bytes: 32768 },
     disclosure: { internal_audiences: [], hard_walls: [] },
     ingest: { inbox_path: 'inbox/' },
+    organize: { archive_path: 'archive/' },
     ...overrides,
   };
 }
@@ -41,7 +42,7 @@ function makeStagedCtx(staged: StagedFile[], configOverrides: Partial<StoreConfi
     git,
     staged,
     notes: async () => [],
-    graph: async () => undefined,
+    graph: async () => null,
     catalog: async () => undefined,
   };
 }
@@ -156,7 +157,7 @@ describe('hooksHealthCheck', () => {
         scope: 'store',
         git,
         notes: async () => [],
-        graph: async () => undefined,
+        graph: async () => null,
         catalog: async () => undefined,
       };
       const result = await hooksHealthCheck.run(ctx);
@@ -176,7 +177,7 @@ describe('hooksHealthCheck', () => {
         scope: 'store',
         git,
         notes: async () => [],
-        graph: async () => undefined,
+        graph: async () => null,
         catalog: async () => undefined,
       };
       const result = await hooksHealthCheck.run(ctx);
@@ -202,7 +203,7 @@ describe('hooksHealthCheck', () => {
         scope: 'store',
         git,
         notes: async () => [],
-        graph: async () => undefined,
+        graph: async () => null,
         catalog: async () => undefined,
       };
       const result = await hooksHealthCheck.run(ctx);

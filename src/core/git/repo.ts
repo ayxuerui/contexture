@@ -99,6 +99,12 @@ export async function movePath(git: GitRunner, cwd: string, from: string, to: st
   await git.run(['mv', from, to], { cwd });
 }
 
+/** Whether `relativePath` is tracked by git — `git mv` refuses an untracked path, so callers check this first to fail with a specific, named error instead of a raw git stderr passthrough. */
+export async function isTracked(git: GitRunner, cwd: string, relativePath: string): Promise<boolean> {
+  const result = await git.run(['ls-files', '--error-unmatch', '--', relativePath], { cwd, allowFailure: true });
+  return result.exitCode === 0;
+}
+
 /** Skips the commit (returns null) when nothing is staged — what makes re-init idempotent. */
 export async function commitIfStaged(
   git: GitRunner,

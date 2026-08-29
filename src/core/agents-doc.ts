@@ -78,3 +78,49 @@ export function renderCaptureSection(config: StoreConfig): string[] {
 export async function buildAgentsCaptureSection(root: string, config: StoreConfig): Promise<{ changed: boolean }> {
   return upsertFencedRegionInFile(agentsMdPath(root), AGENTS_MD_CAPTURE_FENCE, renderCaptureSection(config));
 }
+
+/**
+ * context-organize spec (task 7.1): the placement procedure is
+ * documentation driven entirely by the configured taxonomy, never a
+ * hardcoded layout — this section is generated purely from
+ * `config.taxonomy.layers`, so it reads correctly under PARA, Zettelkasten,
+ * Diátaxis, or any custom taxonomy without a single layer name appearing in
+ * this file's own source.
+ */
+export const AGENTS_MD_PLACEMENT_FENCE = htmlCommentFence('placement');
+
+export function renderPlacementSection(config: StoreConfig): string[] {
+  const { layers } = config.taxonomy;
+  if (layers.length === 0) {
+    return [
+      '## Placing a new note',
+      '',
+      'This store\'s taxonomy declares no top-level layers — place new notes directly at the store root (or',
+      'wherever related notes already live) and rely on wikilinks and `contexture graph` for organization,',
+      'rather than a folder hierarchy.',
+    ];
+  }
+
+  const lines = [
+    '## Placing a new note',
+    '',
+    'This store\'s taxonomy declares these layers — choose the one whose description best matches the note:',
+    '',
+  ];
+  for (const layer of layers) {
+    const directoryDefault = Object.entries(config.visibility.directory_defaults).find(
+      ([prefix]) => prefix === layer.path || prefix === `${layer.path}/`,
+    )?.[1];
+    lines.push(
+      `- **${layer.name}** (\`${layer.path}/\`): ${layer.description}${
+        directoryDefault ? ` Notes here default to visibility "${directoryDefault}" unless given an explicit value.` : ''
+      }`,
+    );
+  }
+  lines.push('', "If no layer fits, use the store's uncategorized/catch-all location and revisit placement later.");
+  return lines;
+}
+
+export async function buildAgentsPlacementSection(root: string, config: StoreConfig): Promise<{ changed: boolean }> {
+  return upsertFencedRegionInFile(agentsMdPath(root), AGENTS_MD_PLACEMENT_FENCE, renderPlacementSection(config));
+}
