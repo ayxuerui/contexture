@@ -68,6 +68,24 @@ const CatalogSchema = z.object({
   section_max_bytes: z.number().int().positive(),
 });
 
+/**
+ * disclosure-policy spec: "v1 keeps the disclosure ladder's shape with a
+ * flat, user-defined value list" (design.md) — no registry syntax, just a
+ * flat set of audience names the operator considers internal, and a flat
+ * list of hard-wall rules evaluated before any tag or visibility rung.
+ */
+const HardWallSchema = z.object({
+  audience: z.string().min(1),
+  /** Omitted means the wall applies to every note. */
+  note_path_prefix: z.string().min(1).optional(),
+  verdict: z.enum(['allow', 'deny']),
+});
+
+const DisclosureSchema = z.object({
+  internal_audiences: z.array(z.string()),
+  hard_walls: z.array(HardWallSchema),
+});
+
 export const StoreConfigSchema = z
   .object({
     schema_version: z.number().int().positive(),
@@ -80,8 +98,10 @@ export const StoreConfigSchema = z
     session: SessionSchema,
     write_lifecycle: WriteLifecycleSchema,
     catalog: CatalogSchema,
+    disclosure: DisclosureSchema,
   })
   .passthrough();
 
 export type StoreConfig = z.infer<typeof StoreConfigSchema>;
 export type TaxonomyLayerConfig = z.infer<typeof TaxonomyLayerSchema>;
+export type HardWallConfig = z.infer<typeof HardWallSchema>;

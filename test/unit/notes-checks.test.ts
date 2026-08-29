@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { StoreConfig } from '../../src/config/schema.js';
-import { failClosedVisibilityCheck } from '../../src/core/notes/checks.js';
+import { failClosedVisibilityCheck, failClosedVisibilityInvariantCheck } from '../../src/core/notes/checks.js';
 import type { CheckContext } from '../../src/core/checks/types.js';
 import { runChecks } from '../../src/core/checks/registry.js';
 import type { Note } from '../../src/core/notes/list.js';
@@ -17,6 +17,7 @@ function makeConfig(): StoreConfig {
     session: { branch_prefix: 'session/', worktrees_path: '.worktrees/' },
     write_lifecycle: { diff_size_ceiling_lines: 2000 },
     catalog: { path: 'catalog/', section_max_bytes: 32768 },
+    disclosure: { internal_audiences: [], hard_walls: [] },
   };
 }
 
@@ -72,5 +73,48 @@ describe('failClosedVisibilityCheck', () => {
     });
     expect(reports).toHaveLength(1);
     expect(reports[0]?.result.status).toBe('fail');
+  });
+});
+
+describe('failClosedVisibilityInvariantCheck', () => {
+  it('is severity: invariant, never observation', () => {
+    expect(failClosedVisibilityInvariantCheck.severity).toBe('invariant');
+  });
+
+  it('fails, naming the note, when a note relies on the fail-closed default', async () => {
+    const ctx = makeCtx([{ path: 'b.md', frontmatter: undefined, body: '' }]);
+    const result = await failClosedVisibilityInvariantCheck.run(ctx);
+    expect(result.status).toBe('fail');
+    expect(result.findings).toHaveLength(1);
+    expect(result.findings[0]?.subject).toBe('b.md');
+  });
+
+  it('passes when every note has an explicit or directory-derived visibility', async () => {
+    const ctx = makeCtx([{ path: 'a.md', frontmatter: { scope: 'shared' }, body: '' }]);
+    const result = await failClosedVisibilityInvariantCheck.run(ctx);
+    expect(result.status).toBe('pass');
+  });
+
+  it('is selectable via an invariant-severity filter (this is what doctor runs)', async () => {
+    const ctx = makeCtx([{ path: 'b.md', frontmatter: undefined, body: '' }]);
+    const reports = await runChecks([failClosedVisibilityInvariantCheck], ctx, {
+      scope: 'store',
+      severity: 'invariant',
+    });
+    expect(reports).toHaveLength(1);
+    expect(reports[0]?.result.status).toBe('fail');
+  });
+
+  it('is excluded by an observation-severity filter (this is what lint runs)', async () => {
+    const ctx = makeCtx([{ path: 'b.md', frontmatter: undefined, body: '' }]);
+    const reports = await runChecks([failClosedVisibilityInvariantCheck], ctx, {
+      scope: 'store',
+      severity: 'observation',
+    });
+    expect(reports).toEqual([]);
+  });
+
+  it('carries a different check id than the lint-facing observation check, so a run never double-counts one condition under two ids colliding', () => {
+    expect(failClosedVisibilityInvariantCheck.id).not.toBe(failClosedVisibilityCheck.id);
   });
 });

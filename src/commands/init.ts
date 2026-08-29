@@ -10,6 +10,8 @@ import {
   DEFAULT_DERIVED_PATHS,
   DEFAULT_DIFF_SIZE_CEILING_LINES,
   DEFAULT_EXCLUDE_PATHS,
+  DEFAULT_HARD_WALLS,
+  DEFAULT_INTERNAL_AUDIENCES,
   DEFAULT_SESSION_BRANCH_PREFIX,
   DEFAULT_VISIBILITY_CONTEXT,
   DEFAULT_VISIBILITY_FIELD_KEY,
@@ -194,6 +196,7 @@ async function runInitCore(env: RunEnv, flags: InitFlags): Promise<RunInitResult
     session: { branch_prefix: DEFAULT_SESSION_BRANCH_PREFIX, worktrees_path: DEFAULT_WORKTREES_PATH },
     write_lifecycle: { diff_size_ceiling_lines: DEFAULT_DIFF_SIZE_CEILING_LINES },
     catalog: { path: DEFAULT_CATALOG_PATH, section_max_bytes: DEFAULT_CATALOG_SECTION_MAX_BYTES },
+    disclosure: { internal_audiences: [...DEFAULT_INTERNAL_AUDIENCES], hard_walls: [...DEFAULT_HARD_WALLS] },
   };
   // Round-trips through the schema internally; throws before any byte is written if it doesn't.
   const configText = renderStoreConfig(config);

@@ -66,11 +66,11 @@ Closes: `context-retrieval` (entire capability)
 
 Closes: `context-visibility` (enforcement requirement), `disclosure-policy` (entire capability)
 
-- [ ] 5.1 Wire `--as <context>` into `graph query`: exclude notes by resolved visibility before traversal, not after
-- [ ] 5.2 Wire the fail-closed visibility check into `doctor` as a failing (not merely lint) check
-- [ ] 5.3 Implement the disclosure ladder: hard walls → explicit audience tag → internal-audience-from-visibility → external default, each rung short-circuiting
-- [ ] 5.4 Implement `contexture check <note> --audience <audience>`: tri-state ALLOW/DENY/ASK with distinct documented exit codes, printing the deciding rung
-- [ ] 5.5 Verify: `graph neighbors <note> --as ctx-a --json` omits a fixture one-hop neighbor whose resolved visibility `ctx-a` cannot see; `check` against a fixture with a hard wall returns the wall's verdict even when an explicit tag would otherwise allow; `check` against an untagged external audience returns ASK (not DENY or ALLOW) with its own exit code
+- [x] 5.1 Wire `--as <context>` into `graph query`: exclude notes by resolved visibility before traversal, not after
+- [x] 5.2 Wire the fail-closed visibility check into `doctor` as a failing (not merely lint) check
+- [x] 5.3 Implement the disclosure ladder: hard walls → explicit audience tag → internal-audience-from-visibility → external default, each rung short-circuiting
+- [x] 5.4 Implement `contexture check <note> --audience <audience>`: tri-state ALLOW/DENY/ASK with distinct documented exit codes, printing the deciding rung
+- [x] 5.5 Verify: `graph neighbors <note> --as ctx-a --json` omits a fixture one-hop neighbor whose resolved visibility `ctx-a` cannot see; `check` against a fixture with a hard wall returns the wall's verdict even when an explicit tag would otherwise allow; `check` against an untagged external audience returns ASK (not DENY or ALLOW) with its own exit code
 
 ## 6. Ingest
 

@@ -2,6 +2,7 @@ import { Command } from 'commander';
 import * as catalogBuildCommand from './commands/catalog-build.js';
 import * as catalogCheckCommand from './commands/catalog-check.js';
 import * as catalogShowCommand from './commands/catalog-show.js';
+import * as checkCommand from './commands/check.js';
 import * as doctorCommand from './commands/doctor.js';
 import * as graphBuildCommand from './commands/graph-build.js';
 import * as graphQueryCommand from './commands/graph-query.js';
@@ -153,6 +154,18 @@ export async function run(argv: readonly string[], env: RunEnv): Promise<ExitCod
       });
     });
 
+  program
+    .command('check <path>')
+    .description('the disclosure-policy tri-state verdict (ALLOW/DENY/ASK) for a note and an audience')
+    .requiredOption('--audience <audience>', 'the audience the content would be disclosed to')
+    .action(async (notePath: string, cmdOpts: { audience: string }, cmd: Command) => {
+      const { runEnv, jsonMode, root } = deriveRunEnv(env, cmd);
+      result = await runCommand('check', runEnv, jsonMode, async () => {
+        const store = await openStore(runEnv, { root });
+        return checkCommand.execute(runEnv, store, { path: notePath, audience: cmdOpts.audience });
+      });
+    });
+
   const noteCommand = program.command('note').description('inspect a single note');
   noteCommand
     .command('resolve <path>')
@@ -224,33 +237,47 @@ export async function run(argv: readonly string[], env: RunEnv): Promise<ExitCod
     .description('list nodes reachable from <node> within --depth hops')
     .option('--depth <n>', 'hop count', (v) => Number.parseInt(v, 10), 1)
     .option('--direction <dir>', 'in, out, or both', 'both')
-    .action(async (node: string, cmdOpts: { depth: number; direction: 'in' | 'out' | 'both' }, cmd: Command) => {
-      const { runEnv, jsonMode, root } = deriveRunEnv(env, cmd);
-      result = await runCommand('graph.query.neighbors', runEnv, jsonMode, async () => {
-        const store = await openStore(runEnv, { root });
-        return graphQueryCommand.executeNeighbors(store, { node, depth: cmdOpts.depth, direction: cmdOpts.direction });
-      });
-    });
+    .option('--as <context>', 'filter to notes visible to this context before traversal')
+    .action(
+      async (
+        node: string,
+        cmdOpts: { depth: number; direction: 'in' | 'out' | 'both'; as?: string },
+        cmd: Command,
+      ) => {
+        const { runEnv, jsonMode, root } = deriveRunEnv(env, cmd);
+        result = await runCommand('graph.query.neighbors', runEnv, jsonMode, async () => {
+          const store = await openStore(runEnv, { root });
+          return graphQueryCommand.executeNeighbors(store, {
+            node,
+            depth: cmdOpts.depth,
+            direction: cmdOpts.direction,
+            as: cmdOpts.as,
+          });
+        });
+      },
+    );
 
   graphQueryCommandGroup
     .command('path <from> <to>')
     .description('shortest path between two nodes, if one exists')
-    .action(async (from: string, to: string, _cmdOpts: object, cmd: Command) => {
+    .option('--as <context>', 'filter to notes visible to this context before traversal')
+    .action(async (from: string, to: string, cmdOpts: { as?: string }, cmd: Command) => {
       const { runEnv, jsonMode, root } = deriveRunEnv(env, cmd);
       result = await runCommand('graph.query.path', runEnv, jsonMode, async () => {
         const store = await openStore(runEnv, { root });
-        return graphQueryCommand.executePath(store, { from, to });
+        return graphQueryCommand.executePath(store, { from, to, as: cmdOpts.as });
       });
     });
 
   graphQueryCommandGroup
     .command('subgraph <ids...>')
     .description('the induced subgraph over the given node ids')
-    .action(async (ids: string[], _cmdOpts: object, cmd: Command) => {
+    .option('--as <context>', 'filter to notes visible to this context before traversal')
+    .action(async (ids: string[], cmdOpts: { as?: string }, cmd: Command) => {
       const { runEnv, jsonMode, root } = deriveRunEnv(env, cmd);
       result = await runCommand('graph.query.subgraph', runEnv, jsonMode, async () => {
         const store = await openStore(runEnv, { root });
-        return graphQueryCommand.executeSubgraph(store, { ids });
+        return graphQueryCommand.executeSubgraph(store, { ids, as: cmdOpts.as });
       });
     });
 
@@ -258,22 +285,24 @@ export async function run(argv: readonly string[], env: RunEnv): Promise<ExitCod
     .command('hubs')
     .description('nodes with the most backlinks')
     .option('--top <n>', 'how many to list', (v) => Number.parseInt(v, 10), 10)
-    .action(async (cmdOpts: { top: number }, cmd: Command) => {
+    .option('--as <context>', 'filter to notes visible to this context before ranking')
+    .action(async (cmdOpts: { top: number; as?: string }, cmd: Command) => {
       const { runEnv, jsonMode, root } = deriveRunEnv(env, cmd);
       result = await runCommand('graph.query.hubs', runEnv, jsonMode, async () => {
         const store = await openStore(runEnv, { root });
-        return graphQueryCommand.executeHubs(store, { top: cmdOpts.top });
+        return graphQueryCommand.executeHubs(store, { top: cmdOpts.top, as: cmdOpts.as });
       });
     });
 
   graphQueryCommandGroup
     .command('orphans')
     .description('nodes with no links in or out')
-    .action(async (_cmdOpts: object, cmd: Command) => {
+    .option('--as <context>', 'filter to notes visible to this context first')
+    .action(async (cmdOpts: { as?: string }, cmd: Command) => {
       const { runEnv, jsonMode, root } = deriveRunEnv(env, cmd);
       result = await runCommand('graph.query.orphans', runEnv, jsonMode, async () => {
         const store = await openStore(runEnv, { root });
-        return graphQueryCommand.executeOrphans(store);
+        return graphQueryCommand.executeOrphans(store, { as: cmdOpts.as });
       });
     });
 

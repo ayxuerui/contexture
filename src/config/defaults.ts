@@ -1,3 +1,5 @@
+import type { HardWallConfig } from './schema.js';
+
 /**
  * context-store spec: "The visibility field's frontmatter key is configurable
  * with a shipped default... No specification other than this one SHALL
@@ -35,3 +37,8 @@ export const DEFAULT_CATALOG_PATH = 'catalog/';
 
 /** context-catalog spec: a section exceeding this triggers a failing doctor check, not a silent slowdown. */
 export const DEFAULT_CATALOG_SECTION_MAX_BYTES = 32 * 1024;
+
+/** disclosure-policy spec: v1 ships with no audiences pre-declared internal, and no hard walls — an explicit, empty starting point the operator opts into. */
+export const DEFAULT_INTERNAL_AUDIENCES: readonly string[] = [];
+export const DEFAULT_HARD_WALLS: readonly HardWallConfig[] = [];
+

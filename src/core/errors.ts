@@ -146,6 +146,17 @@ export class GraphIdentityCollisionError extends ContextureError {
   }
 }
 
+export class NoteNotFoundError extends ContextureError {
+  constructor(notePath: string) {
+    super(ExitCode.Usage, {
+      code: 'note.not_found',
+      severity: 'error',
+      message: `"${notePath}" does not exist in this store.`,
+      subject: notePath,
+    });
+  }
+}
+
 export class GraphNotBuiltError extends ContextureError {
   constructor() {
     super(ExitCode.Usage, {
