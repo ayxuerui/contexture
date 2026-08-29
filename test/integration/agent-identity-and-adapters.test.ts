@@ -147,3 +147,57 @@ describe('agent identity and adapters (real CLI)', () => {
     }
   });
 });
+
+/** entry-doc-generation task 3.2. */
+describe('entry-doc generation (real CLI)', () => {
+  it('a convention file and an operator procedure both get indexed on re-init, and the procedure gains a skill', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const env = hermeticGitEnv();
+      await runCli(['init'], { cwd: tmp.root, env });
+
+      await writeNote(
+        tmp.root,
+        '.contexture/conventions/house-style.md',
+        '---\ntitle: House style\ndescription: How notes are written here.\n---\n\nBullet points, always.\n',
+      );
+      await writeNote(
+        tmp.root,
+        '.contexture/procedures/weekly-review.md',
+        '---\ntitle: Weekly review\ndescription: Walk the health checks weekly.\n---\n\nSteps.\n',
+      );
+
+      await runCli(['init'], { cwd: tmp.root, env }); // idempotent path regenerates the indexes
+      await runCli(['adapters', 'generate'], { cwd: tmp.root, env });
+
+      const agentsMd = await readFile(path.join(tmp.root, 'AGENTS.md'), 'utf8');
+      expect(agentsMd).toContain('[House style](.contexture/conventions/house-style.md) — How notes are written here.');
+      expect(agentsMd).toContain('[Weekly review](.contexture/procedures/weekly-review.md) — Walk the health checks weekly.');
+      expect(agentsMd).not.toContain('Bullet points, always.'); // referenced, never inlined
+
+      const skill = await readFile(path.join(tmp.root, '.claude/skills/contexture-weekly-review/SKILL.md'), 'utf8');
+      expect(skill).toContain('name: contexture-weekly-review');
+
+      const verifyResult = await runCli(['verify', '--portable', '--json'], { cwd: tmp.root, env });
+      expect(verifyResult.exitCode).toBe(0);
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('verify --portable fails naming an operator procedure whose index entry is missing', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const env = hermeticGitEnv();
+      await runCli(['init'], { cwd: tmp.root, env });
+      // Added but never re-indexed: scan sees it, AGENTS.md does not.
+      await writeNote(tmp.root, '.contexture/procedures/unindexed.md', '# Unindexed procedure\n\nSteps.\n');
+
+      const result = await runCli(['verify', '--portable', '--json'], { cwd: tmp.root, env });
+      expect(result.exitCode).not.toBe(0);
+      expect(JSON.parse(result.stdout).findings[0].message).toContain('Unindexed procedure');
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+});

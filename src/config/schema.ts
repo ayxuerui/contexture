@@ -119,9 +119,10 @@ const IdentitySchema = z.object({
   path: z.string().min(1),
 });
 
-/** harness-portability spec: the portable procedure-markdown pack AGENTS.md's index points into. */
+/** harness-portability spec: the portable procedure pack and operator convention docs AGENTS.md's indexes point into. */
 const HarnessSchema = z.object({
   procedures_path: z.string().min(1),
+  conventions_path: z.string().min(1).default('.contexture/conventions/'),
 });
 
 /**

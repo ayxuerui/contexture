@@ -27,7 +27,7 @@ function makeConfig(overrides: Partial<StoreConfig> = {}): StoreConfig {
     ingest: { inbox_path: 'inbox/' },
     organize: { archive_path: 'archive/' },
     identity: { path: 'identity/' },
-    harness: { procedures_path: 'procedures/' },
+    harness: { procedures_path: 'procedures/', conventions_path: 'conventions/' },
     adapters: [],
     ...overrides,
   };

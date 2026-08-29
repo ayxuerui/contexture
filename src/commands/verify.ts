@@ -9,7 +9,7 @@ import { ExitCode } from '../core/exit-codes.js';
 import { buildGraphFromNotes } from '../core/graph/model.js';
 import { writeGraph } from '../core/graph/persist.js';
 import { listNotes } from '../core/notes/list.js';
-import { procedurePaths, PROCEDURES } from '../core/procedures.js';
+import { scanProcedures } from '../core/procedures.js';
 import type { Store } from '../core/store.js';
 
 export const requires: CommandRequires = { store: 'required' };
@@ -86,24 +86,35 @@ export async function execute(store: Store, _flags: VerifyFlags = {}): Promise<C
     return finish(store, steps);
   }
 
-  const paths = procedurePaths(store.config);
-  for (const [i, procedure] of PROCEDURES.entries()) {
-    if (!agentsMdContent.includes(procedureIndexEntry(procedure.name, paths[i]!))) {
+  // entry-doc-generation spec: the index must cover every procedure actually
+  // on disk — shipped seeds and operator-added files alike.
+  const procedures = await scanProcedures(store.root, store.config);
+  for (const procedure of procedures) {
+    if (!agentsMdContent.includes(procedureIndexEntry(procedure.title, procedure.path))) {
       steps.push({
-        operation: `procedure index entry for "${procedure.name}"`,
+        operation: `procedure index entry for "${procedure.title}"`,
         status: 'fail',
-        detail: `AGENTS.md's procedure index has no entry for "${procedure.name}".`,
+        detail: `AGENTS.md's procedure index has no entry for "${procedure.title}".`,
       });
       return finish(store, steps);
     }
   }
 
+  const first = procedures[0];
+  if (!first) {
+    steps.push({
+      operation: 'follow a procedure',
+      status: 'fail',
+      detail: `No procedure files exist at "${store.config.harness.procedures_path}".`,
+    });
+    return finish(store, steps);
+  }
   try {
-    await readFile(path.join(store.root, paths[0]!), 'utf8');
-    steps.push({ operation: `follow procedure "${PROCEDURES[0]!.name}"`, status: 'pass' });
+    await readFile(path.join(store.root, first.path), 'utf8');
+    steps.push({ operation: `follow procedure "${first.title}"`, status: 'pass' });
   } catch (err) {
     steps.push({
-      operation: `follow procedure "${PROCEDURES[0]!.name}"`,
+      operation: `follow procedure "${first.title}"`,
       status: 'fail',
       detail: err instanceof Error ? err.message : String(err),
     });

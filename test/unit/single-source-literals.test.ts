@@ -78,7 +78,7 @@ describe('single-source-literals guard', () => {
     ingest: { inbox_path: 'inbox/' },
     organize: { archive_path: 'archive/' },
     identity: { path: 'identity/' },
-    harness: { procedures_path: 'procedures/' },
+    harness: { procedures_path: 'procedures/', conventions_path: 'conventions/' },
     adapters: [],
     });
     expect(rendered).toContain(`visibility: ${DEFAULT_VISIBILITY_FIELD_KEY}`);

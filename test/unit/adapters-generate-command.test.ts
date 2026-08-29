@@ -2,6 +2,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { execute } from '../../src/commands/adapters-generate.js';
+import { ensureProcedureFiles } from '../../src/core/procedures.js';
 import type { AdapterDeclaration, StoreConfig } from '../../src/config/schema.js';
 import { ExitCode } from '../../src/core/exit-codes.js';
 import type { Store } from '../../src/core/store.js';
@@ -23,7 +24,7 @@ function makeConfig(adapters: AdapterDeclaration[]): StoreConfig {
     ingest: { inbox_path: 'inbox/' },
     organize: { archive_path: 'archive/' },
     identity: { path: 'identity/' },
-    harness: { procedures_path: 'procedures/' },
+    harness: { procedures_path: 'procedures/', conventions_path: 'conventions/' },
     adapters,
   };
 }
@@ -123,6 +124,7 @@ describe('skill generation (contexture-home-layout)', () => {
     const tmp = await makeTmpDir();
     try {
       const store: Store = { root: tmp.root, config: makeConfig([{ id: 'claude-code', kind: 'harness-generation' }]) };
+      await ensureProcedureFiles(tmp.root, store.config);
       await execute(store);
 
       const skill = await readFile(
@@ -143,6 +145,7 @@ describe('skill generation (contexture-home-layout)', () => {
     const tmp = await makeTmpDir();
     try {
       const store: Store = { root: tmp.root, config: makeConfig([{ id: 'claude-code', kind: 'harness-generation' }]) };
+      await ensureProcedureFiles(tmp.root, store.config);
       await execute(store);
       const skillPath = path.join(tmp.root, '.claude/skills/contexture-organize-audit/SKILL.md');
       const before = await readFile(skillPath, 'utf8');
@@ -163,6 +166,31 @@ describe('skill generation (contexture-home-layout)', () => {
       await execute(store);
       const { existsSync } = await import('node:fs');
       expect(existsSync(path.join(tmp.root, '.claude/skills'))).toBe(false);
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+});
+
+describe('scan-based skill generation (entry-doc-generation)', () => {
+  it('an operator-added procedure gains a skill wrapper identically to a shipped one', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const store: Store = { root: tmp.root, config: makeConfig([{ id: 'claude-code', kind: 'harness-generation' }]) };
+      await ensureProcedureFiles(tmp.root, store.config);
+      const { mkdir, writeFile } = await import('node:fs/promises');
+      await mkdir(path.join(tmp.root, 'procedures'), { recursive: true });
+      await writeFile(
+        path.join(tmp.root, 'procedures/weekly-review.md'),
+        '---\ntitle: Weekly review\ndescription: Walk the store health checks weekly.\n---\n\nSteps here.\n',
+      );
+
+      await execute(store);
+      const skill = await readFile(path.join(tmp.root, '.claude/skills/contexture-weekly-review/SKILL.md'), 'utf8');
+      expect(skill).toContain('name: contexture-weekly-review');
+      expect(skill).toContain('description: Walk the store health checks weekly.');
+      expect(skill).toContain('procedures/weekly-review.md');
+      expect(skill).not.toContain('Steps here');
     } finally {
       await tmp.cleanup();
     }

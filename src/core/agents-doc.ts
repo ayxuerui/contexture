@@ -2,8 +2,9 @@ import path from 'node:path';
 import type { StoreConfig } from '../config/schema.js';
 import { CONFIG_FILE_NAME } from './root.js';
 import { excludedPrefixesFor } from './notes/list.js';
+import { scanConventions, type ScannedDoc } from './conventions.js';
 import { identityFilePaths } from './identity.js';
-import { procedurePaths, PROCEDURES } from './procedures.js';
+import { scanProcedures } from './procedures.js';
 import { upsertFencedRegionInFile } from './fs/fenced-region.js';
 import { htmlCommentFence } from './markers.js';
 
@@ -137,7 +138,7 @@ export async function buildAgentsPlacementSection(root: string, config: StoreCon
  */
 export const AGENTS_MD_CANONICAL_FENCE = htmlCommentFence('canonical');
 
-export function renderCanonicalSection(config: StoreConfig): string[] {
+export function renderCanonicalSection(config: StoreConfig, procedures: readonly ScannedDoc[]): string[] {
   const lines = [
     '## Store fundamentals',
     '',
@@ -166,15 +167,45 @@ export function renderCanonicalSection(config: StoreConfig): string[] {
       `\`${config.harness.procedures_path}\` — read one directly, no harness-specific discovery required:`,
     '',
   ];
-  const paths = procedurePaths(config);
-  PROCEDURES.forEach((procedure, i) => {
-    lines.push(`- [${procedure.name}](${paths[i]})`);
-  });
+  for (const procedure of procedures) {
+    lines.push(`- [${procedure.title}](${procedure.path})${procedure.description ? ` — ${procedure.description}` : ''}`);
+  }
   return lines;
 }
 
 export async function buildAgentsCanonicalSection(root: string, config: StoreConfig): Promise<{ changed: boolean }> {
-  return upsertFencedRegionInFile(agentsMdPath(root), AGENTS_MD_CANONICAL_FENCE, renderCanonicalSection(config));
+  const procedures = await scanProcedures(root, config);
+  return upsertFencedRegionInFile(agentsMdPath(root), AGENTS_MD_CANONICAL_FENCE, renderCanonicalSection(config, procedures));
+}
+
+/**
+ * entry-doc-generation spec: operator conventions as referenced documents.
+ * The index lists what is actually on disk at the configured conventions
+ * path; contexture ships no seeds here — conventions are definitionally
+ * operator-authored, so an empty store's section explains the mechanism.
+ */
+export const AGENTS_MD_CONVENTIONS_FENCE = htmlCommentFence('store-conventions');
+
+export function renderConventionsSection(config: StoreConfig, conventions: readonly ScannedDoc[]): string[] {
+  const lines = ['## Store conventions', ''];
+  if (conventions.length === 0) {
+    lines.push(
+      `This store declares no convention documents yet. Operator-authored conventions (content style, field`,
+      `semantics, house rules) belong as markdown files under \`${config.harness.conventions_path}\` — each is`,
+      'indexed here on regeneration, referenced by path, never inlined.',
+    );
+    return lines;
+  }
+  lines.push('Operator-authored conventions for this store — read the ones relevant to your task:', '');
+  for (const doc of conventions) {
+    lines.push(`- [${doc.title}](${doc.path})${doc.description ? ` — ${doc.description}` : ''}`);
+  }
+  return lines;
+}
+
+export async function buildAgentsConventionsSection(root: string, config: StoreConfig): Promise<{ changed: boolean }> {
+  const conventions = await scanConventions(root, config);
+  return upsertFencedRegionInFile(agentsMdPath(root), AGENTS_MD_CONVENTIONS_FENCE, renderConventionsSection(config, conventions));
 }
 
 /**

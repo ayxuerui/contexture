@@ -8,7 +8,7 @@ import { readFile } from 'node:fs/promises';
 import { mkdir } from 'node:fs/promises';
 import { identityFilePaths } from '../core/identity.js';
 import { writeFileAtomic } from '../core/fs/atomic.js';
-import { procedurePaths, PROCEDURES } from '../core/procedures.js';
+import { scanProcedures } from '../core/procedures.js';
 import { mergeJsonArrayLists } from '../core/json-config-merge.js';
 import { htmlCommentFence, type Fence } from '../core/markers.js';
 import type { Store } from '../core/store.js';
@@ -64,11 +64,11 @@ export async function execute(store: Store): Promise<CommandOutcome<AdaptersGene
     }
 
     if (adapter.renderSkills) {
-      const paths = procedurePaths(store.config);
-      const procedures = PROCEDURES.map((procedure, i) => ({
-        name: procedure.name,
-        path: paths[i]!,
-        description: procedure.description,
+      const scanned = await scanProcedures(store.root, store.config);
+      const procedures = scanned.map((procedure) => ({
+        name: procedure.title,
+        path: procedure.path,
+        description: procedure.description ?? `Follow the "${procedure.title}" procedure for this contexture store.`,
       }));
       for (const skill of adapter.renderSkills(procedures)) {
         const skillPath = path.join(store.root, skill.path);

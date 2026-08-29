@@ -40,6 +40,9 @@ export const DEFAULT_IDENTITY_PATH = '.contexture/identity/';
 /** harness-portability spec: the portable procedure-markdown pack, excluded from retrieval (infra, not knowledge). */
 export const DEFAULT_PROCEDURES_PATH = '.contexture/procedures/';
 
+/** harness-portability spec (entry-doc-generation): operator-authored convention docs, indexed by AGENTS.md. */
+export const DEFAULT_CONVENTIONS_PATH = '.contexture/conventions/';
+
 /** Paths excluded from every retrieval leg by default. */
 export const DEFAULT_EXCLUDE_PATHS = ['.contexture/'] as const;
 

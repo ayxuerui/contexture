@@ -19,7 +19,7 @@ function makeConfig(excludePaths: string[], identityPath = 'identity/'): StoreCo
     ingest: { inbox_path: 'inbox/' },
     organize: { archive_path: 'archive/' },
     identity: { path: identityPath },
-    harness: { procedures_path: 'procedures/' },
+    harness: { procedures_path: 'procedures/', conventions_path: 'conventions/' },
     adapters: [],
   };
 }

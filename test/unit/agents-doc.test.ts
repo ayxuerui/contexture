@@ -35,7 +35,7 @@ function makeConfig(overrides: Partial<StoreConfig> = {}): StoreConfig {
     ingest: { inbox_path: 'inbox/' },
     organize: { archive_path: 'archive/' },
     identity: { path: 'identity/' },
-    harness: { procedures_path: 'procedures/' },
+    harness: { procedures_path: 'procedures/', conventions_path: 'conventions/' },
     adapters: [],
     ...overrides,
   };
@@ -153,30 +153,37 @@ describe('buildAgentsCaptureSection', () => {
   });
 });
 
+const SCANNED_PROCEDURES = [
+  { path: 'procedures/ingest-orchestration.md', title: 'Ingest orchestration', description: null },
+  { path: 'procedures/placement.md', title: 'Placement', description: null },
+  { path: 'procedures/connection-finding.md', title: 'Connection finding', description: 'Find related notes.' },
+  { path: 'procedures/organize-audit.md', title: 'Organize audit', description: null },
+];
+
 describe('renderCanonicalSection', () => {
   it('states the root-resolution rule naming --root and CONTEXTURE_ROOT', () => {
-    const lines = renderCanonicalSection(makeConfig()).join('\n');
+    const lines = renderCanonicalSection(makeConfig(), SCANNED_PROCEDURES).join('\n');
     expect(lines).toContain('--root');
     expect(lines).toContain('CONTEXTURE_ROOT');
     expect(lines).toContain('contexture.yaml');
   });
 
   it('points at the configured visibility field key, not a hardcoded one', () => {
-    const lines = renderCanonicalSection(makeConfig({ fields: { visibility: 'lens' } })).join('\n');
+    const lines = renderCanonicalSection(makeConfig({ fields: { visibility: 'lens' } }), SCANNED_PROCEDURES).join('\n');
     expect(lines).toContain('`lens:`');
   });
 
   it('states the write-path rule naming session start and session submit', () => {
-    const lines = renderCanonicalSection(makeConfig()).join('\n');
+    const lines = renderCanonicalSection(makeConfig(), SCANNED_PROCEDURES).join('\n');
     expect(lines).toMatch(/session start/);
     expect(lines).toMatch(/session submit/);
   });
 
-  it('indexes every procedure by name and path', () => {
-    const lines = renderCanonicalSection(makeConfig()).join('\n');
+  it('indexes every scanned procedure by title and path, with description when present', () => {
+    const lines = renderCanonicalSection(makeConfig(), SCANNED_PROCEDURES).join('\n');
     expect(lines).toContain('[Ingest orchestration](procedures/ingest-orchestration.md)');
     expect(lines).toContain('[Placement](procedures/placement.md)');
-    expect(lines).toContain('[Connection finding](procedures/connection-finding.md)');
+    expect(lines).toContain('[Connection finding](procedures/connection-finding.md) — Find related notes.');
     expect(lines).toContain('[Organize audit](procedures/organize-audit.md)');
   });
 });

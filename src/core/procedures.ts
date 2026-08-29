@@ -2,6 +2,7 @@ import { existsSync } from 'node:fs';
 import { mkdir } from 'node:fs/promises';
 import path from 'node:path';
 import type { StoreConfig } from '../config/schema.js';
+import { scanDocsDir, type ScannedDoc } from './conventions.js';
 import { writeFileAtomic } from './fs/atomic.js';
 
 /**
@@ -73,6 +74,18 @@ export const PROCEDURES: readonly Procedure[] = [
 `,
   },
 ];
+
+/**
+ * entry-doc-generation spec: every procedure file actually on disk — the
+ * shipped seeds plus any operator-added ones. This is what the AGENTS.md
+ * index, skill generation, and verify --portable all consume; the static
+ * PROCEDURES const remains only the seed content ensureProcedureFiles
+ * writes. Shipped seeds carry no frontmatter, so their metadata falls back
+ * to the first heading (which matches their PROCEDURES name).
+ */
+export function scanProcedures(root: string, config: StoreConfig): Promise<ScannedDoc[]> {
+  return scanDocsDir(root, config.harness.procedures_path);
+}
 
 export function procedurePaths(config: StoreConfig): string[] {
   return PROCEDURES.map((p) => path.join(config.harness.procedures_path, p.file).split(path.sep).join('/'));

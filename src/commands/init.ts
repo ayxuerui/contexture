@@ -9,6 +9,7 @@ import {
   DEFAULT_ARCHIVE_PATH,
   DEFAULT_CATALOG_PATH,
   DEFAULT_CATALOG_SECTION_MAX_BYTES,
+  DEFAULT_CONVENTIONS_PATH,
   DEFAULT_DERIVED_PATHS,
   DEFAULT_DIFF_SIZE_CEILING_LINES,
   DEFAULT_EXCLUDE_PATHS,
@@ -28,6 +29,7 @@ import { SUPPORTED_SCHEMA_VERSION, TaxonomyLayerSchema, type StoreConfig, type T
 import {
   buildAgentsCanonicalSection,
   buildAgentsCaptureSection,
+  buildAgentsConventionsSection,
   buildAgentsIdentitySection,
   buildAgentsLegRoutingSection,
   buildAgentsPlacementSection,
@@ -157,6 +159,7 @@ async function runInitCore(env: RunEnv, flags: InitFlags): Promise<RunInitResult
     await ensureProcedureFiles(root, config);
     await buildAgentsCanonicalSection(root, config);
     await buildAgentsIdentitySection(root, config);
+    await buildAgentsConventionsSection(root, config);
     return {
       data: {
         root,
@@ -220,7 +223,7 @@ async function runInitCore(env: RunEnv, flags: InitFlags): Promise<RunInitResult
     ingest: { inbox_path: DEFAULT_INBOX_PATH },
     organize: { archive_path: DEFAULT_ARCHIVE_PATH },
     identity: { path: DEFAULT_IDENTITY_PATH },
-    harness: { procedures_path: DEFAULT_PROCEDURES_PATH },
+    harness: { procedures_path: DEFAULT_PROCEDURES_PATH, conventions_path: DEFAULT_CONVENTIONS_PATH },
     adapters: [...DEFAULT_ADAPTERS],
   };
   // Round-trips through the schema internally; throws before any byte is written if it doesn't.
@@ -237,6 +240,7 @@ async function runInitCore(env: RunEnv, flags: InitFlags): Promise<RunInitResult
   const procedureFilesCreated = await ensureProcedureFiles(root, config);
   await buildAgentsCanonicalSection(root, config);
   await buildAgentsIdentitySection(root, config);
+  await buildAgentsConventionsSection(root, config);
 
   // One directory per configured layer with a .gitkeep — makes Zettelkasten's
   // zero-layer shape visibly different from PARA's at a glance. This is a
