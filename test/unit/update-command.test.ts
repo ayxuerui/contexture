@@ -53,7 +53,11 @@ describe('ctxr update', () => {
       expect(outcome.data?.changed).toContain('.claude/skills/contexture-placement/SKILL.md');
       expect(outcome.data?.changed).toContain('AGENTS.md');
       expect(await readFile(skillPath, 'utf8')).toContain(MANAGED_SKILL_HEADER);
-      expect(await readFile(agentsPath, 'utf8')).not.toContain('`contexture ');
+      const agents = await readFile(agentsPath, 'utf8');
+      expect(agents).not.toContain('`contexture ');
+      // The index is a disk scan: it must reflect the FRESH copy in the same run, not the stale one.
+      expect(agents).toContain('[contexture-placement](.claude/skills/contexture-placement/SKILL.md) — Choose the right taxonomy layer');
+      expect(await update(env, store)).toMatchObject({ data: { changed: [] } });
     } finally {
       await tmp.cleanup();
     }

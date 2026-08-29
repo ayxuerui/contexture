@@ -44,6 +44,11 @@ export async function reconcileStore(env: RunEnv, root: string, config: StoreCon
     (await upsertFencedRegionInFile(gitignorePath, WORKTREES_GITIGNORE_FENCE, [config.session.worktrees_path])).changed,
   );
 
+  // Files the generated sections index (skills, identity) must be current
+  // BEFORE the sections are rendered — the procedure index is a disk scan.
+  changed.push(...(await ensureIdentityFiles(root, config)));
+  changed.push(...(await syncShippedSkills(root, config)));
+
   let agentsChanged = false;
   for (const build of [
     buildAgentsLegRoutingSection,
@@ -56,9 +61,6 @@ export async function reconcileStore(env: RunEnv, root: string, config: StoreCon
     if ((await build(root, config)).changed) agentsChanged = true;
   }
   note('AGENTS.md', agentsChanged);
-
-  changed.push(...(await ensureIdentityFiles(root, config)));
-  changed.push(...(await syncShippedSkills(root, config)));
 
   const { changed: hookFiles } = await installHooks(root, config.git.default_branch);
   changed.push(...hookFiles);
