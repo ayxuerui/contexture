@@ -13,26 +13,16 @@
 - [ ] 3.1 Add `drift` to `source check`; add `source stamp <note> --id --hash` and `source add-alt <note> --id`; canonicalize URL identities per D3 with `ingest.tracking_params` config
 - [ ] 3.2 Tests: verdict table (new/duplicate/drift/alt); canonicalization unit table (case, fragment, tracking params, trailing slash); stamp then check → duplicate
 
-## 4. Typed relations
+## 4. Leak scan
 
-- [ ] 4.1 Parse a `relations:` frontmatter block; `graph build` records edge types; `graph query --type <name>`; `retrieval.relations` vocabulary in config with single-group default
-- [ ] 4.2 Tests: typed edge appears in graph.json with its type; untyped wikilink unchanged; unknown type → lint warning; `--type` filter narrows results
+- [ ] 4.1 Add `disclosure.leak_markers` config and a `leak` lint check per D5; `ctxr check <note> --scan` reports the same findings for one note
+- [ ] 4.2 Tests: marker for `ctx-b` inside a note visible only to `ctx-a` → finding; same marker inside a note `ctx-b` can see → no finding; no markers → no-op
 
-## 5. Leak scan
+## 5. Rollup staleness
 
-- [ ] 5.1 Add `disclosure.leak_markers` config and a `leak` lint check per D5; `ctxr check <note> --scan` reports the same findings for one note
-- [ ] 5.2 Tests: marker for `ctx-b` inside a note visible only to `ctx-a` → finding; same marker inside a note `ctx-b` can see → no finding; no markers → no-op
+- [ ] 5.1 Add `ctxr rollup stale [--for <entity>]` and an `organize` lint check using `rolled_up:` and `organize.rollup_stale_days`
+- [ ] 5.2 Tests: backlink newer than `rolled_up` → stale; no `rolled_up` → stale; all older → fresh
 
-## 6. Rollup staleness
+## 6. Integration
 
-- [ ] 6.1 Add `ctxr rollup stale [--for <entity>]` and an `organize` lint check using `rolled_up:` and `organize.rollup_stale_days`
-- [ ] 6.2 Tests: backlink newer than `rolled_up` → stale; no `rolled_up` → stale; all older → fresh
-
-## 7. Identity edits
-
-- [ ] 7.1 Add `ctxr identity add|replace|remove <file> --section <name> [--match <prefix>]` per D7
-- [ ] 7.2 Tests: add creates section; replace by prefix; remove; file without headings → refused with a distinct error
-
-## 8. Integration
-
-- [ ] 8.1 Update `openspec/specs/cli-contract` and `src/core/procedures.ts` so the owned skills call the new verbs instead of their manual equivalents; `npm run build && npm run typecheck && npx vitest run` green
+- [ ] 6.1 Update `openspec/specs/cli-contract` and `src/core/procedures.ts` so the owned skills call the new verbs instead of their manual equivalents; `npm run build && npm run typecheck && npx vitest run` green
