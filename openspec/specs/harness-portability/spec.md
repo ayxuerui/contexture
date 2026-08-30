@@ -40,3 +40,14 @@ contexture SHALL ship, as contexture-owned skills delivered by init and update, 
 #### Scenario: Update delivers the expanded skill set to an existing store
 - **WHEN** a store initialized before this change runs the update command
 - **THEN** every owned skill above is present at the configured procedures path with the managed header, and a second update reports nothing changed
+
+### Requirement: Owned skills read the vocabulary and the graph document from configuration
+The connection-proposal skill SHALL group proposals by the relation vocabulary declared in configuration and fall back to a single group when it is empty; the connection-finding and ingest-orchestration skills SHALL direct the agent to the graph document at its configured path for cluster context; and the generated entry document's retrieval section SHALL name that path. No skill SHALL hardcode a relation name.
+
+#### Scenario: Vocabulary flows into the proposal skill
+- **WHEN** a store's configuration declares the relation names `supports` and `contradicts`
+- **THEN** the rendered connection-proposal skill lists those two groups and no other relation name
+
+#### Scenario: Empty vocabulary yields one group
+- **WHEN** a store declares no relation vocabulary
+- **THEN** the rendered skill instructs a single group and names no relation
