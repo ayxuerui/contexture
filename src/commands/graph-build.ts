@@ -1,8 +1,9 @@
 import type { CommandOutcome, CommandRequires } from '../core/command.js';
 import type { Finding } from '../core/envelope.js';
 import { ExitCode } from '../core/exit-codes.js';
-import { buildGraphFromNotes, type GraphBuildResult } from '../core/graph/model.js';
-import { writeGraph } from '../core/graph/persist.js';
+import { buildGraphFromNotes, graphBuildOptions, type GraphBuildResult } from '../core/graph/model.js';
+import { renderGraphDocument, type GraphDocumentSummary } from '../core/graph/document.js';
+import { GRAPH_DOCUMENT_RELATIVE_PATH, writeGraph, writeGraphDocument } from '../core/graph/persist.js';
 import { listNotes } from '../core/notes/list.js';
 import { buildPerNoteRecords, type PerNoteRecord } from '../core/records.js';
 import type { Store } from '../core/store.js';
@@ -17,6 +18,8 @@ export interface GraphBuildData {
   nodeCount: number;
   edgeCount: number;
   dangling: GraphBuildResult['dangling'];
+  /** graph-context-document spec: where the human-readable render went, and what each section holds. */
+  document: { path: string } & GraphDocumentSummary;
   records?: PerNoteRecord[];
 }
 
@@ -30,8 +33,10 @@ export interface GraphBuildData {
  */
 export async function execute(store: Store, flags: GraphBuildFlags = {}): Promise<CommandOutcome<GraphBuildData>> {
   const notes = await listNotes(store.root, store.config);
-  const graph = buildGraphFromNotes(notes);
+  const graph = buildGraphFromNotes(notes, graphBuildOptions(store.config));
   await writeGraph(store, graph);
+  const { text, summary } = renderGraphDocument(graph, store.config.retrieval.graph);
+  await writeGraphDocument(store, text);
 
   const records = flags.emitRecords ? await buildPerNoteRecords(store) : undefined;
 
@@ -45,9 +50,9 @@ export async function execute(store: Store, flags: GraphBuildFlags = {}): Promis
 
   return {
     exitCode: ExitCode.Ok,
-    data: { nodeCount: graph.nodes.length, edgeCount: graph.edges.length, dangling: graph.dangling, records },
+    data: { nodeCount: graph.nodes.length, edgeCount: graph.edges.length, dangling: graph.dangling, document: { path: GRAPH_DOCUMENT_RELATIVE_PATH, ...summary }, records },
     findings,
-    humanSummary: `Graph built: ${graph.nodes.length} node(s), ${graph.edges.length} edge(s), ${graph.dangling.length} dangling link(s).`,
+    humanSummary: `Graph built: ${graph.nodes.length} node(s), ${graph.edges.length} edge(s) (${summary.typedLinks} typed), ${graph.dangling.length} dangling link(s); ${summary.clusters} cluster(s), ${summary.bridges} bridge(s), ${summary.orphans} orphan(s) → ${GRAPH_DOCUMENT_RELATIVE_PATH}.`,
     storeRoot: store.root,
     schemaVersion: store.config.schema_version,
   };

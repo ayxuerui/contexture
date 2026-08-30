@@ -2,7 +2,17 @@ import type { CommandOutcome, CommandRequires } from '../core/command.js';
 import { GraphNodeNotFoundError, GraphNotBuiltError } from '../core/errors.js';
 import { ExitCode } from '../core/exit-codes.js';
 import type { Direction, HubEntry } from '../core/graph/query.js';
-import { hubs, neighbors, orphans, shortestPath, subgraph } from '../core/graph/query.js';
+import {
+  bridges,
+  clusters,
+  hubs,
+  neighbors,
+  orphans,
+  shortestPath,
+  subgraph,
+  type BridgeEntry,
+  type ClusterEntry,
+} from '../core/graph/query.js';
 import type { GraphBuildResult } from '../core/graph/model.js';
 import { readGraph } from '../core/graph/persist.js';
 import { filterGraphByAudience } from '../core/graph/visibility-filter.js';
@@ -41,6 +51,7 @@ export interface NeighborsFlags {
   node: string;
   depth?: number;
   direction?: Direction;
+  type?: string;
   as?: string;
 }
 
@@ -50,7 +61,7 @@ export async function executeNeighbors(
 ): Promise<CommandOutcome<{ neighbors: string[] }>> {
   const graph = await loadGraph(store, flags.as);
   assertNode(graph, flags.node);
-  const result = neighbors(graph, flags.node, { depth: flags.depth, direction: flags.direction });
+  const result = neighbors(graph, flags.node, { depth: flags.depth, direction: flags.direction, type: flags.type });
   return outcome(store, { neighbors: result }, `${result.length} neighbor(s) of "${flags.node}".`);
 }
 
@@ -106,4 +117,31 @@ export async function executeOrphans(store: Store, flags: OrphansFlags = {}): Pr
   const graph = await loadGraph(store, flags.as);
   const result = orphans(graph);
   return outcome(store, { orphans: result }, `${result.length} orphan node(s) (no links in or out).`);
+}
+
+export interface ClustersFlags {
+  as?: string;
+}
+
+export async function executeClusters(
+  store: Store,
+  flags: ClustersFlags = {},
+): Promise<CommandOutcome<{ clusters: ClusterEntry[] }>> {
+  const graph = await loadGraph(store, flags.as);
+  const result = clusters(graph);
+  return outcome(store, { clusters: result }, `${result.length} cluster(s).`);
+}
+
+export interface BridgesFlags {
+  top?: number;
+  as?: string;
+}
+
+export async function executeBridges(
+  store: Store,
+  flags: BridgesFlags = {},
+): Promise<CommandOutcome<{ bridges: BridgeEntry[] }>> {
+  const graph = await loadGraph(store, flags.as);
+  const result = bridges(graph, flags.top ?? store.config.retrieval.graph.bridge_top);
+  return outcome(store, { bridges: result }, `Top ${result.length} bridge(s) by distinct clusters linked into.`);
 }

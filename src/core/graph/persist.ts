@@ -9,6 +9,19 @@ export function graphFilePath(store: Store): string {
   return path.join(store.root, '.contexture', 'cache', 'graph.json');
 }
 
+/** graph-context-document spec: the human-readable render lives beside the artifact; this is the path AGENTS.md and the skills name. */
+export const GRAPH_DOCUMENT_RELATIVE_PATH = '.contexture/cache/graph.md';
+
+export function graphDocumentPath(store: Store): string {
+  return path.join(store.root, ...GRAPH_DOCUMENT_RELATIVE_PATH.split('/'));
+}
+
+export async function writeGraphDocument(store: Store, text: string): Promise<void> {
+  const filePath = graphDocumentPath(store);
+  await mkdir(path.dirname(filePath), { recursive: true });
+  await writeFileAtomic(filePath, text);
+}
+
 export async function writeGraph(store: Store, graph: GraphBuildResult): Promise<void> {
   const filePath = graphFilePath(store);
   await mkdir(path.dirname(filePath), { recursive: true });

@@ -51,6 +51,17 @@ export const DEFAULT_CONVENTIONS_PATH = '.contexture/conventions/';
 /** Paths excluded from every retrieval leg by default. */
 export const DEFAULT_EXCLUDE_PATHS = ['.contexture/'] as const;
 
+/** graph-context-document spec: no relation vocabulary by default — no typed edges until a store declares names. */
+export const DEFAULT_RELATIONS: readonly string[] = [];
+
+/** graph-context-document spec: positional clusters two directory segments deep; document sections capped for readability. */
+export const DEFAULT_GRAPH_SETTINGS = {
+  cluster_depth: 2,
+  hub_top: 8,
+  bridge_top: 10,
+  orphan_exempt_clusters: [] as string[],
+};
+
 /** write-lifecycle spec: session worktrees live under a configured, gitignored path. */
 export const DEFAULT_WORKTREES_PATH = '.worktrees/';
 

@@ -248,11 +248,12 @@ export async function run(argv: readonly string[], env: RunEnv): Promise<ExitCod
     .description('list nodes reachable from <node> within --depth hops')
     .option('--depth <n>', 'hop count', (v) => Number.parseInt(v, 10), 1)
     .option('--direction <dir>', 'in, out, or both', 'both')
+    .option('--type <name>', 'follow only edges of this type (a configured relation name, or link)')
     .option('--as <context>', 'filter to notes visible to this context before traversal')
     .action(
       async (
         node: string,
-        cmdOpts: { depth: number; direction: 'in' | 'out' | 'both'; as?: string },
+        cmdOpts: { depth: number; direction: 'in' | 'out' | 'both'; type?: string; as?: string },
         cmd: Command,
       ) => {
         const { runEnv, jsonMode, root } = deriveRunEnv(env, cmd);
@@ -262,6 +263,7 @@ export async function run(argv: readonly string[], env: RunEnv): Promise<ExitCod
             node,
             depth: cmdOpts.depth,
             direction: cmdOpts.direction,
+            type: cmdOpts.type,
             as: cmdOpts.as,
           });
         });
@@ -302,6 +304,31 @@ export async function run(argv: readonly string[], env: RunEnv): Promise<ExitCod
       result = await runCommand('graph.query.hubs', runEnv, jsonMode, async () => {
         const store = await openStore(runEnv, { root });
         return graphQueryCommand.executeHubs(store, { top: cmdOpts.top, as: cmdOpts.as });
+      });
+    });
+
+  graphQueryCommandGroup
+    .command('clusters')
+    .description('every positional cluster with its note count')
+    .option('--as <context>', 'filter to notes visible to this context first')
+    .action(async (cmdOpts: { as?: string }, cmd: Command) => {
+      const { runEnv, jsonMode, root } = deriveRunEnv(env, cmd);
+      result = await runCommand('graph.query.clusters', runEnv, jsonMode, async () => {
+        const store = await openStore(runEnv, { root });
+        return graphQueryCommand.executeClusters(store, { as: cmdOpts.as });
+      });
+    });
+
+  graphQueryCommandGroup
+    .command('bridges')
+    .description('notes that link into the most other clusters')
+    .option('--top <n>', 'how many to list (default: the configured bridge limit)', (v) => Number.parseInt(v, 10))
+    .option('--as <context>', 'filter to notes visible to this context before ranking')
+    .action(async (cmdOpts: { top?: number; as?: string }, cmd: Command) => {
+      const { runEnv, jsonMode, root } = deriveRunEnv(env, cmd);
+      result = await runCommand('graph.query.bridges', runEnv, jsonMode, async () => {
+        const store = await openStore(runEnv, { root });
+        return graphQueryCommand.executeBridges(store, { top: cmdOpts.top, as: cmdOpts.as });
       });
     });
 

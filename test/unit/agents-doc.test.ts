@@ -26,7 +26,7 @@ function makeConfig(overrides: Partial<StoreConfig> = {}): StoreConfig {
     fields: { visibility: 'scope' },
     visibility: { default_context: 'private', directory_defaults: {}, contexts: {} },
     derived: { paths: ['.contexture/'] },
-    retrieval: { exclude_paths: ['identity/'] },
+    retrieval: { exclude_paths: ['identity/'], relations: [], graph: { cluster_depth: 2, hub_top: 8, bridge_top: 10, orphan_exempt_clusters: [] } },
     git: { default_branch: 'main' },
     session: { branch_prefix: 'session/', worktrees_path: '.worktrees/' },
     write_lifecycle: { diff_size_ceiling_lines: 2000 },
@@ -97,7 +97,7 @@ describe('buildAgentsLegRoutingSection', () => {
     const tmp = await makeTmpDir();
     try {
       await buildAgentsLegRoutingSection(tmp.root, makeConfig());
-      await buildAgentsLegRoutingSection(tmp.root, makeConfig({ retrieval: { exclude_paths: ['secrets/'] } }));
+      await buildAgentsLegRoutingSection(tmp.root, makeConfig({ retrieval: { exclude_paths: ['secrets/'], relations: [], graph: { cluster_depth: 2, hub_top: 8, bridge_top: 10, orphan_exempt_clusters: [] } } }));
       const content = await readFile(agentsMdPath(tmp.root), 'utf8');
       expect(content).toContain('`secrets/`');
       expect(content).not.toContain('`identity/`');
@@ -233,5 +233,15 @@ describe('renderIdentitySection (open-box identity)', () => {
     } finally {
       await tmp.cleanup();
     }
+  });
+});
+
+describe('graph-context-document: the retrieval section names the graph document', () => {
+  it('points agents at the rendered document and the cluster/bridge queries', async () => {
+    const { renderLegRoutingSection } = await import('../../src/core/agents-doc.js');
+    const { GRAPH_DOCUMENT_RELATIVE_PATH } = await import('../../src/core/graph/persist.js');
+    const lines = renderLegRoutingSection(makeConfig()).join('\n');
+    expect(lines).toContain(GRAPH_DOCUMENT_RELATIVE_PATH);
+    expect(lines).toContain('clusters, bridges');
   });
 });

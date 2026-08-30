@@ -14,7 +14,7 @@ function makeConfig(): StoreConfig {
     fields: { visibility: 'scope' },
     visibility: { default_context: 'private', directory_defaults: {}, contexts: {} },
     derived: { paths: [] },
-    retrieval: { exclude_paths: [] },
+    retrieval: { exclude_paths: [], relations: [], graph: { cluster_depth: 2, hub_top: 8, bridge_top: 10, orphan_exempt_clusters: [] } },
     git: { default_branch: 'main' },
     session: { branch_prefix: 'session/', worktrees_path: '.worktrees/' },
     write_lifecycle: { diff_size_ceiling_lines: 2000 },
@@ -43,7 +43,7 @@ describe('filterGraphByAudience', () => {
       await writeNote(tmp.root, 'projects/b.md', '---\nscope: ctx-b\n---\n');
 
       const graph: GraphBuildResult = {
-        nodes: [{ id: 'projects/a.md', path: 'projects/a.md' }, { id: 'projects/b.md', path: 'projects/b.md' }],
+        nodes: [{ id: 'projects/a.md', path: 'projects/a.md', cluster: 'projects' }, { id: 'projects/b.md', path: 'projects/b.md', cluster: 'projects' }],
         edges: [{ src: 'projects/a.md', dst: 'projects/b.md', type: 'link' }],
         dangling: [],
       };
@@ -64,7 +64,7 @@ describe('filterGraphByAudience', () => {
       await writeNote(tmp.root, 'projects/b.md', '---\nscope: ctx-a\n---\n');
 
       const graph: GraphBuildResult = {
-        nodes: [{ id: 'projects/a.md', path: 'projects/a.md' }, { id: 'projects/b.md', path: 'projects/b.md' }],
+        nodes: [{ id: 'projects/a.md', path: 'projects/a.md', cluster: 'projects' }, { id: 'projects/b.md', path: 'projects/b.md', cluster: 'projects' }],
         edges: [{ src: 'projects/a.md', dst: 'projects/b.md', type: 'link' }],
         dangling: [],
       };
@@ -83,7 +83,7 @@ describe('filterGraphByAudience', () => {
       const store: Store = { root: tmp.root, config: makeConfig() };
       // No note written for projects/deleted.md — a stale graph entry.
       const graph: GraphBuildResult = {
-        nodes: [{ id: 'projects/deleted.md', path: 'projects/deleted.md' }],
+        nodes: [{ id: 'projects/deleted.md', path: 'projects/deleted.md', cluster: 'projects' }],
         edges: [],
         dangling: [],
       };
@@ -109,9 +109,9 @@ describe('filterGraphByAudience with a context mapping', () => {
 
       const graph: GraphBuildResult = {
         nodes: [
-          { id: 'projects/own.md', path: 'projects/own.md' },
-          { id: 'projects/shared.md', path: 'projects/shared.md' },
-          { id: 'projects/other.md', path: 'projects/other.md' },
+          { id: 'projects/own.md', path: 'projects/own.md', cluster: 'projects' },
+          { id: 'projects/shared.md', path: 'projects/shared.md', cluster: 'projects' },
+          { id: 'projects/other.md', path: 'projects/other.md', cluster: 'projects' },
         ],
         edges: [],
         dangling: [],
@@ -119,6 +119,26 @@ describe('filterGraphByAudience with a context mapping', () => {
 
       const filtered = await filterGraphByAudience(store, graph, 'ctx-a');
       expect(filtered.nodes.map((n) => n.id).sort()).toEqual(['projects/own.md', 'projects/shared.md']);
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+});
+
+describe('graph-context-document: --as filters bridges through the same pre-filter', () => {
+  it('a bridge that exists only through an invisible note is not a bridge for that context', async () => {
+    const { executeBridges } = await import('../../src/commands/graph-query.js');
+    const { execute: graphBuild } = await import('../../src/commands/graph-build.js');
+    const tmp = await makeTmpDir();
+    try {
+      const store: Store = { root: tmp.root, config: makeConfig() };
+      await writeNote(tmp.root, 'projects/p/a.md', '---\nscope: ctx-a\n---\n[[secret]]\n');
+      await writeNote(tmp.root, 'projects/q/secret.md', '---\nscope: ctx-b\n---\n');
+      await graphBuild(store);
+      const all = await executeBridges(store, {});
+      expect(all.data?.bridges.map((b) => b.id)).toEqual(['projects/p/a.md']);
+      const filtered = await executeBridges(store, { as: 'ctx-a' });
+      expect(filtered.data?.bridges).toEqual([]);
     } finally {
       await tmp.cleanup();
     }

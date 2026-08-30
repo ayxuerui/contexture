@@ -17,7 +17,7 @@ function makeConfig(): StoreConfig {
     fields: { visibility: 'scope' },
     visibility: { default_context: 'private', directory_defaults: {}, contexts: {} },
     derived: { paths: [] },
-    retrieval: { exclude_paths: [] },
+    retrieval: { exclude_paths: [], relations: [], graph: { cluster_depth: 2, hub_top: 8, bridge_top: 10, orphan_exempt_clusters: [] } },
     git: { default_branch: 'main' },
     session: { branch_prefix: 'session/', worktrees_path: '.worktrees/' },
     write_lifecycle: { diff_size_ceiling_lines: 2000 },
@@ -54,7 +54,7 @@ describe('orphanNotesCheck', () => {
   });
 
   it('fails, naming each orphan node, when the graph has orphans', async () => {
-    const graph: GraphBuildResult = { nodes: [{ id: 'a.md', path: 'a.md' }], edges: [], dangling: [] };
+    const graph: GraphBuildResult = { nodes: [{ id: 'a.md', path: 'a.md', cluster: '(root)' }], edges: [], dangling: [] };
     const result = await orphanNotesCheck.run(makeCtx([], graph));
     expect(result.status).toBe('fail');
     expect(result.findings[0]?.subject).toBe('a.md');
@@ -62,7 +62,7 @@ describe('orphanNotesCheck', () => {
 
   it('passes when every node has at least one link', async () => {
     const graph: GraphBuildResult = {
-      nodes: [{ id: 'a.md', path: 'a.md' }, { id: 'b.md', path: 'b.md' }],
+      nodes: [{ id: 'a.md', path: 'a.md', cluster: '(root)' }, { id: 'b.md', path: 'b.md', cluster: '(root)' }],
       edges: [{ src: 'a.md', dst: 'b.md', type: 'link' }],
       dangling: [],
     };
@@ -83,7 +83,7 @@ describe('brokenLinksCheck', () => {
 
   it('fails, naming the dangling link, when the graph reports one', async () => {
     const graph: GraphBuildResult = {
-      nodes: [{ id: 'a.md', path: 'a.md' }],
+      nodes: [{ id: 'a.md', path: 'a.md', cluster: '(root)' }],
       edges: [],
       dangling: [{ from: 'a.md', target: 'ghost', reason: 'not_found' }],
     };

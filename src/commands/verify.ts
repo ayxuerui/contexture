@@ -6,7 +6,7 @@ import { readCatalogSection } from '../core/catalog/build.js';
 import { catalogSectionsFor } from '../core/catalog/model.js';
 import type { Finding } from '../core/envelope.js';
 import { ExitCode } from '../core/exit-codes.js';
-import { buildGraphFromNotes } from '../core/graph/model.js';
+import { buildGraphFromNotes, graphBuildOptions } from '../core/graph/model.js';
 import { writeGraph } from '../core/graph/persist.js';
 import { listNotes } from '../core/notes/list.js';
 import { scanProcedures } from '../core/procedures.js';
@@ -61,7 +61,7 @@ export async function execute(store: Store, _flags: VerifyFlags = {}): Promise<C
   // 2. A derived-artifact build.
   try {
     const notes = await listNotes(store.root, store.config);
-    await writeGraph(store, buildGraphFromNotes(notes));
+    await writeGraph(store, buildGraphFromNotes(notes, graphBuildOptions(store.config)));
     steps.push({ operation: 'derived-artifact build (graph build)', status: 'pass' });
   } catch (err) {
     steps.push({

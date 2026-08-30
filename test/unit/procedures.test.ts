@@ -11,6 +11,7 @@ import {
   syncShippedSkills,
   terminatingLayers,
 } from '../../src/core/procedures.js';
+import { GRAPH_DOCUMENT_RELATIVE_PATH } from '../../src/core/graph/persist.js';
 import { SHIPPED_PROFILES } from '../../src/taxonomy/profiles.js';
 import { makeTmpDir } from '../helpers/tmp-store.js';
 
@@ -34,7 +35,7 @@ function makeConfig(overrides: Partial<StoreConfig> = {}): StoreConfig {
     fields: { visibility: 'scope' },
     visibility: { default_context: 'ctx-default', directory_defaults: {}, contexts: {} },
     derived: { paths: [] },
-    retrieval: { exclude_paths: ['procedures/'] },
+    retrieval: { exclude_paths: ['procedures/'], relations: [], graph: { cluster_depth: 2, hub_top: 8, bridge_top: 10, orphan_exempt_clusters: [] } },
     git: { default_branch: 'trunk' },
     session: { branch_prefix: 'session/', worktrees_path: '.worktrees/' },
     write_lifecycle: { diff_size_ceiling_lines: 2000 },
@@ -100,7 +101,7 @@ describe('owned-skills-expansion: each skill carries its load-bearing rule (task
   it('connection proposal: reads before it proposes, groups by the configured vocabulary with a single fallback group, confirms before writing', () => {
     const s = skills['ctxr-connection-proposal'];
     expect(s).toContain('Read every candidate before proposing it');
-    expect(s).toContain('relation vocabulary this store');
+    expect(s).toContain('relation vocabulary'); // configured or absent, the grouping is always stated against the config
     expect(s).toContain('single **Related** group');
     expect(s).toContain('Confirm before writing');
     expect(s).toContain('`ctxr graph query orphans`');
@@ -329,6 +330,32 @@ describe('syncShippedSkills removes managed copies the installed version no long
       expect(existsSync(path.join(tmp.root, 'procedures/mine/SKILL.md'))).toBe(true);
     } finally {
       await tmp.cleanup();
+    }
+  });
+});
+
+describe('graph-context-document: skills read the vocabulary and the graph document from configuration', () => {
+  it('connection finding and ingest orchestration name the graph document path', () => {
+    const skills = rendered();
+    expect(skills['ctxr-connection-finding']).toContain(GRAPH_DOCUMENT_RELATIVE_PATH);
+    expect(skills['ctxr-ingest-orchestration']).toContain(GRAPH_DOCUMENT_RELATIVE_PATH);
+  });
+
+  it('the proposal skill groups by the configured vocabulary and names no other relation', () => {
+    const config = makeConfig();
+    config.retrieval = { ...config.retrieval, relations: ['supports', 'contradicts'] };
+    const s = rendered(config)['ctxr-connection-proposal'];
+    expect(s).toContain('**supports**, **contradicts**');
+    expect(s).not.toContain('single **Related** group');
+  });
+
+  it('an empty vocabulary yields one group and no relation name anywhere in the owned skills', () => {
+    const skills = rendered();
+    expect(skills['ctxr-connection-proposal']).toContain('single **Related** group');
+    for (const [file, content] of Object.entries(skills)) {
+      for (const word of ['upstream', 'downstream', 'opposing']) {
+        expect(content, `${file} hardcodes relation "${word}"`).not.toMatch(new RegExp(`\\b${word}\\b`, 'i'));
+      }
     }
   });
 });

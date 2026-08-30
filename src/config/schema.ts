@@ -55,8 +55,25 @@ const DerivedSchema = z.object({
   paths: z.array(z.string()),
 });
 
+/**
+ * graph-context-document spec: the graph document's knobs. Clusters are
+ * positional (the first `cluster_depth` directory segments), never nominal,
+ * so no layer name is involved; `orphan_exempt_clusters` keeps a
+ * deliberately unlinked cluster out of the document without touching the
+ * orphan lint check.
+ */
+const GraphSettingsSchema = z.object({
+  cluster_depth: z.number().int().positive().default(2),
+  hub_top: z.number().int().positive().default(8),
+  bridge_top: z.number().int().positive().default(10),
+  orphan_exempt_clusters: z.array(z.string()).default([]),
+});
+
 const RetrievalSchema = z.object({
   exclude_paths: z.array(z.string()),
+  /** graph-context-document spec: relation names whose section headings type the wikilinks under them; empty = no typed edges. */
+  relations: z.array(z.string().min(1)).default([]),
+  graph: GraphSettingsSchema.default({ cluster_depth: 2, hub_top: 8, bridge_top: 10, orphan_exempt_clusters: [] }),
 });
 
 /**
@@ -162,5 +179,6 @@ export const StoreConfigSchema = z
 
 export type StoreConfig = z.infer<typeof StoreConfigSchema>;
 export type TaxonomyLayerConfig = z.infer<typeof TaxonomyLayerSchema>;
+export type GraphSettingsConfig = z.infer<typeof GraphSettingsSchema>;
 export type HardWallConfig = z.infer<typeof HardWallSchema>;
 export type AdapterDeclaration = z.infer<typeof AdapterDeclarationSchema>;

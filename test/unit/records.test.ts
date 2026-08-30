@@ -15,7 +15,7 @@ function makeConfig(overrides: Partial<StoreConfig> = {}): StoreConfig {
     fields: { visibility: 'scope' },
     visibility: { default_context: 'private', directory_defaults: {}, contexts: {} },
     derived: { paths: [] },
-    retrieval: { exclude_paths: [] },
+    retrieval: { exclude_paths: [], relations: [], graph: { cluster_depth: 2, hub_top: 8, bridge_top: 10, orphan_exempt_clusters: [] } },
     git: { default_branch: 'main' },
     session: { branch_prefix: 'session/', worktrees_path: '.worktrees/' },
     write_lifecycle: { diff_size_ceiling_lines: 2000 },

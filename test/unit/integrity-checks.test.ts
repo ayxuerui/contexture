@@ -18,7 +18,7 @@ function makeConfig(overrides: Partial<StoreConfig> = {}): StoreConfig {
     fields: { visibility: 'lens' },
     visibility: { default_context: 'private', directory_defaults: {}, contexts: {} },
     derived: { paths: [] },
-    retrieval: { exclude_paths: [] },
+    retrieval: { exclude_paths: [], relations: [], graph: { cluster_depth: 2, hub_top: 8, bridge_top: 10, orphan_exempt_clusters: [] } },
     git: { default_branch: 'main' },
     session: { branch_prefix: 'session/', worktrees_path: '.worktrees/' },
     write_lifecycle: { diff_size_ceiling_lines: 2000 },
@@ -62,7 +62,7 @@ describe('graphDanglingLinksCheck', () => {
 
   it('fails, naming the link, when the graph has a dangling link', async () => {
     const graph: GraphBuildResult = {
-      nodes: [{ id: 'a.md', path: 'a.md' }],
+      nodes: [{ id: 'a.md', path: 'a.md', cluster: '(root)' }],
       edges: [],
       dangling: [{ from: 'a.md', target: 'ghost', reason: 'not_found' }],
     };
@@ -72,7 +72,7 @@ describe('graphDanglingLinksCheck', () => {
   });
 
   it('passes when the graph has no dangling links', async () => {
-    const graph: GraphBuildResult = { nodes: [{ id: 'a.md', path: 'a.md' }], edges: [], dangling: [] };
+    const graph: GraphBuildResult = { nodes: [{ id: 'a.md', path: 'a.md', cluster: '(root)' }], edges: [], dangling: [] };
     const result = await graphDanglingLinksCheck.run(makeCtx({ graph }));
     expect(result.status).toBe('pass');
   });
@@ -131,7 +131,7 @@ describe('derivedArtifactStalenessCheck', () => {
 
   it('fails when the persisted graph no longer matches a fresh rebuild', async () => {
     const notes: Note[] = [{ path: 'a.md', frontmatter: undefined, body: '' }, { path: 'b.md', frontmatter: undefined, body: '' }];
-    const staleGraph: GraphBuildResult = { nodes: [{ id: 'a.md', path: 'a.md' }], edges: [], dangling: [] }; // missing b.md
+    const staleGraph: GraphBuildResult = { nodes: [{ id: 'a.md', path: 'a.md', cluster: '(root)' }], edges: [], dangling: [] }; // missing b.md
     const result = await derivedArtifactStalenessCheck.run(makeCtx({ notes, graph: staleGraph }));
     expect(result.status).toBe('fail');
     expect(result.findings.some((f) => f.code === 'derived_artifacts.graph_stale')).toBe(true);
@@ -139,7 +139,7 @@ describe('derivedArtifactStalenessCheck', () => {
 
   it('passes when the persisted graph matches a fresh rebuild exactly', async () => {
     const notes: Note[] = [{ path: 'a.md', frontmatter: undefined, body: '' }];
-    const freshGraph: GraphBuildResult = { nodes: [{ id: 'a.md', path: 'a.md' }], edges: [], dangling: [] };
+    const freshGraph: GraphBuildResult = { nodes: [{ id: 'a.md', path: 'a.md', cluster: '(root)' }], edges: [], dangling: [] };
     const result = await derivedArtifactStalenessCheck.run(makeCtx({ notes, graph: freshGraph }));
     expect(result.status).toBe('pass');
   });

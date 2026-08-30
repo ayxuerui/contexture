@@ -113,7 +113,7 @@ describe('contexture graph (real CLI)', () => {
         env,
       });
       expect(subgraphResult.exitCode).toBe(0);
-      expect(JSON.parse(subgraphResult.stdout).data.nodes).toEqual([{ id: 'projects/a.md', path: 'projects/a.md' }]);
+      expect(JSON.parse(subgraphResult.stdout).data.nodes).toEqual([{ id: 'projects/a.md', path: 'projects/a.md', cluster: 'projects' }]);
     } finally {
       await tmp.cleanup();
     }

@@ -3,6 +3,7 @@ import path from 'node:path';
 import type { StoreConfig, TaxonomyLayerConfig } from '../config/schema.js';
 import { scanDocsDir, SKILL_FILE_NAME, type ScannedDoc } from './conventions.js';
 import { writeFileAtomic } from './fs/atomic.js';
+import { GRAPH_DOCUMENT_RELATIVE_PATH } from './graph/persist.js';
 import { IDENTITY_FILES } from './identity.js';
 
 /**
@@ -212,8 +213,9 @@ const INGEST_ORCHESTRATION: ProcedureSeed = {
     '   yourself; never guess which existing note it is.',
     '3. Read the source fully. Then read the existing cluster BEFORE writing anything: the catalog section for',
     '   the domain (`ctxr catalog show --section <id>`), every related note in it (all of them, not one or two),',
-    '   and the graph (`ctxr graph build`, then `ctxr graph query hubs` and `ctxr graph query neighbors <path>`',
-    '   on the closest note) for the cluster\'s hubs and any bridge to a neighboring cluster. Ask: what does the',
+    '   and the graph (`ctxr graph build`, then read the graph document it writes at',
+    `   \`${GRAPH_DOCUMENT_RELATIVE_PATH}\` for hub notes by cluster and cross-cluster bridges; \`ctxr graph query hubs\``,
+    '   and `ctxr graph query neighbors <path>` on the closest note for the detail). Ask: what does the',
     '   store already know, and does this source confirm, extend, contradict, or nuance it?',
     '4. Decide — the decision table:',
     '',
@@ -250,22 +252,46 @@ const CONNECTION_FINDING: ProcedureSeed = {
     'Traversal of links that already exist. To discover links a note SHOULD have, use `ctxr-connection-proposal`;',
     'to synthesize an entity\'s current state from its sources, use `ctxr-rollup`.',
     '',
-    '1. Run `ctxr graph build` to refresh the wikilink graph from the store\'s current notes.',
+    '1. Run `ctxr graph build` to refresh the wikilink graph from the store\'s current notes, then read the graph',
+    `   document it writes at \`${GRAPH_DOCUMENT_RELATIVE_PATH}\` — hub notes by cluster, cross-cluster bridges,`,
+    '   orphans — for the cluster context the point queries below do not summarize.',
     '2. To find what a note connects to or from, run `ctxr graph query neighbors <path>` (add `--depth` for',
-    '   further hops, `--direction in|out|both`, `--as <context>` to see only what that context can see).',
+    '   further hops, `--direction in|out|both`, `--type <relation>` to follow one configured relation,',
+    '   `--as <context>` to see only what that context can see).',
     '3. To find a path between two notes, run `ctxr graph query path <from> <to>`.',
     '4. To find the most-referenced notes, run `ctxr graph query hubs`; to find unlinked ones,',
-    '   `ctxr graph query orphans`.',
+    '   `ctxr graph query orphans`; `ctxr graph query clusters` and `ctxr graph query bridges` show the',
+    '   cluster structure and the notes that span it.',
     '5. Report what the graph says — it enumerates structure and ranks nothing; judgment about which links',
     '   matter is yours.',
   ],
 };
 
+/**
+ * graph-context-document spec: the proposal skill groups by the CONFIGURED
+ * relation vocabulary (the same names `ctxr graph build` types edges from)
+ * and falls back to one group — never a relation name of its own.
+ */
+function relationGroupingStep(relations: readonly string[]): string[] {
+  if (relations.length === 0) {
+    return [
+      '5. This store configures no relation vocabulary (`retrieval.relations` is empty), so present proposals as',
+      '   a single **Related** group. Format each item as `[[Note]]` — reason.',
+    ];
+  }
+  return [
+    `5. Group proposals by this store's configured relation vocabulary: ${relations.map((r) => `**${r}**`).join(', ')}`,
+    '   (`retrieval.relations` — the section headings carrying these names are what `ctxr graph build` types',
+    '   edges from, so a link written under the right heading becomes a typed edge on the next build). Format',
+    '   each item as `[[Note]]` — reason.',
+  ];
+}
+
 const CONNECTION_PROPOSAL: ProcedureSeed = {
   file: 'ctxr-connection-proposal',
   name: 'Connection proposal',
   description: 'Discover the links a note should have, read each candidate before proposing, group by the store relation vocabulary, and write only approved links.',
-  body: () => [
+  body: (config) => [
     'Link DISCOVERY — complementing `ctxr-connection-finding`, which traverses links that already exist.',
     '',
     '1. Read the target note in full. If given a name instead of a path, find the file; several candidates →',
@@ -276,9 +302,7 @@ const CONNECTION_PROPOSAL: ProcedureSeed = {
     '   two-hop candidates the note does not link directly.',
     '4. Read every candidate before proposing it. A keyword match is not a connection; each proposal states in',
     '   one line why the link is meaningful to a reader of the target note.',
-    '5. Group proposals by the relation vocabulary this store\'s conventions declare (AGENTS.md\'s store',
-    '   conventions index points at them — e.g. upstream / downstream / similar / opposing). When the store',
-    '   declares none, use a single **Related** group. Format each item as `[[Note]]` — reason.',
+    ...relationGroupingStep(config.retrieval.relations),
     '6. Confirm before writing: present the grouped proposals and wait for approval by item. Do not write on',
     '   silence or on plan-level agreement.',
     '7. Write approved links into the matching section of the target note, creating the relation sections the',

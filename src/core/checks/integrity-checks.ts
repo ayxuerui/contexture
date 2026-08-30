@@ -2,7 +2,7 @@ import { resolveAdapter } from '../../adapters/registry.js';
 import { SUPPORTED_SCHEMA_VERSION } from '../../config/schema.js';
 import { checkCatalogStale } from '../catalog/build.js';
 import type { Finding } from '../envelope.js';
-import { buildGraphFromNotes } from '../graph/model.js';
+import { buildGraphFromNotes, graphBuildOptions } from '../graph/model.js';
 import { defineCheck } from './types.js';
 
 /**
@@ -35,7 +35,7 @@ export const derivedArtifactStalenessCheck = defineCheck({
 
     const persistedGraph = await ctx.graph();
     if (persistedGraph) {
-      const freshGraph = buildGraphFromNotes(await ctx.notes());
+      const freshGraph = buildGraphFromNotes(await ctx.notes(), graphBuildOptions(ctx.config));
       if (JSON.stringify(persistedGraph) !== JSON.stringify(freshGraph)) {
         findings.push({
           code: 'derived_artifacts.graph_stale',

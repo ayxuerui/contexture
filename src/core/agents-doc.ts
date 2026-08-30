@@ -1,5 +1,6 @@
 import path from 'node:path';
 import type { StoreConfig } from '../config/schema.js';
+import { GRAPH_DOCUMENT_RELATIVE_PATH } from './graph/persist.js';
 import { CONFIG_FILE_NAME } from './root.js';
 import { excludedPrefixesFor } from './notes/list.js';
 import { scanConventions, type ScannedDoc } from './conventions.js';
@@ -31,7 +32,8 @@ export function renderLegRoutingSection(config: StoreConfig): string[] {
     'contexture builds and maintains two retrieval tools ahead of time — consult them first:',
     '',
     '- **Catalog** (`ctxr catalog show --section <id>`): a curated, coverage-guaranteed index of every retrievable note, one section per taxonomy layer.',
-    '- **Graph** (`ctxr graph query ...`): the wikilink graph between notes — neighbors, shortest path, hubs, orphans.',
+    '- **Graph** (`ctxr graph query ...`): the wikilink graph between notes — neighbors, shortest path, hubs, orphans, clusters, bridges; `--type <relation>` follows one configured relation.',
+    `- **Graph document** (\`${GRAPH_DOCUMENT_RELATIVE_PATH}\`, rebuilt by \`ctxr graph build\`): hub notes by cluster, cross-cluster bridges, and orphans — read it for cluster context before writing.`,
     '',
     'For a literal or entity question the catalog and graph do not answer (a specific string, an exact identifier, a phrase),',
     'use your own direct content-matching tool (e.g. grep/ripgrep) against the store, scoped to exclude:',
