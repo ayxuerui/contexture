@@ -91,8 +91,10 @@ const SessionSchema = z.object({
   worktrees_path: z.string().min(1),
 });
 
+/** session-capture-command spec (D5): declaring any path here turns the sanctioned-location gate on; empty (the default) leaves every in-store path accepted. */
 const WriteLifecycleSchema = z.object({
   diff_size_ceiling_lines: z.number().int().positive(),
+  writable_paths: z.array(z.string()).default([]),
 });
 
 const CatalogSchema = z.object({
@@ -131,9 +133,26 @@ const OrganizeSchema = z.object({
   archive_path: z.string().min(1),
 });
 
+/**
+ * session-capture-command spec (D3): each identity role MAY be bound to its
+ * own store-relative path — a store whose runtime keeps memory elsewhere
+ * points the role there, and every identity consumer resolves through it.
+ * An unbound role falls back to its canonical file under `identity.path`.
+ */
+const IdentityFilesSchema = z
+  .object({
+    posture: z.string().min(1).optional(),
+    'world-facts': z.string().min(1).optional(),
+    'user-facts': z.string().min(1).optional(),
+  })
+  .default({});
+
 /** agent-identity spec: canonical identity files live here, excluded from every retrieval leg. */
 const IdentitySchema = z.object({
   path: z.string().min(1),
+  files: IdentityFilesSchema,
+  /** session-capture-command spec (D4): the entry delimiter line; '' means an empty (blank) line. */
+  entry_delimiter: z.string().default(''),
 });
 
 /** harness-portability spec: the portable procedure pack and operator convention docs AGENTS.md's indexes point into. */

@@ -4,7 +4,7 @@ import type { StoreConfig, TaxonomyLayerConfig } from '../config/schema.js';
 import { scanDocsDir, SKILL_FILE_NAME, type ScannedDoc } from './conventions.js';
 import { writeFileAtomic } from './fs/atomic.js';
 import { GRAPH_DOCUMENT_RELATIVE_PATH } from './graph/persist.js';
-import { IDENTITY_FILES } from './identity.js';
+import { identityFilePath } from './identity.js';
 
 /**
  * harness-portability spec (task 8.6, revised by entry-doc-generation D5,
@@ -477,8 +477,8 @@ const SESSION_CAPTURE: ProcedureSeed = {
   name: 'Session capture',
   description: 'At the end of a session, propose durable store notes, world facts, and user facts in one message with per-item approval, then write only what was approved.',
   body: (config) => {
-    const identityPath = config.identity.path;
-    const [, worldFacts, userFacts] = IDENTITY_FILES;
+    const worldFactsPath = identityFilePath(config, 'world-facts');
+    const userFactsPath = identityFilePath(config, 'user-facts');
     return [
       'End-of-session capture: propose what the session produced that is durable, write only what is approved.',
       'The approval gate is what keeps the blast radius low — nothing is written without it.',
@@ -515,10 +515,10 @@ const SESSION_CAPTURE: ProcedureSeed = {
       '- A1  path: <layer>/<location>/<Title>.md',
       '      visibility: <value> — <one-line rationale; `ctxr note resolve` on a sibling shows the default>',
       '      sketch: bullets',
-      `### Block B — world facts (${identityPath}${worldFacts})`,
+      `### Block B — world facts (${worldFactsPath})`,
       '- B1  action: add | replace | remove   (replace/remove name one unique existing line)',
       '      content: "..."',
-      `### Block C — user facts (${identityPath}${userFacts})`,
+      `### Block C — user facts (${userFactsPath})`,
       '- C1  action: add',
       '      content: "..."',
       '```',
@@ -532,19 +532,37 @@ const SESSION_CAPTURE: ProcedureSeed = {
       '',
       '## Apply',
       '',
-      '- Block A: write into the session worktree, matching the frontmatter and style of the sibling notes',
-      '  (`ctxr-placement` decides the location), with an explicit visibility value; an append preserves prior',
-      '  content. Confirm with `ctxr note resolve <path>`. These commits ride the session pull request',
-      '  (`ctxr-session-lifecycle`).',
-      `- Blocks B and C: edit the identity files under \`${identityPath}\` by path — declarative facts ("the user`,
-      '  prefers X"), never imperatives ("always do X"), and user facts describe who the user is, not what they',
-      '  did this session. Never write identity through a harness-specific memory mechanism; the files are the',
-      '  mechanism.',
+      'Write ONLY the approved items to a YAML proposal file, in the shape `ctxr session capture` reads:',
+      '',
+      '```yaml',
+      'notes:',
+      '  - id: A1',
+      '    path: <layer>/<location>/<Title>.md',
+      '    mode: create            # or: append',
+      '    visibility: <value>     # optional; omit to take the location default',
+      '    body: |',
+      '      matching the frontmatter and style of the sibling notes (`ctxr-placement` decides the location)',
+      'world_facts:',
+      '  - id: B1',
+      '    action: add             # or: replace | remove',
+      '    text: "declarative fact, never an imperative"',
+      '    match: "..."            # required for replace/remove: a unique substring of the existing entry',
+      'user_facts:',
+      '  - id: C1',
+      '    action: add',
+      '    text: "who the user is, not what they did this session"',
+      '```',
+      '',
+      'Then run `ctxr session capture --proposal <file>`. It validates and writes every item independently —',
+      'one bad path never blocks the rest — creating or appending notes and applying identity deltas through',
+      'the entry primitive. These note commits ride the session pull request (`ctxr-session-lifecycle`). Never',
+      `edit \`${worldFactsPath}\` or \`${userFactsPath}\` directly, and never write identity through a`,
+      'harness-specific memory mechanism — the command is the only writer.',
       '',
       '## Report from actual writes',
       '',
-      'Wrote / declined / refused / deferred, by ID — computed from what was actually written, not from the',
-      'proposal. A refused path is surfaced prominently with the reason.',
+      'Report exactly what the command reported — wrote / appended / refused (with reason) / skipped, by ID —',
+      'never from the proposal itself. A refused item is surfaced prominently with its reason.',
     ];
   },
 };

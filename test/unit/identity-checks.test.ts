@@ -13,12 +13,12 @@ function makeConfig(excludePaths: string[], identityPath = 'identity/'): StoreCo
     retrieval: { exclude_paths: excludePaths, relations: [], graph: { cluster_depth: 2, hub_top: 8, bridge_top: 10, orphan_exempt_clusters: [] } },
     git: { default_branch: 'main' },
     session: { branch_prefix: 'session/', worktrees_path: '.worktrees/' },
-    write_lifecycle: { diff_size_ceiling_lines: 2000 },
+    write_lifecycle: { diff_size_ceiling_lines: 2000, writable_paths: [] },
     catalog: { path: 'catalog/', section_max_bytes: 32768 },
     disclosure: { internal_audiences: [], hard_walls: [] },
     ingest: { inbox_path: 'inbox/' },
     organize: { archive_path: 'archive/' },
-    identity: { path: identityPath },
+    identity: { path: identityPath, files: {}, entry_delimiter: '' },
     harness: { procedures_path: 'procedures/', conventions_path: 'conventions/' },
     adapters: [],
   };
@@ -46,10 +46,28 @@ describe('identityExclusionCheck', () => {
     expect(result.status).toBe('pass');
   });
 
-  it('fails, naming the identity path, when it is not covered', async () => {
+  it('fails, naming each unexcluded role\'s resolved path, when the identity path is not covered', async () => {
     const result = await identityExclusionCheck.run(makeCtx(makeConfig(['.contexture/'])));
     expect(result.status).toBe('fail');
-    expect(result.findings[0]?.subject).toBe('identity/');
+    expect(result.findings.map((f) => f.subject).sort()).toEqual(
+      ['identity/posture.md', 'identity/user-facts.md', 'identity/world-facts.md'].sort(),
+    );
+  });
+
+  it('session-capture-command D3: fails, naming only the relocated role, when one role is bound outside the excluded identity path', async () => {
+    const config = makeConfig(['identity/']);
+    config.identity.files = { 'world-facts': 'twin/memory/MEMORY.md' };
+    const result = await identityExclusionCheck.run(makeCtx(config));
+    expect(result.status).toBe('fail');
+    expect(result.findings).toHaveLength(1);
+    expect(result.findings[0]?.subject).toBe('twin/memory/MEMORY.md');
+  });
+
+  it('session-capture-command D3: passes when a relocated role\'s path is itself covered by retrieval.exclude_paths', async () => {
+    const config = makeConfig(['identity/', 'twin/memory/']);
+    config.identity.files = { 'world-facts': 'twin/memory/MEMORY.md' };
+    const result = await identityExclusionCheck.run(makeCtx(config));
+    expect(result.status).toBe('pass');
   });
 
   it('passes for a non-default identity path when correctly declared as excluded', async () => {

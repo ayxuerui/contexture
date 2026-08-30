@@ -4,6 +4,7 @@ import { configureHooksPath, detectStaleHooks, getConfiguredHooksPath, installHo
 import { parseNoteText } from '../notes/parse.js';
 import { scanForSecrets } from '../security/secrets.js';
 import { validateFenceIntegrity } from '../fs/fenced-region.js';
+import { sanctionedPath } from '../write-lifecycle/path-gate.js';
 import { defineCheck } from './types.js';
 import type { Finding } from '../envelope.js';
 
@@ -107,11 +108,14 @@ export const stagedSecretScanCheck = defineCheck({
 /**
  * The concrete, testable interpretation of "path allowlist": a declared
  * derived path must never be committed (context-store spec) — staging one
- * is refused here rather than merely documented as a convention.
+ * is refused here rather than merely documented as a convention. Every
+ * staged markdown path also passes the session-capture-command path gate
+ * (D5) — the same `sanctionedPath` function `session capture` applies at
+ * write time, so the two can never disagree.
  */
 export const stagedPathAllowlistCheck = defineCheck({
   id: 'staged.path_allowlist',
-  title: 'No staged file is under a declared derived path',
+  title: 'No staged file is under a declared derived path, and every staged note passes the path gate',
   severity: 'invariant',
   capability: 'write-lifecycle',
   scopes: ['staged'],
@@ -130,6 +134,18 @@ export const stagedPathAllowlistCheck = defineCheck({
           message: `"${file.path}" is under a declared derived path and must never be committed.`,
           subject: file.path,
         });
+        continue;
+      }
+      if (file.path.endsWith('.md')) {
+        const gate = await sanctionedPath(ctx.config, ctx.storeRoot, file.path);
+        if (!gate.ok) {
+          findings.push({
+            code: 'staged.path_allowlist.path_gate',
+            severity: 'error',
+            message: `"${file.path}" ${gate.reason}.`,
+            subject: file.path,
+          });
+        }
       }
     }
     return { status: findings.length > 0 ? 'fail' : 'pass', findings };

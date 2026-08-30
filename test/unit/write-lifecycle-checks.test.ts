@@ -1,3 +1,4 @@
+import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import type { StoreConfig } from '../../src/config/schema.js';
 import {
@@ -24,12 +25,12 @@ function makeConfig(overrides: Partial<StoreConfig> = {}): StoreConfig {
     retrieval: { exclude_paths: [], relations: [], graph: { cluster_depth: 2, hub_top: 8, bridge_top: 10, orphan_exempt_clusters: [] } },
     git: { default_branch: 'main' },
     session: { branch_prefix: 'session/', worktrees_path: '.worktrees/' },
-    write_lifecycle: { diff_size_ceiling_lines: 100 },
+    write_lifecycle: { diff_size_ceiling_lines: 100, writable_paths: [] },
     catalog: { path: 'catalog/', section_max_bytes: 32768 },
     disclosure: { internal_audiences: [], hard_walls: [] },
     ingest: { inbox_path: 'inbox/' },
     organize: { archive_path: 'archive/' },
-    identity: { path: 'identity/' },
+    identity: { path: 'identity/', files: {}, entry_delimiter: '' },
     harness: { procedures_path: 'procedures/', conventions_path: 'conventions/' },
     adapters: [],
     ...overrides,
@@ -129,19 +130,72 @@ describe('stagedPathAllowlistCheck', () => {
     );
     expect(result.status).toBe('pass');
   });
+
+  describe('session-capture-command D5: the path gate on a real store root', () => {
+    it('fails, naming the path, when a staged note escapes through a symlink', async () => {
+      const tmp = await makeTmpDir();
+      const outside = await makeTmpDir();
+      try {
+        const { mkdir, symlink } = await import('node:fs/promises');
+        await mkdir(path.join(tmp.root, 'areas'), { recursive: true });
+        await symlink(outside.root, path.join(tmp.root, 'areas', 'linked'));
+
+        const ctx: CheckContext = { ...makeStagedCtx([file({ path: 'areas/linked/note.md' })]), storeRoot: tmp.root };
+        const result = await stagedPathAllowlistCheck.run(ctx);
+        expect(result.status).toBe('fail');
+        expect(result.findings[0]?.code).toBe('staged.path_allowlist.path_gate');
+        expect(result.findings[0]?.subject).toBe('areas/linked/note.md');
+      } finally {
+        await tmp.cleanup();
+        await outside.cleanup();
+      }
+    });
+
+    it('fails a note outside every sanctioned location once writable_paths is declared', async () => {
+      const tmp = await makeTmpDir();
+      try {
+        const ctx: CheckContext = {
+          ...makeStagedCtx([file({ path: 'somewhere/unusual.md' })], {
+            write_lifecycle: { diff_size_ceiling_lines: 2000, writable_paths: ['notes/'] },
+          }),
+          storeRoot: tmp.root,
+        };
+        const result = await stagedPathAllowlistCheck.run(ctx);
+        expect(result.status).toBe('fail');
+        expect(result.findings[0]?.code).toBe('staged.path_allowlist.path_gate');
+      } finally {
+        await tmp.cleanup();
+      }
+    });
+
+    it('a non-markdown staged file is not subject to the path gate', async () => {
+      const tmp = await makeTmpDir();
+      try {
+        const ctx: CheckContext = {
+          ...makeStagedCtx([file({ path: 'somewhere/unusual.json' })], {
+            write_lifecycle: { diff_size_ceiling_lines: 2000, writable_paths: ['notes/'] },
+          }),
+          storeRoot: tmp.root,
+        };
+        expect((await stagedPathAllowlistCheck.run(ctx)).status).toBe('pass');
+      } finally {
+        await tmp.cleanup();
+      }
+    });
+  });
 });
 
 describe('stagedDiffSizeCeilingCheck', () => {
   it('passes when total changed lines is under the ceiling', async () => {
     const result = await stagedDiffSizeCeilingCheck.run(
-      makeStagedCtx([file({ addedLines: 10, removedLines: 5 })], { write_lifecycle: { diff_size_ceiling_lines: 100 } }),
+      makeStagedCtx([file({ addedLines: 10, removedLines: 5 })], { write_lifecycle: { diff_size_ceiling_lines: 100, writable_paths: [] } }),
     );
     expect(result.status).toBe('pass');
   });
 
   it('fails when total changed lines exceeds the ceiling, naming both numbers', async () => {
     const result = await stagedDiffSizeCeilingCheck.run(
-      makeStagedCtx([file({ addedLines: 80, removedLines: 30 })], { write_lifecycle: { diff_size_ceiling_lines: 100 } }),
+      makeStagedCtx([file({ addedLines: 80, removedLines: 30 })], { write_lifecycle: { diff_size_ceiling_lines: 100, writable_paths: [] } }),
     );
     expect(result.status).toBe('fail');
     expect(result.findings[0]?.details).toEqual({ total: 110, ceiling: 100 });

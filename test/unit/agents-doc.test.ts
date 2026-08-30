@@ -29,12 +29,12 @@ function makeConfig(overrides: Partial<StoreConfig> = {}): StoreConfig {
     retrieval: { exclude_paths: ['identity/'], relations: [], graph: { cluster_depth: 2, hub_top: 8, bridge_top: 10, orphan_exempt_clusters: [] } },
     git: { default_branch: 'main' },
     session: { branch_prefix: 'session/', worktrees_path: '.worktrees/' },
-    write_lifecycle: { diff_size_ceiling_lines: 2000 },
+    write_lifecycle: { diff_size_ceiling_lines: 2000, writable_paths: [] },
     catalog: { path: 'catalog/', section_max_bytes: 32768 },
     disclosure: { internal_audiences: [], hard_walls: [] },
     ingest: { inbox_path: 'inbox/' },
     organize: { archive_path: 'archive/' },
-    identity: { path: 'identity/' },
+    identity: { path: 'identity/', files: {}, entry_delimiter: '' },
     harness: { procedures_path: 'procedures/', conventions_path: 'conventions/' },
     adapters: [],
     ...overrides,
@@ -205,7 +205,7 @@ describe('buildAgentsCanonicalSection', () => {
 
 describe('renderIdentitySection (open-box identity)', () => {
   it('names all three identity file paths with a load-at-session-start instruction', () => {
-    const lines = renderIdentitySection(makeConfig({ identity: { path: '.contexture/identity/' } })).join('\n');
+    const lines = renderIdentitySection(makeConfig({ identity: { path: '.contexture/identity/', files: {}, entry_delimiter: '' } })).join('\n');
     expect(lines).toContain('`.contexture/identity/posture.md`');
     expect(lines).toContain('`.contexture/identity/world-facts.md`');
     expect(lines).toContain('`.contexture/identity/user-facts.md`');
@@ -218,7 +218,7 @@ describe('renderIdentitySection (open-box identity)', () => {
   });
 
   it('regenerates against a custom identity path', () => {
-    const lines = renderIdentitySection(makeConfig({ identity: { path: 'twin/' } })).join('\n');
+    const lines = renderIdentitySection(makeConfig({ identity: { path: 'twin/', files: {}, entry_delimiter: '' } })).join('\n');
     expect(lines).toContain('`twin/posture.md`');
   });
 

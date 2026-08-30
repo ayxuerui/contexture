@@ -1,0 +1,100 @@
+import { existsSync } from 'node:fs';
+import { realpath } from 'node:fs/promises';
+import path from 'node:path';
+import { configuredAdapters } from '../../adapters/registry.js';
+import type { StoreConfig } from '../../config/schema.js';
+import { identityFilePaths } from '../identity.js';
+
+export interface PathGateResult {
+  ok: boolean;
+  reason?: string;
+}
+
+function normalizePrefix(prefix: string): string {
+  return prefix.replace(/\/+$/, '');
+}
+
+function isUnderAnyPrefix(relativePath: string, prefixes: readonly string[]): boolean {
+  return prefixes.some((prefix) => {
+    const trimmed = normalizePrefix(prefix);
+    return relativePath === trimmed || relativePath.startsWith(`${trimmed}/`);
+  });
+}
+
+/** session-capture-command spec (D5): locations contexture itself owns are always sanctioned, regardless of writable_paths. */
+function contextureOwnedPrefixes(config: StoreConfig): string[] {
+  const prefixes = [
+    config.identity.path,
+    config.catalog.path,
+    config.harness.procedures_path,
+    config.harness.conventions_path,
+    ...identityFilePaths(config),
+  ];
+  try {
+    for (const adapter of configuredAdapters(config, 'harness-generation')) prefixes.push(adapter.entryFileName);
+  } catch {
+    // an adapter that fails to resolve is doctor's problem (adapters.compatibility) — never this gate's.
+  }
+  return prefixes;
+}
+
+function sanctionedPrefixesFor(config: StoreConfig): string[] {
+  return [
+    ...config.taxonomy.layers.map((layer) => layer.path),
+    config.ingest.inbox_path,
+    ...config.write_lifecycle.writable_paths,
+    ...contextureOwnedPrefixes(config),
+  ];
+}
+
+/**
+ * session-capture-command spec (D5): one path gate, used at commit time
+ * (`staged.path_allowlist`, via the pre-commit hook) and at capture time
+ * (`session capture`), so the two can never disagree.
+ *
+ * The symlink-escape rule is absolute and always enforced: `relativePath`
+ * must resolve inside the store even after every existing ancestor
+ * directory's symlinks are followed. The sanctioned-location rule is
+ * opt-in — with `write_lifecycle.writable_paths` empty (the default),
+ * every in-store path is accepted; once any path is declared, only a
+ * configured taxonomy layer, the inbox, a declared writable path, or a
+ * contexture-owned location passes.
+ */
+export async function sanctionedPath(config: StoreConfig, root: string, relativePath: string): Promise<PathGateResult> {
+  const normalizedRoot = path.resolve(root);
+  const target = path.resolve(root, relativePath);
+  const rel = path.relative(normalizedRoot, target).split(path.sep).join('/');
+  if (rel === '' || rel.startsWith('..') || path.isAbsolute(rel)) {
+    return { ok: false, reason: 'resolves outside the store' };
+  }
+
+  // Walk up to the deepest EXISTING ancestor, but never past the store root itself: a root (or a
+  // whole store) that doesn't exist yet on disk has no symlink to escape through, and the lexical
+  // check above already confirmed the path is nominally inside it.
+  let ancestor = target;
+  while (ancestor !== normalizedRoot && !existsSync(ancestor)) {
+    const parent = path.dirname(ancestor);
+    if (parent === ancestor) break;
+    ancestor = parent;
+  }
+  if (existsSync(ancestor)) {
+    const realRoot = await realpath(normalizedRoot).catch(() => normalizedRoot);
+    const realAncestor = await realpath(ancestor).catch(() => ancestor);
+    const insideRoot = realAncestor === realRoot || realAncestor.startsWith(`${realRoot}${path.sep}`);
+    if (!insideRoot) {
+      return { ok: false, reason: 'escapes the store through a symbolic link' };
+    }
+  }
+
+  if (config.write_lifecycle.writable_paths.length === 0) {
+    return { ok: true };
+  }
+
+  if (!isUnderAnyPrefix(rel, sanctionedPrefixesFor(config))) {
+    return {
+      ok: false,
+      reason: 'is not under a configured taxonomy layer, the inbox, a declared writable path, or a contexture-owned location',
+    };
+  }
+  return { ok: true };
+}

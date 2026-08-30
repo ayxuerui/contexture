@@ -38,12 +38,12 @@ function makeConfig(overrides: Partial<StoreConfig> = {}): StoreConfig {
     retrieval: { exclude_paths: ['procedures/'], relations: [], graph: { cluster_depth: 2, hub_top: 8, bridge_top: 10, orphan_exempt_clusters: [] } },
     git: { default_branch: 'trunk' },
     session: { branch_prefix: 'session/', worktrees_path: '.worktrees/' },
-    write_lifecycle: { diff_size_ceiling_lines: 2000 },
+    write_lifecycle: { diff_size_ceiling_lines: 2000, writable_paths: [] },
     catalog: { path: 'catalog/', section_max_bytes: 32768 },
     disclosure: { internal_audiences: [], hard_walls: [] },
     ingest: { inbox_path: 'inbox/' },
     organize: { archive_path: 'archive/' },
-    identity: { path: 'identity/' },
+    identity: { path: 'identity/', files: {}, entry_delimiter: '' },
     harness: { procedures_path: 'procedures/', conventions_path: 'conventions/' },
     adapters: [],
     ...overrides,
@@ -171,7 +171,16 @@ describe('owned-skills-expansion: each skill carries its load-bearing rule (task
     expect(s).toContain('⚠ suspected-secret:');
     expect(s).toContain('when in doubt between a note and identity, pick the note');
     expect(s).toContain('## Report from actual writes');
-    expect(s).toContain('Never write identity through a harness-specific memory mechanism');
+    expect(s).toMatch(/never write identity through a\s*\nharness-specific memory mechanism/);
+  });
+
+  it('session-capture-command: the Apply step drives the command, names resolved identity paths, and never instructs a direct identity edit', () => {
+    const s = skills['ctxr-session-capture'];
+    expect(s).toContain('`ctxr session capture --proposal <file>`');
+    expect(s).toContain('identity/world-facts.md');
+    expect(s).toContain('identity/user-facts.md');
+    expect(s).toMatch(/never\s*\nedit `identity\/world-facts\.md` or `identity\/user-facts\.md` directly/i);
+    expect(s).toContain('the command is the only writer');
   });
 
   it('derived artifacts: check before build, count read-back, the fence rule, derived files out of content commits, verify the remote', () => {
