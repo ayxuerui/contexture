@@ -1,5 +1,5 @@
 {
-  "name": "ctxr",
+  "name": "ctxr-cli",
   "version": "0.1.0",
   "description": "A context store that ingests, organizes, and retrieves context for any AI agent",
   "type": "module",
@@ -44,5 +44,13 @@
     "@types/node": "^22.20.1",
     "typescript": "^7.0.2",
     "vitest": "^4.1.11"
-  }
+  },
+  "keywords": [
+    "contexture",
+    "context",
+    "context-store",
+    "ai-agents",
+    "knowledge-base",
+    "cli"
+  ]
 }
