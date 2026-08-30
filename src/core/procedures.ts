@@ -1,5 +1,4 @@
-import { readFile } from 'node:fs/promises';
-import { mkdir } from 'node:fs/promises';
+import { mkdir, readdir, readFile, rm } from 'node:fs/promises';
 import path from 'node:path';
 import type { StoreConfig } from '../config/schema.js';
 import { scanDocsDir, SKILL_FILE_NAME, type ScannedDoc } from './conventions.js';
@@ -9,7 +8,7 @@ import { writeFileAtomic } from './fs/atomic.js';
  * harness-portability spec (task 8.6, revised by entry-doc-generation D5):
  * reusable store procedures ship as contexture-OWNED skills. The canonical
  * content is this module (versioned with the package); a store carries a
- * full copy at `<procedures_path>/contexture-<slug>/SKILL.md` — written by
+ * full copy at `<procedures_path>/ctxr-<slug>/SKILL.md` — written by
  * `ctxr init`, refreshed by `ctxr update`, never hand-edited. The default
  * location is the directory harnesses with skill auto-discovery read, so
  * there is no wrapper and no extra hop; any other harness reaches the same
@@ -32,11 +31,11 @@ export const MANAGED_SKILL_HEADER =
 
 export const PROCEDURES: readonly Procedure[] = [
   {
-    file: 'contexture-ingest-orchestration',
+    file: 'ctxr-ingest-orchestration',
     name: 'Ingest orchestration',
     description: 'Capture raw material into the inbox, run the dedupe check, and ingest it with source identity via the contexture CLI.',
     content: `---
-name: contexture-ingest-orchestration
+name: ctxr-ingest-orchestration
 description: Capture raw material into the inbox, run the dedupe check, and ingest it with source identity via the contexture CLI.
 ---
 
@@ -52,11 +51,11 @@ ${MANAGED_SKILL_HEADER}
 `,
   },
   {
-    file: 'contexture-placement',
+    file: 'ctxr-placement',
     name: 'Placement',
     description: 'Choose the right taxonomy layer for a new or relocated note in this contexture store.',
     content: `---
-name: contexture-placement
+name: ctxr-placement
 description: Choose the right taxonomy layer for a new or relocated note in this contexture store.
 ---
 
@@ -71,11 +70,11 @@ ${MANAGED_SKILL_HEADER}
 `,
   },
   {
-    file: 'contexture-connection-finding',
+    file: 'ctxr-connection-finding',
     name: 'Connection finding',
     description: 'Find related notes via the wikilink graph of the store (neighbors, paths, hubs) and write rollups from gathered sources.',
     content: `---
-name: contexture-connection-finding
+name: ctxr-connection-finding
 description: Find related notes via the wikilink graph of the store (neighbors, paths, hubs) and write rollups from gathered sources.
 ---
 
@@ -91,11 +90,11 @@ ${MANAGED_SKILL_HEADER}
 `,
   },
   {
-    file: 'contexture-organize-audit',
+    file: 'ctxr-organize-audit',
     name: 'Organize audit',
     description: 'Audit store health with ctxr lint (observations) and ctxr doctor (blocking invariants).',
     content: `---
-name: contexture-organize-audit
+name: ctxr-organize-audit
 description: Audit store health with ctxr lint (observations) and ctxr doctor (blocking invariants).
 ---
 
@@ -127,8 +126,11 @@ export function procedurePaths(config: StoreConfig): string[] {
 /**
  * Brings every contexture-owned skill copy to the installed package's
  * content: written when missing, rewritten when different (byte-stable —
- * an up-to-date copy is not touched), and only ever the `contexture-*`
- * directories this module owns. Returns the paths it wrote.
+ * an up-to-date copy is not touched). Managed copies the installed version
+ * no longer ships (recognised by the managed header) are removed, so a
+ * renamed slug never leaves an orphan behind. Only files bearing the header
+ * are ever removed; operator skills are untouched. Returns every path it
+ * wrote or removed.
  */
 export async function syncShippedSkills(root: string, config: StoreConfig): Promise<string[]> {
   const changed: string[] = [];
@@ -149,6 +151,28 @@ export async function syncShippedSkills(root: string, config: StoreConfig): Prom
       await writeFileAtomic(absolutePath, procedure.content);
       changed.push(relativePath);
     }
+  }
+
+  const shippedSlugs = new Set(PROCEDURES.map((p) => p.file));
+  const skillsDir = path.join(root, config.harness.procedures_path);
+  let entries: { name: string; isDirectory(): boolean }[] = [];
+  try {
+    entries = await readdir(skillsDir, { withFileTypes: true });
+  } catch {
+    entries = [];
+  }
+  for (const entry of entries) {
+    if (!entry.isDirectory() || shippedSlugs.has(entry.name)) continue;
+    const skillFile = path.join(skillsDir, entry.name, SKILL_FILE_NAME);
+    let content: string;
+    try {
+      content = await readFile(skillFile, 'utf8');
+    } catch {
+      continue;
+    }
+    if (!content.includes(MANAGED_SKILL_HEADER)) continue; // operator-authored: never touched
+    await rm(path.join(skillsDir, entry.name), { recursive: true, force: true });
+    changed.push(path.join(config.harness.procedures_path, entry.name, SKILL_FILE_NAME).split(path.sep).join('/'));
   }
   return changed;
 }

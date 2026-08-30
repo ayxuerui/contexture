@@ -40,23 +40,23 @@ describe('ctxr update', () => {
     }
   });
 
-  it('refreshes a drifted contexture-owned skill copy and a stale generated AGENTS.md section', async () => {
+  it('refreshes a drifted ctxr-owned skill copy and a stale generated AGENTS.md section', async () => {
     const tmp = await makeTmpDir();
     try {
       const { store, env } = await freshStore(tmp.root);
-      const skillPath = path.join(tmp.root, '.claude/skills/contexture-placement/SKILL.md');
+      const skillPath = path.join(tmp.root, '.claude/skills/ctxr-placement/SKILL.md');
       await writeFile(skillPath, 'stale copy from an older contexture\n');
       const agentsPath = path.join(tmp.root, 'AGENTS.md');
       await writeFile(agentsPath, (await readFile(agentsPath, 'utf8')).replaceAll('`ctxr ', '`contexture '));
 
       const outcome = await update(env, store);
-      expect(outcome.data?.changed).toContain('.claude/skills/contexture-placement/SKILL.md');
+      expect(outcome.data?.changed).toContain('.claude/skills/ctxr-placement/SKILL.md');
       expect(outcome.data?.changed).toContain('AGENTS.md');
       expect(await readFile(skillPath, 'utf8')).toContain(MANAGED_SKILL_HEADER);
       const agents = await readFile(agentsPath, 'utf8');
       expect(agents).not.toContain('`contexture ');
       // The index is a disk scan: it must reflect the FRESH copy in the same run, not the stale one.
-      expect(agents).toContain('[contexture-placement](.claude/skills/contexture-placement/SKILL.md) — Choose the right taxonomy layer');
+      expect(agents).toContain('[ctxr-placement](.claude/skills/ctxr-placement/SKILL.md) — Choose the right taxonomy layer');
       expect(await update(env, store)).toMatchObject({ data: { changed: [] } });
     } finally {
       await tmp.cleanup();

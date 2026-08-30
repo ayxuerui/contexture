@@ -31,7 +31,7 @@ Every surface the tool writes or ships that instructs a human or an agent to run
 - **THEN** the generated regions are rewritten to name `ctxr`, and the hook-health check reports the previously installed hooks as stale and rewrites them
 
 ### Requirement: Store-resident names are unaffected by the executable's name
-Names that live inside a store or in the operator's environment rather than on the command line — the store configuration file, the tool-owned home directory, the environment variables the CLI reads, generated-region markers, and generated skill directories — SHALL remain bound by their own capabilities and SHALL NOT change as a consequence of the executable's name. An existing store SHALL require no migration as a result of the executable being renamed.
+Names that live inside a store or in the operator's environment rather than on the command line — the store configuration file, the tool-owned home directory, the environment variables the CLI reads, and generated-region markers — SHALL remain bound by their own capabilities and SHALL NOT change as a consequence of the executable's name. Generated skill names are the exception by design: an operator types them (as slash commands), so they follow the executable's name (`ctxr-<name>`), and the update command SHALL remove managed skill copies under a name the installed version no longer ships. An existing store SHALL require no migration as a result of the executable being renamed.
 
 #### Scenario: An existing store opens unchanged under the renamed executable
 - **WHEN** a store initialized by a release that named the executable `contexture` is opened by `ctxr`

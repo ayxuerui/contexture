@@ -7,6 +7,7 @@
 
 - [x] 2.1 `verify --portable` checks every scanned procedure's index entry; `adapters generate` renders skills for the scanned set
 - [x] 2.2 Entry file = AGENTS.md import only: remove the shipped claude-code identity-injection adapter (D4); note enumeration skips configured harness entry files at the root
+- [x] 2.4 Generated skill names follow the executable (`ctxr-<name>`, typed like a command); sync removes managed copies the installed version no longer ships (cli-contract amended)
 - [x] 2.3 Skills are contexture-owned copies (D5): full `<slug>/SKILL.md` copies synced by init, refreshed by the new `ctxr update`, operator skills untouched; wrapper generation removed; default procedures_path is the skill-discovery directory
 
 ## 3. Verify

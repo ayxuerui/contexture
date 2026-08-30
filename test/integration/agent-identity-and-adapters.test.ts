@@ -110,12 +110,12 @@ describe('agent identity and adapters (real CLI)', () => {
 
       const agentsMdPath = path.join(tmp.root, 'AGENTS.md');
       const content = await readFile(agentsMdPath, 'utf8');
-      await writeFile(agentsMdPath, content.replace(/^- \[contexture-connection-finding\]\(\.claude\/skills\/contexture-connection-finding\/SKILL\.md\).*\n/m, ''));
+      await writeFile(agentsMdPath, content.replace(/^- \[ctxr-connection-finding\]\(\.claude\/skills\/ctxr-connection-finding\/SKILL\.md\).*\n/m, ''));
 
       const result = await runCli(['verify', '--portable', '--json'], { cwd: tmp.root, env });
       expect(result.exitCode).not.toBe(0);
       const data = JSON.parse(result.stdout);
-      expect(data.findings[0].message).toContain('contexture-connection-finding');
+      expect(data.findings[0].message).toContain('ctxr-connection-finding');
     } finally {
       await tmp.cleanup();
     }

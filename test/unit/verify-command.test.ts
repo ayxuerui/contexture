@@ -72,12 +72,12 @@ describe('verify --portable', () => {
       const store = await setUpStore(tmp.root);
       const agentsMdPath = path.join(tmp.root, 'AGENTS.md');
       const content = await readFile(agentsMdPath, 'utf8');
-      await writeFile(agentsMdPath, content.replace(/^- \[contexture-placement\]\(procedures\/contexture-placement\/SKILL\.md\).*\n/m, ''));
+      await writeFile(agentsMdPath, content.replace(/^- \[ctxr-placement\]\(procedures\/ctxr-placement\/SKILL\.md\).*\n/m, ''));
 
       const outcome = await execute(store, { portable: true });
       expect(outcome.exitCode).toBe(ExitCode.CheckFailed);
       const failed = outcome.data?.steps.find((s) => s.status === 'fail');
-      expect(failed?.operation).toContain('contexture-placement');
+      expect(failed?.operation).toContain('ctxr-placement');
     } finally {
       await tmp.cleanup();
     }
@@ -89,7 +89,7 @@ describe('verify --portable', () => {
       const store = await setUpStore(tmp.root);
       const agentsMdPath = path.join(tmp.root, 'AGENTS.md');
       const content = await readFile(agentsMdPath, 'utf8');
-      await writeFile(agentsMdPath, content.replace(/^- \[contexture-ingest-orchestration\]\(procedures\/contexture-ingest-orchestration\/SKILL\.md\).*\n/m, ''));
+      await writeFile(agentsMdPath, content.replace(/^- \[ctxr-ingest-orchestration\]\(procedures\/ctxr-ingest-orchestration\/SKILL\.md\).*\n/m, ''));
 
       const outcome = await execute(store, { portable: true });
       // Only the retrieval query, the derived-artifact build, and the one failing
