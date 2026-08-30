@@ -9,4 +9,4 @@
 
 ## 3. Publish (operator, interactive terminal — passkey 2FA)
 
-- [ ] 3.1 `npm publish` from the repo; `npm view ctxr-cli version` prints `0.1.0` and `npx ctxr-cli --help` prints `Usage: ctxr`
+- [x] 3.1 `npm publish` from the repo; `npm view ctxr-cli version` prints `0.1.0` and `npx ctxr-cli --help` prints `Usage: ctxr`
