@@ -7,7 +7,7 @@ import type { CommandOutcome, CommandRequires } from '../core/command.js';
 import type { RunEnv } from '../core/env.js';
 import { NoRemoteConfiguredError, SessionValidationFailedError } from '../core/errors.js';
 import { ExitCode } from '../core/exit-codes.js';
-import { commitIfStaged, currentBranch, pushBranch } from '../core/git/repo.js';
+import { commitIfStaged, currentBranch, pushBranch, renameCurrentBranch } from '../core/git/repo.js';
 import { hasRemote } from '../core/git/worktree.js';
 import { readGraph } from '../core/graph/persist.js';
 import { listNotes } from '../core/notes/list.js';
@@ -19,6 +19,8 @@ export interface SessionSubmitFlags {
   message?: string;
   title?: string;
   body?: string;
+  /** session-submit-and-land spec: renames the session branch before pushing, so a generated name never reaches the forge. */
+  branch?: string;
 }
 
 export interface SessionSubmitData {
@@ -42,7 +44,11 @@ export async function execute(
   store: Store,
   flags: SessionSubmitFlags,
 ): Promise<CommandOutcome<SessionSubmitData>> {
-  const branch = await currentBranch(env.git, store.root);
+  let branch = await currentBranch(env.git, store.root);
+  if (flags.branch && flags.branch !== branch) {
+    await renameCurrentBranch(env.git, store.root, flags.branch);
+    branch = flags.branch;
+  }
 
   const ctx: CheckContext = {
     storeRoot: store.root,

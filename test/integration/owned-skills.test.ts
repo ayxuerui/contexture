@@ -23,22 +23,25 @@ const SKILLS_ADDED_BY_THIS_RELEASE = [
   'ctxr-session-lifecycle',
   'ctxr-session-capture',
   'ctxr-derived-artifacts',
+  // session-submit-and-land:
+  'ctxr-submit',
+  'ctxr-land',
 ];
 
 /**
- * owned-skills-expansion, harness-portability scenario "Update delivers the
- * expanded skill set to an existing store" (task 2.3): a store seeded by the
- * previous release — four owned skills, the old placement text — receives
- * every new and changed copy from one `ctxr update`, and the next update is
- * a no-op.
+ * owned-skills-expansion and session-submit-and-land, harness-portability
+ * scenario "Update delivers the expanded skill set to an existing store"
+ * (task 2.3 / 3.2): a store seeded by an earlier release — missing skills,
+ * the old placement text — receives every new and changed copy from one
+ * `ctxr update`, and the next update is a no-op.
  */
 describe('owned skills: delivered by init, expanded by update', () => {
-  it('init writes all nine owned skills with the managed header', async () => {
+  it('init writes all eleven owned skills with the managed header', async () => {
     const tmp = await makeTmpDir();
     try {
       const env = makeFakeEnv({ cwd: tmp.root, env: GIT_IDENTITY });
       await init(env, { root: tmp.root, profile: 'para' });
-      expect(PROCEDURES).toHaveLength(9);
+      expect(PROCEDURES).toHaveLength(11);
       for (const p of PROCEDURES) {
         const file = path.join(tmp.root, '.claude/skills', p.file, 'SKILL.md');
         expect(existsSync(file), p.file).toBe(true);

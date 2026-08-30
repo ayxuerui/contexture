@@ -3,6 +3,7 @@ import type { StoreConfig } from '../../src/config/schema.js';
 import {
   generateSessionBranchName,
   isSessionBranch,
+  isSessionWorktreePath,
   worktreeDirNameFor,
   worktreePathFor,
 } from '../../src/core/session.js';
@@ -71,5 +72,23 @@ describe('worktreeDirNameFor / worktreePathFor', () => {
   it('nests the worktree under the configured worktrees_path', () => {
     const store = { root: '/repo', config: makeConfig() };
     expect(worktreePathFor(store, 'session/abc')).toBe('/repo/.worktrees/session-abc');
+  });
+});
+
+describe('isSessionWorktreePath (session-submit-and-land: survives a --branch rename)', () => {
+  it('recognizes a worktree whose immediate parent is named after the configured worktrees path, regardless of its branch name', () => {
+    expect(isSessionWorktreePath(makeConfig(), '/repo/.worktrees/session-abc')).toBe(true);
+    expect(isSessionWorktreePath(makeConfig(), '/repo/.worktrees/topic-x')).toBe(true); // renamed branch, same location
+  });
+
+  it('is independent of any store.root — true even when the worktree in question IS store.root', () => {
+    // the self-referential case `session land --reap` must handle: invoked FROM the very worktree it would remove.
+    expect(isSessionWorktreePath(makeConfig(), '/repo/.worktrees/session-abc')).toBe(true);
+  });
+
+  it('rejects a path whose parent is not the configured worktrees directory', () => {
+    expect(isSessionWorktreePath(makeConfig(), '/repo')).toBe(false);
+    expect(isSessionWorktreePath(makeConfig(), '/elsewhere/worktree')).toBe(false);
+    expect(isSessionWorktreePath(makeConfig(), '/repo/.worktrees/nested/too-deep')).toBe(false);
   });
 });

@@ -124,6 +124,87 @@ export class NoRemoteConfiguredError extends ContextureError {
   }
 }
 
+/** session-submit-and-land spec (D1): the gate fails loud, before any forge read, when nothing can consent to a merge. */
+export class SessionLandConsentRequiredError extends ContextureError {
+  constructor() {
+    super(ExitCode.Usage, {
+      code: 'session.land.consent_required',
+      severity: 'error',
+      message: 'Non-interactive and no --yes was given; pass --yes to consent to the merge, or run interactively.',
+    });
+  }
+}
+
+export class SessionLandOnDefaultBranchError extends ContextureError {
+  constructor(branch: string) {
+    super(ExitCode.Usage, {
+      code: 'session.land.default_branch',
+      severity: 'error',
+      message: `"${branch}" is the store's default branch; "ctxr session land" refuses to land it.`,
+      subject: branch,
+    });
+  }
+}
+
+export class NoForgeConfiguredError extends ContextureError {
+  constructor() {
+    super(ExitCode.Usage, {
+      code: 'session.land.no_forge',
+      severity: 'error',
+      message: 'No forge adapter is configured or reachable; "ctxr session land" cannot resolve or merge a pull request without one.',
+    });
+  }
+}
+
+export class PullRequestHeadMismatchError extends ContextureError {
+  constructor(requested: string, actual: string) {
+    super(ExitCode.Usage, {
+      code: 'session.land.head_mismatch',
+      severity: 'error',
+      message: `The resolved pull request's head branch is "${actual}", not the requested "${requested}"; refusing to land the wrong pull request.`,
+      details: { requested, actual },
+    });
+  }
+}
+
+export class PullRequestClosedError extends ContextureError {
+  constructor(number: number) {
+    super(ExitCode.CheckFailed, {
+      code: 'session.land.pull_request_closed',
+      severity: 'error',
+      message: `Pull request #${number} is closed, not merged; "ctxr session land" will not act on it.`,
+      subject: String(number),
+    });
+  }
+}
+
+/** session-submit-and-land spec (D1): conflicting AND unknown-after-one-retry share this stop — both need a reader, not a retry. */
+export class PullRequestNotMergeableError extends ContextureError {
+  constructor(number: number, reason: 'conflicting' | 'unknown') {
+    super(ExitCode.CheckFailed, {
+      code: 'session.land.pull_request_not_mergeable',
+      severity: 'error',
+      message:
+        reason === 'conflicting'
+          ? `Pull request #${number} has conflicts; resolve them per the conflict playbook in ctxr-session-lifecycle, then retry.`
+          : `Pull request #${number}'s mergeability is still unknown after a retry; check it on the forge, then retry.`,
+      subject: String(number),
+      details: { reason },
+    });
+  }
+}
+
+export class MergeNotConfirmedError extends ContextureError {
+  constructor(number: number) {
+    super(ExitCode.CheckFailed, {
+      code: 'session.land.merge_not_confirmed',
+      severity: 'error',
+      message: `"gh pr merge" completed but pull request #${number} does not read back as merged; verify on the forge before retrying.`,
+      subject: String(number),
+    });
+  }
+}
+
 export class CatalogSectionNotFoundError extends ContextureError {
   constructor(sectionId: string) {
     super(ExitCode.Usage, {

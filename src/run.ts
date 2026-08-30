@@ -14,6 +14,7 @@ import * as graphQueryCommand from './commands/graph-query.js';
 import * as initCommand from './commands/init.js';
 import * as noteResolveCommand from './commands/note-resolve.js';
 import * as sessionAbandonCommand from './commands/session-abandon.js';
+import * as sessionLandCommand from './commands/session-land.js';
 import * as sessionListCommand from './commands/session-list.js';
 import * as sessionReapCommand from './commands/session-reap.js';
 import * as sessionStartCommand from './commands/session-start.js';
@@ -500,13 +501,35 @@ export async function run(argv: readonly string[], env: RunEnv): Promise<ExitCod
     .option('--message <text>', 'commit message for any remaining staged changes')
     .option('--title <text>', 'pull request title')
     .option('--body <text>', 'pull request body')
-    .action(async (cmdOpts: { message?: string; title?: string; body?: string }, cmd: Command) => {
+    .option('--branch <name>', 'rename the session branch before pushing, so a generated name never reaches the forge')
+    .action(async (cmdOpts: { message?: string; title?: string; body?: string; branch?: string }, cmd: Command) => {
       const { runEnv, jsonMode, root } = deriveRunEnv(env, cmd);
       result = await runCommand('session.submit', runEnv, jsonMode, async () => {
         const store = await openStore(runEnv, { root });
         return sessionSubmitCommand.execute(runEnv, store, cmdOpts);
       });
     });
+
+  sessionCommand
+    .command('land')
+    .description('complete a reviewed session: merge its pull request, sync the default branch, optionally reap the worktree')
+    .option('--pr <number>', 'the pull request number to land (default: the one for the current or --branch session)', (v) => Number.parseInt(v, 10))
+    .option('--branch <name>', 'the session branch to land (default: the current branch)')
+    .option('--yes', 'consent to the merge without an interactive prompt')
+    .option('--merge-method <method>', 'squash, merge, or rebase', 'squash')
+    .option('--reap', 'remove the session worktree afterward, if it is clean and the pull request merged')
+    .action(
+      async (
+        cmdOpts: { pr?: number; branch?: string; yes?: boolean; mergeMethod?: 'squash' | 'merge' | 'rebase'; reap?: boolean },
+        cmd: Command,
+      ) => {
+        const { runEnv, jsonMode, root } = deriveRunEnv(env, cmd);
+        result = await runCommand('session.land', runEnv, jsonMode, async () => {
+          const store = await openStore(runEnv, { root });
+          return sessionLandCommand.execute(runEnv, store, cmdOpts);
+        });
+      },
+    );
 
   sessionCommand
     .command('abandon <branch>')

@@ -60,7 +60,7 @@ const SHIPPED_NAMES = [...new Set(SHIPPED_PROFILES.flatMap((p) => [p.name, ...p.
 const TIER_WORDS = ['personal', 'private', 'public', 'shared', 'internal', 'team', 'confidential'];
 
 describe('PROCEDURES', () => {
-  it('names the nine owned skills, in index order', () => {
+  it('names the eleven owned skills, in index order', () => {
     expect(PROCEDURES.map((p) => p.file)).toEqual([
       'ctxr-ingest-orchestration',
       'ctxr-placement',
@@ -68,6 +68,8 @@ describe('PROCEDURES', () => {
       'ctxr-connection-proposal',
       'ctxr-rollup',
       'ctxr-session-lifecycle',
+      'ctxr-submit',
+      'ctxr-land',
       'ctxr-session-capture',
       'ctxr-derived-artifacts',
       'ctxr-organize-audit',
@@ -119,20 +121,44 @@ describe('owned-skills-expansion: each skill carries its load-bearing rule (task
     expect(s).toContain('`ctxr rollup write <entity> --content-file <file>`');
   });
 
-  it('session lifecycle: gates before submit, land, and reclaim; re-scan; surgical staging; verify-before-retry; conflict playbook; sequencing', () => {
+  it('session lifecycle: start, re-scan discipline, conflict playbook, sequencing, reclaiming — and none of ctxr-submit/ctxr-land\'s own steps (session-submit-and-land D4)', () => {
     const s = skills['ctxr-session-lifecycle'];
-    expect(s).toContain('## Fire gate — submit');
-    expect(s).toContain('## Fire gate — land');
-    expect(s).toContain('## Fire gate — reclaim');
-    expect(s).toContain('plan consent is not fire consent');
-    expect(s).toContain('Re-scan (mandatory');
-    expect(s).toContain('never `git add -A`');
-    expect(s).toContain('## Verify before any retry');
-    expect(s).toContain('git rebase origin/trunk`'); // the CONFIGURED default branch, not a hardcoded one
-    expect(s).toContain('`git log --oneline origin/trunk..HEAD`');
+    expect(s).toContain('## Start');
+    expect(s).toContain('## Re-scan before any plan');
+    expect(s).toContain('## Conflict playbook');
     expect(s).toContain('## Multi-PR sequencing');
+    expect(s).toContain('## Reclaiming');
+    expect(s).toContain('`git log --oneline origin/trunk..HEAD`'); // the CONFIGURED default branch, not a hardcoded one
+    expect(s).toContain('git rebase origin/trunk`');
     expect(s).not.toMatch(/\bgit commit\b/); // D4: the CLI commits; no skill instructs a direct commit
     expect(s).not.toMatch(/\bgit push\b(?! --force-with-lease)/);
+    // this skill references the two seam verbs but does not repeat their steps
+    expect(s).toContain('`ctxr-submit`');
+    expect(s).toContain('`ctxr-land`');
+    expect(s).not.toContain('ctxr session submit');
+    expect(s).not.toContain('ctxr session land');
+  });
+
+  it('submit: re-scans, runs the capture procedure exactly once, stages named paths, gates, and ends in ctxr session submit (session-submit-and-land)', () => {
+    const s = skills['ctxr-submit'];
+    expect(s).toContain('Re-scan (mandatory');
+    expect((s?.match(/ctxr-session-capture/g) ?? []).length).toBe(1); // invoked once, not described twice
+    expect(s).toContain('never `git add -A`');
+    expect(s).toContain('plan consent is not fire consent');
+    expect(s).toContain('`ctxr session submit --branch');
+    expect(s).toContain('Verify before any retry');
+    expect(s).not.toMatch(/\bgit commit\b/);
+    expect(s).not.toMatch(/\bgit push\b/);
+  });
+
+  it('land: ends in ctxr session land, routes conflicts to the lifecycle skill, and never instructs a manual merge (session-submit-and-land)', () => {
+    const s = skills['ctxr-land'];
+    expect(s).toContain('`ctxr session land`');
+    expect(s).toContain('ctxr-session-lifecycle');
+    expect(s).toContain('conflict');
+    expect(s).toMatch(/Never merge by hand/i);
+    expect(s).not.toMatch(/\bgh pr merge\b/);
+    expect(s).not.toMatch(/\bgit merge\b/);
   });
 
   it('session capture: trigger/anti-trigger taxonomy, three-block per-ID proposal, secret markers, identity blast-radius rule, report from writes', () => {
@@ -246,7 +272,7 @@ describe('syncShippedSkills', () => {
     try {
       const written = await syncShippedSkills(tmp.root, makeConfig());
       expect(written.sort()).toEqual(procedurePaths(makeConfig()).sort());
-      expect(written).toHaveLength(9);
+      expect(written).toHaveLength(11);
       const placement = await readFile(path.join(tmp.root, 'procedures/ctxr-placement/SKILL.md'), 'utf8');
       expect(placement).toContain('name: ctxr-placement');
       expect(placement).toContain('description:');
@@ -272,7 +298,12 @@ describe('syncShippedSkills', () => {
       await syncShippedSkills(tmp.root, makeConfig());
       const changed = await syncShippedSkills(tmp.root, makeConfig({ git: { default_branch: 'main' } }));
       expect(changed.sort()).toEqual(
-        ['procedures/ctxr-session-lifecycle/SKILL.md', 'procedures/ctxr-derived-artifacts/SKILL.md'].sort(),
+        [
+          'procedures/ctxr-session-lifecycle/SKILL.md',
+          'procedures/ctxr-submit/SKILL.md',
+          'procedures/ctxr-land/SKILL.md',
+          'procedures/ctxr-derived-artifacts/SKILL.md',
+        ].sort(),
       );
     } finally {
       await tmp.cleanup();

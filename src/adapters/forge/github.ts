@@ -1,10 +1,46 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import type { ForgeAdapter } from './types.js';
+import type { ForgeAdapter, PullRequestLifecycleState, PullRequestMergeability, PullRequestState } from './types.js';
 
 const execFileAsync = promisify(execFile);
 
 const PR_NUMBER_RE = /\/pull\/(\d+)/;
+
+/** GitHub's own vocabulary, normalized to the adapter interface's small unions — kept pure and exported so tests exercise the mapping without a subprocess. */
+export function mapPullRequestState(ghState: string): PullRequestLifecycleState {
+  switch (ghState) {
+    case 'OPEN':
+      return 'open';
+    case 'MERGED':
+      return 'merged';
+    case 'CLOSED':
+      return 'closed';
+    default:
+      throw new Error(`Internal error: unrecognized GitHub pull request state "${ghState}".`);
+  }
+}
+
+export function mapMergeability(ghMergeable: string): PullRequestMergeability {
+  switch (ghMergeable) {
+    case 'MERGEABLE':
+      return 'mergeable';
+    case 'CONFLICTING':
+      return 'conflicting';
+    case 'UNKNOWN':
+      return 'unknown';
+    default:
+      throw new Error(`Internal error: unrecognized GitHub mergeable status "${ghMergeable}".`);
+  }
+}
+
+interface GhPullRequestView {
+  number: number;
+  url: string;
+  title: string;
+  state: string;
+  mergeable: string;
+  headRefName: string;
+}
 
 /**
  * The reference forge adapter, shelling out to `gh` (same tool, same
@@ -15,7 +51,7 @@ const PR_NUMBER_RE = /\/pull\/(\d+)/;
 export const githubForgeAdapter: ForgeAdapter = {
   id: 'github',
   kind: 'forge',
-  interfaceVersion: 1,
+  interfaceVersion: 2,
 
   async isAvailable(cwd) {
     try {
@@ -40,5 +76,26 @@ export const githubForgeAdapter: ForgeAdapter = {
     const url = stdout.trim();
     const match = PR_NUMBER_RE.exec(url);
     return { url, number: match?.[1] ? Number(match[1]) : null };
+  },
+
+  async pullRequest(cwd, ref) {
+    const { stdout } = await execFileAsync(
+      'gh',
+      ['pr', 'view', ref, '--json', 'number,url,title,state,mergeable,headRefName'],
+      { cwd },
+    );
+    const data = JSON.parse(stdout) as GhPullRequestView;
+    return {
+      number: data.number,
+      url: data.url,
+      title: data.title,
+      state: mapPullRequestState(data.state),
+      mergeable: mapMergeability(data.mergeable),
+      headBranch: data.headRefName,
+    } satisfies PullRequestState;
+  },
+
+  async mergePullRequest(cwd, number, method) {
+    await execFileAsync('gh', ['pr', 'merge', String(number), `--${method}`], { cwd });
   },
 };

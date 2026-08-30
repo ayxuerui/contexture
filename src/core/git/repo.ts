@@ -79,6 +79,11 @@ export async function currentBranch(git: GitRunner, cwd: string): Promise<string
   return result.stdout.trim();
 }
 
+/** session-submit-and-land spec: renames the CURRENT branch (the checkout's HEAD moves with it) — used by `session submit --branch`. */
+export async function renameCurrentBranch(git: GitRunner, cwd: string, newName: string): Promise<void> {
+  await git.run(['branch', '-m', newName], { cwd });
+}
+
 /** Explicit pathspecs only — never `-A` — so `init` stages exactly the scaffold it wrote. */
 export async function addPaths(git: GitRunner, cwd: string, paths: readonly string[]): Promise<void> {
   if (paths.length === 0) return;

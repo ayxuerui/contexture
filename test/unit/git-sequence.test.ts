@@ -56,6 +56,8 @@ describe('init git call sequence', () => {
           '.claude/skills/ctxr-connection-proposal/SKILL.md',
           '.claude/skills/ctxr-rollup/SKILL.md',
           '.claude/skills/ctxr-session-lifecycle/SKILL.md',
+          '.claude/skills/ctxr-submit/SKILL.md',
+          '.claude/skills/ctxr-land/SKILL.md',
           '.claude/skills/ctxr-session-capture/SKILL.md',
           '.claude/skills/ctxr-derived-artifacts/SKILL.md',
           '.claude/skills/ctxr-organize-audit/SKILL.md',

@@ -23,14 +23,23 @@ export interface FakePrompterCall {
   defaultId: string;
 }
 
-export function fakePrompter(returnId: string): { prompter: Prompter; calls: FakePrompterCall[] } {
+export function fakePrompter(
+  returnId: string,
+  confirmResponse: boolean = true,
+): { prompter: Prompter; calls: FakePrompterCall[]; confirmCalls: { message: string }[] } {
   const calls: FakePrompterCall[] = [];
+  const confirmCalls: { message: string }[] = [];
   return {
     calls,
+    confirmCalls,
     prompter: {
       async selectProfile(input) {
         calls.push(input);
         return returnId;
+      },
+      async confirm(input) {
+        confirmCalls.push(input);
+        return confirmResponse;
       },
     },
   };

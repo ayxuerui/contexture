@@ -21,6 +21,26 @@ export function isSessionBranch(config: StoreConfig, branch: string): boolean {
   return branch.startsWith(config.session.branch_prefix);
 }
 
+/**
+ * session-submit-and-land spec: a worktree is ALSO recognized as a session
+ * by where it lives, not only by its branch's name — `session submit
+ * --branch <name>` renames the branch out from under the prefix, and a
+ * renamed session must stay a session for `session list`/`session reap`.
+ *
+ * Deliberately independent of any particular `store.root`: the worktree's
+ * OWN path shape is the durable identity — its immediate parent directory
+ * is named after the configured worktrees path — because the caller
+ * checking this (e.g. `session land --reap`, run FROM the very worktree it
+ * would remove) may itself resolve `store.root` to that same path, which
+ * would make a storeRoot-relative comparison meaningless.
+ */
+export function isSessionWorktreePath(config: StoreConfig, worktreePath: string): boolean {
+  const worktreesDirName = path.basename(config.session.worktrees_path);
+  const parts = path.resolve(worktreePath).split(path.sep);
+  const index = parts.lastIndexOf(worktreesDirName);
+  return index !== -1 && index === parts.length - 2;
+}
+
 /** A branch name may contain "/"; a directory name may not treat that as a separator. */
 export function worktreeDirNameFor(branch: string): string {
   return branch.replace(/\//g, '-');

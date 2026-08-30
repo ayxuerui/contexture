@@ -3,7 +3,7 @@ import type { RunEnv } from '../core/env.js';
 import { ExitCode } from '../core/exit-codes.js';
 import { isWorkingTreeClean } from '../core/git/repo.js';
 import { deleteBranch, listWorktrees, removeWorktree } from '../core/git/worktree.js';
-import { isSessionBranch } from '../core/session.js';
+import { isSessionBranch, isSessionWorktreePath } from '../core/session.js';
 import type { Store } from '../core/store.js';
 
 export const requires: CommandRequires = { store: 'required' };
@@ -29,7 +29,9 @@ export interface SessionReapData {
 export async function execute(env: RunEnv, store: Store): Promise<CommandOutcome<SessionReapData>> {
   const worktrees = await listWorktrees(env.git, store.root);
   const sessions = worktrees.filter(
-    (w): w is typeof w & { branch: string } => w.branch !== null && isSessionBranch(store.config, w.branch),
+    (w): w is typeof w & { branch: string } =>
+      w.branch !== null &&
+      (isSessionBranch(store.config, w.branch) || isSessionWorktreePath(store.config, w.path)),
   );
 
   const reaped: ReapOutcome[] = [];

@@ -2,7 +2,7 @@ import type { CommandOutcome, CommandRequires } from '../core/command.js';
 import type { RunEnv } from '../core/env.js';
 import { ExitCode } from '../core/exit-codes.js';
 import { listWorktrees } from '../core/git/worktree.js';
-import { isSessionBranch } from '../core/session.js';
+import { isSessionBranch, isSessionWorktreePath } from '../core/session.js';
 import type { Store } from '../core/store.js';
 
 export const requires: CommandRequires = { store: 'required' };
@@ -20,7 +20,11 @@ export interface SessionListData {
 export async function execute(env: RunEnv, store: Store): Promise<CommandOutcome<SessionListData>> {
   const worktrees = await listWorktrees(env.git, store.root);
   const sessions = worktrees
-    .filter((w): w is typeof w & { branch: string } => w.branch !== null && isSessionBranch(store.config, w.branch))
+    .filter(
+      (w): w is typeof w & { branch: string } =>
+        w.branch !== null &&
+        (isSessionBranch(store.config, w.branch) || isSessionWorktreePath(store.config, w.path)),
+    )
     .map((w) => ({ branch: w.branch, worktree: w.path, head: w.head }));
 
   return {

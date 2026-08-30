@@ -87,6 +87,40 @@ describe('session lifecycle (real git, real CLI)', () => {
     }
   });
 
+  it('session submit --branch renames before pushing, and session list still recognizes the worktree (session-submit-and-land)', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const env = hermeticGitEnv();
+      await runCli(['init'], { cwd: tmp.root, env });
+      await addRemote(tmp.root, env);
+
+      const start = JSON.parse((await runCli(['session', 'start', '--json'], { cwd: tmp.root, env })).stdout);
+      const worktree: string = start.data.worktree;
+      const generatedBranch: string = start.data.branch;
+
+      await mkdir(path.join(worktree, 'projects'), { recursive: true });
+      await writeFile(path.join(worktree, 'projects', 'new.md'), '---\nlens: private\n---\n# New note\n');
+      await runCli(['catalog', 'build'], { cwd: worktree, env });
+      await execFileAsync('git', ['add', '.'], { cwd: worktree, env });
+
+      const submit = await runCli(['session', 'submit', '--branch', 'topic/x', '--json'], { cwd: worktree, env });
+      expect(submit.exitCode).toBe(0);
+      const submitData = JSON.parse(submit.stdout).data;
+      expect(submitData.branch).toBe('topic/x');
+      expect(submitData.manualPrInstructions).toContain('topic/x');
+
+      const remoteBranches = await execFileAsync('git', ['ls-remote', '--heads', 'origin'], { cwd: tmp.root, env });
+      expect(remoteBranches.stdout).toContain('refs/heads/topic/x');
+      expect(remoteBranches.stdout).not.toContain(`refs/heads/${generatedBranch}`);
+
+      const list = JSON.parse((await runCli(['session', 'list', '--json'], { cwd: tmp.root, env })).stdout);
+      expect(list.data.sessions.map((s: { branch: string; worktree: string }) => s.branch)).toContain('topic/x');
+      expect(list.data.sessions.map((s: { worktree: string }) => s.worktree)).toContain(worktree);
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
   it('session submit refuses when full validation fails', async () => {
     const tmp = await makeTmpDir();
     try {

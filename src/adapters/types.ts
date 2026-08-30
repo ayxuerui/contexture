@@ -25,7 +25,8 @@ export interface Adapter<K extends AdapterKind = AdapterKind> {
 export const SUPPORTED_ADAPTER_INTERFACE_VERSION: Record<AdapterKind, number> = {
   'harness-generation': 1,
   'identity-injection': 1,
-  forge: 1,
+  // session-submit-and-land spec (D5): pullRequest/mergePullRequest joined the forge interface at v2.
+  forge: 2,
 };
 
 /**

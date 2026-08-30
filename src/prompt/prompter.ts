@@ -21,4 +21,12 @@ export interface Prompter {
     choices: readonly ProfileChoice[];
     defaultId: string;
   }): Promise<string>;
+
+  /**
+   * session-submit-and-land spec: the fire gate before an external side
+   * effect (a merge, a worktree removal) — `false` means the operator
+   * declined and nothing happens. Implementations MUST render entirely to
+   * stderr, for the same --json-corruption reason as `selectProfile`.
+   */
+  confirm(input: { message: string }): Promise<boolean>;
 }

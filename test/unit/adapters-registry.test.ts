@@ -47,11 +47,23 @@ describe('resolveAdapter', () => {
     );
   });
 
+  it('session-submit-and-land spec: reports a stale (pre-v2) forge adapter, naming both versions', () => {
+    const fixtureRegistry: Adapter[] = [{ id: 'old-forge', kind: 'forge', interfaceVersion: 1 }];
+    try {
+      resolveAdapter({ id: 'old-forge', kind: 'forge' }, fixtureRegistry);
+      expect.unreachable('expected AdapterVersionMismatchError');
+    } catch (err) {
+      expect(err).toBeInstanceOf(AdapterVersionMismatchError);
+      expect((err as Error).message).toContain('1');
+      expect((err as Error).message).toContain('2');
+    }
+  });
+
   it('accepts a fixture adapter of each of the three kinds when the version matches', () => {
     const fixtureRegistry: Adapter[] = [
       { id: 'fixture-harness', kind: 'harness-generation', interfaceVersion: 1 },
       { id: 'fixture-identity', kind: 'identity-injection', interfaceVersion: 1 },
-      { id: 'fixture-forge', kind: 'forge', interfaceVersion: 1 },
+      { id: 'fixture-forge', kind: 'forge', interfaceVersion: 2 },
     ];
     expect(resolveAdapter({ id: 'fixture-harness', kind: 'harness-generation' }, fixtureRegistry).id).toBe(
       'fixture-harness',

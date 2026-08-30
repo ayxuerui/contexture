@@ -34,6 +34,9 @@ describe('init taxonomy prompt (interactive path)', () => {
           calls.push(input);
           return 'para';
         },
+        async confirm() {
+          return true;
+        },
       };
       const env = makeFakeEnv({ prompter, io: interactiveIo(), env: GIT_IDENTITY_ENV });
 
@@ -61,6 +64,9 @@ describe('init taxonomy prompt (interactive path)', () => {
           existedAtPromptTime = existsSync(configPath);
           return 'para';
         },
+        async confirm() {
+          return true;
+        },
       };
       const env = makeFakeEnv({ prompter, io: interactiveIo(), env: GIT_IDENTITY_ENV });
 
@@ -79,6 +85,9 @@ describe('init taxonomy prompt (interactive path)', () => {
       const prompter: Prompter = {
         async selectProfile() {
           return 'zettelkasten';
+        },
+        async confirm() {
+          return true;
         },
       };
       const env = makeFakeEnv({ prompter, io: interactiveIo(), env: GIT_IDENTITY_ENV });
@@ -100,6 +109,9 @@ describe('init taxonomy prompt (interactive path)', () => {
         async selectProfile() {
           called = true;
           return 'para';
+        },
+        async confirm() {
+          return true;
         },
       };
       const env = makeFakeEnv({ prompter, io: interactiveIo(), env: GIT_IDENTITY_ENV });
