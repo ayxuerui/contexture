@@ -15,7 +15,7 @@ describe('cli-contract: the CLI is distributed and invoked as ctxr', () => {
       name: string;
       bin: Record<string, string>;
     };
-    expect(pkg.name).toBe('ctxr');
+    expect(pkg.name).toBe('ctxr-cli');
     expect(pkg.bin.ctxr).toBe('./dist/bin.js');
     expect(pkg.bin.contexture).toBe(pkg.bin.ctxr);
   });

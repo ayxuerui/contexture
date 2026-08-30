@@ -5,10 +5,10 @@ The structured context platform for the organization — a context store that in
 ## Install
 
 ```sh
-npm install -g ctxr
+npm install -g ctxr-cli
 ```
 
-The executable is `ctxr`; the project is Contexture. Everything a store contains keeps the project name — `contexture.yaml`, the `.contexture/` home directory, `CONTEXTURE_*` environment variables — while `ctxr` is what you type. A `contexture` alias executable is also installed for compatibility; docs and generated files always say `ctxr`.
+The npm package is `ctxr-cli`, the executable it installs is `ctxr`, and the project is Contexture. Everything a store contains keeps the project name — `contexture.yaml`, the `.contexture/` home directory, `CONTEXTURE_*` environment variables — while `ctxr` is what you type. A `contexture` alias executable is also installed for compatibility; docs and generated files always say `ctxr`.
 
 ## Usage
 

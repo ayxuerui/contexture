@@ -7,8 +7,9 @@ context: |
 
   Tech stack: TypeScript / Node, npm-distributed CLI + library.
 
-  Naming: the executable and the npm package are `ctxr` (cli-distribution-identity
-  change; bound once in cli-contract). `contexture` is the project name and stays on
+  Naming: the executable is `ctxr`, distributed by the npm package `ctxr-cli`
+  (unscoped `ctxr` is refused by the registry's similarity check; both bound once
+  in cli-contract). `contexture` is the project name and stays on
   everything store-resident or environmental — contexture.yaml, the .contexture/
   home directory, CONTEXTURE_* env vars, `contexture:<region>` markers, generated
   skill directories, prose about the product. A spec that writes
