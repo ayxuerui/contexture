@@ -2,18 +2,40 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import type { StoreConfig } from '../../src/config/schema.js';
-import { MANAGED_SKILL_HEADER, procedurePaths, PROCEDURES, syncShippedSkills } from '../../src/core/procedures.js';
+import {
+  MANAGED_SKILL_HEADER,
+  procedurePaths,
+  PROCEDURES,
+  renderProcedures,
+  retiredLayers,
+  syncShippedSkills,
+  terminatingLayers,
+} from '../../src/core/procedures.js';
+import { SHIPPED_PROFILES } from '../../src/taxonomy/profiles.js';
 import { makeTmpDir } from '../helpers/tmp-store.js';
 
-function makeConfig(): StoreConfig {
+/**
+ * The content tests render against a PLACEHOLDER taxonomy (layer names no
+ * shipped profile uses) so that any shipped layer name found in the output
+ * can only have come from the skill source itself — which is exactly what
+ * owned-skills-expansion D3 forbids.
+ */
+function makeConfig(overrides: Partial<StoreConfig> = {}): StoreConfig {
   return {
     schema_version: 1,
-    taxonomy: { profile: 'para', layers: [] },
+    taxonomy: {
+      profile: 'custom',
+      layers: [
+        { name: 'Alpha', path: 'alpha', description: 'Active work with a defined end state.' },
+        { name: 'Beta', path: 'beta', description: 'Ongoing responsibilities with a standard to maintain.' },
+        { name: 'Gamma', path: 'gamma', description: 'Completed, abandoned, or inactive items.' },
+      ],
+    },
     fields: { visibility: 'scope' },
-    visibility: { default_context: 'private', directory_defaults: {}, contexts: {} },
+    visibility: { default_context: 'ctx-default', directory_defaults: {}, contexts: {} },
     derived: { paths: [] },
     retrieval: { exclude_paths: ['procedures/'] },
-    git: { default_branch: 'main' },
+    git: { default_branch: 'trunk' },
     session: { branch_prefix: 'session/', worktrees_path: '.worktrees/' },
     write_lifecycle: { diff_size_ceiling_lines: 2000 },
     catalog: { path: 'catalog/', section_max_bytes: 32768 },
@@ -23,17 +45,197 @@ function makeConfig(): StoreConfig {
     identity: { path: 'identity/' },
     harness: { procedures_path: 'procedures/', conventions_path: 'conventions/' },
     adapters: [],
+    ...overrides,
   };
 }
 
+function rendered(config = makeConfig()): Record<string, string> {
+  return Object.fromEntries(renderProcedures(config).map((p) => [p.file, p.content]));
+}
+
+const SHIPPED_NAMES = [...new Set(SHIPPED_PROFILES.flatMap((p) => [p.name, ...p.layers.map((l) => l.name)]))];
+
+/** Words a real deployment uses as visibility values; a skill may only ever say `<context>` / `<value>`. */
+const TIER_WORDS = ['personal', 'private', 'public', 'shared', 'internal', 'team', 'confidential'];
+
 describe('PROCEDURES', () => {
-  it('names the four judgment-side operations from the task list', () => {
-    expect(PROCEDURES.map((p) => p.name)).toEqual([
-      'Ingest orchestration',
-      'Placement',
-      'Connection finding',
-      'Organize audit',
+  it('names the nine owned skills, in index order', () => {
+    expect(PROCEDURES.map((p) => p.file)).toEqual([
+      'ctxr-ingest-orchestration',
+      'ctxr-placement',
+      'ctxr-connection-finding',
+      'ctxr-connection-proposal',
+      'ctxr-rollup',
+      'ctxr-session-lifecycle',
+      'ctxr-session-capture',
+      'ctxr-derived-artifacts',
+      'ctxr-organize-audit',
     ]);
+  });
+
+  it('every rendered skill carries frontmatter, the managed header, and its H1', () => {
+    for (const p of renderProcedures(makeConfig())) {
+      expect(p.content.startsWith(`---\nname: ${p.file}\ndescription: ${p.description}\n---\n`)).toBe(true);
+      expect(p.content).toContain(MANAGED_SKILL_HEADER);
+      expect(p.content).toContain(`\n# ${p.name}\n`);
+      expect(p.description).not.toMatch(/: /); // a plain YAML scalar — no "key: value" inside it
+    }
+  });
+});
+
+describe('owned-skills-expansion: each skill carries its load-bearing rule (task 2.1)', () => {
+  const skills = rendered();
+
+  it('placement: the visibility-collision merge test, visibility as an input, sub-item promotion, perishable routing, sibling style', () => {
+    const s = skills['ctxr-placement'];
+    expect(s).toMatch(/If\s+they differ, do NOT merge/);
+    expect(s).toContain('no safe default');
+    expect(s).toContain('Visibility can override location');
+    expect(s).toContain('Promote to its own top-level location');
+    expect(s).toContain('fenced `contexture:<region>` block you OVERWRITE');
+    expect(s).toContain('Read one or two sibling notes');
+    expect(s).toContain('`ctxr note resolve <path>`');
+  });
+
+  it('connection proposal: reads before it proposes, groups by the configured vocabulary with a single fallback group, confirms before writing', () => {
+    const s = skills['ctxr-connection-proposal'];
+    expect(s).toContain('Read every candidate before proposing it');
+    expect(s).toContain('relation vocabulary this store');
+    expect(s).toContain('single **Related** group');
+    expect(s).toContain('Confirm before writing');
+    expect(s).toContain('`ctxr graph query orphans`');
+  });
+
+  it('rollup: resolve-never-create, non-entity refusal, minimum-source pushback, read-all, skip-when-empty, provenance', () => {
+    const s = skills['ctxr-rollup'];
+    expect(s).toContain('Resolve, never create');
+    expect(s).toContain('Refuse non-entities');
+    expect(s).toMatch(/Fewer\s+than 3 accepted sources → push back/);
+    expect(s).toContain('Read EVERY accepted source, not a sample');
+    expect(s).toContain('skip any empty subsection');
+    expect(s).toContain('every fact traceable to a source note');
+    expect(s).toContain('`ctxr rollup gather <entity>`');
+    expect(s).toContain('`ctxr rollup write <entity> --content-file <file>`');
+  });
+
+  it('session lifecycle: gates before submit, land, and reclaim; re-scan; surgical staging; verify-before-retry; conflict playbook; sequencing', () => {
+    const s = skills['ctxr-session-lifecycle'];
+    expect(s).toContain('## Fire gate — submit');
+    expect(s).toContain('## Fire gate — land');
+    expect(s).toContain('## Fire gate — reclaim');
+    expect(s).toContain('plan consent is not fire consent');
+    expect(s).toContain('Re-scan (mandatory');
+    expect(s).toContain('never `git add -A`');
+    expect(s).toContain('## Verify before any retry');
+    expect(s).toContain('git rebase origin/trunk`'); // the CONFIGURED default branch, not a hardcoded one
+    expect(s).toContain('`git log --oneline origin/trunk..HEAD`');
+    expect(s).toContain('## Multi-PR sequencing');
+    expect(s).not.toMatch(/\bgit commit\b/); // D4: the CLI commits; no skill instructs a direct commit
+    expect(s).not.toMatch(/\bgit push\b(?! --force-with-lease)/);
+  });
+
+  it('session capture: trigger/anti-trigger taxonomy, three-block per-ID proposal, secret markers, identity blast-radius rule, report from writes', () => {
+    const s = skills['ctxr-session-capture'];
+    expect(s).toContain('Anti-triggers');
+    expect(s).toContain('### Block A — store notes');
+    expect(s).toContain('### Block B — world facts (identity/world-facts.md)');
+    expect(s).toContain('### Block C — user facts (identity/user-facts.md)');
+    expect(s).toContain('Approve by ID');
+    expect(s).toContain('⚠ suspected-secret:');
+    expect(s).toContain('when in doubt between a note and identity, pick the note');
+    expect(s).toContain('## Report from actual writes');
+    expect(s).toContain('Never write identity through a harness-specific memory mechanism');
+  });
+
+  it('derived artifacts: check before build, count read-back, the fence rule, derived files out of content commits, verify the remote', () => {
+    const s = skills['ctxr-derived-artifacts'];
+    expect(s).toContain('Check BEFORE you build');
+    expect(s).toContain('`ctxr catalog check`');
+    expect(s).toContain('read the result back');
+    expect(s).toContain('never hand-edit inside a `contexture:<region>` fence');
+    expect(s).toContain('OUTSIDE a fence');
+    expect(s).toContain('AFTER the content lands');
+    expect(s).toContain('`git show origin/trunk:<path> | grep -c <marker>`');
+  });
+
+  it('organize audit: move-don\'t-tag, visibility unchanged on retirement, tracked renames, broken-link classes, no stub notes', () => {
+    const s = skills['ctxr-organize-audit'];
+    expect(s).toContain("## Retiring: move, don't tag");
+    expect(s).toContain('visibility field travels unchanged');
+    expect(s).toContain('`git status --short` showing `R`');
+    expect(s).toContain('## Broken links have classes');
+    expect(s).toContain('Never fabricate stub notes');
+  });
+
+  it('ingest orchestration: read the cluster first, the decision table, hub and bridge checks via graph query, the thesis-change rule', () => {
+    const s = skills['ctxr-ingest-orchestration'];
+    expect(s).toContain('read the existing cluster BEFORE writing anything');
+    expect(s).toContain('| adds a genuinely new concept | create a new note |');
+    expect(s).toContain('Hub check');
+    expect(s).toContain('Bridge check');
+    expect(s).toContain('`ctxr graph query hubs`');
+    expect(s).toContain('Thesis-change rule');
+  });
+
+  it('no skill names a shipped profile or layer, and none names a real visibility value (D3)', () => {
+    expect(SHIPPED_NAMES.length).toBeGreaterThan(0);
+    for (const [file, content] of Object.entries(skills)) {
+      for (const name of SHIPPED_NAMES) {
+        expect(content, `${file} names shipped layer/profile "${name}"`).not.toMatch(new RegExp(`\\b${name}\\b`));
+      }
+      for (const word of TIER_WORDS) {
+        expect(content, `${file} uses "${word}" as a visibility value`).not.toMatch(new RegExp(`\\b${word}\\b`, 'i'));
+      }
+      // `--as` only ever takes the placeholder
+      for (const m of content.matchAll(/--as (<[^>]+>|[\w-]+)/g)) expect(m[1], `${file}: --as ${m[1]}`).toBe('<context>');
+      // and the store's own default context is described, never spelled out
+      expect(content).not.toContain('ctx-default');
+    }
+  });
+
+  it('every skill names ctxr, never the project name, as the executable', () => {
+    for (const [file, content] of Object.entries(skills)) {
+      expect(content, file).not.toMatch(/`contexture [a-z]/);
+    }
+  });
+});
+
+describe('owned-skills-expansion: the termination test follows the configured taxonomy (task 2.2)', () => {
+  it('classifies layers by description, never by name', () => {
+    const config = makeConfig();
+    expect(terminatingLayers(config).map((l) => l.name)).toEqual(['Alpha']);
+    expect(retiredLayers(config).map((l) => l.name)).toEqual(['Gamma']);
+  });
+
+  it('a taxonomy with a terminating layer renders the termination test naming that layer', () => {
+    const s = rendered()['ctxr-placement'];
+    expect(s).toContain('Termination test for **Alpha**: does this have a finish line?');
+    expect(s).toContain('**Gamma** is where the other layers\' finished or dropped items go');
+    expect(s).not.toContain('declares no top-level layers');
+  });
+
+  it('a zero-layer taxonomy renders no layer decision and no termination test', () => {
+    const s = rendered(makeConfig({ taxonomy: { profile: 'custom', layers: [] } }))['ctxr-placement'];
+    expect(s).toContain('This store declares no top-level layers');
+    expect(s).not.toContain('Termination test');
+    expect(s).not.toContain('finished or dropped items');
+  });
+
+  it('a layered taxonomy whose descriptions imply no end state renders neither test', () => {
+    const s = rendered(
+      makeConfig({
+        taxonomy: {
+          profile: 'custom',
+          layers: [
+            { name: 'Lessons', path: 'lessons', description: 'Learning-oriented lessons.' },
+            { name: 'Guides', path: 'guides', description: 'Goal-oriented directions.' },
+          ],
+        },
+      }),
+    )['ctxr-placement'];
+    expect(s).toContain('## 1. Which layer?');
+    expect(s).not.toContain('Termination test');
+    expect(s).not.toContain('finished or dropped items');
   });
 });
 
@@ -43,6 +245,7 @@ describe('syncShippedSkills', () => {
     try {
       const written = await syncShippedSkills(tmp.root, makeConfig());
       expect(written.sort()).toEqual(procedurePaths(makeConfig()).sort());
+      expect(written).toHaveLength(9);
       const placement = await readFile(path.join(tmp.root, 'procedures/ctxr-placement/SKILL.md'), 'utf8');
       expect(placement).toContain('name: ctxr-placement');
       expect(placement).toContain('description:');
@@ -57,6 +260,19 @@ describe('syncShippedSkills', () => {
     try {
       await syncShippedSkills(tmp.root, makeConfig());
       expect(await syncShippedSkills(tmp.root, makeConfig())).toEqual([]);
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('re-renders when the configuration a skill depends on changes', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      await syncShippedSkills(tmp.root, makeConfig());
+      const changed = await syncShippedSkills(tmp.root, makeConfig({ git: { default_branch: 'main' } }));
+      expect(changed.sort()).toEqual(
+        ['procedures/ctxr-session-lifecycle/SKILL.md', 'procedures/ctxr-derived-artifacts/SKILL.md'].sort(),
+      );
     } finally {
       await tmp.cleanup();
     }
