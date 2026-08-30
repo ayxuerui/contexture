@@ -7,6 +7,15 @@ context: |
 
   Tech stack: TypeScript / Node, npm-distributed CLI + library.
 
+  Naming: the executable and the npm package are `ctxr` (cli-distribution-identity
+  change; bound once in cli-contract). `contexture` is the project name and stays on
+  everything store-resident or environmental — contexture.yaml, the .contexture/
+  home directory, CONTEXTURE_* env vars, `contexture:<region>` markers, generated
+  skill directories, prose about the product. A spec that writes
+  `contexture <command>` denotes the executable; new specs may write `ctxr <command>`.
+  Every shipped or generated instruction to run a command names `ctxr`, never
+  `contexture`.
+
   Tenancy: single-owner context store, org-ready access model — visibility values
   are user-defined named contexts, never hardcoded tiers (no "team-a/personal"
   style enums in a requirement).

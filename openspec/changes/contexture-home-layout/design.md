@@ -6,7 +6,7 @@
 
 The generated AGENTS.md identity section lists the identity file paths (from config) with a "load these at session start" instruction. Inlining was rejected: it duplicates content the identity files own (violating the no-duplication rule the harness entry files already follow), and it would put per-session-injected content into a document that is also the retrieval-conventions reference.
 
-## D3 — Skills as generated mirrors of canonical procedures
+## D3 — (superseded by entry-doc-generation D5: procedures are contexture-owned skill copies, no mirrors) Skills as generated mirrors of canonical procedures
 
 Same shape as harness entry files: the canonical form is the portable procedure markdown; a skill wrapper is a harness-specific *pointer* (frontmatter for discovery + "read and follow <path>"), regenerated idempotently and byte-stable by `adapters generate`. Tracked, not gitignored — they are tiny, reviewable, and useful to other clones. The adapter interface gains an optional `skills` capability rather than a new adapter kind: skill generation is a facet of harness generation, not an independent lifecycle.
 

@@ -219,7 +219,7 @@ export class GraphNotBuiltError extends ContextureError {
     super(ExitCode.Usage, {
       code: 'graph.not_built',
       severity: 'error',
-      message: 'No graph artifact exists yet. Run "contexture graph build" first.',
+      message: 'No graph artifact exists yet. Run "ctxr graph build" first.',
     });
   }
 }

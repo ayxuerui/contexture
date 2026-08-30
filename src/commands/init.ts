@@ -36,7 +36,8 @@ import {
   agentsMdPath,
 } from '../core/agents-doc.js';
 import { ensureIdentityFiles } from '../core/identity.js';
-import { ensureProcedureFiles } from '../core/procedures.js';
+import { syncShippedSkills } from '../core/procedures.js';
+import { reconcileStore, WORKTREES_GITIGNORE_FENCE } from '../core/reconcile.js';
 import type { Finding } from '../core/envelope.js';
 import { isInteractive, type RunEnv } from '../core/env.js';
 import {
@@ -50,7 +51,7 @@ import { writeFileAtomic } from '../core/fs/atomic.js';
 import { upsertFencedRegionInFile } from '../core/fs/fenced-region.js';
 import { addPaths, commitIfStaged, currentBranch, findToplevel, gitInit, hasGitIdentity } from '../core/git/repo.js';
 import { configureHooksPath, installHooks } from '../core/hooks.js';
-import { commentFence, DERIVED_GITIGNORE_FENCE } from '../core/markers.js';
+import { DERIVED_GITIGNORE_FENCE } from '../core/markers.js';
 import { resolveRootForInit } from '../core/root.js';
 import { defaultProfile, DEFAULT_PROFILE_ID, profileById, SHIPPED_PROFILES } from '../taxonomy/profiles.js';
 
@@ -72,8 +73,6 @@ export interface InitData {
   taxonomy: { profile: string | null; layers: TaxonomyLayerConfig[] };
   schema_version: number;
 }
-
-const WORKTREES_GITIGNORE_FENCE = commentFence('worktrees');
 
 const CustomTaxonomyFileSchema = z.object({ layers: z.array(TaxonomyLayerSchema) });
 
@@ -149,17 +148,8 @@ async function runInitCore(env: RunEnv, flags: InitFlags): Promise<RunInitResult
   // --- Idempotent path: already initialized -----------------------------
   if (existsSync(configPath)) {
     const config = await readConfig(root); // validates + gates schema_version
-    const gitignorePath = path.join(root, '.gitignore');
-    await upsertFencedRegionInFile(gitignorePath, DERIVED_GITIGNORE_FENCE, config.derived.paths);
-    await upsertFencedRegionInFile(gitignorePath, WORKTREES_GITIGNORE_FENCE, [config.session.worktrees_path]);
-    await buildAgentsLegRoutingSection(root, config);
-    await buildAgentsCaptureSection(root, config);
-    await buildAgentsPlacementSection(root, config);
-    await ensureIdentityFiles(root, config);
-    await ensureProcedureFiles(root, config);
-    await buildAgentsCanonicalSection(root, config);
-    await buildAgentsIdentitySection(root, config);
-    await buildAgentsConventionsSection(root, config);
+    // Reconciling an existing store is exactly `ctxr update`'s job — one shared implementation.
+    await reconcileStore(env, root, config);
     return {
       data: {
         root,
@@ -237,7 +227,7 @@ async function runInitCore(env: RunEnv, flags: InitFlags): Promise<RunInitResult
   await buildAgentsCaptureSection(root, config);
   await buildAgentsPlacementSection(root, config);
   const identityFilesCreated = await ensureIdentityFiles(root, config);
-  const procedureFilesCreated = await ensureProcedureFiles(root, config);
+  const procedureFilesCreated = await syncShippedSkills(root, config);
   await buildAgentsCanonicalSection(root, config);
   await buildAgentsIdentitySection(root, config);
   await buildAgentsConventionsSection(root, config);

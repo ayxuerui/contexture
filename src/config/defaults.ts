@@ -37,8 +37,13 @@ export const DEFAULT_DERIVED_PATHS = ['.contexture/cache/'] as const;
 /** agent-identity spec: canonical identity files live here, excluded from every retrieval leg. */
 export const DEFAULT_IDENTITY_PATH = '.contexture/identity/';
 
-/** harness-portability spec: the portable procedure-markdown pack, excluded from retrieval (infra, not knowledge). */
-export const DEFAULT_PROCEDURES_PATH = '.contexture/procedures/';
+/**
+ * harness-portability spec (entry-doc-generation D5): contexture-owned
+ * skills are copied here (`<slug>/SKILL.md`), defaulting to the directory
+ * harnesses with skill auto-discovery read — one file, one hop. A store
+ * driven by another harness points this at that harness's skills directory.
+ */
+export const DEFAULT_PROCEDURES_PATH = '.claude/skills/';
 
 /** harness-portability spec (entry-doc-generation): operator-authored convention docs, indexed by AGENTS.md. */
 export const DEFAULT_CONVENTIONS_PATH = '.contexture/conventions/';

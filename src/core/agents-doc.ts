@@ -30,15 +30,15 @@ export function renderLegRoutingSection(config: StoreConfig): string[] {
     '',
     'contexture builds and maintains two retrieval tools ahead of time — consult them first:',
     '',
-    '- **Catalog** (`contexture catalog show --section <id>`): a curated, coverage-guaranteed index of every retrievable note, one section per taxonomy layer.',
-    '- **Graph** (`contexture graph query ...`): the wikilink graph between notes — neighbors, shortest path, hubs, orphans.',
+    '- **Catalog** (`ctxr catalog show --section <id>`): a curated, coverage-guaranteed index of every retrievable note, one section per taxonomy layer.',
+    '- **Graph** (`ctxr graph query ...`): the wikilink graph between notes — neighbors, shortest path, hubs, orphans.',
     '',
     'For a literal or entity question the catalog and graph do not answer (a specific string, an exact identifier, a phrase),',
     'use your own direct content-matching tool (e.g. grep/ripgrep) against the store, scoped to exclude:',
     '',
     ...exclusions.map((prefix) => `- \`${prefix}\``),
     '',
-    'There is no `contexture search` command. Ranked or semantic search is deferred to a future version — do not look for one.',
+    'There is no `ctxr search` command. Ranked or semantic search is deferred to a future version — do not look for one.',
   ];
 }
 
@@ -51,7 +51,7 @@ export async function buildAgentsLegRoutingSection(root: string, config: StoreCo
  * context-ingest spec (task 6.3): capture is a plain file write an agent
  * does directly with its own tools — no CLI command wraps it, the same
  * "agents gather, the CLI computes/writes/verifies" split that dropped
- * `contexture search`. This section documents the one rule that write must
+ * `ctxr search`. This section documents the one rule that write must
  * follow, so it isn't only tribal knowledge: no source-identity fields, and
  * where the file goes.
  */
@@ -70,11 +70,11 @@ export function renderCaptureSection(config: StoreConfig): string[] {
     '- `source_hash`',
     '- `ingested`',
     '',
-    'Before ingesting, run `contexture source check <path> --source-id <id>` to get one of four verdicts:',
+    'Before ingesting, run `ctxr source check <path> --source-id <id>` to get one of four verdicts:',
     '`new`, `already_ingested`, `alternate_source_match`, or `multiple_matches` — the last one means stop and',
     'resolve the ambiguity yourself rather than guessing which existing note it is.',
     '',
-    'To ingest, run `contexture ingest <path> --source-type <type> --source-id <id>`. It stamps the four fields',
+    'To ingest, run `ctxr ingest <path> --source-type <type> --source-id <id>`. It stamps the four fields',
     'above onto the file in place and rebuilds the catalog, so the result already has a catalog entry.',
   ];
 }
@@ -100,7 +100,7 @@ export function renderPlacementSection(config: StoreConfig): string[] {
       '## Placing a new note',
       '',
       'This store\'s taxonomy declares no top-level layers — place new notes directly at the store root (or',
-      'wherever related notes already live) and rely on wikilinks and `contexture graph` for organization,',
+      'wherever related notes already live) and rely on wikilinks and `ctxr graph` for organization,',
       'rather than a folder hierarchy.',
     ];
   }
@@ -151,14 +151,14 @@ export function renderCanonicalSection(config: StoreConfig, procedures: readonly
     '### Frontmatter schema',
     '',
     `- Visibility field: \`${config.fields.visibility}:\` — resolves explicit value, then directory default, then the ` +
-      `configured fail-closed default (\`${config.visibility.default_context}\`). See \`contexture note resolve <path>\`.`,
-    '- Source-identity fields (assigned only by `contexture ingest`, never hand-written): `source_type`, `source_id`, `source_hash`, `ingested`.',
+      `configured fail-closed default (\`${config.visibility.default_context}\`). See \`ctxr note resolve <path>\`.`,
+    '- Source-identity fields (assigned only by `ctxr ingest`, never hand-written): `source_type`, `source_id`, `source_hash`, `ingested`.',
     '- Disclosure audience tags (optional, hand-written): `audience: [<name>, ...]`.',
     '',
     '### Write path',
     '',
-    'Every write to this store happens inside a session worktree, never directly on the default branch: `contexture ' +
-      'session start` creates one, then `contexture session submit` validates, commits, pushes, and opens (or ' +
+    'Every write to this store happens inside a session worktree, never directly on the default branch: `ctxr ' +
+      'session start` creates one, then `ctxr session submit` validates, commits, pushes, and opens (or ' +
       'reports how to open) a pull request. Do not edit files in the store root directly.',
     '',
     '### Procedure index',

@@ -25,3 +25,11 @@ The `AGENTS.md` procedure index SHALL list every procedure markdown file present
 #### Scenario: Deleting a shipped procedure's index entry still fails the portability test
 - **WHEN** a procedure file exists on disk but its index entry is removed from `AGENTS.md`
 - **THEN** `verify --portable` exits non-zero naming that procedure
+
+### Requirement: Contexture-owned skills are copied into the store and refreshed by update
+The shipped procedures SHALL be contexture-owned skills: their canonical content ships with the tool, and a store SHALL carry a full copy of each at the configured procedures path in the skill layout (`<slug>/SKILL.md`), marked as managed. `init` SHALL write them; a dedicated update command SHALL bring every contexture-owned file in a store — generated entry-document sections, managed ignore blocks, hooks, skill copies, and adapter outputs — to the installed tool version without touching operator-authored content. Both SHALL be byte-stable when nothing has changed.
+
+#### Scenario: Update refreshes a drifted copy and leaves operator content alone
+- **WHEN** a contexture-owned skill copy differs from the installed version and an operator-authored skill sits alongside it, and the update command runs
+- **THEN** the contexture-owned copy is rewritten to the installed version, the operator skill is byte-identical, and an immediately repeated update reports nothing changed
+

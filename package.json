@@ -1,5 +1,5 @@
 {
-  "name": "contexture",
+  "name": "ctxr",
   "version": "0.1.0",
   "description": "A context store that ingests, organizes, and retrieves context for any AI agent",
   "type": "module",
@@ -8,6 +8,7 @@
     "node": ">=20.11"
   },
   "bin": {
+    "ctxr": "./dist/bin.js",
     "contexture": "./dist/bin.js"
   },
   "main": "./dist/index.js",
