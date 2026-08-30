@@ -1,10 +1,9 @@
 ## Why
 
-Auditing the migration target's 52 harness skills against contexture's CLI (see `owned-skills-expansion`, design D1) showed that the store's proven procedures lean on five operations contexture has no verb for. Each is generic — no operator's vocabulary, taxonomy, or tooling is required to state it — and each is currently done by hand-rolled scripts or by an agent editing files directly, which is exactly the class of "bespoke maintenance" contexture exists to replace. Without them the owned skills have to say "do this manually", and the store's most valuable discipline (session landing, structured appends, dedupe verdicts, leak scanning) stays outside the tool.
+Auditing the migration target's 52 harness skills against contexture's CLI (see `owned-skills-expansion`, design D1) showed that the store's proven procedures lean on four operations contexture has no verb for. Each is generic — no operator's vocabulary, taxonomy, or tooling is required to state it — and each is currently done by hand-rolled scripts or by an agent editing files directly, which is exactly the class of "bespoke maintenance" contexture exists to replace. Without them the owned skills have to say "do this manually", and the store's most valuable discipline (structured appends, dedupe verdicts, leak scanning, rollup staleness) stays outside the tool.
 
 ## What Changes
 
-- **Session landing.** `ctxr session land` completes an approved session end-to-end (verify the pull request's state, merge with the configured strategy, sync the default branch, remove the worktree) with explicit gates before every external side effect; `session submit` learns `--branch` and `--title`. Retries verify state before acting.
 - **Append into a fenced region.** `ctxr entry append <note> --region <name>` inserts a line into a `contexture:<region>` fenced block, creating the block if absent, preserving hand-written content outside it, and returning the region's line count so callers can verify.
 - **Dedupe verdicts.** `ctxr source check` distinguishes `duplicate` from `drift` (same identity, different hash), exposes `source stamp` to record identity on an existing note and `source add-alt` to append an alternative source to an already-ingested note, and canonicalizes URL identities (scheme, host case, tracking parameters, trailing slash) before comparison.
 - **Leak scan.** `ctxr lint` gains a check that flags content belonging to one context found inside a note visible to another, using the configured context mapping and operator-declared marker patterns; `ctxr check --scan` reports the same for one note.
@@ -19,7 +18,6 @@ _None._
 
 ### Modified Capabilities
 
-- `write-lifecycle`: session landing, submit options, and gated retries.
 - `context-store`: fenced-region appends.
 - `context-ingest`: drift verdict, stamp, alternative source, URL canonicalization.
 - `disclosure-policy`: leak scan across the context mapping.
@@ -27,7 +25,7 @@ _None._
 
 ## Impact
 
-Affected code: `src/commands/session*.ts`, new `src/commands/entry-append.ts`, `src/core/ingest/{dedupe,canonical-url}.ts`, `src/core/organize/lint.ts` (two new checks), new `src/commands/rollup.ts`, `src/core/procedures.ts` (skills reference the new verbs), `openspec/specs/cli-contract` (command surface). Config gains `disclosure.leak_markers` and `organize.rollup_stale_days`. Typed relations and identity edits, first drafted here, moved to `graph-context-document` and `session-capture-command` respectively. No schema_version bump — additive.
+Affected code: new `src/commands/entry-append.ts`, `src/core/ingest/{dedupe,canonical-url}.ts`, `src/core/organize/lint.ts` (two new checks), new `src/commands/rollup.ts`, `src/core/procedures.ts` (skills reference the new verbs), `openspec/specs/cli-contract` (command surface). Config gains `disclosure.leak_markers` and `organize.rollup_stale_days`. Session landing, typed relations, and identity edits, first drafted here, moved to `session-submit-and-land`, `graph-context-document`, and `session-capture-command` respectively. No schema_version bump — additive.
 
 ## Non-goals
 
