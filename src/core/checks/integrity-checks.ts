@@ -1,8 +1,13 @@
-import { resolveAdapter } from '../../adapters/registry.js';
+import { readFile } from 'node:fs/promises';
+import path from 'node:path';
+import { configuredAdapters, resolveAdapter } from '../../adapters/registry.js';
 import { StoreConfigSchema, SUPPORTED_SCHEMA_VERSION } from '../../config/schema.js';
+import { agentsMdPath } from '../agents-doc.js';
 import { checkCatalogStale } from '../catalog/build.js';
 import type { Finding } from '../envelope.js';
+import { removeFencedRegion } from '../fs/fenced-region.js';
 import { buildGraphFromNotes, graphBuildOptions } from '../graph/model.js';
+import { harnessEntryFence } from '../markers.js';
 import { defineCheck } from './types.js';
 
 /**
@@ -143,6 +148,79 @@ export const adapterCompatibilityCheck = defineCheck({
   },
 });
 
+const MARKDOWN_HEADING_RE = /^#{1,6}\s+(.+)$/gm;
+
+function headingsOf(text: string): Set<string> {
+  const headings = new Set<string>();
+  for (const match of text.matchAll(MARKDOWN_HEADING_RE)) {
+    headings.add(match[1]!.trim().toLowerCase());
+  }
+  return headings;
+}
+
+/**
+ * harness-portability spec: "A harness-specific entry file only imports" —
+ * SHALL contain nothing beyond the adapter's own managed import plus that
+ * harness's own extras, and SHALL NOT duplicate canonical content. Exact
+ * prose duplication is undecidable to check in general (paraphrase, partial
+ * copy, reordering), so this catches the concrete failure mode the
+ * requirement is aimed at: a section heading also present in AGENTS.md,
+ * copy-pasted into the entry file outside its managed fence — the way an
+ * operator reaching for "where do I put a Claude-only note" might otherwise
+ * duplicate a whole AGENTS.md section into CLAUDE.md instead of writing a
+ * harness-specific extra beneath the import (see the `store-conventions`
+ * fence's own guidance in `agents-doc.ts`).
+ */
+export const harnessEntryNoDuplicateConventionTextCheck = defineCheck({
+  id: 'adapters.harness_entry_no_duplicate_convention_text',
+  title: 'A harness entry file carries no convention text already indexed in AGENTS.md',
+  severity: 'invariant',
+  capability: 'harness-portability',
+  scopes: ['store'],
+  async run(ctx) {
+    const adapters = configuredAdapters(ctx.config, 'harness-generation');
+    if (adapters.length === 0) {
+      return { status: 'pass', findings: [] };
+    }
+
+    let agentsMdContent: string;
+    try {
+      agentsMdContent = await readFile(agentsMdPath(ctx.storeRoot), 'utf8');
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+        return { status: 'skip', skipReason: 'AGENTS.md has not been generated yet — run `ctxr update`', findings: [] };
+      }
+      throw err;
+    }
+    const agentsMdHeadings = headingsOf(agentsMdContent);
+
+    const findings: Finding[] = [];
+    for (const adapter of adapters) {
+      let entryContent: string;
+      try {
+        entryContent = await readFile(path.join(ctx.storeRoot, adapter.entryFileName), 'utf8');
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException).code === 'ENOENT') continue; // nothing generated for this adapter yet
+        throw err;
+      }
+      const extra = removeFencedRegion(entryContent, harnessEntryFence(adapter.id)).text;
+      for (const heading of headingsOf(extra)) {
+        if (agentsMdHeadings.has(heading)) {
+          findings.push({
+            code: 'adapters.harness_entry_duplicates_agents_md',
+            severity: 'error',
+            message: `"${adapter.entryFileName}" duplicates AGENTS.md's "${heading}" section outside its managed import — canonical content belongs only in AGENTS.md; a harness-specific extra belongs below the import instead.`,
+            subject: adapter.entryFileName,
+            details: { heading },
+          });
+        }
+      }
+    }
+
+    return { status: findings.length > 0 ? 'fail' : 'pass', findings };
+  },
+});
+
 /** store-integrity spec: "no unrecognized top-level config keys." */
 export const noUnrecognizedConfigKeysCheck = defineCheck({
   id: 'store.no_unrecognized_config_keys',
@@ -167,5 +245,6 @@ export const INTEGRITY_CHECKS = [
   graphDanglingLinksCheck,
   schemaVersionCurrencyCheck,
   adapterCompatibilityCheck,
+  harnessEntryNoDuplicateConventionTextCheck,
   noUnrecognizedConfigKeysCheck,
 ];
