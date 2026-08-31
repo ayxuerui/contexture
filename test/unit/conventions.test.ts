@@ -88,4 +88,14 @@ describe('renderConventionsSection', () => {
     expect(lines).toContain('`conventions/`');
     expect(lines).toMatch(/no convention documents yet/i);
   });
+
+  it('directs a harness-specific note to that harness\'s own entry file, not this directory', () => {
+    const empty = renderConventionsSection(makeConfig(), []).join('\n');
+    expect(empty).toMatch(/only one agent harness/i);
+
+    const populated = renderConventionsSection(makeConfig(), [
+      { path: 'conventions/style.md', title: 'Style', description: 'Prose rules.' },
+    ]).join('\n');
+    expect(populated).toMatch(/only one agent harness/i);
+  });
 });

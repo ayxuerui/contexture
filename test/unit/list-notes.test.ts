@@ -168,4 +168,27 @@ describe('listNotes and harness entry files (entry-doc-generation D4)', () => {
       await tmp.cleanup();
     }
   });
+
+  it('skips AGENTS.md at the store root — it is the CLI-generated entry document, not a note', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      await writeNote(tmp.root, 'AGENTS.md', '# Entry doc\n');
+      await writeNote(tmp.root, 'projects/a.md');
+      const notes = await listNotes(tmp.root, makeConfig());
+      expect(notes.map((n) => n.path)).toEqual(['projects/a.md']);
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('treats a nested AGENTS.md as an ordinary note — contexture only ever generates the root one', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      await writeNote(tmp.root, 'areas/Team/AGENTS.md', '# Team conventions\n');
+      const notes = await listNotes(tmp.root, makeConfig());
+      expect(notes.map((n) => n.path)).toEqual(['areas/Team/AGENTS.md']);
+    } finally {
+      await tmp.cleanup();
+    }
+  });
 });

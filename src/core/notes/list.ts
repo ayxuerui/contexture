@@ -33,8 +33,12 @@ const ALWAYS_SKIP_DIRS = new Set(['.git', '.githooks', '.queue']);
 /**
  * Filenames intrinsic to contexture itself, never user content — same
  * status as ALWAYS_SKIP_DIRS. AGENTS.md is a CLI-generated procedure
- * document (task 4.5), not a note; without this it would otherwise be
- * picked up as one, since it lives at the store root as a plain .md file.
+ * document (task 4.5), not a note, but only the one `agentsMdPath` ever
+ * generates: the store root's own `AGENTS.md` (`agents-doc.ts` hardcodes
+ * `path.join(root, 'AGENTS.md')`, never a nested path). A same-named file
+ * anywhere else is ordinary content an operator happened to name AGENTS.md
+ * — the walk below applies this root-only, the same way it treats a
+ * harness's own entry filename (`skipRootFiles`, right below).
  */
 const ALWAYS_SKIP_FILES = new Set(['AGENTS.md']);
 
@@ -95,7 +99,7 @@ async function walk(
       if (isUnderAnyPrefix(relativePath, excludePrefixes)) continue;
       await walk(fullPath, root, excludePrefixes, skipRootFiles, results);
     } else if (entry.isFile() && entry.name.endsWith('.md')) {
-      if (ALWAYS_SKIP_FILES.has(entry.name)) continue;
+      if (relativePath === entry.name && ALWAYS_SKIP_FILES.has(entry.name)) continue;
       if (relativePath === entry.name && skipRootFiles.has(entry.name)) continue;
       if (isUnderAnyPrefix(relativePath, excludePrefixes)) continue;
       results.push(relativePath);

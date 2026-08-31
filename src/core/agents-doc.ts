@@ -214,6 +214,11 @@ export async function buildAgentsCanonicalSection(root: string, config: StoreCon
  */
 export const AGENTS_MD_CONVENTIONS_FENCE = htmlCommentFence('store-conventions');
 
+const HARNESS_SPECIFIC_NOTE_GUIDANCE =
+  'A note that applies to only one agent harness (not every harness reading this store) belongs below ' +
+  "that harness's own managed import in its own entry file, never here — every file in this directory " +
+  'is indexed into every harness\'s entry document equally.';
+
 export function renderConventionsSection(config: StoreConfig, conventions: readonly ScannedDoc[]): string[] {
   const lines = ['## Store conventions', ''];
   if (conventions.length === 0) {
@@ -221,6 +226,8 @@ export function renderConventionsSection(config: StoreConfig, conventions: reado
       `This store declares no convention documents yet. Operator-authored conventions (content style, field`,
       `semantics, house rules) belong as markdown files under \`${config.harness.conventions_path}\` — each is`,
       'indexed here on regeneration, referenced by path, never inlined.',
+      '',
+      HARNESS_SPECIFIC_NOTE_GUIDANCE,
     );
     return lines;
   }
@@ -228,6 +235,7 @@ export function renderConventionsSection(config: StoreConfig, conventions: reado
   for (const doc of conventions) {
     lines.push(`- [${doc.title}](${doc.path})${doc.description ? ` — ${doc.description}` : ''}`);
   }
+  lines.push('', HARNESS_SPECIFIC_NOTE_GUIDANCE);
   return lines;
 }
 

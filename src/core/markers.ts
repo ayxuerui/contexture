@@ -27,3 +27,13 @@ export function htmlCommentFence(regionName: string): Fence {
     end: `<!-- <<< contexture:${regionName} <<< -->`,
   };
 }
+
+/**
+ * A harness-generation adapter's own fenced region within its entry file
+ * (`adapters-generate.ts`) — shared with the `adapters.harness_entry_no_duplicate_convention_text`
+ * doctor check (`integrity-checks.ts`), which needs the identical fence to
+ * find the same boundary from the other side (everything OUTSIDE it).
+ */
+export function harnessEntryFence(adapterId: string): Fence {
+  return htmlCommentFence(`adapter:${adapterId}:harness-entry`);
+}
