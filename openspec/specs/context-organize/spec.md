@@ -34,3 +34,14 @@ Archiving a note SHALL relocate it via the single tracked rename defined in the 
 #### Scenario: Lint is distinct from doctor
 - **WHEN** an operator wants a check that fails on a real invariant violation rather than merely reports a health observation
 - **THEN** they run `doctor` (defined in the store-integrity capability), not `lint`
+
+### Requirement: Stale rollups are detectable
+`ctxr rollup stale [--for <entity>]` SHALL list entity notes for which any backlinking note was modified more recently than the entity's recorded rollup timestamp, or which record no rollup timestamp; `ctxr lint` SHALL report the same as an organize finding bounded by a configured staleness window.
+
+#### Scenario: A newer backlink marks the rollup stale
+- **WHEN** an entity note records a rollup timestamp and a note linking to it was modified after that timestamp
+- **THEN** `rollup stale` lists the entity
+
+#### Scenario: A fresh rollup is silent
+- **WHEN** every backlinking note was modified before the recorded rollup timestamp
+- **THEN** the entity is not listed
