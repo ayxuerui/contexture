@@ -4,6 +4,14 @@
   "description": "A context store that ingests, organizes, and retrieves context for any AI agent",
   "type": "module",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ayxuerui/contexture.git"
+  },
+  "homepage": "https://github.com/ayxuerui/contexture#readme",
+  "bugs": {
+    "url": "https://github.com/ayxuerui/contexture/issues"
+  },
   "engines": {
     "node": ">=20.11"
   },
