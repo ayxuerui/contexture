@@ -26,3 +26,14 @@ Delivering identity content into a running agent's context SHALL be the responsi
 #### Scenario: No harness-specific injection code in core
 - **WHEN** `contexture adapters generate` is run for a given harness
 - **THEN** the harness-specific injection mechanism (a symlink, a config entry, or equivalent) is produced by that harness's adapter, and removing the adapter removes the injection mechanism without touching the canonical identity files
+
+### Requirement: The canonical entry document references identity
+The generated portion of `AGENTS.md` SHALL include a section that names the store's identity files (at their configured location) and instructs an agent to load them at session start. The section SHALL reference the files by path, not inline their content, and SHALL be regenerated when the configured identity path changes.
+
+#### Scenario: A harness with no adapter still discovers identity
+- **WHEN** an agent harness with no identity-injection adapter reads only `AGENTS.md` at a store's root
+- **THEN** it finds the identity files' paths and the instruction to load them at session start, without any harness-specific mechanism
+
+#### Scenario: Identity content is not duplicated into the entry document
+- **WHEN** the identity section of `AGENTS.md` is generated
+- **THEN** it contains file references and the load instruction only — editing an identity file requires no regeneration of `AGENTS.md`
