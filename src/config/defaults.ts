@@ -84,8 +84,14 @@ export const DEFAULT_HARD_WALLS: readonly HardWallConfig[] = [];
 /** context-ingest spec: capture's landing zone — a normal, retrievable directory, not an exclusion. */
 export const DEFAULT_INBOX_PATH = 'inbox/';
 
+/** store-primitives-from-migration-audit spec (D2): the shipped tracking-parameter list source check strips before comparing URL identities. */
+export const DEFAULT_TRACKING_PARAMS = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content', 'fbclid', 'gclid'];
+
 /** context-organize spec: archive's destination, decoupled from any taxonomy layer name. */
 export const DEFAULT_ARCHIVE_PATH = 'archive/';
+
+/** store-primitives-from-migration-audit spec (D4): grace period, in days, before a stale rollup is reported. */
+export const DEFAULT_ROLLUP_STALE_DAYS = 7;
 
 /**
  * adapters spec: init registers both shipped builtins by default, so

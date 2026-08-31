@@ -2,6 +2,7 @@ import { checkCatalogCoverage } from '../catalog/build.js';
 import type { Finding } from '../envelope.js';
 import { orphans } from '../graph/query.js';
 import { hasSourceIdentity } from '../ingest/identity.js';
+import { findStaleRollups } from '../rollup.js';
 import { defineCheck } from './types.js';
 
 const GRAPH_SKIP_REASON = 'graph has not been built yet — run `ctxr graph build`';
@@ -98,4 +99,28 @@ export const catalogGapsLintCheck = defineCheck({
   },
 });
 
-export const ORGANIZE_CHECKS = [orphanNotesCheck, brokenLinksCheck, uningestedInboxCheck, catalogGapsLintCheck];
+/** context-organize spec (store-primitives-from-migration-audit D4): a rollup with no timestamp, or one whose backlinks have moved past it, reported not failed. */
+export const rollupStaleCheck = defineCheck({
+  id: 'organize.rollup_stale',
+  title: 'Entity rollups whose sources have moved past their last synthesis',
+  severity: 'observation',
+  capability: 'context-organize',
+  scopes: ['store'],
+  async run(ctx) {
+    const notes = await ctx.notes();
+    const stale = await findStaleRollups(ctx.git, ctx.storeRoot, notes, {}, ctx.config.organize.rollup_stale_days);
+    const findings: Finding[] = stale.map((entry) => ({
+      code: 'organize.rollup_stale',
+      severity: 'info',
+      message:
+        entry.rolledUp === null
+          ? `"${entry.entity}" has a rollup section but no recorded rollup timestamp.`
+          : `"${entry.entity}"'s rollup is stale — "${entry.newestBacklink!.path}" was modified after the last rollup.`,
+      subject: entry.entity,
+      details: { rolledUp: entry.rolledUp, newestBacklink: entry.newestBacklink },
+    }));
+    return { status: findings.length > 0 ? 'fail' : 'pass', findings };
+  },
+});
+
+export const ORGANIZE_CHECKS = [orphanNotesCheck, brokenLinksCheck, uningestedInboxCheck, catalogGapsLintCheck, rollupStaleCheck];

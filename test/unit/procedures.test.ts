@@ -40,9 +40,9 @@ function makeConfig(overrides: Partial<StoreConfig> = {}): StoreConfig {
     session: { branch_prefix: 'session/', worktrees_path: '.worktrees/' },
     write_lifecycle: { diff_size_ceiling_lines: 2000, writable_paths: [] },
     catalog: { path: 'catalog/', section_max_bytes: 32768 },
-    disclosure: { internal_audiences: [], hard_walls: [] },
-    ingest: { inbox_path: 'inbox/' },
-    organize: { archive_path: 'archive/' },
+    disclosure: { internal_audiences: [], hard_walls: [], leak_markers: {} },
+    ingest: { inbox_path: 'inbox/', tracking_params: [] },
+    organize: { archive_path: 'archive/', rollup_stale_days: 7 },
     identity: { path: 'identity/', files: {}, entry_delimiter: '' },
     harness: { procedures_path: 'procedures/', conventions_path: 'conventions/' },
     adapters: [],
@@ -211,6 +211,18 @@ describe('owned-skills-expansion: each skill carries its load-bearing rule (task
     expect(s).toContain('Bridge check');
     expect(s).toContain('`ctxr graph query hubs`');
     expect(s).toContain('Thesis-change rule');
+  });
+
+  it('store-primitives-from-migration-audit: owned skills call the new verbs instead of a manual equivalent', () => {
+    const s = skills;
+    expect(s['ctxr-ingest-orchestration']).toContain('`drift`');
+    expect(s['ctxr-ingest-orchestration']).toContain('`ctxr source stamp <path> --id <id>`');
+    expect(s['ctxr-ingest-orchestration']).toContain('`ctxr source add-alt <path> --id <new-id>`');
+    expect(s['ctxr-rollup']).toContain('`ctxr rollup stale`');
+    expect(s['ctxr-organize-audit']).toContain('`ctxr rollup stale`');
+    expect(s['ctxr-organize-audit']).toContain('`ctxr check <path> --scan`');
+    expect(s['ctxr-organize-audit']).toContain('disclosure.leak_markers');
+    expect(s['ctxr-derived-artifacts']).toContain('`ctxr entry append <note> --region <name>`');
   });
 
   it('no skill names a shipped profile or layer, and none names a real visibility value (D3)', () => {

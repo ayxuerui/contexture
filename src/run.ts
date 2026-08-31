@@ -10,6 +10,7 @@ import * as ingestCommand from './commands/ingest.js';
 import * as lintCommand from './commands/lint.js';
 import * as migrateCommand from './commands/migrate.js';
 import * as graphBuildCommand from './commands/graph-build.js';
+import * as entryAppendCommand from './commands/entry-append.js';
 import * as graphQueryCommand from './commands/graph-query.js';
 import * as identityCommand from './commands/identity.js';
 import * as initCommand from './commands/init.js';
@@ -21,10 +22,13 @@ import * as sessionListCommand from './commands/session-list.js';
 import * as sessionReapCommand from './commands/session-reap.js';
 import * as sessionStartCommand from './commands/session-start.js';
 import * as rollupGatherCommand from './commands/rollup-gather.js';
+import * as rollupStaleCommand from './commands/rollup-stale.js';
 import * as rollupWriteCommand from './commands/rollup-write.js';
 import * as sessionSubmitCommand from './commands/session-submit.js';
+import * as sourceAddAltCommand from './commands/source-add-alt.js';
 import * as sourceCheckCommand from './commands/source-check.js';
 import * as sourceHashCommand from './commands/source-hash.js';
+import * as sourceStampCommand from './commands/source-stamp.js';
 import type { CommandOutcome } from './core/command.js';
 import type { Finding } from './core/envelope.js';
 import { buildEnvelope } from './core/envelope.js';
@@ -170,13 +174,29 @@ export async function run(argv: readonly string[], env: RunEnv): Promise<ExitCod
 
   program
     .command('check <path>')
-    .description('the disclosure-policy tri-state verdict (ALLOW/DENY/ASK) for a note and an audience')
-    .requiredOption('--audience <audience>', 'the audience the content would be disclosed to')
-    .action(async (notePath: string, cmdOpts: { audience: string }, cmd: Command) => {
+    .description('the disclosure-policy tri-state verdict (ALLOW/DENY/ASK) for a note and an audience, or --scan for a leak scan')
+    .option('--audience <audience>', 'the audience the content would be disclosed to (required unless --scan is given)')
+    .option('--scan', 'scan this note for content matching another context\'s markers that this note is not visible to')
+    .action(async (notePath: string, cmdOpts: { audience?: string; scan?: boolean }, cmd: Command) => {
       const { runEnv, jsonMode, root } = deriveRunEnv(env, cmd);
       result = await runCommand('check', runEnv, jsonMode, async () => {
         const store = await openStore(runEnv, { root });
-        return checkCommand.execute(runEnv, store, { path: notePath, audience: cmdOpts.audience });
+        return checkCommand.execute(runEnv, store, { path: notePath, audience: cmdOpts.audience, scan: cmdOpts.scan });
+      });
+    });
+
+  const entryCommand = program.command('entry').description('structured writes into a fenced region');
+
+  entryCommand
+    .command('append <path>')
+    .description('append a line into a contexture:<region> fenced region, creating it if absent')
+    .requiredOption('--region <name>', 'the region name')
+    .requiredOption('--text <text>', 'the line to append')
+    .action(async (notePath: string, cmdOpts: { region: string; text: string }, cmd: Command) => {
+      const { runEnv, jsonMode, root } = deriveRunEnv(env, cmd);
+      result = await runCommand('entry.append', runEnv, jsonMode, async () => {
+        const store = await openStore(runEnv, { root });
+        return entryAppendCommand.execute(runEnv, store, { path: notePath, region: cmdOpts.region, text: cmdOpts.text });
       });
     });
 
@@ -379,13 +399,38 @@ export async function run(argv: readonly string[], env: RunEnv): Promise<ExitCod
 
   sourceCommand
     .command('check <path>')
-    .description('two-stage dedupe verdict: already-ingested, alternate-source-match, multiple-matches, or new')
+    .description('two-stage dedupe verdict: new, already-ingested, drift, alternate-source-match, or multiple-matches')
     .requiredOption('--source-id <id>', "the candidate material's source identifier")
     .action(async (notePath: string, cmdOpts: { sourceId: string }, cmd: Command) => {
       const { runEnv, jsonMode, root } = deriveRunEnv(env, cmd);
       result = await runCommand('source.check', runEnv, jsonMode, async () => {
         const store = await openStore(runEnv, { root });
         return sourceCheckCommand.execute(runEnv, store, { path: notePath, sourceId: cmdOpts.sourceId });
+      });
+    });
+
+  sourceCommand
+    .command('stamp <path>')
+    .description('record source identity (and, by default, the current content hash) on a note directly')
+    .requiredOption('--id <id>', 'the source identifier to record')
+    .option('--hash <hash>', 'the content hash to record (default: computed from the note\'s current body)')
+    .action(async (notePath: string, cmdOpts: { id: string; hash?: string }, cmd: Command) => {
+      const { runEnv, jsonMode, root } = deriveRunEnv(env, cmd);
+      result = await runCommand('source.stamp', runEnv, jsonMode, async () => {
+        const store = await openStore(runEnv, { root });
+        return sourceStampCommand.execute(runEnv, store, { path: notePath, id: cmdOpts.id, hash: cmdOpts.hash });
+      });
+    });
+
+  sourceCommand
+    .command('add-alt <path>')
+    .description('append an alternative source identity to an already-ingested note')
+    .requiredOption('--id <id>', 'the alternative source identifier')
+    .action(async (notePath: string, cmdOpts: { id: string }, cmd: Command) => {
+      const { runEnv, jsonMode, root } = deriveRunEnv(env, cmd);
+      result = await runCommand('source.add-alt', runEnv, jsonMode, async () => {
+        const store = await openStore(runEnv, { root });
+        return sourceAddAltCommand.execute(runEnv, store, { path: notePath, id: cmdOpts.id });
       });
     });
 
@@ -433,6 +478,18 @@ export async function run(argv: readonly string[], env: RunEnv): Promise<ExitCod
       result = await runCommand('rollup.write', runEnv, jsonMode, async () => {
         const store = await openStore(runEnv, { root });
         return rollupWriteCommand.execute(runEnv, store, { entity, contentFile: cmdOpts.contentFile });
+      });
+    });
+
+  rollupCommand
+    .command('stale')
+    .description('list entity notes whose backlinks moved past their last rollup timestamp')
+    .option('--for <entity>', 'check only this entity')
+    .action(async (cmdOpts: { for?: string }, cmd: Command) => {
+      const { runEnv, jsonMode, root } = deriveRunEnv(env, cmd);
+      result = await runCommand('rollup.stale', runEnv, jsonMode, async () => {
+        const store = await openStore(runEnv, { root });
+        return rollupStaleCommand.execute(runEnv, store, { for: cmdOpts.for });
       });
     });
 

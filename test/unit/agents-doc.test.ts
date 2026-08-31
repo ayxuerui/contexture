@@ -31,9 +31,9 @@ function makeConfig(overrides: Partial<StoreConfig> = {}): StoreConfig {
     session: { branch_prefix: 'session/', worktrees_path: '.worktrees/' },
     write_lifecycle: { diff_size_ceiling_lines: 2000, writable_paths: [] },
     catalog: { path: 'catalog/', section_max_bytes: 32768 },
-    disclosure: { internal_audiences: [], hard_walls: [] },
-    ingest: { inbox_path: 'inbox/' },
-    organize: { archive_path: 'archive/' },
+    disclosure: { internal_audiences: [], hard_walls: [], leak_markers: {} },
+    ingest: { inbox_path: 'inbox/', tracking_params: [] },
+    organize: { archive_path: 'archive/', rollup_stale_days: 7 },
     identity: { path: 'identity/', files: {}, entry_delimiter: '' },
     harness: { procedures_path: 'procedures/', conventions_path: 'conventions/' },
     adapters: [],
@@ -133,7 +133,7 @@ describe('renderCaptureSection', () => {
   });
 
   it('reflects a non-default inbox path', () => {
-    const lines = renderCaptureSection(makeConfig({ ingest: { inbox_path: 'incoming/' } })).join('\n');
+    const lines = renderCaptureSection(makeConfig({ ingest: { inbox_path: 'incoming/', tracking_params: [] } })).join('\n');
     expect(lines).toContain('`incoming/`');
   });
 });

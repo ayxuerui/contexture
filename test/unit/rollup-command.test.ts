@@ -21,9 +21,9 @@ function makeConfig(): StoreConfig {
     session: { branch_prefix: 'session/', worktrees_path: '.worktrees/' },
     write_lifecycle: { diff_size_ceiling_lines: 2000, writable_paths: [] },
     catalog: { path: 'catalog/', section_max_bytes: 32768 },
-    disclosure: { internal_audiences: [], hard_walls: [] },
-    ingest: { inbox_path: 'inbox/' },
-    organize: { archive_path: 'archive/' },
+    disclosure: { internal_audiences: [], hard_walls: [], leak_markers: {} },
+    ingest: { inbox_path: 'inbox/', tracking_params: [] },
+    organize: { archive_path: 'archive/', rollup_stale_days: 7 },
     identity: { path: 'identity/', files: {}, entry_delimiter: '' },
     harness: { procedures_path: 'procedures/', conventions_path: 'conventions/' },
     adapters: [],
@@ -143,6 +143,31 @@ describe('rollup write', () => {
       await expect(
         executeWrite(env, store, { entity: 'projects/nope.md', contentFile }),
       ).rejects.toBeInstanceOf(NoteNotFoundError);
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('store-primitives-from-migration-audit D4: a real write stamps rolled_up:, a no-op does not', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const store: Store = { root: tmp.root, config: makeConfig() };
+      await writeNote(tmp.root, 'projects/topic.md', '---\nscope: shared\n---\n# Topic\n\nOriginal.\n');
+      const contentFile = path.join(tmp.root, 'content.txt');
+      await writeFile(contentFile, 'Synthesized text.\n');
+      const env = makeFakeEnv({ cwd: tmp.root, now: () => new Date('2026-01-01T00:00:00.000Z') });
+
+      await executeWrite(env, store, { entity: 'projects/topic.md', contentFile });
+      const afterFirst = await readFile(path.join(tmp.root, 'projects/topic.md'), 'utf8');
+      expect(afterFirst).toContain('rolled_up: 2026-01-01T00:00:00.000Z');
+
+      // A later "run" with UNCHANGED content must not bump the timestamp — true no-op stays byte-identical.
+      const laterEnv = makeFakeEnv({ cwd: tmp.root, now: () => new Date('2026-06-01T00:00:00.000Z') });
+      const second = await executeWrite(laterEnv, store, { entity: 'projects/topic.md', contentFile });
+      const afterSecond = await readFile(path.join(tmp.root, 'projects/topic.md'), 'utf8');
+      expect(second.data?.changed).toBe(false);
+      expect(afterSecond).toBe(afterFirst);
+      expect(afterSecond).toContain('rolled_up: 2026-01-01T00:00:00.000Z');
     } finally {
       await tmp.cleanup();
     }

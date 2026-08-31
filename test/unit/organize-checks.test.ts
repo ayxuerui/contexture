@@ -5,8 +5,10 @@ import {
   brokenLinksCheck,
   catalogGapsLintCheck,
   orphanNotesCheck,
+  rollupStaleCheck,
   uningestedInboxCheck,
 } from '../../src/core/checks/organize-checks.js';
+import { ROLLUP_FENCE } from '../../src/core/rollup.js';
 import type { GraphBuildResult } from '../../src/core/graph/model.js';
 import type { Note } from '../../src/core/notes/list.js';
 
@@ -22,9 +24,9 @@ function makeConfig(): StoreConfig {
     session: { branch_prefix: 'session/', worktrees_path: '.worktrees/' },
     write_lifecycle: { diff_size_ceiling_lines: 2000, writable_paths: [] },
     catalog: { path: 'catalog/', section_max_bytes: 32768 },
-    disclosure: { internal_audiences: [], hard_walls: [] },
-    ingest: { inbox_path: 'inbox/' },
-    organize: { archive_path: 'archive/' },
+    disclosure: { internal_audiences: [], hard_walls: [], leak_markers: {} },
+    ingest: { inbox_path: 'inbox/', tracking_params: [] },
+    organize: { archive_path: 'archive/', rollup_stale_days: 7 },
     identity: { path: 'identity/', files: {}, entry_delimiter: '' },
     harness: { procedures_path: 'procedures/', conventions_path: 'conventions/' },
     adapters: [],
@@ -122,5 +124,57 @@ describe('catalogGapsLintCheck', () => {
   it('is severity: observation, a different check id than the doctor invariant', () => {
     expect(catalogGapsLintCheck.severity).toBe('observation');
     expect(catalogGapsLintCheck.id).not.toBe('catalog.coverage');
+  });
+});
+
+describe('rollupStaleCheck (store-primitives-from-migration-audit D4)', () => {
+  function ctxWithGit(notes: Note[], gitStdout: Record<string, string>): CheckContext {
+    return {
+      storeRoot: '/repo',
+      config: makeConfig(),
+      scope: 'store',
+      git: {
+        run: async (args) => {
+          const key = args.join(' ');
+          const targetPath = args[args.length - 1]!;
+          return { stdout: gitStdout[targetPath] ? `${gitStdout[targetPath]}\n` : '', stderr: '', exitCode: 0 };
+        },
+      },
+      notes: async () => notes,
+      graph: async () => null,
+      catalog: async () => undefined,
+    };
+  }
+
+  const rollupNote = (path: string, rolledUp: string | null): Note => ({
+    path,
+    frontmatter: rolledUp ? { rolled_up: rolledUp } : undefined,
+    body: `# Entity\n\n${ROLLUP_FENCE.start}\nsynthesis\n${ROLLUP_FENCE.end}\n`,
+  });
+  const backlinkNote = (path: string, stem: string): Note => ({ path, frontmatter: undefined, body: `[[${stem}]]` });
+
+  it('is severity: observation', () => {
+    expect(rollupStaleCheck.severity).toBe('observation');
+  });
+
+  it('fails, naming the entity, when a backlink is newer than the rollup timestamp', async () => {
+    const notes = [rollupNote('topic.md', '2026-01-01T00:00:00.000Z'), backlinkNote('a.md', 'topic')];
+    const ctx = ctxWithGit(notes, { 'a.md': '2026-02-01T00:00:00.000Z' });
+    const result = await rollupStaleCheck.run(ctx);
+    expect(result.status).toBe('fail');
+    expect(result.findings[0]?.subject).toBe('topic.md');
+  });
+
+  it('passes when every backlink predates the rollup timestamp', async () => {
+    const notes = [rollupNote('topic.md', '2026-06-01T00:00:00.000Z'), backlinkNote('a.md', 'topic')];
+    const ctx = ctxWithGit(notes, { 'a.md': '2026-01-01T00:00:00.000Z' });
+    const result = await rollupStaleCheck.run(ctx);
+    expect(result.status).toBe('pass');
+  });
+
+  it('a note with no rollup section is never considered, regardless of rolled_up', async () => {
+    const notes = [{ path: 'plain.md', frontmatter: { rolled_up: '2026-01-01T00:00:00.000Z' }, body: 'no fence here' }];
+    const result = await rollupStaleCheck.run(ctxWithGit(notes, {}));
+    expect(result.status).toBe('pass');
   });
 });

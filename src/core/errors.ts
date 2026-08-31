@@ -245,6 +245,16 @@ export class InvalidCaptureProposalError extends ContextureError {
   }
 }
 
+export class CheckAudienceRequiredError extends ContextureError {
+  constructor() {
+    super(ExitCode.Usage, {
+      code: 'check.audience_required',
+      severity: 'error',
+      message: '"ctxr check" requires --audience unless --scan is given.',
+    });
+  }
+}
+
 export class CatalogSectionNotFoundError extends ContextureError {
   constructor(sectionId: string) {
     super(ExitCode.Usage, {
@@ -273,6 +283,17 @@ export class NoteNotFoundError extends ContextureError {
       code: 'note.not_found',
       severity: 'error',
       message: `"${notePath}" does not exist in this store.`,
+      subject: notePath,
+    });
+  }
+}
+
+export class SourceIdentityMissingError extends ContextureError {
+  constructor(notePath: string) {
+    super(ExitCode.Usage, {
+      code: 'ingest.source_identity_missing',
+      severity: 'error',
+      message: `"${notePath}" carries no source identity yet; run "ctxr source stamp" before "ctxr source add-alt".`,
       subject: notePath,
     });
   }

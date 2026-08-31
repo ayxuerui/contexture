@@ -56,7 +56,7 @@ describe('readConfig', () => {
         'session: { branch_prefix: session/, worktrees_path: .worktrees/ }',
         'write_lifecycle: { diff_size_ceiling_lines: 2000, writable_paths: [] }',
         'catalog: { path: catalog/, section_max_bytes: 32768 }',
-        'disclosure: { internal_audiences: [], hard_walls: [] }',
+        'disclosure: { internal_audiences: [], hard_walls: [], leak_markers: {} }',
         'ingest: { inbox_path: inbox/ }',
         'organize: { archive_path: archive/ }',
         "identity: { path: identity/, files: {}, entry_delimiter: '' }",

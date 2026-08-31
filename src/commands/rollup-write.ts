@@ -5,13 +5,16 @@ import type { CommandOutcome, CommandRequires } from '../core/command.js';
 import type { RunEnv } from '../core/env.js';
 import { NoteNotFoundError } from '../core/errors.js';
 import { ExitCode } from '../core/exit-codes.js';
+import { writeFileAtomic } from '../core/fs/atomic.js';
 import { upsertFencedRegionInFile } from '../core/fs/fenced-region.js';
-import { htmlCommentFence } from '../core/markers.js';
+import { parseNote } from '../core/notes/parse.js';
+import { renderNoteText } from '../core/notes/render.js';
+import { ROLLED_UP_FIELD, ROLLUP_FENCE } from '../core/rollup.js';
 import type { Store } from '../core/store.js';
 
 export const requires: CommandRequires = { store: 'required' };
 
-export const ROLLUP_FENCE = htmlCommentFence('rollup');
+export { ROLLUP_FENCE };
 
 export interface RollupWriteFlags {
   entity: string;
@@ -37,6 +40,13 @@ function toStoreRelativePath(env: RunEnv, store: Store, givenPath: string): stri
  * codebase. The rollup text itself is supplied by the caller (an agent
  * that already did the reading and synthesis via `rollup gather`'s
  * candidates) — this command's only job is the deterministic write.
+ *
+ * store-primitives-from-migration-audit spec (D4): a write that actually
+ * changes the fenced content ALSO stamps `rolled_up:` with the current
+ * time — recording "when this synthesis was last genuinely produced," the
+ * baseline `rollup stale` compares backlinks against. A true no-op (content
+ * byte-identical) stamps nothing, so re-confirming unchanged content never
+ * resets the clock and the file stays byte-identical across runs.
  */
 export async function execute(
   env: RunEnv,
@@ -52,6 +62,12 @@ export async function execute(
   if (bodyLines.length > 0 && bodyLines[bodyLines.length - 1] === '') bodyLines.pop();
 
   const { changed } = await upsertFencedRegionInFile(absolutePath, ROLLUP_FENCE, bodyLines);
+
+  if (changed) {
+    const note = await parseNote(absolutePath, relativePath);
+    const frontmatter = { ...note.frontmatter, [ROLLED_UP_FIELD]: env.now().toISOString() };
+    await writeFileAtomic(absolutePath, renderNoteText(frontmatter, note.body));
+  }
 
   return {
     exitCode: ExitCode.Ok,

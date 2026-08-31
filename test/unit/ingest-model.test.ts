@@ -56,7 +56,7 @@ describe('evaluateSourceCheck', () => {
 
   it('a source-id match takes priority over a content-hash match, even for a different note', () => {
     const notes = [
-      note('a.md', { source_id: 'src-1', source_hash: 'stale-hash' }),
+      note('a.md', { source_id: 'src-1', source_hash: 'hash-1' }),
       note('b.md', { source_hash: 'hash-1' }),
     ];
     const result = evaluateSourceCheck(notes, 'hash-1', 'src-1');
@@ -64,10 +64,36 @@ describe('evaluateSourceCheck', () => {
     expect(result.matches).toEqual(['a.md']);
   });
 
+  it('store-primitives-from-migration-audit D2: a source-id match whose recorded hash differs from the candidate is drift, not already_ingested', () => {
+    const notes = [note('a.md', { source_id: 'src-1', source_hash: 'h1' })];
+    const result = evaluateSourceCheck(notes, 'h2', 'src-1');
+    expect(result).toEqual({ verdict: 'drift', stage: 'source_id', matches: ['a.md'], hash: 'h2' });
+  });
+
   it('does not match a note whose source-hash was frozen at ingest but whose current body has since changed (never recomputes live)', () => {
     // evaluateSourceCheck only ever reads the frozen frontmatter field, never the note body.
     const notes = [note('a.md', { source_id: 'src-1', source_hash: 'frozen-hash' })];
     const result = evaluateSourceCheck(notes, 'frozen-hash', 'src-1');
+    expect(result.verdict).toBe('already_ingested');
+  });
+
+  it('store-primitives-from-migration-audit D2: an alternate source id (source add-alt) matches as duplicate', () => {
+    const notes = [note('a.md', { source_id: 'src-1', source_hash: 'h1', source_alt_ids: ['src-2'] })];
+    const result = evaluateSourceCheck(notes, 'h1', 'src-2');
+    expect(result).toEqual({ verdict: 'already_ingested', stage: 'source_id', matches: ['a.md'], hash: 'h1' });
+  });
+
+  it('canonicalizes URL source ids before comparing: case, tracking parameters, fragment, and trailing slash are ignored', () => {
+    const notes = [note('a.md', { source_id: 'https://Example.com/a/', source_hash: 'h1' })];
+    const trackingParams = ['utm_source'];
+    const result = evaluateSourceCheck(notes, 'h1', 'https://example.com/a?utm_source=x#top', trackingParams);
+    expect(result.verdict).toBe('already_ingested');
+    expect(result.matches).toEqual(['a.md']);
+  });
+
+  it('a non-URL source id is compared unchanged, canonicalization or not', () => {
+    const notes = [note('a.md', { source_id: 'granola/abc123', source_hash: 'h1' })];
+    const result = evaluateSourceCheck(notes, 'h1', 'granola/abc123', ['utm_source']);
     expect(result.verdict).toBe('already_ingested');
   });
 });

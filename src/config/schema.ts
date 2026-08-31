@@ -118,19 +118,27 @@ const HardWallSchema = z.object({
   verdict: z.enum(['allow', 'deny', 'ask']),
 });
 
+/** store-primitives-from-migration-audit spec (D3): a context's marker patterns for the leak scan; empty (the default) makes the scan a no-op. */
 const DisclosureSchema = z.object({
   internal_audiences: z.array(z.string()),
   hard_walls: z.array(HardWallSchema),
+  leak_markers: z.record(z.string(), z.array(z.string())).default({}),
 });
 
 /** context-ingest spec: where capture lands raw material before ingest stamps identity onto it. */
 const IngestSchema = z.object({
   inbox_path: z.string().min(1),
+  /** store-primitives-from-migration-audit spec (D2): query parameters stripped when canonicalizing a URL source identity, in addition to the shipped defaults. */
+  tracking_params: z
+    .array(z.string())
+    .default(['utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content', 'fbclid', 'gclid']),
 });
 
 /** context-organize spec: archive's destination — independent of taxonomy layers, so it works under any profile. */
 const OrganizeSchema = z.object({
   archive_path: z.string().min(1),
+  /** store-primitives-from-migration-audit spec (D4): the grace period, in days, before a stale rollup is reported — bounds noise from a backlink edited moments ago. */
+  rollup_stale_days: z.number().int().nonnegative().default(7),
 });
 
 /**

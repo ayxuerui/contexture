@@ -49,7 +49,7 @@ export async function execute(
 
   const hash = contentHash(raw, relativePath);
   const notes = await listNotes(store.root, store.config);
-  const result = evaluateSourceCheck(notes, hash, flags.sourceId);
+  const result = evaluateSourceCheck(notes, hash, flags.sourceId, store.config.ingest.tracking_params);
 
   const findings: Finding[] =
     result.verdict === 'multiple_matches'
