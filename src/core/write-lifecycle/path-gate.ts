@@ -3,7 +3,6 @@ import { realpath } from 'node:fs/promises';
 import path from 'node:path';
 import { configuredAdapters } from '../../adapters/registry.js';
 import type { StoreConfig } from '../../config/schema.js';
-import { identityFilePaths } from '../identity.js';
 
 export interface PathGateResult {
   ok: boolean;
@@ -21,15 +20,20 @@ function isUnderAnyPrefix(relativePath: string, prefixes: readonly string[]): bo
   });
 }
 
-/** session-capture-command spec (D5): locations contexture itself owns are always sanctioned, regardless of writable_paths. */
+/**
+ * session-capture-command spec (D5): locations contexture itself owns are
+ * always sanctioned, regardless of writable_paths.
+ *
+ * remove-agent-identity: this list no longer includes an identity path —
+ * ownership of any leftover `.contexture/identity/*.md` files from before
+ * that removal reverts fully to the operator, the same as any other
+ * operator-owned content. A store with `write_lifecycle.writable_paths`
+ * configured (the opt-in strict allowlist) needs those paths added to
+ * `writable_paths` explicitly to keep editing them; this is intentional,
+ * not a gap — see `sanctionedPath`'s test for the refusal this now produces.
+ */
 function contextureOwnedPrefixes(config: StoreConfig): string[] {
-  const prefixes = [
-    config.identity.path,
-    config.catalog.path,
-    config.harness.procedures_path,
-    config.harness.conventions_path,
-    ...identityFilePaths(config),
-  ];
+  const prefixes = [config.catalog.path, config.harness.procedures_path, config.harness.conventions_path];
   try {
     for (const adapter of configuredAdapters(config, 'harness-generation')) prefixes.push(adapter.entryFileName);
   } catch {

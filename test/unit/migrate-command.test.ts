@@ -23,7 +23,6 @@ function makeV1Config(): StoreConfig {
     disclosure: { internal_audiences: [], hard_walls: [], leak_markers: {} },
     ingest: { inbox_path: 'inbox/', tracking_params: [] },
     organize: { archive_path: 'archive/', rollup_stale_days: 7 },
-    identity: { path: 'identity/', files: {}, entry_delimiter: '' },
     harness: { procedures_path: 'procedures/', conventions_path: 'conventions/' },
     adapters: [],
   };

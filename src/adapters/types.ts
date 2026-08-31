@@ -1,14 +1,14 @@
 /**
  * Reserved shape for the adapters capability's single contract, covering the
- * three v1 kinds — harness-generation, identity-injection, forge (a search
- * kind is deferred to v2 alongside the visibility-field naming decision).
+ * two v1 kinds — harness-generation, forge (a search kind is deferred to v2
+ * alongside the visibility-field naming decision).
  *
  * Phase 2.5 ships a concrete GitHub forge adapter six phases before Phase 8.2
  * formally defines discovery. Reserving this shape now means Phase 2 builds
  * against it instead of inventing its own registration mechanism, and
  * Phase 8 extends this rather than retrofitting Phase 2's adapter into it.
  */
-export type AdapterKind = 'harness-generation' | 'identity-injection' | 'forge';
+export type AdapterKind = 'harness-generation' | 'forge';
 
 export interface Adapter<K extends AdapterKind = AdapterKind> {
   kind: K;
@@ -24,7 +24,6 @@ export interface Adapter<K extends AdapterKind = AdapterKind> {
  */
 export const SUPPORTED_ADAPTER_INTERFACE_VERSION: Record<AdapterKind, number> = {
   'harness-generation': 1,
-  'identity-injection': 1,
   // session-submit-and-land spec (D5): pullRequest/mergePullRequest joined the forge interface at v2.
   forge: 2,
 };
@@ -56,25 +55,12 @@ export interface HarnessGenerationAdapter extends Adapter<'harness-generation'> 
 }
 
 /**
- * An identity-injection adapter delivers the store's canonical identity
- * content (agent-identity spec) into a harness's runtime — by reference
- * (an import, a symlink, a config entry), never by copying the canonical
- * files' content into the harness-specific file.
- */
-export interface IdentityInjectionAdapter extends Adapter<'identity-injection'> {
-  /** The file this adapter writes its injection reference into, relative to the store root. */
-  entryFileName: string;
-  render(identityFilePaths: readonly string[]): string[];
-}
-
-/**
  * Maps each adapter kind to its full, kind-specific interface — so a
  * registry lookup by kind returns something with that kind's real methods
  * (render, isAvailable, ...), not just the three common base fields.
  */
 export interface AdapterForKind {
   'harness-generation': HarnessGenerationAdapter;
-  'identity-injection': IdentityInjectionAdapter;
   forge: import('./forge/types.js').ForgeAdapter;
 }
 

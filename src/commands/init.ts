@@ -15,7 +15,6 @@ import {
   DEFAULT_DIFF_SIZE_CEILING_LINES,
   DEFAULT_EXCLUDE_PATHS,
   DEFAULT_HARD_WALLS,
-  DEFAULT_IDENTITY_PATH,
   DEFAULT_INBOX_PATH,
   DEFAULT_TRACKING_PARAMS,
   DEFAULT_INTERNAL_AUDIENCES,
@@ -34,12 +33,10 @@ import {
   buildAgentsCanonicalSection,
   buildAgentsCaptureSection,
   buildAgentsConventionsSection,
-  buildAgentsIdentitySection,
   buildAgentsLegRoutingSection,
   buildAgentsPlacementSection,
   agentsMdPath,
 } from '../core/agents-doc.js';
-import { ensureIdentityFiles } from '../core/identity.js';
 import { syncShippedSkills } from '../core/procedures.js';
 import { reconcileStore, WORKTREES_GITIGNORE_FENCE } from '../core/reconcile.js';
 import type { Finding } from '../core/envelope.js';
@@ -216,7 +213,6 @@ async function runInitCore(env: RunEnv, flags: InitFlags): Promise<RunInitResult
     disclosure: { internal_audiences: [...DEFAULT_INTERNAL_AUDIENCES], hard_walls: [...DEFAULT_HARD_WALLS], leak_markers: {} },
     ingest: { inbox_path: DEFAULT_INBOX_PATH, tracking_params: [...DEFAULT_TRACKING_PARAMS] },
     organize: { archive_path: DEFAULT_ARCHIVE_PATH, rollup_stale_days: DEFAULT_ROLLUP_STALE_DAYS },
-    identity: { path: DEFAULT_IDENTITY_PATH, files: {}, entry_delimiter: '' },
     harness: { procedures_path: DEFAULT_PROCEDURES_PATH, conventions_path: DEFAULT_CONVENTIONS_PATH },
     adapters: [...DEFAULT_ADAPTERS],
   };
@@ -230,10 +226,8 @@ async function runInitCore(env: RunEnv, flags: InitFlags): Promise<RunInitResult
   await buildAgentsLegRoutingSection(root, config);
   await buildAgentsCaptureSection(root, config);
   await buildAgentsPlacementSection(root, config);
-  const identityFilesCreated = await ensureIdentityFiles(root, config);
   const procedureFilesCreated = await syncShippedSkills(root, config);
   await buildAgentsCanonicalSection(root, config);
-  await buildAgentsIdentitySection(root, config);
   await buildAgentsConventionsSection(root, config);
 
   // One directory per configured layer with a .gitkeep — makes Zettelkasten's
@@ -255,7 +249,7 @@ async function runInitCore(env: RunEnv, flags: InitFlags): Promise<RunInitResult
   await configureHooksPath(env.git, root);
 
   const relConfigPath = path.relative(root, configPath);
-  await addPaths(env.git, root, [relConfigPath, '.gitignore', path.relative(root, agentsMdPath(root)), ...layerGitkeeps, ...identityFilesCreated, ...procedureFilesCreated, ...hookFiles]);
+  await addPaths(env.git, root, [relConfigPath, '.gitignore', path.relative(root, agentsMdPath(root)), ...layerGitkeeps, ...procedureFilesCreated, ...hookFiles]);
 
   const commitSha = await commitIfStaged(env.git, root, { kind: 'bootstrap' }, 'chore: initialize contexture store');
 
@@ -263,7 +257,7 @@ async function runInitCore(env: RunEnv, flags: InitFlags): Promise<RunInitResult
     data: {
       root,
       already_initialized: false,
-      created: [relConfigPath, '.gitignore', path.relative(root, agentsMdPath(root)), ...layerGitkeeps, ...identityFilesCreated, ...procedureFilesCreated, ...hookFiles],
+      created: [relConfigPath, '.gitignore', path.relative(root, agentsMdPath(root)), ...layerGitkeeps, ...procedureFilesCreated, ...hookFiles],
       unchanged: [],
       git: { repository_created: !repositoryAlreadyExists, commit: commitSha, default_branch: defaultBranch },
       taxonomy: {

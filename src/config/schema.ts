@@ -141,28 +141,6 @@ const OrganizeSchema = z.object({
   rollup_stale_days: z.number().int().nonnegative().default(7),
 });
 
-/**
- * session-capture-command spec (D3): each identity role MAY be bound to its
- * own store-relative path — a store whose runtime keeps memory elsewhere
- * points the role there, and every identity consumer resolves through it.
- * An unbound role falls back to its canonical file under `identity.path`.
- */
-const IdentityFilesSchema = z
-  .object({
-    posture: z.string().min(1).optional(),
-    'world-facts': z.string().min(1).optional(),
-    'user-facts': z.string().min(1).optional(),
-  })
-  .default({});
-
-/** agent-identity spec: canonical identity files live here, excluded from every retrieval leg. */
-const IdentitySchema = z.object({
-  path: z.string().min(1),
-  files: IdentityFilesSchema,
-  /** session-capture-command spec (D4): the entry delimiter line; '' means an empty (blank) line. */
-  entry_delimiter: z.string().default(''),
-});
-
 /** harness-portability spec: the portable procedure pack and operator convention docs AGENTS.md's indexes point into. */
 const HarnessSchema = z.object({
   procedures_path: z.string().min(1),
@@ -175,7 +153,7 @@ const HarnessSchema = z.object({
  * v1 resolves every entry against the built-in adapter registry by
  * (kind, id).
  */
-const AdapterKindSchema = z.enum(['harness-generation', 'identity-injection', 'forge']);
+const AdapterKindSchema = z.enum(['harness-generation', 'forge']);
 
 const AdapterDeclarationSchema = z.object({
   id: z.string().min(1),
@@ -198,7 +176,6 @@ export const StoreConfigSchema = z
     disclosure: DisclosureSchema,
     ingest: IngestSchema,
     organize: OrganizeSchema,
-    identity: IdentitySchema,
     harness: HarnessSchema,
     adapters: z.array(AdapterDeclarationSchema),
   })

@@ -2,12 +2,12 @@
 
 ## Purpose
 
-Defines one contract governing every extension point where contexture's core behavior is augmented by pluggable, optional code — harness-specific file generation, identity injection, and forge (PR-hosting) integration — so core never assumes any particular plugin is installed. A fourth kind, for ranked/semantic search, is deferred to v2 (see design.md) and is out of scope here.
+Defines one contract governing every extension point where contexture's core behavior is augmented by pluggable, optional code — harness-specific file generation and forge (PR-hosting) integration — so core never assumes any particular plugin is installed. A third kind, for ranked/semantic search, is deferred to v2 (see design.md) and is out of scope here.
 
 ## Requirements
 
 ### Requirement: One contract for every adapter kind
-An adapter, regardless of kind (harness generation, identity injection, forge), SHALL be discoverable via a declared registration mechanism, SHALL declare which capability interface(s) it implements and at which version, and SHALL be independently addable, removable, and upgradable without modifying core contexture code.
+An adapter, regardless of kind (harness generation, forge), SHALL be discoverable via a declared registration mechanism, SHALL declare which capability interface(s) it implements and at which version, and SHALL be independently addable, removable, and upgradable without modifying core contexture code.
 
 #### Scenario: Two adapter kinds share the same discovery mechanism
 - **WHEN** a harness-generation adapter and a forge adapter are both registered in `contexture.yaml`

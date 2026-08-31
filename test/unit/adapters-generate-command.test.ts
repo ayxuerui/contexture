@@ -22,7 +22,6 @@ function makeConfig(adapters: AdapterDeclaration[]): StoreConfig {
     disclosure: { internal_audiences: [], hard_walls: [], leak_markers: {} },
     ingest: { inbox_path: 'inbox/', tracking_params: [] },
     organize: { archive_path: 'archive/', rollup_stale_days: 7 },
-    identity: { path: 'identity/', files: {}, entry_delimiter: '' },
     harness: { procedures_path: 'procedures/', conventions_path: 'conventions/' },
     adapters,
   };
@@ -39,7 +38,6 @@ describe('adapters generate command', () => {
       const content = await readFile(path.join(tmp.root, 'CLAUDE.md'), 'utf8');
       const managed = content.split('\n').filter((l) => l.trim() && !l.startsWith('<!--'));
       expect(managed).toEqual(['@AGENTS.md']);
-      expect(content).not.toContain('identity/');
     } finally {
       await tmp.cleanup();
     }

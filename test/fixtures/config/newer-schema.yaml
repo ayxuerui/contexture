@@ -18,4 +18,3 @@ derived:
 retrieval:
   exclude_paths:
     - .contexture/
-    - identity/

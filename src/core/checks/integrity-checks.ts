@@ -1,9 +1,21 @@
 import { resolveAdapter } from '../../adapters/registry.js';
-import { SUPPORTED_SCHEMA_VERSION } from '../../config/schema.js';
+import { StoreConfigSchema, SUPPORTED_SCHEMA_VERSION } from '../../config/schema.js';
 import { checkCatalogStale } from '../catalog/build.js';
 import type { Finding } from '../envelope.js';
 import { buildGraphFromNotes, graphBuildOptions } from '../graph/model.js';
 import { defineCheck } from './types.js';
+
+/**
+ * store-integrity spec: "unrecognized top-level config keys." StoreConfigSchema
+ * is `.passthrough()` (config/schema.ts — deliberately loose, so a later
+ * package version's additive field never forces every existing store through
+ * a migration). Passthrough's cost is that a REMOVED key — e.g. `identity`,
+ * dropped by remove-agent-identity — is silently carried through as dead
+ * config instead of surfacing anywhere; this check closes that gap generically
+ * (any key StoreConfigSchema doesn't declare, not just `identity` by name), so
+ * the safety net promised at removal time actually exists.
+ */
+const KNOWN_TOP_LEVEL_CONFIG_KEYS = new Set(Object.keys(StoreConfigSchema.shape));
 
 /**
  * store-integrity spec (task 9.3): "derived-artifact staleness." Covers
@@ -131,9 +143,29 @@ export const adapterCompatibilityCheck = defineCheck({
   },
 });
 
+/** store-integrity spec: "no unrecognized top-level config keys." */
+export const noUnrecognizedConfigKeysCheck = defineCheck({
+  id: 'store.no_unrecognized_config_keys',
+  title: 'contexture.yaml declares no top-level key StoreConfigSchema doesn\'t recognize',
+  severity: 'invariant',
+  capability: 'store-integrity',
+  scopes: ['store'],
+  async run(ctx) {
+    const unrecognized = Object.keys(ctx.config).filter((key) => !KNOWN_TOP_LEVEL_CONFIG_KEYS.has(key));
+    const findings: Finding[] = unrecognized.map((key) => ({
+      code: 'store.unrecognized_config_key',
+      severity: 'error',
+      message: `contexture.yaml has a top-level "${key}" key that this version of contexture doesn't recognize — a config schema this old, or a capability retired in a later release. Remove it, or check contexture's changelog for a migration note.`,
+      subject: key,
+    }));
+    return { status: findings.length > 0 ? 'fail' : 'pass', findings };
+  },
+});
+
 export const INTEGRITY_CHECKS = [
   derivedArtifactStalenessCheck,
   graphDanglingLinksCheck,
   schemaVersionCurrencyCheck,
   adapterCompatibilityCheck,
+  noUnrecognizedConfigKeysCheck,
 ];

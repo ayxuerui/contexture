@@ -19,7 +19,6 @@ function makeConfig(adapters: AdapterDeclaration[]): StoreConfig {
     disclosure: { internal_audiences: [], hard_walls: [], leak_markers: {} },
     ingest: { inbox_path: 'inbox/', tracking_params: [] },
     organize: { archive_path: 'archive/', rollup_stale_days: 7 },
-    identity: { path: 'identity/', files: {}, entry_delimiter: '' },
     harness: { procedures_path: 'procedures/', conventions_path: 'conventions/' },
     adapters,
   };
@@ -59,17 +58,13 @@ describe('resolveAdapter', () => {
     }
   });
 
-  it('accepts a fixture adapter of each of the three kinds when the version matches', () => {
+  it('accepts a fixture adapter of each of the two kinds when the version matches', () => {
     const fixtureRegistry: Adapter[] = [
       { id: 'fixture-harness', kind: 'harness-generation', interfaceVersion: 1 },
-      { id: 'fixture-identity', kind: 'identity-injection', interfaceVersion: 1 },
       { id: 'fixture-forge', kind: 'forge', interfaceVersion: 2 },
     ];
     expect(resolveAdapter({ id: 'fixture-harness', kind: 'harness-generation' }, fixtureRegistry).id).toBe(
       'fixture-harness',
-    );
-    expect(resolveAdapter({ id: 'fixture-identity', kind: 'identity-injection' }, fixtureRegistry).id).toBe(
-      'fixture-identity',
     );
     expect(resolveAdapter({ id: 'fixture-forge', kind: 'forge' }, fixtureRegistry).id).toBe('fixture-forge');
   });

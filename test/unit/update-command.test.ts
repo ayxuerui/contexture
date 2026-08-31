@@ -63,17 +63,43 @@ describe('ctxr update', () => {
     }
   });
 
-  it('never rewrites operator content: identity files and operator skills survive an update', async () => {
+  it('removes a pre-existing store\'s orphaned "agent identity" AGENTS.md section (retired by remove-agent-identity)', async () => {
     const tmp = await makeTmpDir();
     try {
       const { store, env } = await freshStore(tmp.root);
-      const posture = path.join(tmp.root, '.contexture/identity/posture.md');
-      await writeFile(posture, 'my posture\n');
+      const agentsPath = path.join(tmp.root, 'AGENTS.md');
+      const before = await readFile(agentsPath, 'utf8');
+      const orphanedFence = [
+        '',
+        '<!-- >>> contexture:agent-identity (managed — do not edit) >>> -->',
+        '## Agent identity',
+        '',
+        'Load at session start: `.contexture/identity/posture.md`.',
+        '<!-- <<< contexture:agent-identity <<< -->',
+      ].join('\n');
+      await writeFile(agentsPath, `${before.replace(/\n$/, '')}${orphanedFence}\n`);
+
+      const outcome = await update(env, store);
+      expect(outcome.data?.changed).toContain('AGENTS.md');
+      const after = await readFile(agentsPath, 'utf8');
+      expect(after).not.toContain('agent-identity');
+      expect(after).not.toContain('Agent identity');
+      expect(after).toBe(before);
+      // Idempotent: a store with no orphaned fence left to remove reports no further AGENTS.md change from this step.
+      expect(await update(env, store)).toMatchObject({ data: { changed: [] } });
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('never rewrites operator content: an operator skill survives an update', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const { store, env } = await freshStore(tmp.root);
       await mkdir(path.join(tmp.root, '.claude/skills/mine'), { recursive: true });
       await writeFile(path.join(tmp.root, '.claude/skills/mine/SKILL.md'), '---\nname: mine\n---\nmine\n');
 
       await update(env, store);
-      expect(await readFile(posture, 'utf8')).toBe('my posture\n');
       expect(await readFile(path.join(tmp.root, '.claude/skills/mine/SKILL.md'), 'utf8')).toBe('---\nname: mine\n---\nmine\n');
     } finally {
       await tmp.cleanup();
