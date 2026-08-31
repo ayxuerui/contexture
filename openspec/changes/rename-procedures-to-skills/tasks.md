@@ -48,4 +48,4 @@
 
 ## 8. Land it
 
-- [ ] 8.1 Rebase onto whichever of `retrieval-legs-hardening` / `separate-scope-and-name-the-axes` has landed, re-running task 7.3, then commit. Do not push until told to.
+- [x] 8.1 Neither `retrieval-legs-hardening` nor `separate-scope-and-name-the-axes` has landed (both are still proposal-only change directories in this tree, not merged branches) - no rebase was needed. Committed. Not pushed.
