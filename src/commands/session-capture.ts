@@ -6,7 +6,6 @@ import type { CommandOutcome, CommandRequires } from '../core/command.js';
 import { ExitCode } from '../core/exit-codes.js';
 import { InvalidCaptureProposalError } from '../core/errors.js';
 import { writeFileAtomic } from '../core/fs/atomic.js';
-import { addIdentityEntry, removeIdentityEntry, replaceIdentityEntry, type IdentityRole } from '../core/identity.js';
 import type { Store } from '../core/store.js';
 import { sanctionedPath } from '../core/write-lifecycle/path-gate.js';
 
@@ -25,24 +24,15 @@ interface NoteItem {
   body: string;
 }
 
-interface IdentityDeltaItem {
-  id?: string;
-  action: 'add' | 'replace' | 'remove';
-  text?: string;
-  match?: string;
-}
-
 interface CaptureProposal {
   notes?: NoteItem[];
-  world_facts?: IdentityDeltaItem[];
-  user_facts?: IdentityDeltaItem[];
 }
 
 export type CaptureOutcomeKind = 'wrote' | 'appended' | 'refused';
 
 export interface CaptureItemReport {
   id: string;
-  kind: 'note' | 'world_facts' | 'user_facts';
+  kind: 'note';
   path?: string;
   outcome: CaptureOutcomeKind;
   reason?: string;
@@ -91,35 +81,6 @@ async function applyNote(store: Store, id: string, item: NoteItem): Promise<Capt
   return { id, kind: 'note', path: item.path, outcome: 'appended' };
 }
 
-async function applyIdentityDelta(
-  store: Store,
-  id: string,
-  kind: 'world_facts' | 'user_facts',
-  role: IdentityRole,
-  item: IdentityDeltaItem,
-): Promise<CaptureItemReport> {
-  try {
-    if (item.action === 'add') {
-      if (item.text === undefined) throw new Error('action "add" requires text');
-      const result = await addIdentityEntry(store.root, store.config, role, item.text);
-      return { id, kind, path: result.path, outcome: 'wrote' };
-    }
-    if (item.action === 'replace') {
-      if (item.text === undefined || item.match === undefined) throw new Error('action "replace" requires text and match');
-      const result = await replaceIdentityEntry(store.root, store.config, role, item.match, item.text);
-      return { id, kind, path: result.path, outcome: 'wrote' };
-    }
-    if (item.action === 'remove') {
-      if (item.match === undefined) throw new Error('action "remove" requires match');
-      const result = await removeIdentityEntry(store.root, store.config, role, item.match);
-      return { id, kind, path: result.path, outcome: 'wrote' };
-    }
-    throw new Error(`unknown action "${(item as { action: string }).action}"`);
-  } catch (err) {
-    return { id, kind, outcome: 'refused', reason: err instanceof Error ? err.message : String(err) };
-  }
-}
-
 /**
  * session-capture-command spec (D2): every item is validated and applied
  * independently — one bad path never blocks the rest. Nothing is scanned
@@ -141,15 +102,20 @@ export async function execute(store: Store, flags: SessionCaptureFlags): Promise
     throw new InvalidCaptureProposalError(flags.proposal, err instanceof Error ? err.message : String(err));
   }
 
+  // remove-agent-identity: a proposal built for the pre-removal contract may still
+  // declare these — reject loudly rather than silently drop items the caller thought
+  // were being applied.
+  const unsupportedKeys = Object.keys(proposal).filter((key) => key !== 'notes');
+  if (unsupportedKeys.length > 0) {
+    throw new InvalidCaptureProposalError(
+      flags.proposal,
+      `unsupported key(s): ${unsupportedKeys.join(', ')} — session capture applies store notes only`,
+    );
+  }
+
   const items: CaptureItemReport[] = [];
   for (const [index, item] of (proposal.notes ?? []).entries()) {
     items.push(await applyNote(store, item.id ?? `notes[${index}]`, item));
-  }
-  for (const [index, item] of (proposal.world_facts ?? []).entries()) {
-    items.push(await applyIdentityDelta(store, item.id ?? `world_facts[${index}]`, 'world_facts', 'world-facts', item));
-  }
-  for (const [index, item] of (proposal.user_facts ?? []).entries()) {
-    items.push(await applyIdentityDelta(store, item.id ?? `user_facts[${index}]`, 'user_facts', 'user-facts', item));
   }
 
   const refused = items.filter((item) => item.outcome === 'refused');

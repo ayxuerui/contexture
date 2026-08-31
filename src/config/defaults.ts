@@ -34,9 +34,6 @@ export const DEFAULT_VISIBILITY_CONTEXT = 'private';
  */
 export const DEFAULT_DERIVED_PATHS = ['.contexture/cache/'] as const;
 
-/** agent-identity spec: canonical identity files live here, excluded from every retrieval leg. */
-export const DEFAULT_IDENTITY_PATH = '.contexture/identity/';
-
 /**
  * harness-portability spec (entry-doc-generation D5): contexture-owned
  * skills are copied here (`<slug>/SKILL.md`), defaulting to the directory

@@ -3,7 +3,6 @@ import { realpath } from 'node:fs/promises';
 import path from 'node:path';
 import { configuredAdapters } from '../../adapters/registry.js';
 import type { StoreConfig } from '../../config/schema.js';
-import { identityFilePaths } from '../identity.js';
 
 export interface PathGateResult {
   ok: boolean;
@@ -23,13 +22,7 @@ function isUnderAnyPrefix(relativePath: string, prefixes: readonly string[]): bo
 
 /** session-capture-command spec (D5): locations contexture itself owns are always sanctioned, regardless of writable_paths. */
 function contextureOwnedPrefixes(config: StoreConfig): string[] {
-  const prefixes = [
-    config.identity.path,
-    config.catalog.path,
-    config.harness.procedures_path,
-    config.harness.conventions_path,
-    ...identityFilePaths(config),
-  ];
+  const prefixes = [config.catalog.path, config.harness.procedures_path, config.harness.conventions_path];
   try {
     for (const adapter of configuredAdapters(config, 'harness-generation')) prefixes.push(adapter.entryFileName);
   } catch {

@@ -17,7 +17,7 @@ function makeConfig(overrides: Partial<StoreConfig> = {}): StoreConfig {
     fields: { visibility: 'scope' },
     visibility: { default_context: 'private', directory_defaults: {}, contexts: {} },
     derived: { paths: ['.contexture/cache/'] },
-    retrieval: { exclude_paths: ['.contexture/', 'identity/'], relations: [], graph: { cluster_depth: 2, hub_top: 8, bridge_top: 10, orphan_exempt_clusters: [] } },
+    retrieval: { exclude_paths: ['.contexture/'], relations: [], graph: { cluster_depth: 2, hub_top: 8, bridge_top: 10, orphan_exempt_clusters: [] } },
     git: { default_branch: 'main' },
     session: { branch_prefix: 'session/', worktrees_path: '.worktrees/' },
     write_lifecycle: { diff_size_ceiling_lines: 2000, writable_paths: [] },
@@ -25,7 +25,6 @@ function makeConfig(overrides: Partial<StoreConfig> = {}): StoreConfig {
     disclosure: { internal_audiences: [], hard_walls: [], leak_markers: {} },
     ingest: { inbox_path: 'inbox/', tracking_params: [] },
     organize: { archive_path: 'archive/', rollup_stale_days: 7 },
-    identity: { path: 'identity/', files: {}, entry_delimiter: '' },
     harness: { procedures_path: 'procedures/', conventions_path: 'conventions/' },
     adapters: [],
     ...overrides,
@@ -156,72 +155,7 @@ describe('ctxr session capture (session-capture-command D1/D2)', () => {
     }
   });
 
-  it('applies identity deltas through the entry primitive into the resolved files', async () => {
-    const tmp = await makeTmpDir();
-    try {
-      const config = makeConfig({ identity: { path: 'identity/', files: { 'world-facts': 'twin/memory/MEMORY.md' }, entry_delimiter: '' } });
-      const store: Store = { root: tmp.root, config };
-      const proposalPath = await writeProposal(
-        tmp.root,
-        [
-          'world_facts:',
-          '  - id: B1',
-          '    action: add',
-          '    text: "the sky is blue"',
-          'user_facts:',
-          '  - id: C1',
-          '    action: add',
-          '    text: "prefers terse answers"',
-        ].join('\n'),
-      );
-
-      const outcome = await execute(store, { proposal: proposalPath });
-
-      expect(outcome.exitCode).toBe(ExitCode.Ok);
-      expect(outcome.data?.items).toEqual([
-        { id: 'B1', kind: 'world_facts', path: 'twin/memory/MEMORY.md', outcome: 'wrote' },
-        { id: 'C1', kind: 'user_facts', path: 'identity/user-facts.md', outcome: 'wrote' },
-      ]);
-      expect(await readFile(path.join(tmp.root, 'twin/memory/MEMORY.md'), 'utf8')).toBe('the sky is blue\n');
-      expect(await readFile(path.join(tmp.root, 'identity/user-facts.md'), 'utf8')).toBe('prefers terse answers\n');
-    } finally {
-      await tmp.cleanup();
-    }
-  });
-
-  it('an ambiguous identity match is refused without blocking sibling items', async () => {
-    const tmp = await makeTmpDir();
-    try {
-      const store: Store = { root: tmp.root, config: makeConfig() };
-      const { mkdir } = await import('node:fs/promises');
-      await mkdir(path.join(tmp.root, 'identity'), { recursive: true });
-      await writeFile(path.join(tmp.root, 'identity/world-facts.md'), 'likes coffee\n\nlikes tea\n');
-
-      const proposalPath = await writeProposal(
-        tmp.root,
-        [
-          'world_facts:',
-          '  - id: B1',
-          '    action: replace',
-          '    match: "likes"',
-          '    text: "revised"',
-          '  - id: B2',
-          '    action: add',
-          '    text: "a brand-new fact"',
-        ].join('\n'),
-      );
-
-      const outcome = await execute(store, { proposal: proposalPath });
-      expect(outcome.exitCode).toBe(ExitCode.CheckFailed);
-      expect(outcome.data?.items[0]).toMatchObject({ id: 'B1', outcome: 'refused' });
-      expect(outcome.data?.items[1]).toMatchObject({ id: 'B2', outcome: 'wrote' });
-      expect(await readFile(path.join(tmp.root, 'identity/world-facts.md'), 'utf8')).toBe('likes coffee\n\nlikes tea\n\na brand-new fact\n');
-    } finally {
-      await tmp.cleanup();
-    }
-  });
-
-  it('is not idempotent by design: a second run of an add-only proposal appends again', async () => {
+  it('rejects a proposal declaring world_facts or user_facts rather than silently ignoring them', async () => {
     const tmp = await makeTmpDir();
     try {
       const store: Store = { root: tmp.root, config: makeConfig() };
@@ -230,10 +164,7 @@ describe('ctxr session capture (session-capture-command D1/D2)', () => {
         ['world_facts:', '  - id: B1', '    action: add', '    text: "a fact"'].join('\n'),
       );
 
-      await execute(store, { proposal: proposalPath });
-      await execute(store, { proposal: proposalPath });
-
-      expect(await readFile(path.join(tmp.root, 'identity/world-facts.md'), 'utf8')).toBe('a fact\n\na fact\n');
+      await expect(execute(store, { proposal: proposalPath })).rejects.toBeInstanceOf(InvalidCaptureProposalError);
     } finally {
       await tmp.cleanup();
     }

@@ -114,7 +114,7 @@ A markdown path being staged or captured SHALL be refused when its canonical loc
 - **THEN** `session capture` refuses that item, writes nothing for it, and still applies the other items
 
 ### Requirement: Capture applies an approved proposal item by item
-`ctxr session capture --proposal <file>` SHALL read a proposal of store notes and identity deltas, validate each item independently (path gate, frontmatter shape, unique identity match), write every valid item — creating a note, appending to an existing note without altering its prior content, writing the visibility field when a value is given, applying identity deltas through the entry primitive — and report per item what was written, appended, refused with a reason, or skipped, computed from the writes performed. It SHALL exit non-zero when any item was refused and SHALL never scan or infer content beyond the proposal.
+`ctxr session capture --proposal <file>` SHALL read a proposal of store notes, validate each item independently (path gate, frontmatter shape), write every valid item — creating a note, appending to an existing note without altering its prior content, writing the visibility field when a value is given — and report per item what was written, appended, refused with a reason, or skipped, computed from the writes performed. It SHALL exit non-zero when any item was refused and SHALL never scan or infer content beyond the proposal.
 
 #### Scenario: One bad item does not block the rest
 - **WHEN** a proposal has three notes and one path fails the gate
