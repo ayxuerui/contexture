@@ -133,5 +133,15 @@ describe('sanctionedPath (session-capture-command D5)', () => {
         await tmp.cleanup();
       }
     });
+
+    it('refuses a legacy .contexture/identity/ path now that identity is not contexture-owned (remove-agent-identity): ownership reverts fully to the operator, so a leftover file there needs an explicit writable_paths entry like any other operator location', async () => {
+      const tmp = await makeTmpDir();
+      try {
+        const result = await sanctionedPath(makeConfig(['notes/']), tmp.root, '.contexture/identity/posture.md');
+        expect(result.ok).toBe(false);
+      } finally {
+        await tmp.cleanup();
+      }
+    });
   });
 });

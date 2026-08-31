@@ -20,7 +20,18 @@ function isUnderAnyPrefix(relativePath: string, prefixes: readonly string[]): bo
   });
 }
 
-/** session-capture-command spec (D5): locations contexture itself owns are always sanctioned, regardless of writable_paths. */
+/**
+ * session-capture-command spec (D5): locations contexture itself owns are
+ * always sanctioned, regardless of writable_paths.
+ *
+ * remove-agent-identity: this list no longer includes an identity path —
+ * ownership of any leftover `.contexture/identity/*.md` files from before
+ * that removal reverts fully to the operator, the same as any other
+ * operator-owned content. A store with `write_lifecycle.writable_paths`
+ * configured (the opt-in strict allowlist) needs those paths added to
+ * `writable_paths` explicitly to keep editing them; this is intentional,
+ * not a gap — see `sanctionedPath`'s test for the refusal this now produces.
+ */
 function contextureOwnedPrefixes(config: StoreConfig): string[] {
   const prefixes = [config.catalog.path, config.harness.procedures_path, config.harness.conventions_path];
   try {
