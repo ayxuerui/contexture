@@ -205,34 +205,6 @@ export class MergeNotConfirmedError extends ContextureError {
   }
 }
 
-/** session-capture-command spec (D4): zero or several matches both refuse — an ambiguous edit is worse than a missed one. */
-export class IdentityEntryMatchError extends ContextureError {
-  constructor(filePath: string, match: string, count: number) {
-    super(ExitCode.Usage, {
-      code: 'identity.entry_match',
-      severity: 'error',
-      message:
-        count === 0
-          ? `No entry in "${filePath}" contains "${match}".`
-          : `${count} entries in "${filePath}" contain "${match}"; refusing an ambiguous match.`,
-      subject: filePath,
-      details: { match, count },
-    });
-  }
-}
-
-export class UnknownIdentityRoleError extends ContextureError {
-  constructor(given: string, knownRoles: readonly string[]) {
-    super(ExitCode.Usage, {
-      code: 'identity.unknown_role',
-      severity: 'error',
-      message: `Unknown identity role "${given}". Known roles: ${knownRoles.join(', ')}.`,
-      subject: given,
-      details: { knownRoles },
-    });
-  }
-}
-
 /** session-capture-command spec (D2): a proposal file that cannot even be read or parsed fails the whole command — there is nothing to apply item by item. */
 export class InvalidCaptureProposalError extends ContextureError {
   constructor(filePath: string, detail: string) {

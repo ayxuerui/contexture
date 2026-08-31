@@ -20,7 +20,6 @@ function makeConfig(writablePaths: string[] = []): StoreConfig {
     disclosure: { internal_audiences: [], hard_walls: [], leak_markers: {} },
     ingest: { inbox_path: 'inbox/', tracking_params: [] },
     organize: { archive_path: 'archive/', rollup_stale_days: 7 },
-    identity: { path: 'identity/', files: {}, entry_delimiter: '' },
     harness: { procedures_path: 'procedures/', conventions_path: 'conventions/' },
     adapters: [],
   };
@@ -120,15 +119,6 @@ describe('sanctionedPath (session-capture-command D5)', () => {
       const tmp = await makeTmpDir();
       try {
         expect(await sanctionedPath(makeConfig(['notes/']), tmp.root, 'notes/x.md')).toEqual({ ok: true });
-      } finally {
-        await tmp.cleanup();
-      }
-    });
-
-    it('accepts a resolved identity file (a contexture-owned location) even outside every other allowance', async () => {
-      const tmp = await makeTmpDir();
-      try {
-        expect(await sanctionedPath(makeConfig(['notes/']), tmp.root, 'identity/world-facts.md')).toEqual({ ok: true });
       } finally {
         await tmp.cleanup();
       }

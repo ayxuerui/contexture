@@ -43,7 +43,6 @@ function makeConfig(overrides: Partial<StoreConfig> = {}): StoreConfig {
     disclosure: { internal_audiences: [], hard_walls: [], leak_markers: {} },
     ingest: { inbox_path: 'inbox/', tracking_params: [] },
     organize: { archive_path: 'archive/', rollup_stale_days: 7 },
-    identity: { path: 'identity/', files: {}, entry_delimiter: '' },
     harness: { procedures_path: 'procedures/', conventions_path: 'conventions/' },
     adapters: [],
     ...overrides,
@@ -161,26 +160,21 @@ describe('owned-skills-expansion: each skill carries its load-bearing rule (task
     expect(s).not.toMatch(/\bgit merge\b/);
   });
 
-  it('session capture: trigger/anti-trigger taxonomy, three-block per-ID proposal, secret markers, identity blast-radius rule, report from writes', () => {
+  it('session capture: trigger/anti-trigger taxonomy, store-notes proposal, secret markers, report from writes', () => {
     const s = skills['ctxr-session-capture'];
     expect(s).toContain('Anti-triggers');
-    expect(s).toContain('### Block A — store notes');
-    expect(s).toContain('### Block B — world facts (identity/world-facts.md)');
-    expect(s).toContain('### Block C — user facts (identity/user-facts.md)');
+    expect(s).toContain('### Store notes');
     expect(s).toContain('Approve by ID');
     expect(s).toContain('⚠ suspected-secret:');
-    expect(s).toContain('when in doubt between a note and identity, pick the note');
     expect(s).toContain('## Report from actual writes');
-    expect(s).toMatch(/never write identity through a\s*\nharness-specific memory mechanism/);
+    expect(s).not.toMatch(/world.facts|user.facts|identity/i);
   });
 
-  it('session-capture-command: the Apply step drives the command, names resolved identity paths, and never instructs a direct identity edit', () => {
+  it('session-capture-command: the Apply step drives the command and covers store notes only', () => {
     const s = skills['ctxr-session-capture'];
     expect(s).toContain('`ctxr session capture --proposal <file>`');
-    expect(s).toContain('identity/world-facts.md');
-    expect(s).toContain('identity/user-facts.md');
-    expect(s).toMatch(/never\s*\nedit `identity\/world-facts\.md` or `identity\/user-facts\.md` directly/i);
-    expect(s).toContain('the command is the only writer');
+    expect(s).toContain('notes:');
+    expect(s).not.toMatch(/world.facts|user.facts|identity/i);
   });
 
   it('derived artifacts: check before build, count read-back, the fence rule, derived files out of content commits, verify the remote', () => {

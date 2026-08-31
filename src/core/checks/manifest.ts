@@ -1,6 +1,5 @@
 import { CATALOG_CHECKS } from './catalog-checks.js';
 import { DISCLOSURE_CHECKS } from './disclosure-checks.js';
-import { IDENTITY_CHECKS } from './identity-checks.js';
 import { INTEGRITY_CHECKS } from './integrity-checks.js';
 import { failClosedVisibilityCheck, failClosedVisibilityInvariantCheck } from '../notes/checks.js';
 import { ORGANIZE_CHECKS } from './organize-checks.js';
@@ -18,6 +17,5 @@ export const CHECKS: readonly CheckDefinition[] = [
   ...CATALOG_CHECKS,
   ...ORGANIZE_CHECKS,
   ...DISCLOSURE_CHECKS,
-  ...IDENTITY_CHECKS,
   ...INTEGRITY_CHECKS,
 ];

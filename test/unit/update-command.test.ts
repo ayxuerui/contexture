@@ -63,17 +63,14 @@ describe('ctxr update', () => {
     }
   });
 
-  it('never rewrites operator content: identity files and operator skills survive an update', async () => {
+  it('never rewrites operator content: an operator skill survives an update', async () => {
     const tmp = await makeTmpDir();
     try {
       const { store, env } = await freshStore(tmp.root);
-      const posture = path.join(tmp.root, '.contexture/identity/posture.md');
-      await writeFile(posture, 'my posture\n');
       await mkdir(path.join(tmp.root, '.claude/skills/mine'), { recursive: true });
       await writeFile(path.join(tmp.root, '.claude/skills/mine/SKILL.md'), '---\nname: mine\n---\nmine\n');
 
       await update(env, store);
-      expect(await readFile(posture, 'utf8')).toBe('my posture\n');
       expect(await readFile(path.join(tmp.root, '.claude/skills/mine/SKILL.md'), 'utf8')).toBe('---\nname: mine\n---\nmine\n');
     } finally {
       await tmp.cleanup();

@@ -12,7 +12,6 @@ import * as migrateCommand from './commands/migrate.js';
 import * as graphBuildCommand from './commands/graph-build.js';
 import * as entryAppendCommand from './commands/entry-append.js';
 import * as graphQueryCommand from './commands/graph-query.js';
-import * as identityCommand from './commands/identity.js';
 import * as initCommand from './commands/init.js';
 import * as noteResolveCommand from './commands/note-resolve.js';
 import * as sessionAbandonCommand from './commands/session-abandon.js';
@@ -493,53 +492,11 @@ export async function run(argv: readonly string[], env: RunEnv): Promise<ExitCod
       });
     });
 
-  const identityCommandGroup = program.command('identity').description('edit an identity role\'s file by entry — add, replace, or remove');
-
-  identityCommandGroup
-    .command('add')
-    .description('append a new entry')
-    .requiredOption('--file <role>', 'posture, world-facts, or user-facts')
-    .requiredOption('--text <text>', 'the entry text')
-    .action(async (cmdOpts: { file: string; text: string }, cmd: Command) => {
-      const { runEnv, jsonMode, root } = deriveRunEnv(env, cmd);
-      result = await runCommand('identity.add', runEnv, jsonMode, async () => {
-        const store = await openStore(runEnv, { root });
-        return identityCommand.executeAdd(store, cmdOpts);
-      });
-    });
-
-  identityCommandGroup
-    .command('replace')
-    .description('replace the single entry containing --match')
-    .requiredOption('--file <role>', 'posture, world-facts, or user-facts')
-    .requiredOption('--match <text>', 'a unique substring of the entry to replace')
-    .requiredOption('--text <text>', 'the replacement text')
-    .action(async (cmdOpts: { file: string; match: string; text: string }, cmd: Command) => {
-      const { runEnv, jsonMode, root } = deriveRunEnv(env, cmd);
-      result = await runCommand('identity.replace', runEnv, jsonMode, async () => {
-        const store = await openStore(runEnv, { root });
-        return identityCommand.executeReplace(store, cmdOpts);
-      });
-    });
-
-  identityCommandGroup
-    .command('remove')
-    .description('remove the single entry containing --match')
-    .requiredOption('--file <role>', 'posture, world-facts, or user-facts')
-    .requiredOption('--match <text>', 'a unique substring of the entry to remove')
-    .action(async (cmdOpts: { file: string; match: string }, cmd: Command) => {
-      const { runEnv, jsonMode, root } = deriveRunEnv(env, cmd);
-      result = await runCommand('identity.remove', runEnv, jsonMode, async () => {
-        const store = await openStore(runEnv, { root });
-        return identityCommand.executeRemove(store, cmdOpts);
-      });
-    });
-
-  const adaptersCommand = program.command('adapters').description('harness-generation, identity-injection, and forge adapters');
+  const adaptersCommand = program.command('adapters').description('harness-generation and forge adapters');
 
   adaptersCommand
     .command('generate')
-    .description('(re)generate every configured harness-generation and identity-injection adapter\'s output')
+    .description('(re)generate every configured harness-generation adapter\'s output')
     .action(async (_cmdOpts: object, cmd: Command) => {
       const { runEnv, jsonMode, root } = deriveRunEnv(env, cmd);
       result = await runCommand('adapters.generate', runEnv, jsonMode, async () => {
@@ -613,8 +570,8 @@ export async function run(argv: readonly string[], env: RunEnv): Promise<ExitCod
 
   sessionCommand
     .command('capture')
-    .description('apply an approved end-of-session capture proposal: create or append notes, apply identity deltas')
-    .requiredOption('--proposal <path>', 'a YAML file of approved notes / world_facts / user_facts items')
+    .description('apply an approved end-of-session capture proposal: create or append notes')
+    .requiredOption('--proposal <path>', 'a YAML file of approved note items')
     .action(async (cmdOpts: { proposal: string }, cmd: Command) => {
       const { runEnv, jsonMode, root } = deriveRunEnv(env, cmd);
       result = await runCommand('session.capture', runEnv, jsonMode, async () => {

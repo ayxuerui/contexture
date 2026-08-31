@@ -17,43 +17,14 @@ async function writeNote(root: string, relPath: string, content: string): Promis
 
 /**
  * Task 8.8's literal verification. The fourth clause — "the adapter
- * registry accepts a harness-generation, an identity-injection, and a
- * forge adapter, and rejects a fixture adapter declaring an unsupported
- * interface version" — is covered at the unit level
- * (test/unit/adapters-registry.test.ts), since v1's registry only resolves
- * built-in adapters by (kind, id); there is no real-CLI-reachable way to
- * register a non-built-in fixture adapter to exercise that path end to end.
+ * registry accepts a harness-generation and a forge adapter, and rejects a
+ * fixture adapter declaring an unsupported interface version" — is covered
+ * at the unit level (test/unit/adapters-registry.test.ts), since v1's
+ * registry only resolves built-in adapters by (kind, id); there is no
+ * real-CLI-reachable way to register a non-built-in fixture adapter to
+ * exercise that path end to end.
  */
-describe('agent identity and adapters (real CLI)', () => {
-  it('identity content never appears in the catalog or graph (task 8.1 regression)', async () => {
-    const tmp = await makeTmpDir();
-    try {
-      const env = hermeticGitEnv();
-      await runCli(['init'], { cwd: tmp.root, env });
-      await writeNote(tmp.root, 'projects/a.md', '---\nlens: shared\n---\nOrdinary content.\n');
-
-      await runCli(['catalog', 'build'], { cwd: tmp.root, env });
-      const graphResult = await runCli(['graph', 'build', '--json'], { cwd: tmp.root, env });
-      const graphData = JSON.parse(graphResult.stdout).data;
-      expect(graphData.nodeCount).toBe(1); // only projects/a.md — not the three identity files
-
-      const catalogFiles = ['projects.md', 'areas.md', 'resources.md', 'archives.md', 'uncategorized.md'];
-      for (const file of catalogFiles) {
-        const content = await readFile(path.join(tmp.root, 'catalog', file), 'utf8').catch(() => '');
-        expect(content).not.toMatch(/identity\//);
-      }
-
-      const doctor = await runCli(['doctor', '--json'], { cwd: tmp.root, env });
-      expect(doctor.exitCode).toBe(0);
-      const identityCheck = JSON.parse(doctor.stdout).data.checks.find(
-        (c: { id: string }) => c.id === 'identity.excluded_from_retrieval',
-      );
-      expect(identityCheck.result).toBe('pass');
-    } finally {
-      await tmp.cleanup();
-    }
-  });
-
+describe('adapters (real CLI)', () => {
   it('adapters generate run twice in a row produces byte-identical harness files', async () => {
     const tmp = await makeTmpDir();
     try {
