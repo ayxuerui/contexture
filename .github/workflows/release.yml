@@ -1,0 +1,179 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    name: Verify and build
+    if: github.repository == 'ayxuerui/contexture'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      published: ${{ steps.registry.outputs.published }}
+      tag_exists: ${{ steps.tag.outputs.exists }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24'
+          package-manager-cache: false
+
+      - name: Guard - CLI_VERSION matches package.json
+        run: |
+          set -euo pipefail
+          pkg_version="$(npm pkg get version | tr -d '"')"
+          src_version="$(sed -n "s/.*CLI_VERSION[[:space:]]*=[[:space:]]*'\([^']*\)'.*/\1/p" src/version.ts)"
+          echo "package.json  : ${pkg_version}"
+          echo "src/version.ts: ${src_version:-<unparsed>}"
+          if [ -z "${src_version}" ]; then
+            echo "::error file=src/version.ts::could not parse CLI_VERSION out of src/version.ts"
+            exit 1
+          fi
+          if [ "${pkg_version}" != "${src_version}" ]; then
+            echo "::error file=src/version.ts::CLI_VERSION (${src_version}) does not match package.json version (${pkg_version}); every --json envelope would report the wrong cli_version"
+            exit 1
+          fi
+
+      - name: Resolve version
+        id: version
+        run: |
+          set -euo pipefail
+          echo "version=$(npm pkg get version | tr -d '"')" >> "$GITHUB_OUTPUT"
+
+      - name: Check the npm registry for this version
+        id: registry
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          name="$(npm pkg get name | tr -d '"')"
+
+          set +e
+          output="$(npm view "${name}@${VERSION}" version 2>&1)"
+          status=$?
+          set -e
+
+          if [ "${status}" -eq 0 ]; then
+            echo "${name}@${VERSION} is already on the registry - publish will be skipped"
+            echo "published=true" >> "$GITHUB_OUTPUT"
+          elif printf '%s' "${output}" | grep -q 'E404'; then
+            echo "${name}@${VERSION} is not on the registry - it will be published"
+            echo "published=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "::error::npm view failed for an unexpected reason (exit ${status}); refusing to guess"
+            printf '%s\n' "${output}"
+            exit 1
+          fi
+
+      - name: Check whether the git tag already exists
+        id: tag
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          if git ls-remote --exit-code --tags origin "refs/tags/v${VERSION}" >/dev/null 2>&1; then
+            echo "tag v${VERSION} already exists"
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag v${VERSION} does not exist"
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install from lockfile
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Build
+        run: npm run build
+
+      - name: Test
+        run: npm test
+
+      - name: Upload dist
+        if: steps.registry.outputs.published == 'false'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: dist
+          path: dist/
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    name: Publish and release
+    needs: verify
+    if: needs.verify.outputs.published == 'false' || needs.verify.outputs.tag_exists == 'false'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      id-token: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24'
+          registry-url: 'https://registry.npmjs.org'
+          package-manager-cache: false
+
+      - name: Assert npm supports trusted publishing
+        run: |
+          set -euo pipefail
+          required='11.5.1'
+          actual="$(npm --version)"
+          echo "npm ${actual} (trusted publishing needs >= ${required})"
+          if [ "$(printf '%s\n%s\n' "${required}" "${actual}" | sort -V | head -n1)" != "${required}" ]; then
+            echo "::error::npm ${actual} is older than ${required}; add 'npm install -g npm@latest' before this step"
+            exit 1
+          fi
+
+      - name: Download dist
+        if: needs.verify.outputs.published == 'false'
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: dist
+          path: dist
+
+      - name: Show what would be packed
+        if: needs.verify.outputs.published == 'false'
+        run: npm pack --dry-run
+
+      - name: Publish to npm
+        if: needs.verify.outputs.published == 'false'
+        run: npm publish --provenance --access public
+
+      - name: Tag and create the GitHub Release
+        if: needs.verify.outputs.tag_exists == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: v${{ needs.verify.outputs.version }}
+        run: |
+          set -euo pipefail
+          if gh release view "${TAG}" >/dev/null 2>&1; then
+            echo "release ${TAG} already exists"
+            exit 0
+          fi
+          gh release create "${TAG}" \
+            --target "${GITHUB_SHA}" \
+            --title "${TAG}" \
+            --generate-notes
