@@ -99,3 +99,52 @@ describe('renderConventionsSection', () => {
     expect(populated).toMatch(/only one agent harness/i);
   });
 });
+
+/**
+ * extract-agents-doc-templates: the two conventions branches ship as two
+ * complete template files (`store-conventions.md`, `store-conventions-empty.md`)
+ * rather than one file with a swapped middle, so each reads as a full
+ * rendering of what an agent actually sees. That duplicates the trailing
+ * harness-specific-note paragraph across both files — these tests are what
+ * keep the copies from drifting into two different instructions.
+ */
+describe('conventions section templates', () => {
+  it('renders the empty branch exactly', () => {
+    expect(renderConventionsSection(makeConfig(), [])).toEqual([
+      "## Store conventions",
+      "",
+      "This store declares no convention documents yet. Operator-authored conventions (content style, field",
+      "semantics, house rules) belong as markdown files under `conventions/` — each is",
+      "indexed here on regeneration, referenced by path, never inlined.",
+      "",
+      "A note that applies to only one agent harness (not every harness reading this store) belongs below that harness's own managed import in its own entry file, never here — every file in this directory is indexed into every harness's entry document equally.",
+    ]);
+  });
+
+  it('renders the populated branch exactly', () => {
+    expect(
+      renderConventionsSection(makeConfig(), [
+        { path: 'conventions/style.md', title: 'Style', description: 'Prose rules.' },
+        { path: 'conventions/rules.md', title: 'Rules', description: null },
+      ]),
+    ).toEqual([
+      "## Store conventions",
+      "",
+      "Operator-authored conventions for this store — read the ones relevant to your task:",
+      "",
+      "- [Style](conventions/style.md) — Prose rules.",
+      "- [Rules](conventions/rules.md)",
+      "",
+      "A note that applies to only one agent harness (not every harness reading this store) belongs below that harness's own managed import in its own entry file, never here — every file in this directory is indexed into every harness's entry document equally.",
+    ]);
+  });
+
+  it('ends both branches with a byte-identical harness-specific-note paragraph', () => {
+    const empty = renderConventionsSection(makeConfig(), []);
+    const populated = renderConventionsSection(makeConfig(), [
+      { path: 'conventions/style.md', title: 'Style', description: 'Prose rules.' },
+    ]);
+    expect(empty.at(-1)).toBe(populated.at(-1));
+    expect(empty.at(-1)).toMatch(/only one agent harness/);
+  });
+});

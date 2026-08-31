@@ -1,35 +1,18 @@
-import { readFileSync } from 'node:fs';
 import { mkdir, readdir, readFile, rm } from 'node:fs/promises';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import type { StoreConfig, TaxonomyLayerConfig } from '../config/schema.js';
 import { scanDocsDir, SKILL_FILE_NAME, type ScannedDoc } from './conventions.js';
+import { GRAPH_DOCUMENT_RELATIVE_PATH } from './graph/persist.js';
 import { writeFileAtomic } from './fs/atomic.js';
+import { packagedTemplate } from './templates.js';
 
 /**
- * extract-skill-templates: canonical skill bodies live as plain markdown
- * files under `templates/skills/` (reviewable, diffable, syntax-highlighted)
- * rather than as inline TypeScript string arrays — the same pattern
- * `hooks.ts`'s `templatesDir()` already uses for the git hook templates.
- * Loaded synchronously, once, at module init: `ProcedureSeed.body` is called
- * synchronously from many call sites (including throughout the test suite),
- * and these are fixed, package-bundled files whose content never changes
- * after the process starts — threading `async` through every call site to
- * read a file once would be a large, purely mechanical change for no
- * behavioral gain.
+ * The canonical skill bodies live as plain markdown under
+ * `templates/skills/` — see `templates.ts` for why they are loaded
+ * synchronously and cached.
  */
-function skillTemplatesDir(): string {
-  return fileURLToPath(new URL('../../templates/skills', import.meta.url));
-}
-
-const skillTemplateCache = new Map<string, string>();
-
 function skillTemplate(slug: string): string {
-  const cached = skillTemplateCache.get(slug);
-  if (cached !== undefined) return cached;
-  const text = readFileSync(path.join(skillTemplatesDir(), `${slug}.md`), 'utf8').replace(/\n$/, '');
-  skillTemplateCache.set(slug, text);
-  return text;
+  return packagedTemplate('skills', slug);
 }
 
 /**
@@ -162,14 +145,14 @@ const INGEST_ORCHESTRATION: ProcedureSeed = {
   file: 'ctxr-ingest-orchestration',
   name: 'Ingest orchestration',
   description: 'Capture raw material into the inbox, run the dedupe check, read the existing cluster, decide new/update/merge/restructure, and ingest with source identity via the contexture CLI.',
-  body: () => skillTemplate('ctxr-ingest-orchestration').split('\n'),
+  body: () => skillTemplate('ctxr-ingest-orchestration').replaceAll('__GRAPH_DOCUMENT_PATH__', GRAPH_DOCUMENT_RELATIVE_PATH).split('\n'),
 };
 
 const CONNECTION_FINDING: ProcedureSeed = {
   file: 'ctxr-connection-finding',
   name: 'Connection finding',
   description: 'Traverse the wikilink graph of the store (neighbors, paths, hubs, orphans) to find what a note already connects to.',
-  body: () => skillTemplate('ctxr-connection-finding').split('\n'),
+  body: () => skillTemplate('ctxr-connection-finding').replaceAll('__GRAPH_DOCUMENT_PATH__', GRAPH_DOCUMENT_RELATIVE_PATH).split('\n'),
 };
 
 /**

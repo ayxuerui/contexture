@@ -13,7 +13,7 @@ to put the file — "create a new note" is one option among several, never the d
 3. Read the source fully. Then read the existing cluster BEFORE writing anything: the catalog section for
    the domain (`ctxr catalog show --section <id>`), every related note in it (all of them, not one or two),
    and the graph (`ctxr graph build`, then read the graph document it writes at
-   `.contexture/cache/graph.md` for hub notes by cluster and cross-cluster bridges; `ctxr graph query hubs`
+   `__GRAPH_DOCUMENT_PATH__` for hub notes by cluster and cross-cluster bridges; `ctxr graph query hubs`
    and `ctxr graph query neighbors <path>` on the closest note for the detail). Ask: what does the
    store already know, and does this source confirm, extend, contradict, or nuance it?
 4. Decide — the decision table:

@@ -11,6 +11,7 @@ import {
   buildAgentsCaptureSection,
   buildAgentsLegRoutingSection,
   renderCanonicalSection,
+  renderPlacementSection,
   renderCaptureSection,
   renderLegRoutingSection,
 } from '../../src/core/agents-doc.js';
@@ -206,5 +207,148 @@ describe('graph-context-document: the retrieval section names the graph document
     const lines = renderLegRoutingSection(makeConfig()).join('\n');
     expect(lines).toContain(GRAPH_DOCUMENT_RELATIVE_PATH);
     expect(lines).toContain('clusters, bridges');
+  });
+});
+
+/**
+ * extract-agents-doc-templates: exact-output assertions. The `toContain`
+ * checks above still pass against output with a dropped blank line, a
+ * doubled blank line, or a raw `__PLACEHOLDER__` left in it — these do not.
+ * Asserting on the line array rather than the joined string is deliberate:
+ * a blank-line count change is invisible in a joined-string diff and
+ * obvious here.
+ */
+describe('exact rendered output', () => {
+  it('renders the leg-routing section', () => {
+    expect(renderLegRoutingSection(makeConfig())).toEqual([
+      "## Retrieval: which leg to use",
+      "",
+      "contexture builds and maintains two retrieval tools ahead of time — consult them first:",
+      "",
+      "- **Catalog** (`ctxr catalog show --section <id>`): a curated, coverage-guaranteed index of every retrievable note, one section per taxonomy layer.",
+      "- **Graph** (`ctxr graph query ...`): the wikilink graph between notes — neighbors, shortest path, hubs, orphans, clusters, bridges; `--type <relation>` follows one configured relation.",
+      "- **Graph document** (`.contexture/cache/graph.md`, rebuilt by `ctxr graph build`): hub notes by cluster, cross-cluster bridges, and orphans — read it for cluster context before writing.",
+      "",
+      "For a literal or entity question the catalog and graph do not answer (a specific string, an exact identifier, a phrase),",
+      "use your own direct content-matching tool (e.g. grep/ripgrep) against the store, scoped to exclude:",
+      "",
+      "- `identity/`",
+      "- `.contexture/`",
+      "- `.worktrees/`",
+      "- `catalog/`",
+      "- `procedures/`",
+      "- `conventions/`",
+      "",
+      "There is no `ctxr search` command. Ranked or semantic search is deferred to a future version — do not look for one.",
+    ]);
+  });
+
+  it('renders the capture section', () => {
+    expect(renderCaptureSection(makeConfig())).toEqual([
+      "## Capturing and ingesting new material",
+      "",
+      "To capture something new, write a plain markdown file directly into `inbox/` —",
+      "no CLI command wraps this. That file MUST NOT contain any of these frontmatter fields; contexture assigns",
+      "them once, at ingest, and never before:",
+      "",
+      "- `source_type`",
+      "- `source_id`",
+      "- `source_hash`",
+      "- `ingested`",
+      "",
+      "Before ingesting, run `ctxr source check <path> --source-id <id>` to get one of four verdicts:",
+      "`new`, `already_ingested`, `alternate_source_match`, or `multiple_matches` — the last one means stop and",
+      "resolve the ambiguity yourself rather than guessing which existing note it is.",
+      "",
+      "To ingest, run `ctxr ingest <path> --source-type <type> --source-id <id>`. It stamps the four fields",
+      "above onto the file in place and rebuilds the catalog, so the result already has a catalog entry.",
+    ]);
+  });
+
+  it('renders the placement section for a store that declares no layers', () => {
+    expect(renderPlacementSection(makeConfig())).toEqual([
+      "## Placing a new note",
+      "",
+      "This store's taxonomy declares no top-level layers — place new notes directly at the store root (or",
+      "wherever related notes already live) and rely on wikilinks and `ctxr graph` for organization,",
+      "rather than a folder hierarchy.",
+    ]);
+  });
+
+  it('renders the placement section for layers with and without a directory default', () => {
+    const config = makeConfig({
+      taxonomy: {
+        profile: 'para',
+        layers: [
+          { name: 'Projects', path: 'projects', description: 'Active efforts with an end state.' },
+          { name: 'Areas', path: 'areas', description: 'Ongoing responsibilities.' },
+        ],
+      },
+      visibility: { default_context: 'private', directory_defaults: { projects: 'work' }, contexts: {} },
+    });
+    expect(renderPlacementSection(config)).toEqual([
+      "## Placing a new note",
+      "",
+      "This store's taxonomy declares these layers — choose the one whose description best matches the note:",
+      "",
+      "- **Projects** (`projects/`): Active efforts with an end state. Notes here default to visibility \"work\" unless given an explicit value.",
+      "- **Areas** (`areas/`): Ongoing responsibilities.",
+      "",
+      "If no layer fits, use the store's uncategorized/catch-all location and revisit placement later.",
+    ]);
+  });
+
+  it('renders the canonical section with an empty procedure index, adding no trailing blank line', () => {
+    expect(renderCanonicalSection(makeConfig(), [])).toEqual([
+      "## Store fundamentals",
+      "",
+      "### Root resolution",
+      "",
+      "Every contexture command resolves the store root in this order: an explicit `--root <path>` flag; the `CONTEXTURE_ROOT` environment variable; walking up from the current directory looking for `contexture.yaml`. No other flag or environment variable selects the root.",
+      "",
+      "### Frontmatter schema",
+      "",
+      "- Visibility field: `scope:` — resolves explicit value, then directory default, then the configured fail-closed default (`private`). See `ctxr note resolve <path>`.",
+      "- Source-identity fields (assigned only by `ctxr ingest`, never hand-written): `source_type`, `source_id`, `source_hash`, `ingested`.",
+      "- Disclosure audience tags (optional, hand-written): `audience: [<name>, ...]`.",
+      "",
+      "### Write path",
+      "",
+      "Every write to this store happens inside a session worktree, never directly on the default branch: `ctxr session start` creates one, then `ctxr session submit` validates, commits, pushes, and opens (or reports how to open) a pull request. Do not edit files in the store root directly.",
+      "",
+      "### Procedure index",
+      "",
+      "Judgment-driven operations, documented as portable markdown under `procedures/` — read one directly, no harness-specific discovery required:",
+      "",
+    ]);
+  });
+
+  it('renders the canonical section with a populated procedure index', () => {
+    expect(renderCanonicalSection(makeConfig(), SCANNED_PROCEDURES)).toEqual([
+      "## Store fundamentals",
+      "",
+      "### Root resolution",
+      "",
+      "Every contexture command resolves the store root in this order: an explicit `--root <path>` flag; the `CONTEXTURE_ROOT` environment variable; walking up from the current directory looking for `contexture.yaml`. No other flag or environment variable selects the root.",
+      "",
+      "### Frontmatter schema",
+      "",
+      "- Visibility field: `scope:` — resolves explicit value, then directory default, then the configured fail-closed default (`private`). See `ctxr note resolve <path>`.",
+      "- Source-identity fields (assigned only by `ctxr ingest`, never hand-written): `source_type`, `source_id`, `source_hash`, `ingested`.",
+      "- Disclosure audience tags (optional, hand-written): `audience: [<name>, ...]`.",
+      "",
+      "### Write path",
+      "",
+      "Every write to this store happens inside a session worktree, never directly on the default branch: `ctxr session start` creates one, then `ctxr session submit` validates, commits, pushes, and opens (or reports how to open) a pull request. Do not edit files in the store root directly.",
+      "",
+      "### Procedure index",
+      "",
+      "Judgment-driven operations, documented as portable markdown under `procedures/` — read one directly, no harness-specific discovery required:",
+      "",
+      "- [Ingest orchestration](procedures/ingest-orchestration.md)",
+      "- [Placement](procedures/placement.md)",
+      "- [Connection finding](procedures/connection-finding.md) — Find related notes.",
+      "- [Organize audit](procedures/organize-audit.md)",
+    ]);
   });
 });
