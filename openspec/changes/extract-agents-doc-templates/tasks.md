@@ -51,4 +51,4 @@
 
 ## 8. Land it
 
-- [ ] 8.1 Commit on this branch. Do not push until told to.
+- [x] 8.1 Commit on this branch. Do not push until told to.
