@@ -11,7 +11,7 @@ const VALID_CONFIG = [
   'fields: { visibility: scope }',
   'visibility: { default_context: private, directory_defaults: {} }',
   'derived: { paths: [] }',
-  'retrieval: { exclude_paths: [] }',
+  'retrieval: { exclude_paths: [], relations: [], graph: { cluster_depth: 2, hub_top: 8, bridge_top: 10, orphan_exempt_clusters: [] } }',
   '',
 ].join('\n');
 

@@ -1,0 +1,140 @@
+import { describe, expect, it } from 'vitest';
+import type { GraphBuildResult } from '../../src/core/graph/model.js';
+import { bridges, clusters, hubs, neighbors, orphans, shortestPath, subgraph } from '../../src/core/graph/query.js';
+
+// a -> b -> c, d is isolated
+function chainGraph(): GraphBuildResult {
+  return {
+    nodes: [{ id: 'a', path: 'a.md', cluster: '(root)' }, { id: 'b', path: 'b.md', cluster: '(root)' }, { id: 'c', path: 'c.md', cluster: '(root)' }, { id: 'd', path: 'd.md', cluster: '(root)' }],
+    edges: [
+      { src: 'a', dst: 'b', type: 'link' },
+      { src: 'b', dst: 'c', type: 'link' },
+    ],
+    dangling: [{ from: 'a', target: 'ghost', reason: 'not_found' }],
+  };
+}
+
+describe('neighbors', () => {
+  it('defaults to depth 1, both directions', () => {
+    expect(neighbors(chainGraph(), 'b')).toEqual(['a', 'c']);
+  });
+
+  it('respects direction: out', () => {
+    expect(neighbors(chainGraph(), 'a', { direction: 'out' })).toEqual(['b']);
+    expect(neighbors(chainGraph(), 'b', { direction: 'out' })).toEqual(['c']);
+  });
+
+  it('respects direction: in', () => {
+    expect(neighbors(chainGraph(), 'c', { direction: 'in' })).toEqual(['b']);
+    expect(neighbors(chainGraph(), 'a', { direction: 'in' })).toEqual([]);
+  });
+
+  it('expands with depth > 1', () => {
+    expect(neighbors(chainGraph(), 'a', { depth: 2, direction: 'out' })).toEqual(['b', 'c']);
+  });
+
+  it('returns an empty list for an isolated node', () => {
+    expect(neighbors(chainGraph(), 'd')).toEqual([]);
+  });
+});
+
+describe('shortestPath', () => {
+  it('finds the direct path along a chain', () => {
+    expect(shortestPath(chainGraph(), 'a', 'c')).toEqual(['a', 'b', 'c']);
+  });
+
+  it('returns [from] when from === to', () => {
+    expect(shortestPath(chainGraph(), 'a', 'a')).toEqual(['a']);
+  });
+
+  it('returns null when no path exists', () => {
+    expect(shortestPath(chainGraph(), 'a', 'd')).toBeNull();
+  });
+
+  it('treats edges as traversable in both directions', () => {
+    expect(shortestPath(chainGraph(), 'c', 'a')).toEqual(['c', 'b', 'a']);
+  });
+});
+
+describe('hubs', () => {
+  it('ranks nodes by backlink count, descending, tie-broken by id', () => {
+    const graph: GraphBuildResult = {
+      nodes: [{ id: 'a', path: 'a.md', cluster: '(root)' }, { id: 'b', path: 'b.md', cluster: '(root)' }, { id: 'c', path: 'c.md', cluster: '(root)' }],
+      edges: [
+        { src: 'a', dst: 'c', type: 'link' },
+        { src: 'b', dst: 'c', type: 'link' },
+      ],
+      dangling: [],
+    };
+    expect(hubs(graph, 10)).toEqual([
+      { id: 'c', backlinks: 2 },
+      { id: 'a', backlinks: 0 },
+      { id: 'b', backlinks: 0 },
+    ]);
+  });
+
+  it('respects the top-N cap', () => {
+    expect(hubs(chainGraph(), 1)).toHaveLength(1);
+  });
+});
+
+describe('orphans', () => {
+  it('lists only nodes with no edges in or out', () => {
+    expect(orphans(chainGraph())).toEqual(['d']);
+  });
+});
+
+describe('subgraph', () => {
+  it('filters nodes, edges, and dangling links to the given id set', () => {
+    const result = subgraph(chainGraph(), ['a', 'b']);
+    expect(result.nodes.map((n) => n.id).sort()).toEqual(['a', 'b']);
+    expect(result.edges).toEqual([{ src: 'a', dst: 'b', type: 'link' }]);
+    expect(result.dangling).toEqual([{ from: 'a', target: 'ghost', reason: 'not_found' }]);
+  });
+
+  it('drops an edge whose endpoint falls outside the id set', () => {
+    const result = subgraph(chainGraph(), ['b', 'c']);
+    expect(result.edges).toEqual([{ src: 'b', dst: 'c', type: 'link' }]);
+  });
+});
+
+describe('graph-context-document: clusters, bridges, and typed traversal', () => {
+  // alpha/p/{a,b} ; alpha/q/{q1,q2} ; alpha/r/r1 ; root note
+  function clusteredGraph(): GraphBuildResult {
+    const n = (id: string, cluster: string) => ({ id, path: id, cluster });
+    return {
+      nodes: [n('alpha/p/a.md', 'alpha/p'), n('alpha/p/b.md', 'alpha/p'), n('alpha/q/q1.md', 'alpha/q'), n('alpha/q/q2.md', 'alpha/q'), n('alpha/r/r1.md', 'alpha/r'), n('root.md', '(root)')],
+      edges: [
+        { src: 'alpha/p/a.md', dst: 'alpha/q/q1.md', type: 'link' },
+        { src: 'alpha/p/a.md', dst: 'alpha/q/q2.md', type: 'link' },
+        { src: 'alpha/p/b.md', dst: 'alpha/q/q1.md', type: 'supports' },
+        { src: 'alpha/p/b.md', dst: 'alpha/r/r1.md', type: 'link' },
+        { src: 'alpha/p/b.md', dst: 'alpha/p/a.md', type: 'supports' },
+      ],
+      dangling: [],
+    };
+  }
+
+  it('clusters lists every cluster with its note count, by name', () => {
+    expect(clusters(clusteredGraph())).toEqual([
+      { cluster: '(root)', notes: 1 },
+      { cluster: 'alpha/p', notes: 2 },
+      { cluster: 'alpha/q', notes: 2 },
+      { cluster: 'alpha/r', notes: 1 },
+    ]);
+  });
+
+  it('bridges ranks by distinct other clusters, ties by id, and omits non-bridges', () => {
+    expect(bridges(clusteredGraph(), 10)).toEqual([
+      { id: 'alpha/p/b.md', cluster: 'alpha/p', clusters: ['alpha/q', 'alpha/r'], score: 2 },
+      { id: 'alpha/p/a.md', cluster: 'alpha/p', clusters: ['alpha/q'], score: 1 },
+    ]);
+    expect(bridges(clusteredGraph(), 1)).toHaveLength(1);
+  });
+
+  it('neighbors --type follows only edges of that type', () => {
+    expect(neighbors(clusteredGraph(), 'alpha/p/b.md', { direction: 'out', type: 'supports' })).toEqual(['alpha/p/a.md', 'alpha/q/q1.md']);
+    expect(neighbors(clusteredGraph(), 'alpha/p/b.md', { direction: 'out', type: 'link' })).toEqual(['alpha/r/r1.md']);
+    expect(neighbors(clusteredGraph(), 'alpha/p/b.md', { direction: 'out' })).toHaveLength(3);
+  });
+});

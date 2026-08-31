@@ -1,4 +1,4 @@
-import { select } from '@inquirer/prompts';
+import { confirm, select } from '@inquirer/prompts';
 import type { Prompter } from './prompter.js';
 
 /**
@@ -26,6 +26,10 @@ export function createInquirerPrompter(): Prompter {
         },
         { output: process.stderr },
       );
+    },
+
+    async confirm(input) {
+      return confirm({ message: input.message, default: false }, { output: process.stderr });
     },
   };
 }

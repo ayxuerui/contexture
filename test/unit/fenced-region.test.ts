@@ -2,7 +2,7 @@ import { readFile, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { MarkerMismatchError } from '../../src/core/errors.js';
-import { upsertFencedRegion, upsertFencedRegionInFile } from '../../src/core/fs/fenced-region.js';
+import { upsertFencedRegion, upsertFencedRegionInFile, validateFenceIntegrity } from '../../src/core/fs/fenced-region.js';
 import { commentFence } from '../../src/core/markers.js';
 import { makeTmpDir } from '../helpers/tmp-store.js';
 
@@ -78,5 +78,47 @@ describe('upsertFencedRegionInFile', () => {
     } finally {
       await tmp.cleanup();
     }
+  });
+});
+
+describe('validateFenceIntegrity', () => {
+  it('reports no problems for a well-formed fence', () => {
+    const text = `${fence.start}\nbody\n${fence.end}\n`;
+    expect(validateFenceIntegrity(text)).toEqual([]);
+  });
+
+  it('reports no problems for text with no fences at all', () => {
+    expect(validateFenceIntegrity('just an ordinary file\n')).toEqual([]);
+  });
+
+  it('reports an unpaired start marker', () => {
+    const problems = validateFenceIntegrity(`${fence.start}\nbody\n`);
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toContain('test-region');
+  });
+
+  it('reports a duplicated start marker', () => {
+    const text = `${fence.start}\na\n${fence.end}\n${fence.start}\nb\n${fence.end}\n`;
+    const problems = validateFenceIntegrity(text);
+    expect(problems).toHaveLength(1);
+  });
+
+  it('is comment-syntax-agnostic: matches the token regardless of wrapper', () => {
+    const problems = validateFenceIntegrity('<!-- >>> contexture:notes -->\nbody\n');
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toContain('notes');
+  });
+
+  it('tracks multiple distinct regions independently', () => {
+    const text = [
+      commentFence('a').start,
+      'body-a',
+      commentFence('a').end,
+      commentFence('b').start, // unpaired
+      'body-b',
+    ].join('\n');
+    const problems = validateFenceIntegrity(text);
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toContain('"b"');
   });
 });

@@ -23,18 +23,32 @@ export interface FakePrompterCall {
   defaultId: string;
 }
 
-export function fakePrompter(returnId: string): { prompter: Prompter; calls: FakePrompterCall[] } {
+export function fakePrompter(
+  returnId: string,
+  confirmResponse: boolean = true,
+): { prompter: Prompter; calls: FakePrompterCall[]; confirmCalls: { message: string }[] } {
   const calls: FakePrompterCall[] = [];
+  const confirmCalls: { message: string }[] = [];
   return {
     calls,
+    confirmCalls,
     prompter: {
       async selectProfile(input) {
         calls.push(input);
         return returnId;
       },
+      async confirm(input) {
+        confirmCalls.push(input);
+        return confirmResponse;
+      },
     },
   };
 }
+
+/** A branch name is needed by nearly every init-related test, so it's the one sensible default. */
+const DEFAULT_RESPONSES: ReadonlyMap<string, GitResult> = new Map([
+  ['symbolic-ref --short HEAD', { exitCode: 0, stdout: 'main\n', stderr: '' }],
+]);
 
 export function fakeGitRunner(
   responses: Map<string, GitResult> = new Map(),
@@ -45,7 +59,8 @@ export function fakeGitRunner(
     git: {
       async run(args) {
         calls.push([...args]);
-        return responses.get(args.join(' ')) ?? { stdout: '', stderr: '', exitCode: 0 };
+        const key = args.join(' ');
+        return responses.get(key) ?? DEFAULT_RESPONSES.get(key) ?? { stdout: '', stderr: '', exitCode: 0 };
       },
     },
   };

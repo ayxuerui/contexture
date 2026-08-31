@@ -23,7 +23,15 @@ export function configPathFor(root: string): string {
 export async function readConfig(root: string): Promise<StoreConfig> {
   const configPath = configPathFor(root);
   const text = await readFile(configPath, 'utf8');
-  const raw = parseYaml(text) as unknown;
+
+  let raw: unknown;
+  try {
+    raw = parseYaml(text);
+  } catch (err) {
+    throw new InvalidConfigError(configPath, [
+      { path: '(root)', message: err instanceof Error ? err.message : String(err) },
+    ]);
+  }
 
   const rawVersion = (raw as { schema_version?: unknown } | null)?.schema_version;
   if (rawVersion === undefined || rawVersion === null) {

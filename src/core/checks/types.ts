@@ -1,4 +1,7 @@
+import type { StoreConfig } from '../../config/schema.js';
 import type { Finding } from '../envelope.js';
+import type { GitRunner } from '../git/exec.js';
+import type { GraphBuildResult } from '../graph/model.js';
 import type { Note } from '../notes/list.js';
 
 /**
@@ -34,11 +37,24 @@ export interface CheckResult {
  * checks all need the full note set — adding memoization doesn't mean
  * changing `run()`'s signature across six phases of accumulated checks.
  */
+export interface StagedFile {
+  path: string;
+  status: 'A' | 'M' | 'D' | 'R' | '?';
+  addedLines: number | null;
+  removedLines: number | null;
+  /** Staged (index) content, for non-deleted text files; undefined for deletions or unread files. */
+  content?: string;
+}
+
 export interface CheckContext {
   readonly storeRoot: string;
+  readonly config: StoreConfig;
   readonly scope: CheckScope;
+  readonly git: GitRunner;
+  /** Populated only when scope === 'staged'. */
+  readonly staged?: readonly StagedFile[];
   notes(): Promise<readonly Note[]>;
-  graph(): Promise<unknown>;
+  graph(): Promise<GraphBuildResult | null>;
   catalog(): Promise<unknown>;
 }
 

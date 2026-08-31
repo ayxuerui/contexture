@@ -79,6 +79,11 @@ export async function currentBranch(git: GitRunner, cwd: string): Promise<string
   return result.stdout.trim();
 }
 
+/** session-submit-and-land spec: renames the CURRENT branch (the checkout's HEAD moves with it) — used by `session submit --branch`. */
+export async function renameCurrentBranch(git: GitRunner, cwd: string, newName: string): Promise<void> {
+  await git.run(['branch', '-m', newName], { cwd });
+}
+
 /** Explicit pathspecs only — never `-A` — so `init` stages exactly the scaffold it wrote. */
 export async function addPaths(git: GitRunner, cwd: string, paths: readonly string[]): Promise<void> {
   if (paths.length === 0) return;
@@ -88,6 +93,21 @@ export async function addPaths(git: GitRunner, cwd: string, paths: readonly stri
 export async function hasStagedChanges(git: GitRunner, cwd: string): Promise<boolean> {
   const result = await git.run(['diff', '--cached', '--quiet'], { cwd, allowFailure: true });
   return result.exitCode === 1; // git diff --quiet: 0 = no differences, 1 = differences found
+}
+
+/**
+ * context-store spec: relocating a note is a single tracked rename, not
+ * delete+create — this is what makes `git log --follow` on the new path
+ * return the note's full prior history. Used by archive (Phase 7).
+ */
+export async function movePath(git: GitRunner, cwd: string, from: string, to: string): Promise<void> {
+  await git.run(['mv', from, to], { cwd });
+}
+
+/** Whether `relativePath` is tracked by git — `git mv` refuses an untracked path, so callers check this first to fail with a specific, named error instead of a raw git stderr passthrough. */
+export async function isTracked(git: GitRunner, cwd: string, relativePath: string): Promise<boolean> {
+  const result = await git.run(['ls-files', '--error-unmatch', '--', relativePath], { cwd, allowFailure: true });
+  return result.exitCode === 0;
 }
 
 /** Skips the commit (returns null) when nothing is staged — what makes re-init idempotent. */
@@ -104,4 +124,15 @@ export async function commitIfStaged(
   await git.run(['commit', '-m', message], { cwd });
   const result = await git.run(['rev-parse', 'HEAD'], { cwd });
   return result.stdout.trim();
+}
+
+/** Pushes a session branch to the remote — never the default branch, which the installed hook refuses anyway. */
+export async function pushBranch(git: GitRunner, cwd: string, branch: string, remote = 'origin'): Promise<void> {
+  await git.run(['push', '--set-upstream', remote, branch], { cwd });
+}
+
+/** Whole-tree dirty check (staged AND unstaged) — distinct from hasStagedChanges, used by session reap. */
+export async function isWorkingTreeClean(git: GitRunner, cwd: string): Promise<boolean> {
+  const result = await git.run(['status', '--porcelain'], { cwd });
+  return result.stdout.trim().length === 0;
 }
