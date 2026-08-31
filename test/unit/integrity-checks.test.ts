@@ -3,6 +3,7 @@ import {
   adapterCompatibilityCheck,
   derivedArtifactStalenessCheck,
   graphDanglingLinksCheck,
+  noUnrecognizedConfigKeysCheck,
   schemaVersionCurrencyCheck,
 } from '../../src/core/checks/integrity-checks.js';
 import type { CheckContext } from '../../src/core/checks/types.js';
@@ -26,7 +27,6 @@ function makeConfig(overrides: Partial<StoreConfig> = {}): StoreConfig {
     disclosure: { internal_audiences: [], hard_walls: [], leak_markers: {} },
     ingest: { inbox_path: 'inbox/', tracking_params: [] },
     organize: { archive_path: 'archive/', rollup_stale_days: 7 },
-    identity: { path: 'identity/', files: {}, entry_delimiter: '' },
     harness: { procedures_path: 'procedures/', conventions_path: 'conventions/' },
     adapters: [],
     ...overrides,
@@ -116,6 +116,32 @@ describe('adapterCompatibilityCheck', () => {
   it('passes trivially when no adapters are declared', async () => {
     const result = await adapterCompatibilityCheck.run(makeCtx({ config: makeConfig({ adapters: [] }) }));
     expect(result.status).toBe('pass');
+  });
+});
+
+describe('noUnrecognizedConfigKeysCheck', () => {
+  it('is severity: invariant', () => {
+    expect(noUnrecognizedConfigKeysCheck.severity).toBe('invariant');
+  });
+
+  it('passes for a config with only recognized top-level keys', async () => {
+    const result = await noUnrecognizedConfigKeysCheck.run(makeCtx());
+    expect(result.status).toBe('pass');
+  });
+
+  it('fails, naming the key, when the config carries a top-level key StoreConfigSchema no longer declares', async () => {
+    const config = { ...makeConfig(), identity: { path: 'identity/', files: {}, entry_delimiter: '' } } as StoreConfig;
+    const result = await noUnrecognizedConfigKeysCheck.run(makeCtx({ config }));
+    expect(result.status).toBe('fail');
+    expect(result.findings[0]?.subject).toBe('identity');
+    expect(result.findings[0]?.code).toBe('store.unrecognized_config_key');
+  });
+
+  it('names every unrecognized key when there is more than one', async () => {
+    const config = { ...makeConfig(), identity: {}, some_future_typo: {} } as StoreConfig;
+    const result = await noUnrecognizedConfigKeysCheck.run(makeCtx({ config }));
+    expect(result.status).toBe('fail');
+    expect(result.findings.map((f) => f.subject).sort()).toEqual(['identity', 'some_future_typo']);
   });
 });
 

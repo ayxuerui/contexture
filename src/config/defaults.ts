@@ -29,13 +29,10 @@ export const DEFAULT_VISIBILITY_CONTEXT = 'private';
 /**
  * context-store spec (contexture-home-layout): `.contexture/` is the tool's
  * home directory. Only its cache subpath is derived/gitignored — the
- * catalog, identity, and procedure subdirectories are authored-but-tool-
- * owned and stay tracked.
+ * catalog and procedure subdirectories are authored-but-tool-owned and stay
+ * tracked.
  */
 export const DEFAULT_DERIVED_PATHS = ['.contexture/cache/'] as const;
-
-/** agent-identity spec: canonical identity files live here, excluded from every retrieval leg. */
-export const DEFAULT_IDENTITY_PATH = '.contexture/identity/';
 
 /**
  * harness-portability spec (entry-doc-generation D5): contexture-owned

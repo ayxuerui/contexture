@@ -156,6 +156,69 @@ export async function upsertFencedRegionInFile(
   return { changed: result.changed };
 }
 
+/**
+ * The inverse of `upsertFencedRegion`: deletes a named fence and its body
+ * entirely, including the one blank line `upsertFencedRegion` adds before a
+ * fresh block, so remove-then-upsert-on-empty-tail round-trips byte-for-byte.
+ * A fence that isn't present is a no-op (`changed: false`), not an error —
+ * removal is idempotent, the same way upsert is.
+ *
+ * Exists for a capability that stops generating a fence it used to (review
+ * finding on remove-agent-identity, contexture issue #14's general gap):
+ * `upsertFencedRegionInFile` alone has no way to make an orphaned fence go
+ * away, since nothing calls it with that fence's name anymore once the
+ * capability is gone.
+ */
+export function removeFencedRegion(text: string, fence: Fence): UpsertFencedRegionResult {
+  const trailingNewline = text.endsWith('\n');
+  const lines = text.length === 0 ? [] : text.split('\n');
+  if (trailingNewline) lines.pop();
+
+  const startIndices = indicesOf(lines, fence.start);
+  const endIndices = indicesOf(lines, fence.end);
+
+  if (startIndices.length === 0 && endIndices.length === 0) {
+    return finish(lines, text);
+  }
+
+  if (startIndices.length === 1 && endIndices.length === 1 && startIndices[0]! < endIndices[0]!) {
+    const startIdx = startIndices[0]!;
+    const endIdx = endIndices[0]!;
+    let removeFrom = startIdx;
+    if (removeFrom > 0 && lines[removeFrom - 1] === '') removeFrom -= 1;
+    const out = [...lines.slice(0, removeFrom), ...lines.slice(endIdx + 1)];
+    return finish(out, text);
+  }
+
+  throw new FenceMismatch(`found ${startIndices.length} start marker(s) and ${endIndices.length} end marker(s)`);
+}
+
+/** File-backed counterpart to `removeFencedRegion`. A missing file is a no-op. */
+export async function removeFencedRegionFromFile(filePath: string, fence: Fence): Promise<{ changed: boolean }> {
+  let existing: string;
+  try {
+    existing = await readFile(filePath, 'utf8');
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
+    return { changed: false };
+  }
+
+  let result: UpsertFencedRegionResult;
+  try {
+    result = removeFencedRegion(existing, fence);
+  } catch (err) {
+    if (err instanceof FenceMismatch) {
+      throw new MarkerMismatchError(filePath, err.message);
+    }
+    throw err;
+  }
+
+  if (result.changed) {
+    await writeFileAtomic(filePath, result.text);
+  }
+  return { changed: result.changed };
+}
+
 const GENERIC_START_RE = />>>\s*contexture:(\S+)/;
 const GENERIC_END_RE = /<<<\s*contexture:(\S+)/;
 

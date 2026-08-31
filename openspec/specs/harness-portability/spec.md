@@ -107,7 +107,7 @@ contexture SHALL ship, as contexture-owned skills delivered by init and update, 
 
 #### Scenario: Session capture proposes before it writes
 - **WHEN** an agent follows the session-capture skill at the end of a session
-- **THEN** it emits one proposal separating store notes from world facts from user facts, each item individually identified, and writes only approved items — to the identity files by path, never through a harness-specific memory mechanism
+- **THEN** it emits one proposal of store notes, each item individually identified, and writes only approved items into the store
 
 #### Scenario: Derived-artifact skill checks before it builds
 - **WHEN** an agent follows the derived-artifacts skill
@@ -151,12 +151,12 @@ contexture SHALL ship `ctxr-submit` and `ctxr-land` as contexture-owned skills d
 - **THEN** both skills are present at the configured procedures path with the managed header and the lifecycle skill no longer contains the submit or land steps
 
 ### Requirement: The session-capture skill applies through the command
-The owned session-capture skill SHALL instruct the agent to write the approved items to a proposal file and run `ctxr session capture --proposal <file>`, to take its report from the command's output, and SHALL name the identity files by their resolved paths. It SHALL NOT instruct direct edits to identity files or any harness-specific memory mechanism.
-
-#### Scenario: Skill names resolved identity paths
-- **WHEN** a store binds the user-facts role to a custom path
-- **THEN** the rendered skill names that path in its proposal template
+The owned session-capture skill SHALL instruct the agent to write the approved items to a proposal file and run `ctxr session capture --proposal <file>`, and to take its report from the command's output.
 
 #### Scenario: Skill applies via the command
 - **WHEN** an agent follows the rendered skill's Apply step
 - **THEN** the only write instruction is the capture command, and the report step references its output
+
+#### Scenario: Skill names resolved identity paths
+- **WHEN** the rendered skill is generated for any store
+- **THEN** it names no identity file or path — the skill's contract covers store notes only, and identity is no longer a concept the skill or the command it invokes knows about

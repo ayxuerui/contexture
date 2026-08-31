@@ -20,7 +20,6 @@ function makeConfig(writablePaths: string[] = []): StoreConfig {
     disclosure: { internal_audiences: [], hard_walls: [], leak_markers: {} },
     ingest: { inbox_path: 'inbox/', tracking_params: [] },
     organize: { archive_path: 'archive/', rollup_stale_days: 7 },
-    identity: { path: 'identity/', files: {}, entry_delimiter: '' },
     harness: { procedures_path: 'procedures/', conventions_path: 'conventions/' },
     adapters: [],
   };
@@ -125,20 +124,21 @@ describe('sanctionedPath (session-capture-command D5)', () => {
       }
     });
 
-    it('accepts a resolved identity file (a contexture-owned location) even outside every other allowance', async () => {
-      const tmp = await makeTmpDir();
-      try {
-        expect(await sanctionedPath(makeConfig(['notes/']), tmp.root, 'identity/world-facts.md')).toEqual({ ok: true });
-      } finally {
-        await tmp.cleanup();
-      }
-    });
-
     it('accepts the catalog and the procedures/conventions directories', async () => {
       const tmp = await makeTmpDir();
       try {
         expect(await sanctionedPath(makeConfig(['notes/']), tmp.root, 'catalog/areas.md')).toEqual({ ok: true });
         expect(await sanctionedPath(makeConfig(['notes/']), tmp.root, 'procedures/ctxr-placement/SKILL.md')).toEqual({ ok: true });
+      } finally {
+        await tmp.cleanup();
+      }
+    });
+
+    it('refuses a legacy .contexture/identity/ path now that identity is not contexture-owned (remove-agent-identity): ownership reverts fully to the operator, so a leftover file there needs an explicit writable_paths entry like any other operator location', async () => {
+      const tmp = await makeTmpDir();
+      try {
+        const result = await sanctionedPath(makeConfig(['notes/']), tmp.root, '.contexture/identity/posture.md');
+        expect(result.ok).toBe(false);
       } finally {
         await tmp.cleanup();
       }
