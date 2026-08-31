@@ -52,7 +52,10 @@ export async function generateAdapterOutputs(store: Store): Promise<AdaptersGene
 
     if (adapter.permissionConfig) {
       const permPath = path.join(store.root, adapter.permissionConfig.path);
-      const rules = adapter.permissionConfig.render({ worktreesPath: store.config.session.worktrees_path });
+      const rules = adapter.permissionConfig.render({
+        root: store.root,
+        worktreesPath: store.config.session.worktrees_path,
+      });
       const { changed: permChanged } = await mergeJsonArrayLists(
         permPath,
         rules as Record<string, Record<string, readonly string[]>>,
