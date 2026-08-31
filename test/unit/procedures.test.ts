@@ -37,7 +37,7 @@ function makeConfig(overrides: Partial<StoreConfig> = {}): StoreConfig {
     derived: { paths: [] },
     retrieval: { exclude_paths: ['procedures/'], relations: [], graph: { cluster_depth: 2, hub_top: 8, bridge_top: 10, orphan_exempt_clusters: [] } },
     git: { default_branch: 'trunk' },
-    session: { branch_prefix: 'session/', worktrees_path: '.worktrees/' },
+    session: { branch_prefix: 'session/', worktrees_path: '.worktrees/', workspaces_external: false },
     write_lifecycle: { diff_size_ceiling_lines: 2000, writable_paths: [] },
     catalog: { path: 'catalog/', section_max_bytes: 32768 },
     disclosure: { internal_audiences: [], hard_walls: [], leak_markers: {} },
@@ -59,13 +59,14 @@ const SHIPPED_NAMES = [...new Set(SHIPPED_PROFILES.flatMap((p) => [p.name, ...p.
 const TIER_WORDS = ['personal', 'private', 'public', 'shared', 'internal', 'team', 'confidential'];
 
 describe('PROCEDURES', () => {
-  it('names the eleven owned skills, in index order', () => {
+  it('names the twelve owned skills, in index order', () => {
     expect(PROCEDURES.map((p) => p.file)).toEqual([
       'ctxr-ingest-orchestration',
       'ctxr-placement',
       'ctxr-connection-finding',
       'ctxr-connection-proposal',
       'ctxr-rollup',
+      'ctxr-mission',
       'ctxr-session-lifecycle',
       'ctxr-submit',
       'ctxr-land',
@@ -120,6 +121,26 @@ describe('owned-skills-expansion: each skill carries its load-bearing rule (task
     expect(s).toContain('`ctxr rollup write <entity> --content-file <file>`');
   });
 
+  it('mission: kept current from recent work and the taxonomy layers, status/purpose/next-action, dormant reasons, sunset/debt as their own sections, and writes via ctxr rollup write (generalize-identity-migration-residue)', () => {
+    const s = skills['ctxr-mission'];
+    expect(s).toContain('AGENTS.md');
+    expect(s).toContain('If no mission document is configured for');
+    expect(s).toContain('every store location the taxonomy');
+    expect(s).toContain('status, its purpose, and its next useful action');
+    expect(s).toContain('state plainly why it is not active right now');
+    expect(s).toContain('Carry sunset candidates');
+    expect(s).toContain('operational');
+    expect(s).toContain('debt');
+    expect(s).toContain('`ctxr rollup stale`');
+    expect(s).toContain('`ctxr rollup write <mission_path> --content-file <file>`');
+    expect(s).toContain('## Report');
+  });
+
+  it('mission is present in renderProcedures() output and procedurePaths()', () => {
+    expect(renderProcedures(makeConfig()).map((p) => p.file)).toContain('ctxr-mission');
+    expect(procedurePaths(makeConfig())).toContain('procedures/ctxr-mission/SKILL.md');
+  });
+
   it('session lifecycle: start, re-scan discipline, conflict playbook, sequencing, reclaiming — and none of ctxr-submit/ctxr-land\'s own steps (session-submit-and-land D4)', () => {
     const s = skills['ctxr-session-lifecycle'];
     expect(s).toContain('## Start');
@@ -136,6 +157,19 @@ describe('owned-skills-expansion: each skill carries its load-bearing rule (task
     expect(s).toContain('`ctxr-land`');
     expect(s).not.toContain('ctxr session submit');
     expect(s).not.toContain('ctxr session land');
+  });
+
+  it('session lifecycle: external workspace ownership states worktrees are externally provided when configured, and default rendering is unchanged (write-lifecycle spec)', () => {
+    const external = rendered(makeConfig({ session: { branch_prefix: 'session/', worktrees_path: '.worktrees/', workspaces_external: true } }))['ctxr-session-lifecycle'];
+    expect(external).toContain('provided externally');
+    expect(external).toMatch(/MUST NOT/);
+    expect(external).toContain('create, switch to, unlock, remove, or prune');
+    expect(external).not.toContain('`ctxr session reap` removes merged');
+    expect(external).not.toContain('ctxr session abandon');
+
+    const withoutFlag = rendered()['ctxr-session-lifecycle'];
+    expect(withoutFlag).toContain('`ctxr session reap` removes merged, clean worktrees');
+    expect(withoutFlag).not.toContain('provided externally');
   });
 
   it('submit: re-scans, runs the capture procedure exactly once, stages named paths, gates, and ends in ctxr session submit (session-submit-and-land)', () => {
@@ -287,7 +321,7 @@ describe('syncShippedSkills', () => {
     try {
       const written = await syncShippedSkills(tmp.root, makeConfig());
       expect(written.sort()).toEqual(procedurePaths(makeConfig()).sort());
-      expect(written).toHaveLength(11);
+      expect(written).toHaveLength(12);
       const placement = await readFile(path.join(tmp.root, 'procedures/ctxr-placement/SKILL.md'), 'utf8');
       expect(placement).toContain('name: ctxr-placement');
       expect(placement).toContain('description:');

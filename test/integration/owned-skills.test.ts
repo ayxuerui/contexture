@@ -36,12 +36,12 @@ const SKILLS_ADDED_BY_THIS_RELEASE = [
  * `ctxr update`, and the next update is a no-op.
  */
 describe('owned skills: delivered by init, expanded by update', () => {
-  it('init writes all eleven owned skills with the managed header', async () => {
+  it('init writes all twelve owned skills with the managed header', async () => {
     const tmp = await makeTmpDir();
     try {
       const env = makeFakeEnv({ cwd: tmp.root, env: GIT_IDENTITY });
       await init(env, { root: tmp.root, profile: 'para' });
-      expect(PROCEDURES).toHaveLength(11);
+      expect(PROCEDURES).toHaveLength(12);
       for (const p of PROCEDURES) {
         const file = path.join(tmp.root, '.claude/skills', p.file, 'SKILL.md');
         expect(existsSync(file), p.file).toBe(true);

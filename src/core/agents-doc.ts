@@ -139,6 +139,26 @@ export async function buildAgentsPlacementSection(root: string, config: StoreCon
  */
 export const AGENTS_MD_CANONICAL_FENCE = htmlCommentFence('canonical');
 
+/**
+ * context-organize spec: when `organize.mission_path` is configured, the
+ * canonical section names it as a document to load at session start,
+ * immediately after the identity-boundary paragraph. Content is written and
+ * its staleness reported through the existing rollup mechanism (`ctxr
+ * rollup write` / `ctxr rollup stale`) — this pointer only names the path,
+ * it names no mechanism of its own. Nothing is rendered when unset, so a
+ * store that never configures it sees this line disappear entirely, not a
+ * placeholder.
+ */
+function renderMissionPointer(config: StoreConfig): string[] {
+  const { mission_path: missionPath } = config.organize;
+  if (!missionPath) return [];
+  return [
+    '',
+    `Load \`${missionPath}\` at the start of every session — this store's standing current-state document, ` +
+      'kept current by the mission skill (see the procedure index below) and written through `ctxr rollup write`.',
+  ];
+}
+
 export function renderCanonicalSection(config: StoreConfig, procedures: readonly ScannedDoc[]): string[] {
   const lines = [
     '## Store fundamentals',
@@ -161,6 +181,13 @@ export function renderCanonicalSection(config: StoreConfig, procedures: readonly
     'Every write to this store happens inside a session worktree, never directly on the default branch: `ctxr ' +
       'session start` creates one, then `ctxr session submit` validates, commits, pushes, and opens (or ' +
       'reports how to open) a pull request. Do not edit files in the store root directly.',
+    '',
+    '### Identity and memory',
+    '',
+    'Identity, persona, and durable cross-session memory for the agent working this store belong to its harness, ' +
+      'not to this store — the store holds knowledge and procedures, documented as portable markdown under ' +
+      `\`${config.harness.procedures_path}\` (see the procedure index below), never a persona or memory file of its own.`,
+    ...renderMissionPointer(config),
     '',
     '### Procedure index',
     '',

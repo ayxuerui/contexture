@@ -1,0 +1,42 @@
+## 1. Config schema
+
+- [x] 1.1 `src/config/schema.ts`: add `workspaces_external: z.boolean().default(false)` to `SessionSchema`; add `mission_path: z.string().min(1).optional()` to `OrganizeSchema`
+- [x] 1.2 `src/config/defaults.ts`: add `DEFAULT_WORKSPACES_EXTERNAL = false` and use it where `SessionSchema` defaults are assembled (mirror how `DEFAULT_ROLLUP_STALE_DAYS` is threaded into `OrganizeSchema`'s default); no default needed for `mission_path` since it stays `undefined` when unset
+- [x] 1.3 `npx vitest run test/unit/config-schema.test.ts` green, including a case asserting a `contexture.yaml` with neither key still parses to `workspaces_external: false` and `mission_path: undefined`
+
+## 2. Delta A — identity boundary statement
+
+- [x] 2.1 `src/core/agents-doc.ts`: add a boundary paragraph to `renderCanonicalSection()` — after the "Write path" subsection, before "Procedure index" — stating identity/persona/durable cross-session memory is the harness's concern, referencing `config.harness.procedures_path` by path, no identity file or path named
+- [x] 2.2 `test/unit/agents-doc.test.ts`: assert the rendered canonical section contains the boundary statement for every config fixture used in that file (not just a new one), and that a second render is byte-identical (no `changed` on repeat)
+- [x] 2.3 `npx vitest run test/unit/agents-doc.test.ts` green
+
+## 3. Delta B — external workspace ownership
+
+- [x] 3.1 `templates/skills/ctxr-session-lifecycle.md`: replace the `## Reclaiming` section's fixed text with a `__RECLAIMING_STEP__` placeholder
+- [x] 3.2 `src/core/procedures.ts`: add `reclaimingStep(config): string[]` returning the external-ownership text (worktrees are externally provided; do not create/switch/unlock/remove/prune one) when `config.session.workspaces_external` is true, and the existing `ctxr session reap`/`ctxr session abandon` text unchanged when false; wire it into `SESSION_LIFECYCLE.body` via `.replace('__RECLAIMING_STEP__', ...)` alongside the existing `__DEFAULT_BRANCH__` substitution
+- [x] 3.3 `src/commands/session-reap.ts`: at the top of `execute()`, if `store.config.session.workspaces_external` is true, refuse before calling `listWorktrees` naming `session.workspaces_external` as the reason. DEVIATION: `ExitCode.Failure` does not exist in this codebase's `ExitCode` taxonomy (Ok/Internal/Usage/CheckFailed/DisclosureDeny/DisclosureAsk), and `session-reap.ts` had no existing error-outcome shape to match (it always returned `Ok`). Followed the established codebase pattern instead — a thrown `ContextureError` subclass (new `SessionReapWorkspacesExternalError`, `ExitCode.Usage`), the same shape every other command-level refusal in this repo uses (e.g. `SessionLandOnDefaultBranchError`, `NoForgeConfiguredError`). Externally observable behavior (non-zero exit, reason named in the findings, no worktree touched) matches the spec's WHEN/THEN exactly.
+- [x] 3.4 `test/unit/procedures.test.ts`: assert the rendered session-lifecycle skill states external ownership when the flag is true, and is byte-identical to a store without the flag when false
+- [x] 3.5 Reap test: no `test/unit/session-reap.test.ts` exists — only `test/integration/session-lifecycle.test.ts` covers `session reap` (confirmed by search). Added a case there asserting non-zero exit, `session.reap.workspaces_external` in `findings[].code`, and that the merged worktree/branch are untouched; prior reap test (flag unset) still passes unaffected.
+- [x] 3.6 `npx vitest run` for the three touched test files green (57/57, with `--exclude '**/.claude/worktrees/**'` — see final report on unrelated nested-worktree test-discovery contamination)
+
+## 4. Delta C — store mission
+
+- [x] 4.1 `src/core/rollup.ts`: add `checkMissionStaleness(note: Note, staleDays: number, now: Date): StaleRollupEntry | null` — no git, no backlinks; `rolledUp` read the same way `checkRollupStaleness` does; stale when `rolledUp === null` or `now.getTime() - new Date(rolledUp).getTime() >= staleDays * 24 * 60 * 60 * 1000`; returns an entry with `newestBacklink: null`
+- [x] 4.2 `src/core/rollup.ts`: extend `findStaleRollups` with an optional `missionPath` in its options and a `now` parameter (default `new Date()`); when `missionPath` is set and a note at that path exists in `notes`, include it via `checkMissionStaleness` instead of the `hasRollupSection` entity scan for that one path, then de-duplicate the combined result by `entity` path (mission-path match wins on collision, per design.md's risk mitigation). Implemented as a `Map<path, entry>`: the entity scan populates it first, then the mission verdict (present or absent) always overrides that key — so the mission rule owns the configured path outright, never blending with a stale verdict the backlink rule would otherwise have produced for the same note.
+- [x] 4.3 `src/commands/rollup-stale.ts`: pass `store.config.organize.mission_path` and `env.now()` through to `findStaleRollups`
+- [x] 4.4 `test/unit/rollup-staleness.test.ts`: covers all four spec scenarios plus the collision/override case
+- [x] 4.5 `test/unit/rollup-stale-command.test.ts`: one integration-level case wiring a configured `mission_path` through the actual command
+- [x] 4.6 `src/core/agents-doc.ts`: extend `renderCanonicalSection()` to name `config.organize.mission_path` as a load-at-session-start document when set, immediately after the boundary paragraph from task 2.1; nothing rendered when unset
+- [x] 4.7 `test/unit/agents-doc.test.ts`: assert the mission pointer appears only when `organize.mission_path` is set, and names the exact configured path
+- [x] 4.8 `templates/skills/ctxr-mission.md`: new file, following `ctxr-rollup.md`'s shape (numbered steps, ending in a `## Report` section) — gathers from recent work and the store's taxonomy layers via AGENTS.md's "Placing a new note" section (no config data inlined, same as `ctxr-rollup.md` itself takes no per-store substitution); every active priority states status, purpose, and next useful action; back-burner items state why they are dormant; carries sunset candidates and debt as their own sections; writes via `ctxr rollup write <mission_path> --content-file <file>` and reports `changed`/unchanged
+- [x] 4.9 `src/core/procedures.ts`: added `MISSION: ProcedureSeed` (`file: 'ctxr-mission'`) using `skillTemplate('ctxr-mission')` with no per-store substitution (static body, like `ROLLUP`); added to `PROCEDURES` immediately after `ROLLUP`
+- [x] 4.10 `test/unit/procedures.test.ts`: asserts `ctxr-mission` is present in `renderProcedures()`'s output and `procedurePaths()`, its load-bearing rules, and (via the existing generic D3 loop over all rendered skills) that it names no shipped taxonomy profile/layer or real visibility value
+- [x] 4.11 `npx vitest run` for all five touched test files green
+
+## 5. End-to-end verification
+
+- [x] 5.1 `npm run typecheck && npm run build` — both clean
+- [x] 5.2 `npx vitest run` (full suite) green — 656/656 tests, 85/85 files (run with `--exclude '**/.claude/worktrees/**'`; see final report re: unrelated nested-worktree test-discovery contamination in this shared dev box, present before this change and orthogonal to it)
+- [x] 5.3 Verified in a throwaway temp directory (`ctxr init --profile para`, then hand-set both keys in `contexture.yaml`, `ctxr update`): `AGENTS.md`'s canonical section carries the "### Identity and memory" boundary paragraph and names `MISSION.md`; `.claude/skills/ctxr-mission/SKILL.md` exists with the managed header; `.claude/skills/ctxr-session-lifecycle/SKILL.md`'s Reclaiming section states external ownership; `ctxr session reap --json` exits 2 with finding code `session.reap.workspaces_external`
+- [x] 5.4 Same store, unset both keys, re-ran `ctxr update`: boundary paragraph still present (byte-identical text); mission pointer line gone (confirmed via diff — only that one line and its blank separator disappeared); `ctxr-mission` still shipped and still indexed in AGENTS.md; Reclaiming section byte-identical to the original template text; `ctxr session reap --json` now exits 0
+- [x] 5.5 Bumped `package.json` 0.3.0 → 0.4.0 (minor: additive, no removals, per `remove-agent-identity`'s stated pre-1.0 convention) via `npm version minor --no-git-tag-version`; synced `package-lock.json` via `npm install --package-lock-only` (clean 2-line diff, same shape as the precedent commit); updated `src/version.ts`'s `CLI_VERSION` to match. `test/unit/version-sync.test.ts` (the sync guard) passes.

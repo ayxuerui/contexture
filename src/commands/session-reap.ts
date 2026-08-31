@@ -1,5 +1,6 @@
 import type { CommandOutcome, CommandRequires } from '../core/command.js';
 import type { RunEnv } from '../core/env.js';
+import { SessionReapWorkspacesExternalError } from '../core/errors.js';
 import { ExitCode } from '../core/exit-codes.js';
 import { isWorkingTreeClean } from '../core/git/repo.js';
 import { deleteBranch, listWorktrees, removeWorktree } from '../core/git/worktree.js';
@@ -27,6 +28,10 @@ export interface SessionReapData {
  * conservative reap that only ever touches provably-safe sessions.
  */
 export async function execute(env: RunEnv, store: Store): Promise<CommandOutcome<SessionReapData>> {
+  if (store.config.session.workspaces_external) {
+    throw new SessionReapWorkspacesExternalError();
+  }
+
   const worktrees = await listWorktrees(env.git, store.root);
   const sessions = worktrees.filter(
     (w): w is typeof w & { branch: string } =>

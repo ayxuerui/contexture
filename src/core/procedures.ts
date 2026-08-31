@@ -206,6 +206,13 @@ const ROLLUP: ProcedureSeed = {
   body: () => skillTemplate('ctxr-rollup').split('\n'),
 };
 
+const MISSION: ProcedureSeed = {
+  file: 'ctxr-mission',
+  name: 'Mission',
+  description: "Keep the store's mission document current from recent work and its taxonomy layers, with every active priority naming its status/purpose/next action, back-burner items stating why they're dormant, and sunset candidates and debt carried as their own sections.",
+  body: () => skillTemplate('ctxr-mission').split('\n'),
+};
+
 const SUBMIT: ProcedureSeed = {
   file: 'ctxr-submit',
   name: 'Submit',
@@ -220,11 +227,36 @@ const LAND: ProcedureSeed = {
   body: (config) => skillTemplate('ctxr-land').replaceAll('__DEFAULT_BRANCH__', config.git.default_branch).split('\n'),
 };
 
+/**
+ * write-lifecycle spec: when `session.workspaces_external` is true, worktree
+ * lifecycle is owned by a process outside `ctxr` (e.g. an external
+ * agent-runtime WebUI) — the rendered skill must not instruct creating,
+ * switching, unlocking, removing, or pruning one. False/unset keeps the
+ * prior text byte-identical.
+ */
+function reclaimingStep(config: StoreConfig): string[] {
+  if (config.session.workspaces_external) {
+    return [
+      'Session worktrees are provided externally (`session.workspaces_external: true`) — this procedure MUST NOT',
+      'create, switch to, unlock, remove, or prune a worktree. `ctxr session reap` refuses to run under this',
+      'configuration; reclaiming worktrees is the external process\'s responsibility, not this skill\'s.',
+    ];
+  }
+  return [
+    '`ctxr session reap` removes merged, clean worktrees (or use `ctxr-land`\'s `--reap`); `ctxr session abandon',
+    '<branch>` discards work and needs an explicit go. Never claim cleanup happened without having run one.',
+  ];
+}
+
 const SESSION_LIFECYCLE: ProcedureSeed = {
   file: 'ctxr-session-lifecycle',
   name: 'Session lifecycle',
   description: 'Start a session worktree, re-scan before any plan, resolve conflicts, and sequence multiple pull requests — the frame ctxr-submit and ctxr-land sit inside.',
-  body: (config) => skillTemplate('ctxr-session-lifecycle').replaceAll('__DEFAULT_BRANCH__', config.git.default_branch).split('\n'),
+  body: (config) =>
+    skillTemplate('ctxr-session-lifecycle')
+      .replaceAll('__DEFAULT_BRANCH__', config.git.default_branch)
+      .replace('__RECLAIMING_STEP__', reclaimingStep(config).join('\n'))
+      .split('\n'),
 };
 
 const SESSION_CAPTURE: ProcedureSeed = {
@@ -254,6 +286,7 @@ export const PROCEDURES: readonly ProcedureSeed[] = [
   CONNECTION_FINDING,
   CONNECTION_PROPOSAL,
   ROLLUP,
+  MISSION,
   SESSION_LIFECYCLE,
   SUBMIT,
   LAND,

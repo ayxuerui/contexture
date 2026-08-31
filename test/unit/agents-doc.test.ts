@@ -25,7 +25,7 @@ function makeConfig(overrides: Partial<StoreConfig> = {}): StoreConfig {
     derived: { paths: ['.contexture/'] },
     retrieval: { exclude_paths: ['identity/'], relations: [], graph: { cluster_depth: 2, hub_top: 8, bridge_top: 10, orphan_exempt_clusters: [] } },
     git: { default_branch: 'main' },
-    session: { branch_prefix: 'session/', worktrees_path: '.worktrees/' },
+    session: { branch_prefix: 'session/', worktrees_path: '.worktrees/', workspaces_external: false },
     write_lifecycle: { diff_size_ceiling_lines: 2000, writable_paths: [] },
     catalog: { path: 'catalog/', section_max_bytes: 32768 },
     disclosure: { internal_audiences: [], hard_walls: [], leak_markers: {} },
@@ -181,6 +181,40 @@ describe('renderCanonicalSection', () => {
     expect(lines).toContain('[Placement](procedures/placement.md)');
     expect(lines).toContain('[Connection finding](procedures/connection-finding.md) — Find related notes.');
     expect(lines).toContain('[Organize audit](procedures/organize-audit.md)');
+  });
+
+  it('states the harness/store identity boundary for every config fixture used in this file', () => {
+    for (const config of [
+      makeConfig(),
+      makeConfig({ fields: { visibility: 'lens' } }),
+      makeConfig({ ingest: { inbox_path: 'incoming/', tracking_params: [] } }),
+    ]) {
+      const lines = renderCanonicalSection(config, SCANNED_PROCEDURES).join('\n');
+      expect(lines).toMatch(/identity.*persona.*(durable )?cross-session memory/is);
+      expect(lines).toMatch(/harness/i);
+      expect(lines).not.toMatch(/identity\//); // no identity file or path of its own
+    }
+  });
+
+  it('a second render is byte-identical: no rewrite from unchanged config', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const config = makeConfig();
+      await buildAgentsCanonicalSection(tmp.root, config);
+      const { changed } = await buildAgentsCanonicalSection(tmp.root, config);
+      expect(changed).toBe(false);
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('names the configured mission document, immediately after the boundary paragraph, only when set', () => {
+    const withMission = renderCanonicalSection(makeConfig({ organize: { archive_path: 'archive/', rollup_stale_days: 7, mission_path: 'MISSION.md' } }), SCANNED_PROCEDURES).join('\n');
+    expect(withMission).toContain('`MISSION.md`');
+    expect(withMission).toMatch(/session start/);
+
+    const withoutMission = renderCanonicalSection(makeConfig(), SCANNED_PROCEDURES).join('\n');
+    expect(withoutMission).not.toMatch(/Load `.*` at the start of every session/);
   });
 });
 
