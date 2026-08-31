@@ -2,7 +2,13 @@ import { readFile, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { MarkerMismatchError } from '../../src/core/errors.js';
-import { upsertFencedRegion, upsertFencedRegionInFile, validateFenceIntegrity } from '../../src/core/fs/fenced-region.js';
+import {
+  removeFencedRegion,
+  removeFencedRegionFromFile,
+  upsertFencedRegion,
+  upsertFencedRegionInFile,
+  validateFenceIntegrity,
+} from '../../src/core/fs/fenced-region.js';
 import { commentFence } from '../../src/core/markers.js';
 import { makeTmpDir } from '../helpers/tmp-store.js';
 
@@ -47,6 +53,38 @@ describe('upsertFencedRegion (in-memory)', () => {
   });
 });
 
+describe('removeFencedRegion (in-memory)', () => {
+  it('is a no-op on text with no matching fence', () => {
+    const result = removeFencedRegion('just an ordinary file\n', fence);
+    expect(result.changed).toBe(false);
+    expect(result.text).toBe('just an ordinary file\n');
+  });
+
+  it('removes the fence and its body, including the blank line inserted before it', () => {
+    const before = upsertFencedRegion('existing content\n', fence, ['body']);
+    const result = removeFencedRegion(before.text, fence);
+    expect(result.changed).toBe(true);
+    expect(result.text).toBe('existing content\n');
+  });
+
+  it('removes a fence with no preceding blank line without disturbing the line before it', () => {
+    const before = `before\n${fence.start}\nbody\n${fence.end}\nafter\n`;
+    const result = removeFencedRegion(before, fence);
+    expect(result.text).toBe('before\nafter\n');
+  });
+
+  it('removing then re-inserting into the resulting empty tail round-trips byte-for-byte', () => {
+    const original = upsertFencedRegion('existing content\n', fence, ['body']);
+    const removed = removeFencedRegion(original.text, fence);
+    const reinserted = upsertFencedRegion(removed.text, fence, ['body']);
+    expect(reinserted.text).toBe(original.text);
+  });
+
+  it('throws on an unpaired start marker, the same as upsert', () => {
+    expect(() => removeFencedRegion(`${fence.start}\nbody\n`, fence)).toThrow();
+  });
+});
+
 describe('upsertFencedRegionInFile', () => {
   it('writes zero bytes — leaves the file untouched — when markers are mismatched', async () => {
     const tmp = await makeTmpDir();
@@ -75,6 +113,59 @@ describe('upsertFencedRegionInFile', () => {
       const mtimeAfter = (await stat(filePath)).mtimeMs;
       expect(changed).toBe(false);
       expect(mtimeAfter).toBe(mtimeBefore);
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+});
+
+describe('removeFencedRegionFromFile', () => {
+  it('is a no-op on a missing file', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const filePath = path.join(tmp.root, 'missing.txt');
+      const { changed } = await removeFencedRegionFromFile(filePath, fence);
+      expect(changed).toBe(false);
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('is a no-op when the fence is not present', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const filePath = path.join(tmp.root, 'target.txt');
+      await writeFile(filePath, 'no fence here\n');
+      const { changed } = await removeFencedRegionFromFile(filePath, fence);
+      expect(changed).toBe(false);
+      expect(await readFile(filePath, 'utf8')).toBe('no fence here\n');
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('removes an existing fence, leaving surrounding content untouched', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const filePath = path.join(tmp.root, 'target.txt');
+      await upsertFencedRegionInFile(filePath, fence, ['body']);
+      await writeFile(filePath, `before\n${await readFile(filePath, 'utf8')}after\n`);
+      const { changed } = await removeFencedRegionFromFile(filePath, fence);
+      expect(changed).toBe(true);
+      expect(await readFile(filePath, 'utf8')).toBe('before\nafter\n');
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('throws on mismatched markers and writes zero bytes', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const filePath = path.join(tmp.root, 'target.txt');
+      await writeFile(filePath, `${fence.start}\nbody\n`);
+      const before = await readFile(filePath, 'utf8');
+      await expect(removeFencedRegionFromFile(filePath, fence)).rejects.toBeInstanceOf(MarkerMismatchError);
+      expect(await readFile(filePath, 'utf8')).toBe(before);
     } finally {
       await tmp.cleanup();
     }

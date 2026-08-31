@@ -2,18 +2,30 @@ import path from 'node:path';
 import type { StoreConfig } from '../config/schema.js';
 import type { RunEnv } from './env.js';
 import {
+  agentsMdPath,
   buildAgentsCanonicalSection,
   buildAgentsCaptureSection,
   buildAgentsConventionsSection,
   buildAgentsLegRoutingSection,
   buildAgentsPlacementSection,
 } from './agents-doc.js';
-import { upsertFencedRegionInFile } from './fs/fenced-region.js';
+import { removeFencedRegionFromFile, upsertFencedRegionInFile } from './fs/fenced-region.js';
 import { configureHooksPath, installHooks } from './hooks.js';
-import { commentFence, DERIVED_GITIGNORE_FENCE } from './markers.js';
+import { commentFence, DERIVED_GITIGNORE_FENCE, htmlCommentFence } from './markers.js';
 import { syncShippedSkills } from './procedures.js';
 
 export const WORKTREES_GITIGNORE_FENCE = commentFence('worktrees');
+
+/**
+ * remove-agent-identity: AGENTS.md's old "Agent identity" section is an
+ * orphaned fence now that nothing calls `upsertFencedRegionInFile` with it —
+ * reconstructed from the region name alone (`htmlCommentFence('agent-identity')`,
+ * matching the deleted `AGENTS_MD_IDENTITY_FENCE`) since removing the region
+ * doesn't require keeping the retired builder function around. A one-time,
+ * capability-specific cleanup, not the general orphan-detection mechanism
+ * contexture issue #14 tracks.
+ */
+const RETIRED_AGENTS_MD_IDENTITY_FENCE = htmlCommentFence('agent-identity');
 
 export interface ReconcileResult {
   /** Store-relative paths written this run (an up-to-date store yields none). */
@@ -55,6 +67,7 @@ export async function reconcileStore(env: RunEnv, root: string, config: StoreCon
   ]) {
     if ((await build(root, config)).changed) agentsChanged = true;
   }
+  if ((await removeFencedRegionFromFile(agentsMdPath(root), RETIRED_AGENTS_MD_IDENTITY_FENCE)).changed) agentsChanged = true;
   note('AGENTS.md', agentsChanged);
 
   const { changed: hookFiles } = await installHooks(root, config.git.default_branch);
