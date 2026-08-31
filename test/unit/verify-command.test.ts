@@ -3,7 +3,7 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { buildAgentsCanonicalSection } from '../../src/core/agents-doc.js';
 import { execute } from '../../src/commands/verify.js';
-import { syncShippedSkills } from '../../src/core/procedures.js';
+import { syncShippedSkills } from '../../src/core/skills.js';
 import type { StoreConfig } from '../../src/config/schema.js';
 import { ExitCode } from '../../src/core/exit-codes.js';
 import type { Store } from '../../src/core/store.js';
@@ -24,7 +24,7 @@ function makeConfig(): StoreConfig {
     disclosure: { internal_audiences: [], hard_walls: [], leak_markers: {} },
     ingest: { inbox_path: 'inbox/', tracking_params: [] },
     organize: { archive_path: 'archive/', rollup_stale_days: 7 },
-    harness: { procedures_path: 'procedures/', conventions_path: 'conventions/' },
+    harness: { skills_path: 'skills/', conventions_path: 'conventions/' },
     adapters: [],
   };
 }
@@ -50,7 +50,7 @@ describe('verify --portable', () => {
     }
   });
 
-  it('fails naming the retrieval-query step when AGENTS.md is entirely missing (no procedure index to check, but this fails earlier anyway)', async () => {
+  it('fails naming the retrieval-query step when AGENTS.md is entirely missing (no skill index to check, but this fails earlier anyway)', async () => {
     const tmp = await makeTmpDir();
     try {
       // No setup at all — not even contexture.yaml-adjacent scaffolding beyond config.
@@ -59,19 +59,19 @@ describe('verify --portable', () => {
       // catalog show and graph build both work from nothing; the failure should be the missing AGENTS.md.
       expect(outcome.exitCode).toBe(ExitCode.CheckFailed);
       const failed = outcome.data?.steps.find((s) => s.status === 'fail');
-      expect(failed?.operation).toContain('procedure index');
+      expect(failed?.operation).toContain('skill index');
     } finally {
       await tmp.cleanup();
     }
   });
 
-  it('fails naming the specific missing procedure when one index entry is deleted from AGENTS.md (task 8.8)', async () => {
+  it('fails naming the specific missing skill when one index entry is deleted from AGENTS.md (task 8.8)', async () => {
     const tmp = await makeTmpDir();
     try {
       const store = await setUpStore(tmp.root);
       const agentsMdPath = path.join(tmp.root, 'AGENTS.md');
       const content = await readFile(agentsMdPath, 'utf8');
-      await writeFile(agentsMdPath, content.replace(/^- \[ctxr-placement\]\(procedures\/ctxr-placement\/SKILL\.md\).*\n/m, ''));
+      await writeFile(agentsMdPath, content.replace(/^- \[ctxr-placement\]\(skills\/ctxr-placement\/SKILL\.md\).*\n/m, ''));
 
       const outcome = await execute(store, { portable: true });
       expect(outcome.exitCode).toBe(ExitCode.CheckFailed);
@@ -88,11 +88,11 @@ describe('verify --portable', () => {
       const store = await setUpStore(tmp.root);
       const agentsMdPath = path.join(tmp.root, 'AGENTS.md');
       const content = await readFile(agentsMdPath, 'utf8');
-      await writeFile(agentsMdPath, content.replace(/^- \[ctxr-ingest-orchestration\]\(procedures\/ctxr-ingest-orchestration\/SKILL\.md\).*\n/m, ''));
+      await writeFile(agentsMdPath, content.replace(/^- \[ctxr-ingest-orchestration\]\(skills\/ctxr-ingest-orchestration\/SKILL\.md\).*\n/m, ''));
 
       const outcome = await execute(store, { portable: true });
       // Only the retrieval query, the derived-artifact build, and the one failing
-      // procedure-index check should run — never a fourth "follow procedure" step.
+      // skill-index check should run — never a fourth "follow skill" step.
       expect(outcome.data?.steps).toHaveLength(3);
       expect(outcome.data?.steps[2]?.status).toBe('fail');
     } finally {

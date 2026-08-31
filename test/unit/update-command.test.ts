@@ -5,7 +5,7 @@ import { execute as init } from '../../src/commands/init.js';
 import { execute as update } from '../../src/commands/update.js';
 import { readConfig } from '../../src/config/load.js';
 import { ExitCode } from '../../src/core/exit-codes.js';
-import { MANAGED_SKILL_HEADER } from '../../src/core/procedures.js';
+import { MANAGED_SKILL_HEADER } from '../../src/core/skills.js';
 import type { Store } from '../../src/core/store.js';
 import { makeFakeEnv } from '../helpers/fake-env.js';
 import { makeTmpDir } from '../helpers/tmp-store.js';

@@ -17,10 +17,10 @@ function skillTemplate(slug: string): string {
 
 /**
  * harness-portability spec (task 8.6, revised by entry-doc-generation D5,
- * expanded by owned-skills-expansion): reusable store procedures ship as
- * contexture-OWNED skills. The canonical content is this module (versioned
+ * expanded by owned-skills-expansion): reusable store skills ship as
+ * contexture-OWNED files. The canonical content is this module (versioned
  * with the package); a store carries a full copy at
- * `<procedures_path>/ctxr-<slug>/SKILL.md` — written by `ctxr init`,
+ * `<skills_path>/ctxr-<slug>/SKILL.md` — written by `ctxr init`,
  * refreshed by `ctxr update`, never hand-edited. The default location is
  * the directory harnesses with skill auto-discovery read, so there is no
  * wrapper and no extra hop; any other harness reaches the same file by
@@ -35,8 +35,8 @@ function skillTemplate(slug: string): string {
  * that verifies it. The one config-derived skill (placement) is rendered
  * per store, which is why a seed's body is a function of the config.
  */
-export interface Procedure {
-  /** Skill directory slug under config.harness.procedures_path (file is `<slug>/SKILL.md`). */
+export interface Skill {
+  /** Skill directory slug under config.harness.skills_path (file is `<slug>/SKILL.md`). */
   file: string;
   /** The human title (the H1 in the skill body). */
   name: string;
@@ -45,7 +45,7 @@ export interface Procedure {
   content: string;
 }
 
-interface ProcedureSeed {
+interface SkillSeed {
   file: string;
   name: string;
   description: string;
@@ -74,7 +74,7 @@ export function retiredLayers(config: StoreConfig): TaxonomyLayerConfig[] {
   return config.taxonomy.layers.filter((layer) => RETIRED_PATTERN.test(layer.description));
 }
 
-function skillDocument(seed: ProcedureSeed, config: StoreConfig): string {
+function skillDocument(seed: SkillSeed, config: StoreConfig): string {
   const lines = [
     '---',
     `name: ${seed.file}`,
@@ -134,21 +134,21 @@ function placementLayerStep(config: StoreConfig): string[] {
   return lines;
 }
 
-const PLACEMENT: ProcedureSeed = {
+const PLACEMENT: SkillSeed = {
   file: 'ctxr-placement',
   name: 'Placement',
   description: 'Choose the right taxonomy layer, location, and visibility for a new or relocated note in this contexture store, with the reasoning.',
   body: (config) => skillTemplate('ctxr-placement').replace('__LAYER_STEP__', placementLayerStep(config).join('\n')).split('\n'),
 };
 
-const INGEST_ORCHESTRATION: ProcedureSeed = {
+const INGEST_ORCHESTRATION: SkillSeed = {
   file: 'ctxr-ingest-orchestration',
   name: 'Ingest orchestration',
   description: 'Capture raw material into the inbox, run the dedupe check, read the existing cluster, decide new/update/merge/restructure, and ingest with source identity via the contexture CLI.',
   body: () => skillTemplate('ctxr-ingest-orchestration').replaceAll('__GRAPH_DOCUMENT_PATH__', GRAPH_DOCUMENT_RELATIVE_PATH).split('\n'),
 };
 
-const CONNECTION_FINDING: ProcedureSeed = {
+const CONNECTION_FINDING: SkillSeed = {
   file: 'ctxr-connection-finding',
   name: 'Connection finding',
   description: 'Traverse the wikilink graph of the store (neighbors, paths, hubs, orphans) to find what a note already connects to.',
@@ -175,63 +175,63 @@ function relationGroupingStep(relations: readonly string[]): string[] {
   ];
 }
 
-const CONNECTION_PROPOSAL: ProcedureSeed = {
+const CONNECTION_PROPOSAL: SkillSeed = {
   file: 'ctxr-connection-proposal',
   name: 'Connection proposal',
   description: 'Discover the links a note should have, read each candidate before proposing, group by the store relation vocabulary, and write only approved links.',
   body: (config) => skillTemplate('ctxr-connection-proposal').replace('__RELATION_GROUPING_STEP__', relationGroupingStep(config.retrieval.relations).join('\n')).split('\n'),
 };
 
-const ROLLUP: ProcedureSeed = {
+const ROLLUP: SkillSeed = {
   file: 'ctxr-rollup',
   name: 'Rollup',
   description: 'Regenerate the synthesized current-state region of an entity note from every source that references it, with provenance for every fact.',
   body: () => skillTemplate('ctxr-rollup').split('\n'),
 };
 
-const SUBMIT: ProcedureSeed = {
+const SUBMIT: SkillSeed = {
   file: 'ctxr-submit',
   name: 'Submit',
   description: 'End a working session — re-scan, capture once, stage surgically, gate the external side effect, and open the reviewed pull request.',
   body: (config) => skillTemplate('ctxr-submit').replaceAll('__DEFAULT_BRANCH__', config.git.default_branch).split('\n'),
 };
 
-const LAND: ProcedureSeed = {
+const LAND: SkillSeed = {
   file: 'ctxr-land',
   name: 'Land',
   description: 'Complete a reviewed session — merge its pull request, sync the default branch, and reclaim the worktree — one gated command, never a manual merge.',
   body: (config) => skillTemplate('ctxr-land').replaceAll('__DEFAULT_BRANCH__', config.git.default_branch).split('\n'),
 };
 
-const SESSION_LIFECYCLE: ProcedureSeed = {
+const SESSION_LIFECYCLE: SkillSeed = {
   file: 'ctxr-session-lifecycle',
   name: 'Session lifecycle',
   description: 'Start a session worktree, re-scan before any plan, resolve conflicts, and sequence multiple pull requests — the frame ctxr-submit and ctxr-land sit inside.',
   body: (config) => skillTemplate('ctxr-session-lifecycle').replaceAll('__DEFAULT_BRANCH__', config.git.default_branch).split('\n'),
 };
 
-const SESSION_CAPTURE: ProcedureSeed = {
+const SESSION_CAPTURE: SkillSeed = {
   file: 'ctxr-session-capture',
   name: 'Session capture',
   description: 'At the end of a session, propose durable store notes in one message with per-item approval, then write only what was approved.',
   body: () => skillTemplate('ctxr-session-capture').split('\n'),
 };
 
-const DERIVED_ARTIFACTS: ProcedureSeed = {
+const DERIVED_ARTIFACTS: SkillSeed = {
   file: 'ctxr-derived-artifacts',
   name: 'Derived artifacts',
   description: 'Refresh a generated artifact safely — check before build, read the counts back, never hand-edit inside a fence, keep derived files out of content commits.',
   body: (config) => skillTemplate('ctxr-derived-artifacts').replaceAll('__DEFAULT_BRANCH__', config.git.default_branch).split('\n'),
 };
 
-const ORGANIZE_AUDIT: ProcedureSeed = {
+const ORGANIZE_AUDIT: SkillSeed = {
   file: 'ctxr-organize-audit',
   name: 'Organize audit',
   description: 'Audit store health with ctxr lint (observations) and ctxr doctor (blocking invariants), retire by moving, and classify broken links before fixing them.',
   body: () => skillTemplate('ctxr-organize-audit').split('\n'),
 };
 
-export const PROCEDURES: readonly ProcedureSeed[] = [
+export const SKILLS: readonly SkillSeed[] = [
   INGEST_ORCHESTRATION,
   PLACEMENT,
   CONNECTION_FINDING,
@@ -246,8 +246,8 @@ export const PROCEDURES: readonly ProcedureSeed[] = [
 ];
 
 /** The owned skills, rendered against one store's configuration — what `syncShippedSkills` writes. */
-export function renderProcedures(config: StoreConfig): Procedure[] {
-  return PROCEDURES.map((seed) => ({
+export function renderSkills(config: StoreConfig): Skill[] {
+  return SKILLS.map((seed) => ({
     file: seed.file,
     name: seed.name,
     description: seed.description,
@@ -258,15 +258,15 @@ export function renderProcedures(config: StoreConfig): Procedure[] {
 /**
  * entry-doc-generation spec: every skill actually on disk — the contexture-
  * owned ones plus any operator-authored ones. This is what the AGENTS.md
- * index and verify --portable consume; the static PROCEDURES const is only
+ * index and verify --portable consume; the static SKILLS const is only
  * the canonical content syncShippedSkills writes.
  */
-export function scanProcedures(root: string, config: StoreConfig): Promise<ScannedDoc[]> {
-  return scanDocsDir(root, config.harness.procedures_path);
+export function scanSkills(root: string, config: StoreConfig): Promise<ScannedDoc[]> {
+  return scanDocsDir(root, config.harness.skills_path);
 }
 
-export function procedurePaths(config: StoreConfig): string[] {
-  return PROCEDURES.map((p) => path.join(config.harness.procedures_path, p.file, SKILL_FILE_NAME).split(path.sep).join('/'));
+export function skillPaths(config: StoreConfig): string[] {
+  return SKILLS.map((p) => path.join(config.harness.skills_path, p.file, SKILL_FILE_NAME).split(path.sep).join('/'));
 }
 
 /**
@@ -280,9 +280,9 @@ export function procedurePaths(config: StoreConfig): string[] {
  */
 export async function syncShippedSkills(root: string, config: StoreConfig): Promise<string[]> {
   const changed: string[] = [];
-  for (const procedure of renderProcedures(config)) {
+  for (const skill of renderSkills(config)) {
     const relativePath = path
-      .join(config.harness.procedures_path, procedure.file, SKILL_FILE_NAME)
+      .join(config.harness.skills_path, skill.file, SKILL_FILE_NAME)
       .split(path.sep)
       .join('/');
     const absolutePath = path.join(root, relativePath);
@@ -292,15 +292,15 @@ export async function syncShippedSkills(root: string, config: StoreConfig): Prom
     } catch {
       existing = undefined;
     }
-    if (existing !== procedure.content) {
+    if (existing !== skill.content) {
       await mkdir(path.dirname(absolutePath), { recursive: true });
-      await writeFileAtomic(absolutePath, procedure.content);
+      await writeFileAtomic(absolutePath, skill.content);
       changed.push(relativePath);
     }
   }
 
-  const shippedSlugs = new Set(PROCEDURES.map((p) => p.file));
-  const skillsDir = path.join(root, config.harness.procedures_path);
+  const shippedSlugs = new Set(SKILLS.map((p) => p.file));
+  const skillsDir = path.join(root, config.harness.skills_path);
   let entries: { name: string; isDirectory(): boolean }[] = [];
   try {
     entries = await readdir(skillsDir, { withFileTypes: true });
@@ -318,7 +318,7 @@ export async function syncShippedSkills(root: string, config: StoreConfig): Prom
     }
     if (!content.includes(MANAGED_SKILL_HEADER)) continue; // operator-authored: never touched
     await rm(path.join(skillsDir, entry.name), { recursive: true, force: true });
-    changed.push(path.join(config.harness.procedures_path, entry.name, SKILL_FILE_NAME).split(path.sep).join('/'));
+    changed.push(path.join(config.harness.skills_path, entry.name, SKILL_FILE_NAME).split(path.sep).join('/'));
   }
   return changed;
 }

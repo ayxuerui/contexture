@@ -27,7 +27,7 @@ context: |
   ranked/semantic engine later; v1 ships none.
 
   Code/judgment seam: agents read (grep, cluster reading, synthesis, placement,
-  ingest orchestration are procedure markdown, never CLI); the CLI computes
+  ingest orchestration are skill markdown, never CLI); the CLI computes
   (byte-stable derivation), writes (idempotent, fence-validated, always onto a
   branch), verifies (checks that fail, not instructions that decay), and owns
   session lifecycle (worktrees) and git. No store operation may require the CLI to
@@ -76,7 +76,7 @@ rules:
     - "Every requirement that claims something is enforced must name the mechanism
        that enforces it (a hook, a check that exits non-zero, a pre-filter) and
        must not rely on an agent following an instruction. If the only enforcement
-       is 'the agent is told to', it is a procedure-markdown convention, not a
+       is 'the agent is told to', it is a skill-markdown convention, not a
        requirement."
     - "Fail-closed language must name what it fails closed TO, sourced from
        config, not a hardcoded literal (e.g. 'the configured default visibility

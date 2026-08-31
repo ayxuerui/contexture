@@ -4,7 +4,7 @@ import { GRAPH_DOCUMENT_RELATIVE_PATH } from './graph/persist.js';
 import { CONFIG_FILE_NAME } from './root.js';
 import { excludedPrefixesFor } from './notes/list.js';
 import { scanConventions, type ScannedDoc } from './conventions.js';
-import { scanProcedures } from './procedures.js';
+import { scanSkills } from './skills.js';
 import { upsertFencedRegionInFile } from './fs/fenced-region.js';
 import { htmlCommentFence } from './markers.js';
 import { packagedTemplate, substituteBlock } from './templates.js';
@@ -20,7 +20,7 @@ function agentsTemplate(name: string): string {
   return packagedTemplate('agents', name);
 }
 
-/** The one index-entry format both the procedure and convention indexes use. */
+/** The one index-entry format both the skill and convention indexes use. */
 function docIndexEntry(doc: ScannedDoc): string {
   return `- [${doc.title}](${doc.path})${doc.description ? ` — ${doc.description}` : ''}`;
 }
@@ -35,7 +35,7 @@ export function agentsMdPath(root: string): string {
  * catalog/graph (contexture-built-and-maintained) or its own direct content
  * matching (grep, scoped by the store's declared exclusion paths). This is
  * one fenced region within AGENTS.md; Phase 8 adds the canonical template's
- * other sections (root-resolution, frontmatter schema, write-path, procedure
+ * other sections (root-resolution, frontmatter schema, write-path, skill
  * index) as sibling regions in the same file, never touching this one.
  */
 export const AGENTS_MD_LEG_ROUTING_FENCE = htmlCommentFence('retrieval-leg-routing');
@@ -73,8 +73,8 @@ export async function buildAgentsCaptureSection(root: string, config: StoreConfi
 }
 
 /**
- * context-organize spec (task 7.1): the placement procedure is
- * documentation driven entirely by the configured taxonomy, never a
+ * context-organize spec (task 7.1): the placement skill's documentation is
+ * driven entirely by the configured taxonomy, never a
  * hardcoded layout — the layer list is generated purely from
  * `config.taxonomy.layers`, so it reads correctly under PARA, Zettelkasten,
  * Diátaxis, or any custom taxonomy without a single layer name appearing in
@@ -106,24 +106,24 @@ export async function buildAgentsPlacementSection(root: string, config: StoreCon
 /**
  * harness-portability spec (task 8.5): the canonical template's four
  * required pieces — root-resolution rule, frontmatter schema pointer,
- * write-path rule, and a procedure index — so an agent that has read only
+ * write-path rule, and a skill index — so an agent that has read only
  * this file, with no harness-specific context, has everything it needs
  * (the spec's own "Reading only AGENTS.md is sufficient" scenario).
  */
 export const AGENTS_MD_CANONICAL_FENCE = htmlCommentFence('canonical');
 
-export function renderCanonicalSection(config: StoreConfig, procedures: readonly ScannedDoc[]): string[] {
+export function renderCanonicalSection(config: StoreConfig, skills: readonly ScannedDoc[]): string[] {
   const text = agentsTemplate('canonical')
     .replaceAll('__CONFIG_FILE_NAME__', CONFIG_FILE_NAME)
     .replaceAll('__VISIBILITY_FIELD__', config.fields.visibility)
     .replaceAll('__DEFAULT_CONTEXT__', config.visibility.default_context)
-    .replaceAll('__PROCEDURES_PATH__', config.harness.procedures_path);
-  return substituteBlock(text, '__PROCEDURE_INDEX__', procedures.map(docIndexEntry)).split('\n');
+    .replaceAll('__SKILLS_PATH__', config.harness.skills_path);
+  return substituteBlock(text, '__SKILL_INDEX__', skills.map(docIndexEntry)).split('\n');
 }
 
 export async function buildAgentsCanonicalSection(root: string, config: StoreConfig): Promise<{ changed: boolean }> {
-  const procedures = await scanProcedures(root, config);
-  return upsertFencedRegionInFile(agentsMdPath(root), AGENTS_MD_CANONICAL_FENCE, renderCanonicalSection(config, procedures));
+  const skills = await scanSkills(root, config);
+  return upsertFencedRegionInFile(agentsMdPath(root), AGENTS_MD_CANONICAL_FENCE, renderCanonicalSection(config, skills));
 }
 
 /**

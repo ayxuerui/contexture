@@ -14,8 +14,8 @@ Every contexture command resolves the store root in this order: an explicit `--r
 
 Every write to this store happens inside a session worktree, never directly on the default branch: `ctxr session start` creates one, then `ctxr session submit` validates, commits, pushes, and opens (or reports how to open) a pull request. Do not edit files in the store root directly.
 
-### Procedure index
+### Skill index
 
-Judgment-driven operations, documented as portable markdown under `__PROCEDURES_PATH__` — read one directly, no harness-specific discovery required:
+Judgment-driven operations, documented as portable markdown under `__SKILLS_PATH__` — read one directly, no harness-specific discovery required:
 
-__PROCEDURE_INDEX__
+__SKILL_INDEX__

@@ -11,7 +11,7 @@ import { fileURLToPath } from 'node:url';
  * them, resolving the same way `hooks.ts`'s `templatesDir()` does.
  *
  * Loaded synchronously, once, and cached: the render functions in
- * `procedures.ts` and `agents-doc.ts` are synchronous with many synchronous
+ * `skills.ts` and `agents-doc.ts` are synchronous with many synchronous
  * call sites (the test suite especially), and these are fixed,
  * package-bundled files whose content cannot change after process start.
  * Threading `async` through every caller to read a file once would be a

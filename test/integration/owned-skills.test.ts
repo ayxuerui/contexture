@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { execute as init } from '../../src/commands/init.js';
 import { execute as update } from '../../src/commands/update.js';
 import { readConfig } from '../../src/config/load.js';
-import { MANAGED_SKILL_HEADER, PROCEDURES } from '../../src/core/procedures.js';
+import { MANAGED_SKILL_HEADER, SKILLS } from '../../src/core/skills.js';
 import type { Store } from '../../src/core/store.js';
 import { makeFakeEnv } from '../helpers/fake-env.js';
 import { makeTmpDir } from '../helpers/tmp-store.js';
@@ -41,14 +41,14 @@ describe('owned skills: delivered by init, expanded by update', () => {
     try {
       const env = makeFakeEnv({ cwd: tmp.root, env: GIT_IDENTITY });
       await init(env, { root: tmp.root, profile: 'para' });
-      expect(PROCEDURES).toHaveLength(11);
-      for (const p of PROCEDURES) {
+      expect(SKILLS).toHaveLength(11);
+      for (const p of SKILLS) {
         const file = path.join(tmp.root, '.claude/skills', p.file, 'SKILL.md');
         expect(existsSync(file), p.file).toBe(true);
         expect(await readFile(file, 'utf8')).toContain(MANAGED_SKILL_HEADER);
       }
       const agents = await readFile(path.join(tmp.root, 'AGENTS.md'), 'utf8');
-      for (const p of PROCEDURES) expect(agents).toContain(`[${p.file}](.claude/skills/${p.file}/SKILL.md)`);
+      for (const p of SKILLS) expect(agents).toContain(`[${p.file}](.claude/skills/${p.file}/SKILL.md)`);
     } finally {
       await tmp.cleanup();
     }
@@ -84,7 +84,7 @@ describe('owned skills: delivered by init, expanded by update', () => {
       const changed = outcome.data?.changed ?? [];
       for (const slug of SKILLS_ADDED_BY_THIS_RELEASE) expect(changed).toContain(`.claude/skills/${slug}/SKILL.md`);
       expect(changed).toContain('.claude/skills/ctxr-placement/SKILL.md');
-      expect(changed).toContain('AGENTS.md'); // the procedure index grew
+      expect(changed).toContain('AGENTS.md'); // the skill index grew
       const agents = await readFile(agentsPath, 'utf8');
       for (const slug of SKILLS_ADDED_BY_THIS_RELEASE) expect(agents).toContain(`[${slug}](.claude/skills/${slug}/SKILL.md)`);
       expect(await readFile(placementPath, 'utf8')).toContain('The collision test');

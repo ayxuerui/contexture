@@ -29,7 +29,7 @@ export const DEFAULT_VISIBILITY_CONTEXT = 'private';
 /**
  * context-store spec (contexture-home-layout): `.contexture/` is the tool's
  * home directory. Only its cache subpath is derived/gitignored — the
- * catalog and procedure subdirectories are authored-but-tool-owned and stay
+ * catalog and skill subdirectories are authored-but-tool-owned and stay
  * tracked.
  */
 export const DEFAULT_DERIVED_PATHS = ['.contexture/cache/'] as const;
@@ -40,7 +40,7 @@ export const DEFAULT_DERIVED_PATHS = ['.contexture/cache/'] as const;
  * harnesses with skill auto-discovery read — one file, one hop. A store
  * driven by another harness points this at that harness's skills directory.
  */
-export const DEFAULT_PROCEDURES_PATH = '.claude/skills/';
+export const DEFAULT_SKILLS_PATH = '.claude/skills/';
 
 /** harness-portability spec (entry-doc-generation): operator-authored convention docs, indexed by AGENTS.md. */
 export const DEFAULT_CONVENTIONS_PATH = '.contexture/conventions/';

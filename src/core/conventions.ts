@@ -5,7 +5,7 @@ import { parseNoteText } from './notes/parse.js';
 
 /**
  * harness-portability spec (entry-doc-generation): operator-authored
- * convention documents and (via scanProcedures in procedures.ts) procedure
+ * convention documents and (via scanSkills in skills.ts) skill
  * files are indexed from what is actually on disk — adding a file is the
  * entire integration. Metadata extraction order: frontmatter title →
  * first `# ` heading → filename stem; description only from frontmatter.

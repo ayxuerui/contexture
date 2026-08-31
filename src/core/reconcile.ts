@@ -12,7 +12,7 @@ import {
 import { removeFencedRegionFromFile, upsertFencedRegionInFile } from './fs/fenced-region.js';
 import { configureHooksPath, installHooks } from './hooks.js';
 import { commentFence, DERIVED_GITIGNORE_FENCE, htmlCommentFence } from './markers.js';
-import { syncShippedSkills } from './procedures.js';
+import { syncShippedSkills } from './skills.js';
 
 export const WORKTREES_GITIGNORE_FENCE = commentFence('worktrees');
 
@@ -54,7 +54,7 @@ export async function reconcileStore(env: RunEnv, root: string, config: StoreCon
   );
 
   // Files the generated sections index (skills) must be current BEFORE the
-  // sections are rendered — the procedure index is a disk scan.
+  // sections are rendered — the skill index is a disk scan.
   changed.push(...(await syncShippedSkills(root, config)));
 
   let agentsChanged = false;

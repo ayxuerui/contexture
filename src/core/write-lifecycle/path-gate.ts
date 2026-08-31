@@ -33,7 +33,7 @@ function isUnderAnyPrefix(relativePath: string, prefixes: readonly string[]): bo
  * not a gap — see `sanctionedPath`'s test for the refusal this now produces.
  */
 function contextureOwnedPrefixes(config: StoreConfig): string[] {
-  const prefixes = [config.catalog.path, config.harness.procedures_path, config.harness.conventions_path];
+  const prefixes = [config.catalog.path, config.harness.skills_path, config.harness.conventions_path];
   try {
     for (const adapter of configuredAdapters(config, 'harness-generation')) prefixes.push(adapter.entryFileName);
   } catch {

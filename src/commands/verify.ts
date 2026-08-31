@@ -9,7 +9,7 @@ import { ExitCode } from '../core/exit-codes.js';
 import { buildGraphFromNotes, graphBuildOptions } from '../core/graph/model.js';
 import { writeGraph } from '../core/graph/persist.js';
 import { listNotes } from '../core/notes/list.js';
-import { scanProcedures } from '../core/procedures.js';
+import { scanSkills } from '../core/skills.js';
 import type { Store } from '../core/store.js';
 
 export const requires: CommandRequires = { store: 'required' };
@@ -28,7 +28,7 @@ export interface VerifyData {
   steps: VerifyStepResult[];
 }
 
-function procedureIndexEntry(name: string, relativePath: string): string {
+function skillIndexEntry(name: string, relativePath: string): string {
   return `[${name}](${relativePath})`;
 }
 
@@ -72,49 +72,49 @@ export async function execute(store: Store, _flags: VerifyFlags = {}): Promise<C
     return finish(store, steps);
   }
 
-  // 3. Follow one procedure via the AGENTS.md index: every canonical
-  // procedure must have an index entry, and at least one must be readable.
+  // 3. Follow one skill via the AGENTS.md index: every canonical skill
+  // must have an index entry, and at least one must be readable.
   let agentsMdContent: string;
   try {
     agentsMdContent = await readFile(agentsMdPath(store.root), 'utf8');
   } catch (err) {
     steps.push({
-      operation: 'procedure index (AGENTS.md)',
+      operation: 'skill index (AGENTS.md)',
       status: 'fail',
       detail: err instanceof Error ? err.message : String(err),
     });
     return finish(store, steps);
   }
 
-  // entry-doc-generation spec: the index must cover every procedure actually
-  // on disk — shipped seeds and operator-added files alike.
-  const procedures = await scanProcedures(store.root, store.config);
-  for (const procedure of procedures) {
-    if (!agentsMdContent.includes(procedureIndexEntry(procedure.title, procedure.path))) {
+  // entry-doc-generation spec: the index must cover every skill actually on
+  // disk — shipped seeds and operator-added files alike.
+  const skills = await scanSkills(store.root, store.config);
+  for (const skill of skills) {
+    if (!agentsMdContent.includes(skillIndexEntry(skill.title, skill.path))) {
       steps.push({
-        operation: `procedure index entry for "${procedure.title}"`,
+        operation: `skill index entry for "${skill.title}"`,
         status: 'fail',
-        detail: `AGENTS.md's procedure index has no entry for "${procedure.title}".`,
+        detail: `AGENTS.md's skill index has no entry for "${skill.title}".`,
       });
       return finish(store, steps);
     }
   }
 
-  const first = procedures[0];
+  const first = skills[0];
   if (!first) {
     steps.push({
-      operation: 'follow a procedure',
+      operation: 'follow a skill',
       status: 'fail',
-      detail: `No procedure files exist at "${store.config.harness.procedures_path}".`,
+      detail: `No skill files exist at "${store.config.harness.skills_path}".`,
     });
     return finish(store, steps);
   }
   try {
     await readFile(path.join(store.root, first.path), 'utf8');
-    steps.push({ operation: `follow procedure "${first.title}"`, status: 'pass' });
+    steps.push({ operation: `follow skill "${first.title}"`, status: 'pass' });
   } catch (err) {
     steps.push({
-      operation: `follow procedure "${first.title}"`,
+      operation: `follow skill "${first.title}"`,
       status: 'fail',
       detail: err instanceof Error ? err.message : String(err),
     });

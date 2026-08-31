@@ -32,7 +32,7 @@ function makeConfig(overrides: Partial<StoreConfig> = {}): StoreConfig {
     disclosure: { internal_audiences: [], hard_walls: [], leak_markers: {} },
     ingest: { inbox_path: 'inbox/', tracking_params: [] },
     organize: { archive_path: 'archive/', rollup_stale_days: 7 },
-    harness: { procedures_path: 'procedures/', conventions_path: 'conventions/' },
+    harness: { skills_path: 'skills/', conventions_path: 'conventions/' },
     adapters: [],
     ...overrides,
   };
@@ -150,38 +150,38 @@ describe('buildAgentsCaptureSection', () => {
   });
 });
 
-const SCANNED_PROCEDURES = [
-  { path: 'procedures/ingest-orchestration.md', title: 'Ingest orchestration', description: null },
-  { path: 'procedures/placement.md', title: 'Placement', description: null },
-  { path: 'procedures/connection-finding.md', title: 'Connection finding', description: 'Find related notes.' },
-  { path: 'procedures/organize-audit.md', title: 'Organize audit', description: null },
+const SCANNED_SKILLS = [
+  { path: 'skills/ingest-orchestration.md', title: 'Ingest orchestration', description: null },
+  { path: 'skills/placement.md', title: 'Placement', description: null },
+  { path: 'skills/connection-finding.md', title: 'Connection finding', description: 'Find related notes.' },
+  { path: 'skills/organize-audit.md', title: 'Organize audit', description: null },
 ];
 
 describe('renderCanonicalSection', () => {
   it('states the root-resolution rule naming --root and CONTEXTURE_ROOT', () => {
-    const lines = renderCanonicalSection(makeConfig(), SCANNED_PROCEDURES).join('\n');
+    const lines = renderCanonicalSection(makeConfig(), SCANNED_SKILLS).join('\n');
     expect(lines).toContain('--root');
     expect(lines).toContain('CONTEXTURE_ROOT');
     expect(lines).toContain('contexture.yaml');
   });
 
   it('points at the configured visibility field key, not a hardcoded one', () => {
-    const lines = renderCanonicalSection(makeConfig({ fields: { visibility: 'lens' } }), SCANNED_PROCEDURES).join('\n');
+    const lines = renderCanonicalSection(makeConfig({ fields: { visibility: 'lens' } }), SCANNED_SKILLS).join('\n');
     expect(lines).toContain('`lens:`');
   });
 
   it('states the write-path rule naming session start and session submit', () => {
-    const lines = renderCanonicalSection(makeConfig(), SCANNED_PROCEDURES).join('\n');
+    const lines = renderCanonicalSection(makeConfig(), SCANNED_SKILLS).join('\n');
     expect(lines).toMatch(/session start/);
     expect(lines).toMatch(/session submit/);
   });
 
-  it('indexes every scanned procedure by title and path, with description when present', () => {
-    const lines = renderCanonicalSection(makeConfig(), SCANNED_PROCEDURES).join('\n');
-    expect(lines).toContain('[Ingest orchestration](procedures/ingest-orchestration.md)');
-    expect(lines).toContain('[Placement](procedures/placement.md)');
-    expect(lines).toContain('[Connection finding](procedures/connection-finding.md) — Find related notes.');
-    expect(lines).toContain('[Organize audit](procedures/organize-audit.md)');
+  it('indexes every scanned skill by title and path, with description when present', () => {
+    const lines = renderCanonicalSection(makeConfig(), SCANNED_SKILLS).join('\n');
+    expect(lines).toContain('[Ingest orchestration](skills/ingest-orchestration.md)');
+    expect(lines).toContain('[Placement](skills/placement.md)');
+    expect(lines).toContain('[Connection finding](skills/connection-finding.md) — Find related notes.');
+    expect(lines).toContain('[Organize audit](skills/organize-audit.md)');
   });
 });
 
@@ -194,6 +194,30 @@ describe('buildAgentsCanonicalSection', () => {
       const content = await readFile(agentsMdPath(tmp.root), 'utf8');
       expect(content).toContain(AGENTS_MD_LEG_ROUTING_FENCE.start);
       expect(content).toContain(AGENTS_MD_CANONICAL_FENCE.start);
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  /**
+   * rename-procedures-to-skills (task 5.3): the skill-index heading and its
+   * __SKILLS_PATH__ placeholder both changed text in this release — this is
+   * what proves the rewrite converges instead of re-diffing on every run
+   * (e.g. a stray placeholder or an extra blank line would make every
+   * regeneration report changed: true forever).
+   */
+  it('is convergent: rebuilding from unchanged config does not rewrite the file', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const config = makeConfig();
+      await buildAgentsCanonicalSection(tmp.root, config);
+      const filePath = agentsMdPath(tmp.root);
+      const before = (await import('node:fs')).statSync(filePath).mtimeMs;
+      await new Promise((r) => setTimeout(r, 10));
+      const { changed } = await buildAgentsCanonicalSection(tmp.root, config);
+      const after = (await import('node:fs')).statSync(filePath).mtimeMs;
+      expect(changed).toBe(false);
+      expect(after).toBe(before);
     } finally {
       await tmp.cleanup();
     }
@@ -236,7 +260,7 @@ describe('exact rendered output', () => {
       "- `.contexture/`",
       "- `.worktrees/`",
       "- `catalog/`",
-      "- `procedures/`",
+      "- `skills/`",
       "- `conventions/`",
       "",
       "There is no `ctxr search` command. Ranked or semantic search is deferred to a future version — do not look for one.",
@@ -298,7 +322,7 @@ describe('exact rendered output', () => {
     ]);
   });
 
-  it('renders the canonical section with an empty procedure index, adding no trailing blank line', () => {
+  it('renders the canonical section with an empty skill index, adding no trailing blank line', () => {
     expect(renderCanonicalSection(makeConfig(), [])).toEqual([
       "## Store fundamentals",
       "",
@@ -316,15 +340,15 @@ describe('exact rendered output', () => {
       "",
       "Every write to this store happens inside a session worktree, never directly on the default branch: `ctxr session start` creates one, then `ctxr session submit` validates, commits, pushes, and opens (or reports how to open) a pull request. Do not edit files in the store root directly.",
       "",
-      "### Procedure index",
+      "### Skill index",
       "",
-      "Judgment-driven operations, documented as portable markdown under `procedures/` — read one directly, no harness-specific discovery required:",
+      "Judgment-driven operations, documented as portable markdown under `skills/` — read one directly, no harness-specific discovery required:",
       "",
     ]);
   });
 
-  it('renders the canonical section with a populated procedure index', () => {
-    expect(renderCanonicalSection(makeConfig(), SCANNED_PROCEDURES)).toEqual([
+  it('renders the canonical section with a populated skill index', () => {
+    expect(renderCanonicalSection(makeConfig(), SCANNED_SKILLS)).toEqual([
       "## Store fundamentals",
       "",
       "### Root resolution",
@@ -341,14 +365,14 @@ describe('exact rendered output', () => {
       "",
       "Every write to this store happens inside a session worktree, never directly on the default branch: `ctxr session start` creates one, then `ctxr session submit` validates, commits, pushes, and opens (or reports how to open) a pull request. Do not edit files in the store root directly.",
       "",
-      "### Procedure index",
+      "### Skill index",
       "",
-      "Judgment-driven operations, documented as portable markdown under `procedures/` — read one directly, no harness-specific discovery required:",
+      "Judgment-driven operations, documented as portable markdown under `skills/` — read one directly, no harness-specific discovery required:",
       "",
-      "- [Ingest orchestration](procedures/ingest-orchestration.md)",
-      "- [Placement](procedures/placement.md)",
-      "- [Connection finding](procedures/connection-finding.md) — Find related notes.",
-      "- [Organize audit](procedures/organize-audit.md)",
+      "- [Ingest orchestration](skills/ingest-orchestration.md)",
+      "- [Placement](skills/placement.md)",
+      "- [Connection finding](skills/connection-finding.md) — Find related notes.",
+      "- [Organize audit](skills/organize-audit.md)",
     ]);
   });
 });
