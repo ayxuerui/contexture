@@ -114,6 +114,24 @@ export class SessionValidationFailedError extends ContextureError {
   }
 }
 
+/**
+ * write-lifecycle spec: `session.workspaces_external: true` marks a store
+ * whose worktrees are created/removed by a process outside `ctxr` — `ctxr
+ * session reap` refuses before inspecting or modifying any worktree, rather
+ * than reclaiming something it does not own.
+ */
+export class SessionReapWorkspacesExternalError extends ContextureError {
+  constructor() {
+    super(ExitCode.Usage, {
+      code: 'session.reap.workspaces_external',
+      severity: 'error',
+      message:
+        '"session.workspaces_external" is true; "ctxr session reap" refuses to run — worktrees are provided ' +
+        'externally and are not this command\'s to reclaim.',
+    });
+  }
+}
+
 export class NoRemoteConfiguredError extends ContextureError {
   constructor() {
     super(ExitCode.Usage, {

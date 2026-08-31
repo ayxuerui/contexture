@@ -35,5 +35,4 @@ time regardless — sequence those.
 
 ## Reclaiming
 
-`ctxr session reap` removes merged, clean worktrees (or use `ctxr-land`'s `--reap`); `ctxr session abandon
-<branch>` discards work and needs an explicit go. Never claim cleanup happened without having run one.
+__RECLAIMING_STEP__

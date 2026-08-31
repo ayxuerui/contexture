@@ -68,19 +68,69 @@ export async function checkRollupStaleness(
   return { entity: entity.path, rolledUp, newestBacklink: newest };
 }
 
-/** Every entity with a rollup section (optionally narrowed to one), reported stale per `checkRollupStaleness`. */
+/**
+ * context-organize spec (D3, generalize-identity-migration-residue): a
+ * store-wide mission document has no natural backlink set — nothing
+ * wikilinks "the mission" — so its staleness is purely time-based: no
+ * recorded timestamp, or one older than `staleDays`, is stale. No git call,
+ * no backlink computation. `newestBacklink` is always `null`, which never
+ * occurs for a *stale* entry under `checkRollupStaleness`'s backlink rule
+ * (an entity with no backlinks is never reported stale there), so `null`
+ * unambiguously marks a mission-rule entry to any caller that cares.
+ */
+export function checkMissionStaleness(note: Note, staleDays: number, now: Date): StaleRollupEntry | null {
+  const recorded = note.frontmatter?.[ROLLED_UP_FIELD];
+  const rolledUp = typeof recorded === 'string' ? recorded : null;
+
+  if (rolledUp === null) {
+    return { entity: note.path, rolledUp: null, newestBacklink: null };
+  }
+
+  const elapsedMs = now.getTime() - new Date(rolledUp).getTime();
+  if (elapsedMs < staleDays * 24 * 60 * 60 * 1000) return null;
+
+  return { entity: note.path, rolledUp, newestBacklink: null };
+}
+
+/**
+ * Every entity with a rollup section (optionally narrowed to one), reported
+ * stale per `checkRollupStaleness`, plus — when `missionPath` names a note
+ * that exists in `notes` — that one path via `checkMissionStaleness`
+ * instead of the backlink-based entity scan, even when it carries no
+ * `ROLLUP_FENCE` yet (an unwritten mission document must surface as
+ * needing its first write, not be silently excluded by `hasRollupSection`).
+ * The two candidate sources are de-duplicated by entity path before
+ * returning; a path matching both the entity scan and the configured
+ * `missionPath` is reported once, under the mission (time-based) rule,
+ * since that is the operator's explicit configuration choice for that path.
+ */
 export async function findStaleRollups(
   git: GitRunner,
   root: string,
   notes: readonly Note[],
-  options: { entity?: string } = {},
+  options: { entity?: string; missionPath?: string } = {},
   staleDays = 0,
+  now: Date = new Date(),
 ): Promise<StaleRollupEntry[]> {
   const candidates = notes.filter((n) => hasRollupSection(n) && (!options.entity || n.path === options.entity));
-  const results: StaleRollupEntry[] = [];
+  const byPath = new Map<string, StaleRollupEntry>();
   for (const candidate of candidates) {
     const entry = await checkRollupStaleness(git, root, candidate, notes, staleDays);
-    if (entry) results.push(entry);
+    if (entry) byPath.set(entry.entity, entry);
   }
-  return results.sort((a, b) => a.entity.localeCompare(b.entity));
+
+  if (options.missionPath && (!options.entity || options.entity === options.missionPath)) {
+    const missionNote = notes.find((n) => n.path === options.missionPath);
+    if (missionNote) {
+      const entry = checkMissionStaleness(missionNote, staleDays, now);
+      // The mission rule OWNS this path once configured: it overrides the
+      // entity scan's verdict for the same note either way — sets a stale
+      // entry, or clears one the backlink-based scan produced — never a
+      // blend of both rules for one path.
+      if (entry) byPath.set(options.missionPath, entry);
+      else byPath.delete(options.missionPath);
+    }
+  }
+
+  return [...byPath.values()].sort((a, b) => a.entity.localeCompare(b.entity));
 }

@@ -86,9 +86,17 @@ const GitSchema = z.object({
   default_branch: z.string().min(1),
 });
 
+/**
+ * write-lifecycle spec: `workspaces_external: true` marks a store whose
+ * session worktrees are created/removed by a process outside `ctxr` (e.g. an
+ * external agent-runtime WebUI) — `ctxr session reap` refuses to run rather
+ * than touch a worktree it does not own. Defaults to `false`, the prior
+ * behavior, for every store that does not set it.
+ */
 const SessionSchema = z.object({
   branch_prefix: z.string().min(1),
   worktrees_path: z.string().min(1),
+  workspaces_external: z.boolean().default(false),
 });
 
 /** session-capture-command spec (D5): declaring any path here turns the sanctioned-location gate on; empty (the default) leaves every in-store path accepted. */
@@ -139,6 +147,15 @@ const OrganizeSchema = z.object({
   archive_path: z.string().min(1),
   /** store-primitives-from-migration-audit spec (D4): the grace period, in days, before a stale rollup is reported — bounds noise from a backlink edited moments ago. */
   rollup_stale_days: z.number().int().nonnegative().default(7),
+  /**
+   * context-organize spec: the store's standing current-state document
+   * (priorities, active builds, back burner, sunset candidates, debt).
+   * Unset by default — no mission mechanism until an operator opts in.
+   * Content is written via `ctxr rollup write` exactly like an entity
+   * rollup; `ctxr rollup stale` reports this one path stale on elapsed
+   * time rather than backlinks (see `checkMissionStaleness`).
+   */
+  mission_path: z.string().min(1).optional(),
 });
 
 /** harness-portability spec: the portable procedure pack and operator convention docs AGENTS.md's indexes point into. */
