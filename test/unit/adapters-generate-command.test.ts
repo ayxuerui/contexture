@@ -51,8 +51,29 @@ describe('adapters generate command', () => {
       const store: Store = { root: tmp.root, config: makeConfig([{ id: 'claude-code', kind: 'harness-generation' }]) };
       await execute(store);
       const settings = JSON.parse(await readFile(path.join(tmp.root, '.claude/settings.json'), 'utf8'));
+      const absRoot = tmp.root.replace(/^\/+/, '');
       expect(settings.permissions.deny).toContain('Bash(git push:*)');
-      expect(settings.permissions.allow).toContain('Write(./.worktrees/**)');
+      expect(settings.permissions.deny).toContain(`Write(//${absRoot}/**)`);
+      expect(settings.permissions.allow).toContain(`Write(//${absRoot}/.worktrees/**)`);
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('anchors permission rules at the store root, not the launch cwd, so a session opened directly inside a worktree is still covered', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const store: Store = { root: tmp.root, config: makeConfig([{ id: 'claude-code', kind: 'harness-generation' }]) };
+      await execute(store);
+      const settings = JSON.parse(await readFile(path.join(tmp.root, '.claude/settings.json'), 'utf8'));
+      const worktreePath = path.join(tmp.root, '.worktrees', 'some-session', 'notes', 'foo.md');
+      const stripGlob = (rule: string) =>
+        `/${rule.slice('Write('.length, -')'.length).replace(/^\/\//, '').replace(/\*\*$/, '')}`;
+      const allowGlob = settings.permissions.allow[0] as string;
+      expect(worktreePath.startsWith(stripGlob(allowGlob))).toBe(true);
+      const rootFilePath = path.join(tmp.root, 'AGENTS.md');
+      const denyGlob = settings.permissions.deny.find((r: string) => r.startsWith('Write(')) as string;
+      expect(rootFilePath.startsWith(stripGlob(denyGlob))).toBe(true);
     } finally {
       await tmp.cleanup();
     }

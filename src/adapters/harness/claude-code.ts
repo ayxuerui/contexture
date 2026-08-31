@@ -28,15 +28,32 @@ export const claudeCodeHarnessAdapter: HarnessGenerationAdapter = {
      * session worktree" generically without needing to know which one is
      * currently checked out.
      *
+     * Rules are anchored at the store's absolute root (Claude Code's `//`
+     * absolute-path syntax), not written cwd-relative (`./`): a `./`-relative
+     * rule resolves against whatever directory a session's cwd happens to be
+     * at launch, which for a harness that opens a worktree itself as the
+     * project root (cwd already inside the worktree, not at the store root)
+     * resolves to the wrong directory — `./**` then denies the whole
+     * worktree and the `./<worktreesPath>/**` carve-out never matches
+     * anything, since there is no nested worktrees directory inside a
+     * worktree. An absolute anchor matches the real target path regardless
+     * of launch cwd, correctly covering both conventions.
+     *
      * This targets Claude Code's settings.json permission-rule syntax as
      * documented at the time this was written; if that syntax changes, this
      * is the one function to update.
      */
-    render({ worktreesPath }: { worktreesPath: string }): Record<string, unknown> {
-      const worktreeGlob = `./${worktreesPath.replace(/\/+$/, '')}/**`;
+    render({ root, worktreesPath }: { root: string; worktreesPath: string }): Record<string, unknown> {
+      // Claude Code's `//` absolute-path marker stands in for the path's own
+      // leading slash — strip it here so the result is `//abs/path`, not
+      // `///abs/path`.
+      const absRoot = root.replace(/^\/+/, '').replace(/\/+$/, '');
+      const worktreesSegment = worktreesPath.replace(/^\/+|\/+$/g, '');
+      const rootGlob = `//${absRoot}/**`;
+      const worktreeGlob = `//${absRoot}/${worktreesSegment}/**`;
       return {
         permissions: {
-          deny: ['Write(./**)', 'Edit(./**)', 'Bash(git push:*)', 'Bash(git commit:*)'],
+          deny: [`Write(${rootGlob})`, `Edit(${rootGlob})`, 'Bash(git push:*)', 'Bash(git commit:*)'],
           allow: [`Write(${worktreeGlob})`, `Edit(${worktreeGlob})`],
         },
       };

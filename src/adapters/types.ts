@@ -44,7 +44,14 @@ export interface HarnessGenerationAdapter extends Adapter<'harness-generation'> 
   permissionConfig?: {
     /** Relative to the store root (e.g. ".claude/settings.json"). */
     path: string;
-    render(config: { worktreesPath: string }): Record<string, unknown>;
+    /**
+     * `root` is the store's absolute filesystem path. Permission-rule paths
+     * are anchored there (not written cwd-relative) because a session may be
+     * launched with its cwd already inside a worktree rather than at the
+     * store root — a cwd-relative rule would then resolve against the wrong
+     * directory. See claude-code.ts's permissionConfig for the concrete case.
+     */
+    render(config: { root: string; worktreesPath: string }): Record<string, unknown>;
   };
 }
 
