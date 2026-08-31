@@ -48,10 +48,10 @@ Throughout this project's specs, a command written as `contexture <command>` den
 - **WHEN** the CLI is invoked with `--help`
 - **THEN** the usage line names `ctxr`, and no usage line names `contexture` as the executable
 ### Requirement: Every shipped instruction to run a command names `ctxr`
-Every surface the tool writes or ships that instructs a human or an agent to run a command — the generated sections of the canonical entry document, shipped procedure seeds, generated harness skill wrappers, installed git hooks and their diagnostic messages, and command error and check messages — SHALL name the executable as `ctxr`. No such surface SHALL instruct the reader to run `contexture <command>`.
+Every surface the tool writes or ships that instructs a human or an agent to run a command — the generated sections of the canonical entry document, shipped procedure seeds, generated harness-owned skill copies, installed git hooks and their diagnostic messages, and command error and check messages — SHALL name the executable as `ctxr`. No such surface SHALL instruct the reader to run `contexture <command>`.
 
 #### Scenario: A freshly initialized store carries no stale invocation
-- **WHEN** a store is initialized and its entry document, procedure seeds, hooks, and skill wrappers are generated
+- **WHEN** a store is initialized and its entry document, procedure seeds, hooks, and skill copies are generated
 - **THEN** every command invocation in those files names `ctxr`, and none names `contexture` as the executable
 
 #### Scenario: An existing store's generated surfaces converge on regeneration
