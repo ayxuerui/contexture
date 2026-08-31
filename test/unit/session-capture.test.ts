@@ -99,6 +99,31 @@ describe('ctxr session capture (session-capture-command D1/D2)', () => {
     }
   });
 
+  it('is not idempotent by design: running the same append proposal twice appends twice', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const store: Store = { root: tmp.root, config: makeConfig() };
+      const { mkdir } = await import('node:fs/promises');
+      await mkdir(path.join(tmp.root, 'areas'), { recursive: true });
+      await writeFile(path.join(tmp.root, 'areas/existing.md'), '# Existing\n');
+
+      const proposalPath = await writeProposal(
+        tmp.root,
+        ['notes:', '  - id: A1', '    path: areas/existing.md', '    mode: append', '    body: "new content"'].join('\n'),
+      );
+
+      const first = await execute(store, { proposal: proposalPath });
+      expect(first.data?.items[0]).toMatchObject({ outcome: 'appended' });
+      const second = await execute(store, { proposal: proposalPath });
+      expect(second.data?.items[0]).toMatchObject({ outcome: 'appended' });
+
+      const text = await readFile(path.join(tmp.root, 'areas/existing.md'), 'utf8');
+      expect(text).toBe('# Existing\nnew content\nnew content');
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
   it('append refuses when the target does not exist, without touching anything', async () => {
     const tmp = await makeTmpDir();
     try {
