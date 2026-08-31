@@ -5,7 +5,7 @@ import { agentsMdPath } from '../core/agents-doc.js';
 import { ExitCode } from '../core/exit-codes.js';
 import { upsertFencedRegionInFile } from '../core/fs/fenced-region.js';
 import { mergeJsonArrayLists } from '../core/json-config-merge.js';
-import { htmlCommentFence, type Fence } from '../core/markers.js';
+import { harnessEntryFence } from '../core/markers.js';
 import type { Store } from '../core/store.js';
 
 export const requires: CommandRequires = { store: 'required' };
@@ -17,10 +17,6 @@ export interface AdaptersGenerateFileResult {
 
 export interface AdaptersGenerateData {
   files: AdaptersGenerateFileResult[];
-}
-
-function harnessEntryFence(adapterId: string): Fence {
-  return htmlCommentFence(`adapter:${adapterId}:harness-entry`);
 }
 
 /**
