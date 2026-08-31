@@ -65,9 +65,9 @@ describe('ctxr session capture (session-capture-command D1/D2)', () => {
 
       expect(outcome.exitCode).toBe(ExitCode.CheckFailed);
       expect(outcome.data?.items).toEqual([
-        { id: 'A1', kind: 'note', path: 'areas/one.md', outcome: 'wrote' },
-        { id: 'A2', kind: 'note', path: '../escape.md', outcome: 'refused', reason: 'resolves outside the store' },
-        { id: 'A3', kind: 'note', path: 'areas/two.md', outcome: 'wrote' },
+        { id: 'A1', path: 'areas/one.md', outcome: 'wrote' },
+        { id: 'A2', path: '../escape.md', outcome: 'refused', reason: 'resolves outside the store' },
+        { id: 'A3', path: 'areas/two.md', outcome: 'wrote' },
       ]);
       expect(await readFile(path.join(tmp.root, 'areas/one.md'), 'utf8')).toBe('# One\n');
       expect(await readFile(path.join(tmp.root, 'areas/two.md'), 'utf8')).toBe('# Two\n');
@@ -175,6 +175,18 @@ describe('ctxr session capture (session-capture-command D1/D2)', () => {
       expect(note.frontmatter?.scope).toBe('ctx-a');
       const resolution = resolveVisibility(store.config, note);
       expect(resolution).toEqual({ value: 'ctx-a', reason: 'explicit' });
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('rejects a non-object top-level proposal (e.g. a bare scalar) instead of silently treating it as empty', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const store: Store = { root: tmp.root, config: makeConfig() };
+      const proposalPath = await writeProposal(tmp.root, 'false');
+
+      await expect(execute(store, { proposal: proposalPath })).rejects.toBeInstanceOf(InvalidCaptureProposalError);
     } finally {
       await tmp.cleanup();
     }

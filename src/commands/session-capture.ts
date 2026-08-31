@@ -2,12 +2,26 @@ import { existsSync } from 'node:fs';
 import { mkdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
+import { z } from 'zod';
 import type { CommandOutcome, CommandRequires } from '../core/command.js';
 import { ExitCode } from '../core/exit-codes.js';
 import { InvalidCaptureProposalError } from '../core/errors.js';
 import { writeFileAtomic } from '../core/fs/atomic.js';
 import type { Store } from '../core/store.js';
 import { sanctionedPath } from '../core/write-lifecycle/path-gate.js';
+
+/**
+ * session-capture-command spec (D2): every note item is validated and
+ * applied independently by `applyNote` — one bad item is a per-item
+ * 'refused' outcome, never a whole-proposal rejection. So this schema only
+ * enforces the TOP-LEVEL shape (no unsupported key, `notes` an array if
+ * present) and deliberately leaves each item as `unknown` — item shape
+ * stays applyNote's job. remove-agent-identity: replaces a hand-rolled
+ * `Object.keys()` filter that a non-object top-level YAML document (e.g. a
+ * bare scalar) could bypass, since `Object.keys()` on a primitive returns
+ * `[]`; `z.object(...).strict()` rejects a non-object input outright.
+ */
+const CaptureProposalSchema = z.object({ notes: z.array(z.unknown()).optional() }).strict();
 
 export const requires: CommandRequires = { store: 'required' };
 
@@ -32,7 +46,6 @@ export type CaptureOutcomeKind = 'wrote' | 'appended' | 'refused';
 
 export interface CaptureItemReport {
   id: string;
-  kind: 'note';
   path?: string;
   outcome: CaptureOutcomeKind;
   reason?: string;
@@ -56,29 +69,29 @@ function renderNote(frontmatter: Record<string, unknown> | undefined, body: stri
 
 async function applyNote(store: Store, id: string, item: NoteItem): Promise<CaptureItemReport> {
   if (item.mode !== 'create' && item.mode !== 'append') {
-    return { id, kind: 'note', path: item.path, outcome: 'refused', reason: 'mode must be "create" or "append"' };
+    return { id, path: item.path, outcome: 'refused', reason: 'mode must be "create" or "append"' };
   }
   const gate = await sanctionedPath(store.config, store.root, item.path);
   if (!gate.ok) {
-    return { id, kind: 'note', path: item.path, outcome: 'refused', reason: gate.reason };
+    return { id, path: item.path, outcome: 'refused', reason: gate.reason };
   }
   const absolutePath = path.join(store.root, item.path);
   const exists = existsSync(absolutePath);
 
   if (item.mode === 'create') {
-    if (exists) return { id, kind: 'note', path: item.path, outcome: 'refused', reason: 'already exists; use mode: append' };
+    if (exists) return { id, path: item.path, outcome: 'refused', reason: 'already exists; use mode: append' };
     const frontmatter: Record<string, unknown> = { ...item.frontmatter };
     if (item.visibility !== undefined) frontmatter[store.config.fields.visibility] = item.visibility;
     await mkdir(path.dirname(absolutePath), { recursive: true });
     await writeFileAtomic(absolutePath, renderNote(frontmatter, item.body));
-    return { id, kind: 'note', path: item.path, outcome: 'wrote' };
+    return { id, path: item.path, outcome: 'wrote' };
   }
 
-  if (!exists) return { id, kind: 'note', path: item.path, outcome: 'refused', reason: 'append target does not exist' };
+  if (!exists) return { id, path: item.path, outcome: 'refused', reason: 'append target does not exist' };
   const existing = await readFile(absolutePath, 'utf8');
   const separator = existing.length > 0 && !existing.endsWith('\n') ? '\n' : '';
   await writeFileAtomic(absolutePath, `${existing}${separator}${item.body}`);
-  return { id, kind: 'note', path: item.path, outcome: 'appended' };
+  return { id, path: item.path, outcome: 'appended' };
 }
 
 /**
@@ -95,23 +108,25 @@ export async function execute(store: Store, flags: SessionCaptureFlags): Promise
     throw new InvalidCaptureProposalError(flags.proposal, err instanceof Error ? err.message : String(err));
   }
 
-  let proposal: CaptureProposal;
+  let rawProposal: unknown;
   try {
-    proposal = (parseYaml(raw) ?? {}) as CaptureProposal;
+    rawProposal = parseYaml(raw) ?? {};
   } catch (err) {
     throw new InvalidCaptureProposalError(flags.proposal, err instanceof Error ? err.message : String(err));
   }
 
   // remove-agent-identity: a proposal built for the pre-removal contract may still
-  // declare these — reject loudly rather than silently drop items the caller thought
-  // were being applied.
-  const unsupportedKeys = Object.keys(proposal).filter((key) => key !== 'notes');
-  if (unsupportedKeys.length > 0) {
-    throw new InvalidCaptureProposalError(
-      flags.proposal,
-      `unsupported key(s): ${unsupportedKeys.join(', ')} — session capture applies store notes only`,
-    );
+  // declare world_facts/user_facts — reject loudly rather than silently drop items
+  // the caller thought were being applied.
+  const result = CaptureProposalSchema.safeParse(rawProposal);
+  if (!result.success) {
+    const issues = result.error.issues.map((issue) => ({
+      path: issue.path.join('.') || '(root)',
+      message: issue.message,
+    }));
+    throw new InvalidCaptureProposalError(flags.proposal, issues);
   }
+  const proposal = result.data as CaptureProposal;
 
   const items: CaptureItemReport[] = [];
   for (const [index, item] of (proposal.notes ?? []).entries()) {

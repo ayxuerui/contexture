@@ -205,14 +205,27 @@ export class MergeNotConfirmedError extends ContextureError {
   }
 }
 
-/** session-capture-command spec (D2): a proposal file that cannot even be read or parsed fails the whole command — there is nothing to apply item by item. */
+/**
+ * session-capture-command spec (D2): a proposal file that cannot even be
+ * read or parsed fails the whole command — there is nothing to apply item
+ * by item. `detail` covers that case (a plain message: unreadable file,
+ * unparseable YAML); `issues` covers the proposal parsing but failing
+ * `CaptureProposalSchema` (unsupported keys, malformed note items) —
+ * remove-agent-identity's zod-validated replacement for a hand-rolled key
+ * filter, mirroring InvalidConfigError/InvalidTaxonomyFileError's shape.
+ */
 export class InvalidCaptureProposalError extends ContextureError {
-  constructor(filePath: string, detail: string) {
+  constructor(filePath: string, detail: string | readonly { path: string; message: string }[]) {
+    const message =
+      typeof detail === 'string'
+        ? `"${filePath}" could not be read as a capture proposal: ${detail}.`
+        : `"${filePath}" is not a valid capture proposal: ${detail.map((i) => `${i.path}: ${i.message}`).join('; ')}`;
     super(ExitCode.Usage, {
       code: 'session.capture.invalid_proposal',
       severity: 'error',
-      message: `"${filePath}" could not be read as a capture proposal: ${detail}.`,
+      message,
       subject: filePath,
+      ...(typeof detail === 'string' ? {} : { details: { issues: detail } }),
     });
   }
 }
