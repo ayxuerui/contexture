@@ -158,7 +158,9 @@ export class SessionLandOnDefaultBranchError extends ContextureError {
     super(ExitCode.Usage, {
       code: 'session.land.default_branch',
       severity: 'error',
-      message: `"${branch}" is the store's default branch; "ctxr session land" refuses to land it.`,
+      message:
+        `"${branch}" is the store's default branch; "ctxr session land" refuses to land it. ` +
+        'Name the session with --branch <name>, or the pull request with --pr <number>.',
       subject: branch,
     });
   }

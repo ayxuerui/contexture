@@ -184,11 +184,17 @@ describe('owned-skills-expansion: each skill carries its load-bearing rule (task
     expect(s).not.toMatch(/\bgit push\b/);
   });
 
-  it('land: ends in ctxr session land, routes conflicts to the lifecycle skill, and never instructs a manual merge (session-submit-and-land)', () => {
+  it('land: ends in ctxr session land, names its target and where a reap runs, routes conflicts to the lifecycle skill, and never instructs a manual merge (session-submit-and-land, land-resolves-its-own-target)', () => {
     const s = skills['ctxr-land'];
     expect(s).toContain('`ctxr session land`');
     expect(s).toContain('ctxr-session-lifecycle');
     expect(s).toContain('conflict');
+    // the target is named, never inferred from wherever the agent happens to stand
+    expect(s).toContain('`--branch <name>` or `--pr <n>`');
+    expect(s).toMatch(/rather than letting it fall back to the current\s+checkout/);
+    // and a reap runs from outside the worktree it removes
+    expect(s).toMatch(/from outside that worktree/);
+    expect(s).toMatch(/canonical clone/);
     expect(s).toMatch(/Never merge by hand/i);
     expect(s).not.toMatch(/\bgh pr merge\b/);
     expect(s).not.toMatch(/\bgit merge\b/);
