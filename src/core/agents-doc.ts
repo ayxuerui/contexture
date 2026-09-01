@@ -223,31 +223,42 @@ export async function buildAgentsMissionSection(root: string, config: StoreConfi
 }
 
 /**
- * harness-portability spec (inline-conventions-and-mission): operator
- * conventions inlined in full. What's on disk at the configured conventions
- * path is inlined body-and-all — heading-demoted under a heading naming its
- * title, with a provenance line naming its source path — never referenced by
- * a link alone; contexture ships no seeds here — conventions are
- * definitionally operator-authored, so an empty store gets its own template
- * explaining the mechanism. Both templates end with the same
- * harness-specific-note paragraph; a test asserts they stay byte-identical.
+ * harness-portability spec (inline-conventions-and-mission, folded into one
+ * template by compose-store-guidance-documents): operator conventions
+ * inlined in full. What's on disk at the configured conventions path is
+ * inlined body-and-all — heading-demoted under a heading naming its title,
+ * with a provenance line naming its source path — never referenced by a
+ * link alone; contexture ships no seeds here — conventions are
+ * definitionally operator-authored, so an empty store gets an explanation of
+ * the mechanism instead. One template (`conventions.md`) carries both: the
+ * empty-vs-populated difference is entirely in the lines `renderConventionsSection`
+ * computes for its one `__CONVENTION_BODY__` slot, so the surrounding frame
+ * (heading, harness-specific-note paragraph) exists in exactly one place and
+ * cannot drift between two copies the way it could when it shipped as two
+ * separate template files.
  */
-export const AGENTS_MD_CONVENTIONS_FENCE = htmlCommentFence('store-conventions');
+export const AGENTS_MD_CONVENTIONS_FENCE = htmlCommentFence('conventions');
 
 /** Exported so doctor/verify can check a specific convention file's inlined block for drift without re-deriving the format. */
 export function renderConventionBlock(doc: ScannedDoc): string[] {
   return [`### ${doc.title}`, '', ...inlineDocBody(doc, 2), '', `_Source: ${doc.path}_`];
 }
 
-export function renderConventionsSection(config: StoreConfig, conventions: readonly ScannedDoc[]): string[] {
+function conventionsBody(config: StoreConfig, conventions: readonly ScannedDoc[]): string[] {
   if (conventions.length === 0) {
-    return agentsTemplate('store-conventions-empty')
-      .replaceAll('__CONVENTIONS_PATH__', config.harness.guidance_path)
-      .split('\n');
+    return [
+      'This store declares no convention documents yet. Operator-authored conventions (content style, field',
+      `semantics, house rules) belong as markdown files under \`${config.harness.guidance_path}\` — each is`,
+      'inlined here in full on regeneration.',
+    ];
   }
   const blocks = conventions.map(renderConventionBlock);
   const bodies = blocks.flatMap((block, i) => (i === blocks.length - 1 ? block : [...block, '']));
-  return substituteBlock(agentsTemplate('store-conventions'), '__CONVENTION_BODIES__', bodies).split('\n');
+  return ['Operator-authored conventions for this store, inlined in full:', '', ...bodies];
+}
+
+export function renderConventionsSection(config: StoreConfig, conventions: readonly ScannedDoc[]): string[] {
+  return substituteBlock(agentsTemplate('conventions'), '__CONVENTION_BODY__', conventionsBody(config, conventions)).split('\n');
 }
 
 export async function buildAgentsConventionsSection(root: string, config: StoreConfig): Promise<{ changed: boolean }> {

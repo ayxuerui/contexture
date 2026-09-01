@@ -177,12 +177,12 @@ describe('renderConventionsSection', () => {
 });
 
 /**
- * inline-conventions-and-mission: the two conventions branches ship as two
- * complete template files (`store-conventions.md`, `store-conventions-empty.md`)
- * rather than one file with a swapped middle, so each reads as a full
- * rendering of what an agent actually sees. That duplicates the trailing
- * harness-specific-note paragraph across both files — these tests are what
- * keep the copies from drifting into two different instructions.
+ * compose-store-guidance-documents: the empty/populated branches share one
+ * template file (`conventions.md`) with one `__CONVENTION_BODY__` slot —
+ * `conventionsBody` computes the middle content for either case, so the
+ * surrounding frame (heading, harness-specific-note paragraph) exists in
+ * exactly one place and can't drift into two different instructions the way
+ * it could when it shipped as two separate template files.
  */
 describe('conventions section templates', () => {
   it('renders the empty branch exactly', () => {
@@ -215,14 +215,5 @@ describe('conventions section templates', () => {
       "",
       "A note that applies to only one agent harness (not every harness reading this store) belongs below that harness's own managed import in its own entry file, never here — every file in this directory is inlined into every harness's entry document equally.",
     ]);
-  });
-
-  it('ends both branches with a byte-identical harness-specific-note paragraph', () => {
-    const empty = renderConventionsSection(makeConfig(), []);
-    const populated = renderConventionsSection(makeConfig(), [
-      extractDocMetadata('---\ntitle: Style\n---\nBody.\n', 'conventions/style.md'),
-    ]);
-    expect(empty.at(-1)).toBe(populated.at(-1));
-    expect(empty.at(-1)).toMatch(/only one agent harness/);
   });
 });

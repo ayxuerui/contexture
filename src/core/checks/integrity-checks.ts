@@ -177,7 +177,7 @@ function headingsOf(text: string): Set<string> {
  * copy-pasted into the entry file outside its managed fence — the way an
  * operator reaching for "where do I put a Claude-only note" might otherwise
  * duplicate a whole AGENTS.md section into CLAUDE.md instead of writing a
- * harness-specific extra beneath the import (see the `store-conventions`
+ * harness-specific extra beneath the import (see the `conventions`
  * fence's own guidance in `agents-doc.ts`).
  */
 export const harnessEntryNoDuplicateConventionTextCheck = defineCheck({

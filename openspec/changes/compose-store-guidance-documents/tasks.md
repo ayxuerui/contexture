@@ -33,3 +33,11 @@
 
 - [x] 5.1 `npm run typecheck && npm run build && npx vitest run --exclude '**/.claude/**'` — full suite green.
 - [x] 5.2 In a scratch store: `ctxr init` produces the full guidance directory and an `AGENTS.md` whose conventions section inlines the baseline and custom files; write custom prose and confirm it's picked up by `ctxr update`; hand-edit the baseline file and confirm `inline-conventions-and-mission`'s existing drift check fails doctor, then `ctxr update` heals it; a store still carrying `harness.conventions_path` at the old default migrates cleanly (`ctxr migrate --dry-run` names both deltas, a real run moves the directory and bumps the schema version); `ctxr doctor` and `ctxr verify --portable` pass throughout.
+
+## 6. Collapse the conventions template pair and rename the fence (D7)
+
+- [x] 6.1 Replace `templates/agents/store-conventions.md` and `templates/agents/store-conventions-empty.md` with one `templates/agents/conventions.md` carrying a single `__CONVENTION_BODY__` slot.
+- [x] 6.2 In `src/core/agents-doc.ts`, add `conventionsBody()` computing either branch's lines in code; `renderConventionsSection` becomes a single `substituteBlock` call; rename `AGENTS_MD_CONVENTIONS_FENCE`'s underlying marker from `store-conventions` to `conventions`.
+- [x] 6.3 Add `RETIRED_AGENTS_MD_STORE_CONVENTIONS_FENCE` cleanup in `src/core/reconcile.ts`, same shape as the existing identity-fence retirement.
+- [x] 6.4 Update the fence-order literal in `test/unit/agents-doc.test.ts` and drop the now-structurally-impossible byte-identical-paragraph test in `test/unit/conventions.test.ts` (kept the two exact-output tests, since output is unchanged).
+- [x] 6.5 Verify: `npx vitest run --exclude '**/.claude/**'` — full suite green (753/753, one fewer than before by design); a fresh `ctxr init` writes the `contexture:conventions` fence; a store carrying the old `contexture:store-conventions` fence has it retired and replaced on the next `ctxr update`, with `doctor`/`verify --portable` passing throughout.

@@ -31,6 +31,17 @@ export const WORKTREES_GITIGNORE_FENCE = commentFence('worktrees');
  */
 const RETIRED_AGENTS_MD_IDENTITY_FENCE = htmlCommentFence('agent-identity');
 
+/**
+ * compose-store-guidance-documents: the conventions fence was renamed from
+ * `store-conventions` to `conventions` (dropping the redundant "store-"
+ * prefix — every sibling fence/template already omits it, e.g. `canonical`,
+ * `placement`, `mission`). Same one-time cleanup shape as the identity
+ * retirement above: `buildAgentsConventionsSection` already writes the new
+ * `contexture:conventions` fence via the loop below, so this only needs to
+ * remove the orphaned old one.
+ */
+const RETIRED_AGENTS_MD_STORE_CONVENTIONS_FENCE = htmlCommentFence('store-conventions');
+
 export interface ReconcileResult {
   /** Store-relative paths written this run (an up-to-date store yields none). */
   changed: string[];
@@ -83,6 +94,7 @@ export async function reconcileStore(env: RunEnv, root: string, config: StoreCon
     if ((await build(root, config)).changed) agentsChanged = true;
   }
   if ((await removeFencedRegionFromFile(agentsMdPath(root), RETIRED_AGENTS_MD_IDENTITY_FENCE)).changed) agentsChanged = true;
+  if ((await removeFencedRegionFromFile(agentsMdPath(root), RETIRED_AGENTS_MD_STORE_CONVENTIONS_FENCE)).changed) agentsChanged = true;
   // harness-portability spec "Generated sections render in a fixed order":
   // reorders once every section fence above has been written/refreshed, so
   // a first-time init and a subsequent update converge on the same layout.

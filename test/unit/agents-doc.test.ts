@@ -410,7 +410,7 @@ describe('reorderFencedRegionsInFile (via reconcileStore section order)', () => 
       await init(env, { root: tmp.root, profile: 'para' });
 
       const content = await readFile(agentsMdPath(tmp.root), 'utf8');
-      const order = ['contexture:canonical', 'contexture:retrieval-leg-routing', 'contexture:capture-and-ingest', 'contexture:placement', 'contexture:store-conventions']
+      const order = ['contexture:canonical', 'contexture:retrieval-leg-routing', 'contexture:capture-and-ingest', 'contexture:placement', 'contexture:conventions']
         .map((marker) => content.indexOf(marker))
         .filter((idx) => idx >= 0);
       expect(order).toEqual([...order].sort((a, b) => a - b));
