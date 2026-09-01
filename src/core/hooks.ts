@@ -38,6 +38,27 @@ async function renderHook(spec: HookSpec, defaultBranch: string): Promise<string
     .replaceAll('__DEFAULT_BRANCH__', defaultBranch);
 }
 
+/**
+ * The idempotent render+chmod discipline every generated executable script
+ * in this store shares: write only when the rendered content actually
+ * differs, so a second run with the same inputs touches neither mtime nor
+ * disk. `installHooks` and `installTemplatedHookScript` both funnel through
+ * this — one write path, never duplicated.
+ */
+async function writeRenderedScript(targetPath: string, rendered: string): Promise<boolean> {
+  let existing: string | undefined;
+  try {
+    existing = await readFile(targetPath, 'utf8');
+  } catch {
+    existing = undefined;
+  }
+  if (existing === rendered) return false;
+  await mkdir(path.dirname(targetPath), { recursive: true });
+  await writeFileAtomic(targetPath, rendered);
+  await chmod(targetPath, 0o755);
+  return true;
+}
+
 export interface HookInstallResult {
   /** Relative paths (from the store root) of hooks that were written or rewritten. */
   changed: string[];
@@ -57,20 +78,32 @@ export async function installHooks(root: string, defaultBranch: string): Promise
   for (const spec of HOOK_SPECS) {
     const rendered = await renderHook(spec, defaultBranch);
     const targetPath = path.join(hooksDir, spec.fileName);
-    let existing: string | undefined;
-    try {
-      existing = await readFile(targetPath, 'utf8');
-    } catch {
-      existing = undefined;
-    }
-    if (existing !== rendered) {
-      await writeFileAtomic(targetPath, rendered);
-      await chmod(targetPath, 0o755);
+    if (await writeRenderedScript(targetPath, rendered)) {
       changed.push(`${HOOKS_DIR_NAME}/${spec.fileName}`);
     }
   }
 
   return { changed, hooksDir };
+}
+
+/**
+ * A harness adapter's own generated hook script (e.g. Claude Code's
+ * PreToolUse write-gate) — same idempotent render+chmod discipline as git
+ * hooks, without assuming git-hook-specific substitutions or the
+ * `.githooks` directory. `substitutions` are applied as literal
+ * find-and-replace, the same convention `renderHook` uses.
+ */
+export async function installTemplatedHookScript(
+  root: string,
+  relativeTargetPath: string,
+  templateFileName: string,
+  substitutions: Readonly<Record<string, string>>,
+): Promise<{ changed: boolean }> {
+  const templateText = await readFile(path.join(templatesDir(), templateFileName), 'utf8');
+  const rendered = Object.entries(substitutions).reduce((text, [k, v]) => text.replaceAll(k, v), templateText);
+  const targetPath = path.join(root, relativeTargetPath);
+  const changed = await writeRenderedScript(targetPath, rendered);
+  return { changed };
 }
 
 export async function configureHooksPath(git: GitRunner, cwd: string): Promise<void> {

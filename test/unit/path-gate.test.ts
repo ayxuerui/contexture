@@ -2,7 +2,7 @@ import { mkdir, symlink } from 'node:fs/promises';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import type { StoreConfig } from '../../src/config/schema.js';
-import { sanctionedPath } from '../../src/core/write-lifecycle/path-gate.js';
+import { isWriteInScope, sanctionedPath } from '../../src/core/write-lifecycle/path-gate.js';
 import { makeTmpDir } from '../helpers/tmp-store.js';
 
 function makeConfig(writablePaths: string[] = []): StoreConfig {
@@ -143,5 +143,59 @@ describe('sanctionedPath (session-capture-command D5)', () => {
         await tmp.cleanup();
       }
     });
+  });
+});
+
+describe('isWriteInScope (Claude Code write-gate)', () => {
+  it('is in scope inside the store root but outside the store entirely — not this gate\'s concern', async () => {
+    const result = await isWriteInScope(makeConfig(), '/repo', '../outside.md');
+    expect(result.inScope).toBe(true);
+  });
+
+  it('is in scope for a path inside the configured worktrees tree', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const result = await isWriteInScope(makeConfig(), tmp.root, '.worktrees/sess1/notes/foo.md');
+      expect(result).toEqual({ inScope: true });
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('is out of scope for a path in the store root outside the worktrees tree', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const result = await isWriteInScope(makeConfig(), tmp.root, 'AGENTS.md');
+      expect(result.inScope).toBe(false);
+      expect(result.reason).toContain('outside the active session worktree');
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('is out of scope for a directory named identically to the worktrees prefix as a substring', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const result = await isWriteInScope(makeConfig(), tmp.root, '.worktrees-backup/note.md');
+      expect(result.inScope).toBe(false);
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('denies a symlink escape whether it points out of the store or merely out of the worktrees tree', async () => {
+    const tmp = await makeTmpDir();
+    const outside = await makeTmpDir();
+    try {
+      await mkdir(path.join(tmp.root, '.worktrees', 'sess1'), { recursive: true });
+      await symlink(outside.root, path.join(tmp.root, '.worktrees', 'sess1', 'linked'));
+
+      const result = await isWriteInScope(makeConfig(), tmp.root, '.worktrees/sess1/linked/note.md');
+      expect(result.inScope).toBe(false);
+      expect(result.reason).toContain('symbolic link');
+    } finally {
+      await tmp.cleanup();
+      await outside.cleanup();
+    }
   });
 });
