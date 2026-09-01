@@ -1,43 +1,26 @@
-import { readFileSync } from 'node:fs';
 import { mkdir, readdir, readFile, rm } from 'node:fs/promises';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import type { StoreConfig, TaxonomyLayerConfig } from '../config/schema.js';
 import { scanDocsDir, SKILL_FILE_NAME, type ScannedDoc } from './conventions.js';
+import { GRAPH_DOCUMENT_RELATIVE_PATH } from './graph/persist.js';
 import { writeFileAtomic } from './fs/atomic.js';
+import { packagedTemplate } from './templates.js';
 
 /**
- * extract-skill-templates: canonical skill bodies live as plain markdown
- * files under `templates/skills/` (reviewable, diffable, syntax-highlighted)
- * rather than as inline TypeScript string arrays — the same pattern
- * `hooks.ts`'s `templatesDir()` already uses for the git hook templates.
- * Loaded synchronously, once, at module init: `ProcedureSeed.body` is called
- * synchronously from many call sites (including throughout the test suite),
- * and these are fixed, package-bundled files whose content never changes
- * after the process starts — threading `async` through every call site to
- * read a file once would be a large, purely mechanical change for no
- * behavioral gain.
+ * The canonical skill bodies live as plain markdown under
+ * `templates/skills/` — see `templates.ts` for why they are loaded
+ * synchronously and cached.
  */
-function skillTemplatesDir(): string {
-  return fileURLToPath(new URL('../../templates/skills', import.meta.url));
-}
-
-const skillTemplateCache = new Map<string, string>();
-
 function skillTemplate(slug: string): string {
-  const cached = skillTemplateCache.get(slug);
-  if (cached !== undefined) return cached;
-  const text = readFileSync(path.join(skillTemplatesDir(), `${slug}.md`), 'utf8').replace(/\n$/, '');
-  skillTemplateCache.set(slug, text);
-  return text;
+  return packagedTemplate('skills', slug);
 }
 
 /**
  * harness-portability spec (task 8.6, revised by entry-doc-generation D5,
- * expanded by owned-skills-expansion): reusable store procedures ship as
- * contexture-OWNED skills. The canonical content is this module (versioned
+ * expanded by owned-skills-expansion): reusable store skills ship as
+ * contexture-OWNED files. The canonical content is this module (versioned
  * with the package); a store carries a full copy at
- * `<procedures_path>/ctxr-<slug>/SKILL.md` — written by `ctxr init`,
+ * `<skills_path>/ctxr-<slug>/SKILL.md` — written by `ctxr init`,
  * refreshed by `ctxr update`, never hand-edited. The default location is
  * the directory harnesses with skill auto-discovery read, so there is no
  * wrapper and no extra hop; any other harness reaches the same file by
@@ -52,8 +35,8 @@ function skillTemplate(slug: string): string {
  * that verifies it. The one config-derived skill (placement) is rendered
  * per store, which is why a seed's body is a function of the config.
  */
-export interface Procedure {
-  /** Skill directory slug under config.harness.procedures_path (file is `<slug>/SKILL.md`). */
+export interface Skill {
+  /** Skill directory slug under config.harness.skills_path (file is `<slug>/SKILL.md`). */
   file: string;
   /** The human title (the H1 in the skill body). */
   name: string;
@@ -62,7 +45,7 @@ export interface Procedure {
   content: string;
 }
 
-interface ProcedureSeed {
+interface SkillSeed {
   file: string;
   name: string;
   description: string;
@@ -91,7 +74,7 @@ export function retiredLayers(config: StoreConfig): TaxonomyLayerConfig[] {
   return config.taxonomy.layers.filter((layer) => RETIRED_PATTERN.test(layer.description));
 }
 
-function skillDocument(seed: ProcedureSeed, config: StoreConfig): string {
+function skillDocument(seed: SkillSeed, config: StoreConfig): string {
   const lines = [
     '---',
     `name: ${seed.file}`,
@@ -151,25 +134,25 @@ function placementLayerStep(config: StoreConfig): string[] {
   return lines;
 }
 
-const PLACEMENT: ProcedureSeed = {
+const PLACEMENT: SkillSeed = {
   file: 'ctxr-placement',
   name: 'Placement',
   description: 'Choose the right taxonomy layer, location, and visibility for a new or relocated note in this contexture store, with the reasoning.',
   body: (config) => skillTemplate('ctxr-placement').replace('__LAYER_STEP__', placementLayerStep(config).join('\n')).split('\n'),
 };
 
-const INGEST_ORCHESTRATION: ProcedureSeed = {
+const INGEST_ORCHESTRATION: SkillSeed = {
   file: 'ctxr-ingest-orchestration',
   name: 'Ingest orchestration',
   description: 'Capture raw material into the inbox, run the dedupe check, read the existing cluster, decide new/update/merge/restructure, and ingest with source identity via the contexture CLI.',
-  body: () => skillTemplate('ctxr-ingest-orchestration').split('\n'),
+  body: () => skillTemplate('ctxr-ingest-orchestration').replaceAll('__GRAPH_DOCUMENT_PATH__', GRAPH_DOCUMENT_RELATIVE_PATH).split('\n'),
 };
 
-const CONNECTION_FINDING: ProcedureSeed = {
+const CONNECTION_FINDING: SkillSeed = {
   file: 'ctxr-connection-finding',
   name: 'Connection finding',
   description: 'Traverse the wikilink graph of the store (neighbors, paths, hubs, orphans) to find what a note already connects to.',
-  body: () => skillTemplate('ctxr-connection-finding').split('\n'),
+  body: () => skillTemplate('ctxr-connection-finding').replaceAll('__GRAPH_DOCUMENT_PATH__', GRAPH_DOCUMENT_RELATIVE_PATH).split('\n'),
 };
 
 /**
@@ -192,35 +175,35 @@ function relationGroupingStep(relations: readonly string[]): string[] {
   ];
 }
 
-const CONNECTION_PROPOSAL: ProcedureSeed = {
+const CONNECTION_PROPOSAL: SkillSeed = {
   file: 'ctxr-connection-proposal',
   name: 'Connection proposal',
   description: 'Discover the links a note should have, read each candidate before proposing, group by the store relation vocabulary, and write only approved links.',
   body: (config) => skillTemplate('ctxr-connection-proposal').replace('__RELATION_GROUPING_STEP__', relationGroupingStep(config.retrieval.relations).join('\n')).split('\n'),
 };
 
-const ROLLUP: ProcedureSeed = {
+const ROLLUP: SkillSeed = {
   file: 'ctxr-rollup',
   name: 'Rollup',
   description: 'Regenerate the synthesized current-state region of an entity note from every source that references it, with provenance for every fact.',
   body: () => skillTemplate('ctxr-rollup').split('\n'),
 };
 
-const MISSION: ProcedureSeed = {
+const MISSION: SkillSeed = {
   file: 'ctxr-mission',
   name: 'Mission',
   description: "Keep the store's mission document current from recent work and its taxonomy layers, with every active priority naming its status/purpose/next action, back-burner items stating why they're dormant, and sunset candidates and debt carried as their own sections.",
   body: () => skillTemplate('ctxr-mission').split('\n'),
 };
 
-const SUBMIT: ProcedureSeed = {
+const SUBMIT: SkillSeed = {
   file: 'ctxr-submit',
   name: 'Submit',
   description: 'End a working session — re-scan, capture once, stage surgically, gate the external side effect, and open the reviewed pull request.',
   body: (config) => skillTemplate('ctxr-submit').replaceAll('__DEFAULT_BRANCH__', config.git.default_branch).split('\n'),
 };
 
-const LAND: ProcedureSeed = {
+const LAND: SkillSeed = {
   file: 'ctxr-land',
   name: 'Land',
   description: 'Complete a reviewed session — merge its pull request, sync the default branch, and reclaim the worktree — one gated command, never a manual merge.',
@@ -237,7 +220,7 @@ const LAND: ProcedureSeed = {
 function reclaimingStep(config: StoreConfig): string[] {
   if (config.session.workspaces_external) {
     return [
-      'Session worktrees are provided externally (`session.workspaces_external: true`) — this procedure MUST NOT',
+      'Session worktrees are provided externally (`session.workspaces_external: true`) — this skill MUST NOT',
       'create, switch to, unlock, remove, or prune a worktree. `ctxr session reap` refuses to run under this',
       'configuration; reclaiming worktrees is the external process\'s responsibility, not this skill\'s.',
     ];
@@ -248,7 +231,7 @@ function reclaimingStep(config: StoreConfig): string[] {
   ];
 }
 
-const SESSION_LIFECYCLE: ProcedureSeed = {
+const SESSION_LIFECYCLE: SkillSeed = {
   file: 'ctxr-session-lifecycle',
   name: 'Session lifecycle',
   description: 'Start a session worktree, re-scan before any plan, resolve conflicts, and sequence multiple pull requests — the frame ctxr-submit and ctxr-land sit inside.',
@@ -259,28 +242,28 @@ const SESSION_LIFECYCLE: ProcedureSeed = {
       .split('\n'),
 };
 
-const SESSION_CAPTURE: ProcedureSeed = {
+const SESSION_CAPTURE: SkillSeed = {
   file: 'ctxr-session-capture',
   name: 'Session capture',
   description: 'At the end of a session, propose durable store notes in one message with per-item approval, then write only what was approved.',
   body: () => skillTemplate('ctxr-session-capture').split('\n'),
 };
 
-const DERIVED_ARTIFACTS: ProcedureSeed = {
+const DERIVED_ARTIFACTS: SkillSeed = {
   file: 'ctxr-derived-artifacts',
   name: 'Derived artifacts',
   description: 'Refresh a generated artifact safely — check before build, read the counts back, never hand-edit inside a fence, keep derived files out of content commits.',
   body: (config) => skillTemplate('ctxr-derived-artifacts').replaceAll('__DEFAULT_BRANCH__', config.git.default_branch).split('\n'),
 };
 
-const ORGANIZE_AUDIT: ProcedureSeed = {
+const ORGANIZE_AUDIT: SkillSeed = {
   file: 'ctxr-organize-audit',
   name: 'Organize audit',
   description: 'Audit store health with ctxr lint (observations) and ctxr doctor (blocking invariants), retire by moving, and classify broken links before fixing them.',
   body: () => skillTemplate('ctxr-organize-audit').split('\n'),
 };
 
-export const PROCEDURES: readonly ProcedureSeed[] = [
+export const SKILLS: readonly SkillSeed[] = [
   INGEST_ORCHESTRATION,
   PLACEMENT,
   CONNECTION_FINDING,
@@ -296,8 +279,8 @@ export const PROCEDURES: readonly ProcedureSeed[] = [
 ];
 
 /** The owned skills, rendered against one store's configuration — what `syncShippedSkills` writes. */
-export function renderProcedures(config: StoreConfig): Procedure[] {
-  return PROCEDURES.map((seed) => ({
+export function renderSkills(config: StoreConfig): Skill[] {
+  return SKILLS.map((seed) => ({
     file: seed.file,
     name: seed.name,
     description: seed.description,
@@ -308,15 +291,15 @@ export function renderProcedures(config: StoreConfig): Procedure[] {
 /**
  * entry-doc-generation spec: every skill actually on disk — the contexture-
  * owned ones plus any operator-authored ones. This is what the AGENTS.md
- * index and verify --portable consume; the static PROCEDURES const is only
+ * index and verify --portable consume; the static SKILLS const is only
  * the canonical content syncShippedSkills writes.
  */
-export function scanProcedures(root: string, config: StoreConfig): Promise<ScannedDoc[]> {
-  return scanDocsDir(root, config.harness.procedures_path);
+export function scanSkills(root: string, config: StoreConfig): Promise<ScannedDoc[]> {
+  return scanDocsDir(root, config.harness.skills_path);
 }
 
-export function procedurePaths(config: StoreConfig): string[] {
-  return PROCEDURES.map((p) => path.join(config.harness.procedures_path, p.file, SKILL_FILE_NAME).split(path.sep).join('/'));
+export function skillPaths(config: StoreConfig): string[] {
+  return SKILLS.map((p) => path.join(config.harness.skills_path, p.file, SKILL_FILE_NAME).split(path.sep).join('/'));
 }
 
 /**
@@ -330,9 +313,9 @@ export function procedurePaths(config: StoreConfig): string[] {
  */
 export async function syncShippedSkills(root: string, config: StoreConfig): Promise<string[]> {
   const changed: string[] = [];
-  for (const procedure of renderProcedures(config)) {
+  for (const skill of renderSkills(config)) {
     const relativePath = path
-      .join(config.harness.procedures_path, procedure.file, SKILL_FILE_NAME)
+      .join(config.harness.skills_path, skill.file, SKILL_FILE_NAME)
       .split(path.sep)
       .join('/');
     const absolutePath = path.join(root, relativePath);
@@ -342,15 +325,15 @@ export async function syncShippedSkills(root: string, config: StoreConfig): Prom
     } catch {
       existing = undefined;
     }
-    if (existing !== procedure.content) {
+    if (existing !== skill.content) {
       await mkdir(path.dirname(absolutePath), { recursive: true });
-      await writeFileAtomic(absolutePath, procedure.content);
+      await writeFileAtomic(absolutePath, skill.content);
       changed.push(relativePath);
     }
   }
 
-  const shippedSlugs = new Set(PROCEDURES.map((p) => p.file));
-  const skillsDir = path.join(root, config.harness.procedures_path);
+  const shippedSlugs = new Set(SKILLS.map((p) => p.file));
+  const skillsDir = path.join(root, config.harness.skills_path);
   let entries: { name: string; isDirectory(): boolean }[] = [];
   try {
     entries = await readdir(skillsDir, { withFileTypes: true });
@@ -368,7 +351,7 @@ export async function syncShippedSkills(root: string, config: StoreConfig): Prom
     }
     if (!content.includes(MANAGED_SKILL_HEADER)) continue; // operator-authored: never touched
     await rm(path.join(skillsDir, entry.name), { recursive: true, force: true });
-    changed.push(path.join(config.harness.procedures_path, entry.name, SKILL_FILE_NAME).split(path.sep).join('/'));
+    changed.push(path.join(config.harness.skills_path, entry.name, SKILL_FILE_NAME).split(path.sep).join('/'));
   }
   return changed;
 }

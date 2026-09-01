@@ -1,8 +1,9 @@
+import { renameProceduresPathMigration } from './rename-procedures-path.js';
 import { renameVisibilityFieldMigration } from './rename-visibility-field.js';
 import type { Migration } from './types.js';
 
 /** Every migration contexture ships, in ascending fromVersion order. Later phases append here, nothing else. */
-export const MIGRATIONS: readonly Migration[] = [renameVisibilityFieldMigration];
+export const MIGRATIONS: readonly Migration[] = [renameVisibilityFieldMigration, renameProceduresPathMigration];
 
 /** Every migration a store currently at `fromVersion` still needs to reach the CLI's supported version, in order. */
 export function pendingMigrations(fromVersion: number): Migration[] {

@@ -7,11 +7,11 @@ Governs how a store stays organized over time: where a note belongs, how a compl
 ## Requirements
 
 ### Requirement: Placement is driven by configured taxonomy, not a hardcoded layout
-The store's placement procedure SHALL determine a new note's layer and folder using the taxonomy declared in `contexture.yaml` — its set of top-level layers and their declared defaults — and SHALL NOT assume any specific named layout is present.
+The store's placement skill SHALL determine a new note's layer and folder using the taxonomy declared in `contexture.yaml` — its set of top-level layers and their declared defaults — and SHALL NOT assume any specific named layout is present.
 
 #### Scenario: Placement works under a non-default taxonomy
 - **WHEN** a store's `contexture.yaml` declares a taxonomy other than the shipped default profile
-- **THEN** the placement procedure's decision steps still resolve to a valid layer and folder within that configured taxonomy
+- **THEN** the placement skill's decision steps still resolve to a valid layer and folder within that configured taxonomy
 
 ### Requirement: Archive is a single tracked rename
 Archiving a note SHALL relocate it via the single tracked rename defined in the context-store capability, SHALL preserve the note's resolved visibility unchanged, and SHALL report every other note in the store whose link would now point at the moved path.

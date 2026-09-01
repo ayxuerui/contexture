@@ -73,7 +73,7 @@ describe('adapters (real CLI)', () => {
     }
   });
 
-  it('deleting the AGENTS.md procedure index entry for one operation makes verify --portable fail naming that operation', async () => {
+  it('deleting the AGENTS.md skill index entry for one operation makes verify --portable fail naming that operation', async () => {
     const tmp = await makeTmpDir();
     try {
       const env = hermeticGitEnv();
@@ -154,17 +154,17 @@ describe('entry-doc generation (real CLI)', () => {
     }
   });
 
-  it('verify --portable fails naming an operator procedure whose index entry is missing', async () => {
+  it('verify --portable fails naming an operator skill whose index entry is missing', async () => {
     const tmp = await makeTmpDir();
     try {
       const env = hermeticGitEnv();
       await runCli(['init'], { cwd: tmp.root, env });
       // Added but never re-indexed: scan sees it, AGENTS.md does not.
-      await writeNote(tmp.root, '.claude/skills/unindexed/SKILL.md', '# Unindexed procedure\n\nSteps.\n');
+      await writeNote(tmp.root, '.claude/skills/unindexed/SKILL.md', '# Unindexed skill\n\nSteps.\n');
 
       const result = await runCli(['verify', '--portable', '--json'], { cwd: tmp.root, env });
       expect(result.exitCode).not.toBe(0);
-      expect(JSON.parse(result.stdout).findings[0].message).toContain('Unindexed procedure');
+      expect(JSON.parse(result.stdout).findings[0].message).toContain('Unindexed skill');
     } finally {
       await tmp.cleanup();
     }

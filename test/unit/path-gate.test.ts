@@ -20,7 +20,7 @@ function makeConfig(writablePaths: string[] = []): StoreConfig {
     disclosure: { internal_audiences: [], hard_walls: [], leak_markers: {} },
     ingest: { inbox_path: 'inbox/', tracking_params: [] },
     organize: { archive_path: 'archive/', rollup_stale_days: 7 },
-    harness: { procedures_path: 'procedures/', conventions_path: 'conventions/' },
+    harness: { skills_path: 'skills/', conventions_path: 'conventions/' },
     adapters: [],
   };
 }
@@ -124,11 +124,11 @@ describe('sanctionedPath (session-capture-command D5)', () => {
       }
     });
 
-    it('accepts the catalog and the procedures/conventions directories', async () => {
+    it('accepts the catalog and the skills/conventions directories', async () => {
       const tmp = await makeTmpDir();
       try {
         expect(await sanctionedPath(makeConfig(['notes/']), tmp.root, 'catalog/areas.md')).toEqual({ ok: true });
-        expect(await sanctionedPath(makeConfig(['notes/']), tmp.root, 'procedures/ctxr-placement/SKILL.md')).toEqual({ ok: true });
+        expect(await sanctionedPath(makeConfig(['notes/']), tmp.root, 'skills/ctxr-placement/SKILL.md')).toEqual({ ok: true });
       } finally {
         await tmp.cleanup();
       }

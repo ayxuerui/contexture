@@ -17,26 +17,26 @@ A store MAY carry operator-authored convention documents as markdown files at a 
 - **WHEN** a store has no convention files and the entry document is generated
 - **THEN** the conventions section names the configured path and states that operator conventions added there will be indexed
 
-### Requirement: The procedure index reflects the files on disk
-The `AGENTS.md` procedure index SHALL list every procedure markdown file present at the configured procedures path — the shipped pack and any operator-added files — deriving each entry's name and description from the file itself (frontmatter, first-heading, or filename fallback). Harness skill generation (per `contexture-home-layout`) SHALL cover the same scanned set. The portability test SHALL verify every scanned procedure has an index entry.
+### Requirement: The skill index reflects the files on disk
+The `AGENTS.md` skill index SHALL list every skill markdown file present at the configured skills path — the shipped pack and any operator-added files — deriving each entry's name and description from the file itself (frontmatter, first-heading, or filename fallback). Harness skill generation (per `contexture-home-layout`) SHALL cover the same scanned set. The portability test SHALL verify every scanned skill has an index entry.
 
-#### Scenario: An operator-added procedure joins the index
-- **WHEN** an operator adds a new procedure file at the configured path and regeneration runs
-- **THEN** the `AGENTS.md` index lists it, identically to a shipped procedure
+#### Scenario: An operator-added skill joins the index
+- **WHEN** an operator adds a new skill file at the configured path and regeneration runs
+- **THEN** the `AGENTS.md` index lists it, identically to a shipped skill
 
-#### Scenario: Deleting a shipped procedure's index entry still fails the portability test
-- **WHEN** a procedure file exists on disk but its index entry is removed from `AGENTS.md`
-- **THEN** `verify --portable` exits non-zero naming that procedure
+#### Scenario: Deleting a shipped skill's index entry still fails the portability test
+- **WHEN** a skill file exists on disk but its index entry is removed from `AGENTS.md`
+- **THEN** `verify --portable` exits non-zero naming that skill
 
 ### Requirement: Contexture-owned skills are copied into the store and refreshed by update
-The shipped procedures SHALL be contexture-owned skills: their canonical content ships with the tool, and a store SHALL carry a full copy of each at the configured procedures path in the skill layout (`<slug>/SKILL.md`), marked as managed. `init` SHALL write them; a dedicated update command SHALL bring every contexture-owned file in a store — generated entry-document sections, managed ignore blocks, hooks, skill copies, and adapter outputs — to the installed tool version without touching operator-authored content. Both SHALL be byte-stable when nothing has changed.
+The shipped skills SHALL be contexture-owned: their canonical content ships with the tool, and a store SHALL carry a full copy of each at the configured skills path in the skill layout (`<slug>/SKILL.md`), marked as managed. `init` SHALL write them; a dedicated update command SHALL bring every contexture-owned file in a store — generated entry-document sections, managed ignore blocks, hooks, skill copies, and adapter outputs — to the installed tool version without touching operator-authored content. Both SHALL be byte-stable when nothing has changed.
 
 #### Scenario: Update refreshes a drifted copy and leaves operator content alone
 - **WHEN** a contexture-owned skill copy differs from the installed version and an operator-authored skill sits alongside it, and the update command runs
 - **THEN** the contexture-owned copy is rewritten to the installed version, the operator skill is byte-identical, and an immediately repeated update reports nothing changed
 
 ### Requirement: `AGENTS.md` is the canonical entry document
-Every context store SHALL carry an `AGENTS.md` file at its root that is the canonical, harness-agnostic index of the store's conventions and procedures. A harness-specific entry file (for example, one named for a particular agent product) SHALL contain nothing beyond an import of `AGENTS.md` plus that harness's own extras, and SHALL NOT duplicate canonical content.
+Every context store SHALL carry an `AGENTS.md` file at its root that is the canonical, harness-agnostic index of the store's conventions and skills. A harness-specific entry file (for example, one named for a particular agent product) SHALL contain nothing beyond an import of `AGENTS.md` plus that harness's own extras, and SHALL NOT duplicate canonical content.
 
 #### Scenario: A harness-specific entry file only imports
 - **WHEN** a store's `contexture.yaml` declares a harness-specific entry filename
@@ -44,7 +44,7 @@ Every context store SHALL carry an `AGENTS.md` file at its root that is the cano
 
 #### Scenario: Reading only `AGENTS.md` is sufficient
 - **WHEN** an agent with no harness-specific context reads `AGENTS.md` at a store's root
-- **THEN** it finds the root-resolution rule, the frontmatter schema pointer, the write-path rule, and an index of every store procedure, without needing to read any other file
+- **THEN** it finds the root-resolution rule, the frontmatter schema pointer, the write-path rule, and an index of every store skill, without needing to read any other file
 
 ### Requirement: Root resolution precedence
 Any contexture command SHALL resolve the store root in this order: an explicit `--root` argument; the `CONTEXTURE_ROOT` environment variable; walking up from the current working directory looking for `contexture.yaml`. If none resolves, the command SHALL exit non-zero naming that no store root was found, and SHALL NOT guess a fallback location.
@@ -64,15 +64,15 @@ The store root SHALL be addressable by exactly one environment variable and one 
 - **WHEN** an operator sets an environment variable other than the one documented root variable, intending it to select the store root
 - **THEN** contexture does not recognize it and falls through to the next resolution step
 
-### Requirement: Procedures are portable markdown reached by path
-Reusable store procedures SHALL be markdown files reachable by a documented path from `AGENTS.md`, readable and followable by any agent capable of reading files, independent of any harness's auto-discovery mechanism.
+### Requirement: Skills are portable markdown reached by path
+Reusable store skills SHALL be markdown files reachable by a documented path from `AGENTS.md`, readable and followable by any agent capable of reading files, independent of any harness's auto-discovery mechanism.
 
-#### Scenario: A non-auto-discovering harness follows a procedure
-- **WHEN** an agent harness with no automatic skill-discovery mechanism is given the path to a procedure listed in `AGENTS.md`
-- **THEN** the agent can read and follow that procedure's file directly, with no harness-specific adaptation required
+#### Scenario: A non-auto-discovering harness follows a skill
+- **WHEN** an agent harness with no automatic skill-discovery mechanism is given the path to a skill listed in `AGENTS.md`
+- **THEN** the agent can read and follow that skill's file directly, with no harness-specific adaptation required
 
 ### Requirement: Executable portability test
-The store SHALL provide a command that exercises core store operations — at minimum, a retrieval query, a derived-artifact build, and following one procedure via the `AGENTS.md` index — from an environment with no harness-specific state present, and SHALL exit non-zero naming the first failing operation if any operation fails.
+The store SHALL provide a command that exercises core store operations — at minimum, a retrieval query, a derived-artifact build, and following one skill via the `AGENTS.md` index — from an environment with no harness-specific state present, and SHALL exit non-zero naming the first failing operation if any operation fails.
 
 #### Scenario: Portability test passes with no harness state
 - **WHEN** the portability test command runs in a freshly created worktree with no harness-specific configuration or state directories present
@@ -83,7 +83,7 @@ The store SHALL provide a command that exercises core store operations — at mi
 - **THEN** the command exits non-zero and its output names which specific operation failed
 
 ### Requirement: The shipped skills carry decision procedures
-contexture SHALL ship, as contexture-owned skills delivered by init and update, procedures for: placement, ingest orchestration, connection finding, connection proposal, rollup, session lifecycle, session capture, derived artifacts, and organize audit. Each SHALL state its decision rules against the store's configured taxonomy, contexts, and relation vocabulary — never a shipped profile's layer names or any real context name — and SHALL name the command that verifies each step it asks for.
+contexture SHALL ship, as contexture-owned skills delivered by init and update, skills for: placement, ingest orchestration, connection finding, connection proposal, rollup, session lifecycle, session capture, derived artifacts, and organize audit. Each SHALL state its decision rules against the store's configured taxonomy, contexts, and relation vocabulary — never a shipped profile's layer names or any real context name — and SHALL name the command that verifies each step it asks for.
 
 #### Scenario: Placement teaches the visibility-collision test
 - **WHEN** a store is initialized
@@ -115,7 +115,7 @@ contexture SHALL ship, as contexture-owned skills delivered by init and update, 
 
 #### Scenario: Update delivers the expanded skill set to an existing store
 - **WHEN** a store initialized before this change runs the update command
-- **THEN** every owned skill above is present at the configured procedures path with the managed header, and a second update reports nothing changed
+- **THEN** every owned skill above is present at the configured skills path with the managed header, and a second update reports nothing changed
 
 ### Requirement: Owned skills read the vocabulary and the graph document from configuration
 The connection-proposal skill SHALL group proposals by the relation vocabulary declared in configuration and fall back to a single group when it is empty; the connection-finding and ingest-orchestration skills SHALL direct the agent to the graph document at its configured path for cluster context; and the generated entry document's retrieval section SHALL name that path. No skill SHALL hardcode a relation name.
@@ -128,19 +128,19 @@ The connection-proposal skill SHALL group proposals by the relation vocabulary d
 - **WHEN** a store declares no relation vocabulary
 - **THEN** the rendered skill instructs a single group and names no relation
 
-### Requirement: Procedures are reachable at a skill-discovery path
-The configured procedures path SHALL be usable as a harness's native skill directory, so a harness with skill auto-discovery finds every procedure without an intermediate file, while any other harness reaches the same file by path from `AGENTS.md`.
+### Requirement: The skills path is a harness's native skill directory
+The configured skills path SHALL be usable as a harness's native skill directory, so a harness with skill auto-discovery finds every skill without an intermediate file, while any other harness reaches the same file by path from `AGENTS.md`.
 
-#### Scenario: A skill-discovering harness surfaces every procedure without an intermediate hop
-- **WHEN** a store's procedures path is that harness's skill directory
-- **THEN** every procedure is discoverable there as a complete skill file — the file the harness loads is the file `AGENTS.md` indexes
+#### Scenario: A skill-discovering harness surfaces every skill without an intermediate hop
+- **WHEN** a store's skills path is that harness's skill directory
+- **THEN** every skill is discoverable there as a complete skill file — the file the harness loads is the file `AGENTS.md` indexes
 
 ### Requirement: Submit and land are owned skills
-contexture SHALL ship `ctxr-submit` and `ctxr-land` as contexture-owned skills delivered by init and update. The submit skill SHALL run the re-scan, run the capture procedure exactly once, stage named paths, gate the external side effect, and end in `ctxr session submit`; the land skill SHALL end in `ctxr session land`, SHALL route conflicts to the lifecycle skill's playbook, and SHALL NOT instruct a manual merge. The lifecycle skill SHALL cover start, re-scan, conflicts, and sequencing and SHALL reference both without repeating their steps.
+contexture SHALL ship `ctxr-submit` and `ctxr-land` as contexture-owned skills delivered by init and update. The submit skill SHALL run the re-scan, run the capture skill exactly once, stage named paths, gate the external side effect, and end in `ctxr session submit`; the land skill SHALL end in `ctxr session land`, SHALL route conflicts to the lifecycle skill's playbook, and SHALL NOT instruct a manual merge. The lifecycle skill SHALL cover start, re-scan, conflicts, and sequencing and SHALL reference both without repeating their steps.
 
 #### Scenario: Submit ends in the command
 - **WHEN** an agent follows the rendered submit skill
-- **THEN** its only write instruction after the gate is `ctxr session submit`, and the capture procedure is invoked once
+- **THEN** its only write instruction after the gate is `ctxr session submit`, and the capture skill is invoked once
 
 #### Scenario: Land never merges by hand
 - **WHEN** an agent follows the rendered land skill
@@ -148,7 +148,7 @@ contexture SHALL ship `ctxr-submit` and `ctxr-land` as contexture-owned skills d
 
 #### Scenario: Update delivers both to an existing store
 - **WHEN** a store initialized before this change runs the update command
-- **THEN** both skills are present at the configured procedures path with the managed header and the lifecycle skill no longer contains the submit or land steps
+- **THEN** both skills are present at the configured skills path with the managed header and the lifecycle skill no longer contains the submit or land steps
 
 ### Requirement: The session-capture skill applies through the command
 The owned session-capture skill SHALL instruct the agent to write the approved items to a proposal file and run `ctxr session capture --proposal <file>`, and to take its report from the command's output.

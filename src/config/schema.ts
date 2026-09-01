@@ -11,8 +11,14 @@ import { z } from 'zod';
  * is "a config-default change plus a migration, never a spec or code
  * rewrite" (design.md D7): every consumer already reads
  * config.fields.visibility, never a literal key, so nothing else changed.
+ *
+ * Bumped to 3 by the procedures-to-skills key rename migration
+ * (rename-procedures-to-skills, 0003-rename-procedures-path-to-skills):
+ * `harness.procedures_path` -> `harness.skills_path`. HarnessSchema's
+ * transform accepts the old key through this version so an unmigrated
+ * store still loads (see schema.ts's HarnessSchema comment).
  */
-export const SUPPORTED_SCHEMA_VERSION = 2;
+export const SUPPORTED_SCHEMA_VERSION = 3;
 
 export const TaxonomyLayerSchema = z.object({
   name: z.string().min(1),
@@ -158,11 +164,37 @@ const OrganizeSchema = z.object({
   mission_path: z.string().min(1).optional(),
 });
 
-/** harness-portability spec: the portable procedure pack and operator convention docs AGENTS.md's indexes point into. */
-const HarnessSchema = z.object({
-  procedures_path: z.string().min(1),
-  conventions_path: z.string().min(1).default('.contexture/conventions/'),
-});
+/**
+ * harness-portability spec: the portable skill pack and operator convention
+ * docs AGENTS.md's indexes point into.
+ *
+ * rename-procedures-to-skills migration (0003): `skills_path` is the
+ * current key; `procedures_path` is its pre-migration name, accepted here
+ * so a store on schema 2 still loads (with a message pointing at `ctxr
+ * migrate`, not a raw shape-validation error) rather than failing the
+ * moment this schema starts requiring the new key. The transform below is
+ * the ONLY place either spelling is read — every other consumer in the
+ * codebase sees `config.harness.skills_path` and nothing else, so the old
+ * key never leaks past config loading.
+ */
+const HarnessSchema = z
+  .object({
+    skills_path: z.string().min(1).optional(),
+    procedures_path: z.string().min(1).optional(),
+    conventions_path: z.string().min(1).default('.contexture/conventions/'),
+  })
+  .transform((value, ctx) => {
+    const skillsPath = value.skills_path ?? value.procedures_path;
+    if (skillsPath === undefined) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['skills_path'],
+        message: 'harness.skills_path is missing. If this store predates the skills-path rename, run `ctxr migrate`.',
+      });
+      return z.NEVER;
+    }
+    return { skills_path: skillsPath, conventions_path: value.conventions_path };
+  });
 
 /**
  * adapters spec: the one declared-registration mechanism shared by every

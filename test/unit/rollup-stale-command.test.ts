@@ -30,7 +30,7 @@ function makeConfig(rollupStaleDays = 0, missionPath?: string): StoreConfig {
     disclosure: { internal_audiences: [], hard_walls: [], leak_markers: {} },
     ingest: { inbox_path: 'inbox/', tracking_params: [] },
     organize: { archive_path: 'archive/', rollup_stale_days: rollupStaleDays, mission_path: missionPath },
-    harness: { procedures_path: 'procedures/', conventions_path: 'conventions/' },
+    harness: { skills_path: 'skills/', conventions_path: 'conventions/' },
     adapters: [],
   };
 }

@@ -32,8 +32,8 @@ const ALWAYS_SKIP_DIRS = new Set(['.git', '.githooks', '.queue']);
 
 /**
  * Filenames intrinsic to contexture itself, never user content — same
- * status as ALWAYS_SKIP_DIRS. AGENTS.md is a CLI-generated procedure
- * document (task 4.5), not a note, but only the one `agentsMdPath` ever
+ * status as ALWAYS_SKIP_DIRS. AGENTS.md is a CLI-generated document
+ * (task 4.5), not a note, but only the one `agentsMdPath` ever
  * generates: the store root's own `AGENTS.md` (`agents-doc.ts` hardcodes
  * `path.join(root, 'AGENTS.md')`, never a nested path). A same-named file
  * anywhere else is ordinary content an operator happened to name AGENTS.md
@@ -70,7 +70,7 @@ export function excludedPrefixesFor(config: StoreConfig): string[] {
     config.session.worktrees_path,
     config.catalog.path,
     // Tool-owned instruction docs (skills, conventions) are never notes, wherever they live.
-    config.harness.procedures_path,
+    config.harness.skills_path,
     config.harness.conventions_path,
   ];
 }
