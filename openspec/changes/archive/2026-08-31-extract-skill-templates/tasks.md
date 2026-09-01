@@ -37,4 +37,4 @@
 
 ## 7. Land it
 
-- [ ] 7.1 Commit on this branch (`extract-skill-templates`, based on `remove-agent-identity`). Do not push until told to.
+- [x] 7.1 Commit on this branch (`extract-skill-templates`, based on `remove-agent-identity`). Do not push until told to.

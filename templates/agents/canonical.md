@@ -14,6 +14,11 @@ Every contexture command resolves the store root in this order: an explicit `--r
 
 Every write to this store happens inside a session worktree, never directly on the default branch: `ctxr session start` creates one, then `ctxr session submit` validates, commits, pushes, and opens (or reports how to open) a pull request. Do not edit files in the store root directly.
 
+### Identity and memory
+
+Identity, persona, and durable cross-session memory for the agent working this store belong to its harness, not to this store — the store holds knowledge and procedures, documented as portable markdown under `__SKILLS_PATH__` (see the skill index below), never a persona or memory file of its own.
+__MISSION_POINTER__
+
 ### Skill index
 
 Judgment-driven operations, documented as portable markdown under `__SKILLS_PATH__` — read one directly, no harness-specific discovery required:

@@ -42,6 +42,36 @@ describe('readConfig', () => {
     }
   });
 
+  it('defaults workspaces_external to false and leaves mission_path undefined when neither key is declared', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const text = [
+        'schema_version: 1',
+        'taxonomy: { profile: para, layers: [] }',
+        'fields: { visibility: scope }',
+        'visibility: { default_context: private, directory_defaults: {} }',
+        'derived: { paths: [] }',
+        'retrieval: { exclude_paths: [], relations: [], graph: { cluster_depth: 2, hub_top: 8, bridge_top: 10, orphan_exempt_clusters: [] } }',
+        'git: { default_branch: main }',
+        'session: { branch_prefix: session/, worktrees_path: .worktrees/ }',
+        'write_lifecycle: { diff_size_ceiling_lines: 2000, writable_paths: [] }',
+        'catalog: { path: catalog/, section_max_bytes: 32768 }',
+        'disclosure: { internal_audiences: [], hard_walls: [], leak_markers: {} }',
+        'ingest: { inbox_path: inbox/ }',
+        'organize: { archive_path: archive/ }',
+        'harness: { procedures_path: procedures/ }',
+        'adapters: []',
+        '',
+      ].join('\n');
+      await writeFile(path.join(tmp.root, CONFIG_FILE_NAME), text);
+      const config = await readConfig(tmp.root);
+      expect(config.session.workspaces_external).toBe(false);
+      expect(config.organize.mission_path).toBeUndefined();
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
   it('accepts unknown top-level keys (loose validation)', async () => {
     const tmp = await makeTmpDir();
     try {

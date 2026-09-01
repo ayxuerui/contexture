@@ -112,12 +112,36 @@ export async function buildAgentsPlacementSection(root: string, config: StoreCon
  */
 export const AGENTS_MD_CANONICAL_FENCE = htmlCommentFence('canonical');
 
+/**
+ * context-organize spec: when `organize.mission_path` is configured, the
+ * canonical section names it as a document to load at session start,
+ * immediately after the identity-boundary paragraph. Content is written and
+ * its staleness reported through the existing rollup mechanism (`ctxr
+ * rollup write` / `ctxr rollup stale`) — this pointer only names the path,
+ * it names no mechanism of its own. Nothing is rendered when unset: the
+ * `__MISSION_POINTER__` template line disappears entirely (via
+ * `substituteBlock`'s empty-list case), not a placeholder.
+ */
+function renderMissionPointer(config: StoreConfig): string[] {
+  const { mission_path: missionPath } = config.organize;
+  if (!missionPath) return [];
+  return [
+    '',
+    `Load \`${missionPath}\` at the start of every session — this store's standing current-state document, ` +
+      'kept current by the mission skill (see the skill index below) and written through `ctxr rollup write`.',
+  ];
+}
+
 export function renderCanonicalSection(config: StoreConfig, skills: readonly ScannedDoc[]): string[] {
-  const text = agentsTemplate('canonical')
-    .replaceAll('__CONFIG_FILE_NAME__', CONFIG_FILE_NAME)
-    .replaceAll('__VISIBILITY_FIELD__', config.fields.visibility)
-    .replaceAll('__DEFAULT_CONTEXT__', config.visibility.default_context)
-    .replaceAll('__SKILLS_PATH__', config.harness.skills_path);
+  const text = substituteBlock(
+    agentsTemplate('canonical')
+      .replaceAll('__CONFIG_FILE_NAME__', CONFIG_FILE_NAME)
+      .replaceAll('__VISIBILITY_FIELD__', config.fields.visibility)
+      .replaceAll('__DEFAULT_CONTEXT__', config.visibility.default_context)
+      .replaceAll('__SKILLS_PATH__', config.harness.skills_path),
+    '__MISSION_POINTER__',
+    renderMissionPointer(config),
+  );
   return substituteBlock(text, '__SKILL_INDEX__', skills.map(docIndexEntry)).split('\n');
 }
 

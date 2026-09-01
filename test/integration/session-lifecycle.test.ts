@@ -194,4 +194,40 @@ describe('session lifecycle (real git, real CLI)', () => {
       await tmp.cleanup();
     }
   });
+
+  it('session reap refuses when session.workspaces_external is true, touching no worktree (write-lifecycle spec)', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const env = hermeticGitEnv();
+      await runCli(['init'], { cwd: tmp.root, env });
+
+      const start = JSON.parse((await runCli(['session', 'start', '--json'], { cwd: tmp.root, env })).stdout);
+      const worktree: string = start.data.worktree;
+      await mkdir(path.join(worktree, 'projects'), { recursive: true });
+      await writeFile(path.join(worktree, 'projects', 'merged.md'), '# Merged\n');
+      await execFileAsync('git', ['add', '.'], { cwd: worktree, env });
+      await execFileAsync('git', ['commit', '-m', 'add merged'], { cwd: worktree, env });
+      await execFileAsync('git', ['merge', '--no-ff', start.data.branch, '-m', 'merge it'], { cwd: tmp.root, env });
+
+      const configPath = path.join(tmp.root, 'contexture.yaml');
+      const configText = (await (await import('node:fs/promises')).readFile(configPath, 'utf8')).replace(
+        'workspaces_external: false',
+        'workspaces_external: true',
+      );
+      await writeFile(configPath, configText);
+
+      const reap = await runCli(['session', 'reap', '--json'], { cwd: tmp.root, env });
+      expect(reap.exitCode).not.toBe(0);
+      const reapOutput = JSON.parse(reap.stdout);
+      expect(reapOutput.findings.some((f: { code: string }) => f.code === 'session.reap.workspaces_external')).toBe(true);
+
+      // Neither the merged, clean worktree nor its branch was touched.
+      const list = await execFileAsync('git', ['worktree', 'list'], { cwd: tmp.root, env });
+      expect(list.stdout).toContain(worktree);
+      const branches = await execFileAsync('git', ['branch', '--list', start.data.branch], { cwd: tmp.root, env });
+      expect(branches.stdout).toContain(start.data.branch);
+    } finally {
+      await tmp.cleanup();
+    }
+  });
 });

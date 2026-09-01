@@ -36,7 +36,14 @@ export async function execute(env: RunEnv, store: Store, flags: RollupStaleFlags
   }
 
   const notes = await listNotes(store.root, store.config);
-  const stale = await findStaleRollups(env.git, store.root, notes, { entity }, store.config.organize.rollup_stale_days);
+  const stale = await findStaleRollups(
+    env.git,
+    store.root,
+    notes,
+    { entity, missionPath: store.config.organize.mission_path },
+    store.config.organize.rollup_stale_days,
+    env.now(),
+  );
 
   return {
     exitCode: ExitCode.Ok,

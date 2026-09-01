@@ -26,7 +26,7 @@ function makeConfig(overrides: Partial<StoreConfig> = {}): StoreConfig {
     derived: { paths: ['.contexture/'] },
     retrieval: { exclude_paths: ['identity/'], relations: [], graph: { cluster_depth: 2, hub_top: 8, bridge_top: 10, orphan_exempt_clusters: [] } },
     git: { default_branch: 'main' },
-    session: { branch_prefix: 'session/', worktrees_path: '.worktrees/' },
+    session: { branch_prefix: 'session/', worktrees_path: '.worktrees/', workspaces_external: false },
     write_lifecycle: { diff_size_ceiling_lines: 2000, writable_paths: [] },
     catalog: { path: 'catalog/', section_max_bytes: 32768 },
     disclosure: { internal_audiences: [], hard_walls: [], leak_markers: {} },
@@ -182,6 +182,40 @@ describe('renderCanonicalSection', () => {
     expect(lines).toContain('[Placement](skills/placement.md)');
     expect(lines).toContain('[Connection finding](skills/connection-finding.md) — Find related notes.');
     expect(lines).toContain('[Organize audit](skills/organize-audit.md)');
+  });
+
+  it('states the harness/store identity boundary for every config fixture used in this file', () => {
+    for (const config of [
+      makeConfig(),
+      makeConfig({ fields: { visibility: 'lens' } }),
+      makeConfig({ ingest: { inbox_path: 'incoming/', tracking_params: [] } }),
+    ]) {
+      const lines = renderCanonicalSection(config, SCANNED_SKILLS).join('\n');
+      expect(lines).toMatch(/identity.*persona.*(durable )?cross-session memory/is);
+      expect(lines).toMatch(/harness/i);
+      expect(lines).not.toMatch(/identity\//); // no identity file or path of its own
+    }
+  });
+
+  it('a second render is byte-identical: no rewrite from unchanged config', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const config = makeConfig();
+      await buildAgentsCanonicalSection(tmp.root, config);
+      const { changed } = await buildAgentsCanonicalSection(tmp.root, config);
+      expect(changed).toBe(false);
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('names the configured mission document, immediately after the boundary paragraph, only when set', () => {
+    const withMission = renderCanonicalSection(makeConfig({ organize: { archive_path: 'archive/', rollup_stale_days: 7, mission_path: 'MISSION.md' } }), SCANNED_SKILLS).join('\n');
+    expect(withMission).toContain('`MISSION.md`');
+    expect(withMission).toMatch(/session start/);
+
+    const withoutMission = renderCanonicalSection(makeConfig(), SCANNED_SKILLS).join('\n');
+    expect(withoutMission).not.toMatch(/Load `.*` at the start of every session/);
   });
 });
 
@@ -340,6 +374,10 @@ describe('exact rendered output', () => {
       "",
       "Every write to this store happens inside a session worktree, never directly on the default branch: `ctxr session start` creates one, then `ctxr session submit` validates, commits, pushes, and opens (or reports how to open) a pull request. Do not edit files in the store root directly.",
       "",
+      "### Identity and memory",
+      "",
+      "Identity, persona, and durable cross-session memory for the agent working this store belong to its harness, not to this store — the store holds knowledge and procedures, documented as portable markdown under `skills/` (see the skill index below), never a persona or memory file of its own.",
+      "",
       "### Skill index",
       "",
       "Judgment-driven operations, documented as portable markdown under `skills/` — read one directly, no harness-specific discovery required:",
@@ -364,6 +402,10 @@ describe('exact rendered output', () => {
       "### Write path",
       "",
       "Every write to this store happens inside a session worktree, never directly on the default branch: `ctxr session start` creates one, then `ctxr session submit` validates, commits, pushes, and opens (or reports how to open) a pull request. Do not edit files in the store root directly.",
+      "",
+      "### Identity and memory",
+      "",
+      "Identity, persona, and durable cross-session memory for the agent working this store belong to its harness, not to this store — the store holds knowledge and procedures, documented as portable markdown under `skills/` (see the skill index below), never a persona or memory file of its own.",
       "",
       "### Skill index",
       "",

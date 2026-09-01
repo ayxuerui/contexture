@@ -65,6 +65,9 @@ export const DEFAULT_WORKTREES_PATH = '.worktrees/';
 /** Branch names for session worktrees are prefixed so they're recognizable and sweep-safe. */
 export const DEFAULT_SESSION_BRANCH_PREFIX = 'session/';
 
+/** write-lifecycle spec: worktrees are ctxr-owned (not externally provided) unless a store opts in. */
+export const DEFAULT_WORKSPACES_EXTERNAL = false;
+
 /** write-lifecycle spec: pre-commit's diff-size ceiling, in total changed lines. */
 export const DEFAULT_DIFF_SIZE_CEILING_LINES = 2000;
 

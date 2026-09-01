@@ -15,7 +15,7 @@ import { promisify } from 'node:util';
 
 const execFileAsync = promisify(execFile);
 
-function makeConfig(rollupStaleDays = 0): StoreConfig {
+function makeConfig(rollupStaleDays = 0, missionPath?: string): StoreConfig {
   return {
     schema_version: 1,
     taxonomy: { profile: 'para', layers: [{ name: 'Projects', path: 'projects', description: '' }] },
@@ -24,12 +24,12 @@ function makeConfig(rollupStaleDays = 0): StoreConfig {
     derived: { paths: [] },
     retrieval: { exclude_paths: [], relations: [], graph: { cluster_depth: 2, hub_top: 8, bridge_top: 10, orphan_exempt_clusters: [] } },
     git: { default_branch: 'main' },
-    session: { branch_prefix: 'session/', worktrees_path: '.worktrees/' },
+    session: { branch_prefix: 'session/', worktrees_path: '.worktrees/', workspaces_external: false },
     write_lifecycle: { diff_size_ceiling_lines: 2000, writable_paths: [] },
     catalog: { path: 'catalog/', section_max_bytes: 32768 },
     disclosure: { internal_audiences: [], hard_walls: [], leak_markers: {} },
     ingest: { inbox_path: 'inbox/', tracking_params: [] },
-    organize: { archive_path: 'archive/', rollup_stale_days: rollupStaleDays },
+    organize: { archive_path: 'archive/', rollup_stale_days: rollupStaleDays, mission_path: missionPath },
     harness: { skills_path: 'skills/', conventions_path: 'conventions/' },
     adapters: [],
   };
@@ -132,6 +132,24 @@ describe('ctxr rollup stale (real git)', () => {
       ]);
 
       await expect(execute(env, store, { for: 'projects/nope.md' })).rejects.toBeInstanceOf(NoteNotFoundError);
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('reports a configured mission_path stale on elapsed time, wired end-to-end through the real command (context-organize spec: generalize-identity-migration-residue)', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const gitEnv = hermeticGitEnv();
+      await initGitRepo(tmp.root, gitEnv);
+      const store: Store = { root: tmp.root, config: makeConfig(7, 'MISSION.md') };
+      const env = makeFakeEnv({ cwd: tmp.root, git: createExecFileGitRunner(), now: () => new Date('2026-02-01T00:00:00.000Z') });
+
+      // Never rollup-written: no ROLLUP_FENCE, no rolled_up timestamp — still surfaces as stale.
+      await commit(tmp.root, gitEnv, 'MISSION.md', '# Mission\n', '2026-01-01T00:00:00');
+
+      const outcome = await execute(env, store, {});
+      expect(outcome.data?.stale).toEqual([{ entity: 'MISSION.md', rolledUp: null, newestBacklink: null }]);
     } finally {
       await tmp.cleanup();
     }

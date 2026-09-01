@@ -24,6 +24,7 @@ import {
   DEFAULT_SESSION_BRANCH_PREFIX,
   DEFAULT_VISIBILITY_CONTEXT,
   DEFAULT_VISIBILITY_FIELD_KEY,
+  DEFAULT_WORKSPACES_EXTERNAL,
   DEFAULT_WORKTREES_PATH,
 } from '../config/defaults.js';
 import { configPathFor, readConfig } from '../config/load.js';
@@ -207,7 +208,7 @@ async function runInitCore(env: RunEnv, flags: InitFlags): Promise<RunInitResult
     derived: { paths: [...DEFAULT_DERIVED_PATHS] },
     retrieval: { exclude_paths: [...DEFAULT_EXCLUDE_PATHS], relations: [...DEFAULT_RELATIONS], graph: { ...DEFAULT_GRAPH_SETTINGS, orphan_exempt_clusters: [] } },
     git: { default_branch: defaultBranch },
-    session: { branch_prefix: DEFAULT_SESSION_BRANCH_PREFIX, worktrees_path: DEFAULT_WORKTREES_PATH },
+    session: { branch_prefix: DEFAULT_SESSION_BRANCH_PREFIX, worktrees_path: DEFAULT_WORKTREES_PATH, workspaces_external: DEFAULT_WORKSPACES_EXTERNAL },
     write_lifecycle: { diff_size_ceiling_lines: DEFAULT_DIFF_SIZE_CEILING_LINES, writable_paths: [] },
     catalog: { path: DEFAULT_CATALOG_PATH, section_max_bytes: DEFAULT_CATALOG_SECTION_MAX_BYTES },
     disclosure: { internal_audiences: [...DEFAULT_INTERNAL_AUDIENCES], hard_walls: [...DEFAULT_HARD_WALLS], leak_markers: {} },

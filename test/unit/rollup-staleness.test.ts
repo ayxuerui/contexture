@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { checkRollupStaleness, findStaleRollups, hasRollupSection, ROLLED_UP_FIELD, ROLLUP_FENCE } from '../../src/core/rollup.js';
+import { checkMissionStaleness, checkRollupStaleness, findStaleRollups, hasRollupSection, ROLLED_UP_FIELD, ROLLUP_FENCE } from '../../src/core/rollup.js';
 import type { Note } from '../../src/core/notes/list.js';
 import { fakeGitRunner } from '../helpers/fake-env.js';
 
@@ -86,6 +86,81 @@ describe('checkRollupStaleness (context-organize D4)', () => {
     const git = gitWithDates({ 'a.md': '2026-01-05T00:00:00.000Z', 'b.md': '2026-03-01T00:00:00.000Z' });
     const result = await checkRollupStaleness(git, '/repo', notes[0]!, notes, 0);
     expect(result?.newestBacklink).toEqual({ path: 'b.md', modified: '2026-03-01T00:00:00.000Z' });
+  });
+});
+
+function plainNote(relPath: string, rolledUp: string | null): Note {
+  const frontmatter: Record<string, unknown> = {};
+  if (rolledUp !== null) frontmatter[ROLLED_UP_FIELD] = rolledUp;
+  return { path: relPath, frontmatter: Object.keys(frontmatter).length > 0 ? frontmatter : undefined, body: '# Mission\n\nno rollup fence yet\n' };
+}
+
+describe('checkMissionStaleness (context-organize spec: generalize-identity-migration-residue)', () => {
+  it('an unwritten mission document (no recorded timestamp) is stale', () => {
+    const note = plainNote('MISSION.md', null);
+    const result = checkMissionStaleness(note, 7, new Date('2026-06-01T00:00:00.000Z'));
+    expect(result).toEqual({ entity: 'MISSION.md', rolledUp: null, newestBacklink: null });
+  });
+
+  it('an aged mission document is stale once elapsed time exceeds staleDays', () => {
+    const note = entity('MISSION.md', '2026-01-01T00:00:00.000Z'); // has a ROLLUP_FENCE too — irrelevant to this rule
+    const result = checkMissionStaleness(note, 7, new Date('2026-02-01T00:00:00.000Z'));
+    expect(result).toEqual({ entity: 'MISSION.md', rolledUp: '2026-01-01T00:00:00.000Z', newestBacklink: null });
+  });
+
+  it('a freshly rolled-up mission document (within staleDays) is not stale', () => {
+    const note = entity('MISSION.md', '2026-01-30T00:00:00.000Z');
+    const result = checkMissionStaleness(note, 7, new Date('2026-02-01T00:00:00.000Z'));
+    expect(result).toBeNull();
+  });
+
+  it('staleness is purely time-based: no backlinks or git are ever consulted', () => {
+    // No backlinking note exists at all, unlike checkRollupStaleness's requirement of at least one.
+    const note = plainNote('MISSION.md', null);
+    expect(checkMissionStaleness(note, 0, new Date('2026-01-01T00:00:00.000Z'))).not.toBeNull();
+  });
+});
+
+describe('findStaleRollups (mission path)', () => {
+  it('an unwritten mission document is included as a candidate even without a ROLLUP_FENCE', async () => {
+    const notes = [plainNote('MISSION.md', null)];
+    const git = gitWithDates({});
+    const results = await findStaleRollups(git, '/repo', notes, { missionPath: 'MISSION.md' }, 7, new Date('2026-06-01T00:00:00.000Z'));
+    expect(results.map((r) => r.entity)).toEqual(['MISSION.md']);
+    expect(results[0]?.newestBacklink).toBeNull();
+  });
+
+  it('an aged mission document is stale regardless of unrelated notes being recently modified', async () => {
+    const notes = [entity('MISSION.md', '2026-01-01T00:00:00.000Z'), entity('other.md', '2026-05-01T00:00:00.000Z')];
+    const git = gitWithDates({});
+    const results = await findStaleRollups(git, '/repo', notes, { missionPath: 'MISSION.md' }, 7, new Date('2026-02-01T00:00:00.000Z'));
+    expect(results.map((r) => r.entity)).toEqual(['MISSION.md']);
+  });
+
+  it('a freshly rolled-up mission document is not reported', async () => {
+    const notes = [entity('MISSION.md', '2026-01-30T00:00:00.000Z')];
+    const git = gitWithDates({});
+    const results = await findStaleRollups(git, '/repo', notes, { missionPath: 'MISSION.md' }, 7, new Date('2026-02-01T00:00:00.000Z'));
+    expect(results).toEqual([]);
+  });
+
+  it('with no missionPath configured, the candidate set and results are unchanged from the pre-existing behavior', async () => {
+    const notes = [entity('topic.md', null), backlink('a.md', 'topic')];
+    const git = gitWithDates({ 'a.md': '2026-01-01T00:00:00.000Z' });
+    const withoutMission = await findStaleRollups(git, '/repo', notes);
+    const withUndefinedMission = await findStaleRollups(git, '/repo', notes, { missionPath: undefined }, 0, new Date());
+    expect(withoutMission.map((r) => r.entity)).toEqual(['topic.md']);
+    expect(withUndefinedMission.map((r) => r.entity)).toEqual(['topic.md']);
+  });
+
+  it('a note matching both the entity scan and the configured mission path is reported once, under the mission rule', async () => {
+    // "topic.md" carries a ROLLUP_FENCE (so the entity scan would normally
+    // evaluate it) AND is the configured mission path — the mission rule
+    // must own it exclusively, not double-report or blend rules.
+    const notes = [entity('topic.md', '2026-01-01T00:00:00.000Z'), backlink('a.md', 'topic')];
+    const git = gitWithDates({ 'a.md': '2026-03-01T00:00:00.000Z' }); // would be stale under the backlink rule
+    const results = await findStaleRollups(git, '/repo', notes, { missionPath: 'topic.md' }, 7, new Date('2026-01-05T00:00:00.000Z')); // fresh under the mission rule
+    expect(results).toEqual([]); // mission rule wins: fresh, not stale — not the backlink rule's stale verdict
   });
 });
 
