@@ -135,7 +135,7 @@ describe('entry-doc generation (real CLI)', () => {
 
       await writeNote(
         tmp.root,
-        '.contexture/conventions/house-style.md',
+        '.contexture/guidance/house-style.md',
         '---\ntitle: House style\ndescription: How notes are written here.\n---\n\nBullet points, always.\n',
       );
       await writeNote(
@@ -150,7 +150,7 @@ describe('entry-doc generation (real CLI)', () => {
       const agentsMd = await readFile(path.join(tmp.root, 'AGENTS.md'), 'utf8');
       expect(agentsMd).toContain('### House style');
       expect(agentsMd).toContain('Bullet points, always.'); // now inlined, not referenced
-      expect(agentsMd).toContain('_Source: .contexture/conventions/house-style.md_');
+      expect(agentsMd).toContain('_Source: .contexture/guidance/house-style.md_');
       expect(agentsMd).not.toContain('[House style]'); // no more link-style index entry
       expect(agentsMd).not.toContain('weekly-review'); // the skill index is gone; skills are never named in AGENTS.md
       expect(agentsMd).not.toContain('Steps.'); // the skill body is not inlined either — only conventions/mission are
@@ -167,11 +167,11 @@ describe('entry-doc generation (real CLI)', () => {
     try {
       const env = hermeticGitEnv();
       await runCli(['init'], { cwd: tmp.root, env });
-      await writeNote(tmp.root, '.contexture/conventions/house-style.md', '---\ntitle: House style\n---\n\nOriginal text.\n');
+      await writeNote(tmp.root, '.contexture/guidance/house-style.md', '---\ntitle: House style\n---\n\nOriginal text.\n');
       await runCli(['init'], { cwd: tmp.root, env });
 
       // Edit the source directly, bypassing `ctxr update` — AGENTS.md now drifts.
-      await writeNote(tmp.root, '.contexture/conventions/house-style.md', '---\ntitle: House style\n---\n\nChanged text.\n');
+      await writeNote(tmp.root, '.contexture/guidance/house-style.md', '---\ntitle: House style\n---\n\nChanged text.\n');
 
       const result = await runCli(['verify', '--portable', '--json'], { cwd: tmp.root, env });
       expect(result.exitCode).not.toBe(0);

@@ -130,7 +130,28 @@ export async function scanDocsDir(root: string, dirRelativePath: string): Promis
   return docs;
 }
 
-/** Every operator convention doc currently at the configured path. */
-export function scanConventions(root: string, config: StoreConfig): Promise<ScannedDoc[]> {
-  return scanDocsDir(root, config.harness.conventions_path);
+/**
+ * compose-store-guidance-documents: the mission document, when configured,
+ * commonly lives in the same guidance directory as convention files (its
+ * shipped default is `<guidance_path>/mission.md`) but is never itself a
+ * convention — it already gets its own "Mission" section
+ * (inline-conventions-and-mission's `renderMissionSection`). Excluded by
+ * basename so inlining conventions never double-renders it.
+ */
+function reservedGuidanceFileNames(config: StoreConfig): Set<string> {
+  const names = new Set<string>();
+  if (config.organize.mission_path) names.add(path.basename(config.organize.mission_path));
+  return names;
+}
+
+/**
+ * Every convention doc currently at the configured guidance path —
+ * contexture's own shipped baseline (see `templates/conventions/baseline-convention.md`,
+ * synced by `syncBaselineConvention` in `convention-doc.ts`) alongside
+ * whatever the operator has added — minus the mission document.
+ */
+export async function scanConventions(root: string, config: StoreConfig): Promise<ScannedDoc[]> {
+  const docs = await scanDocsDir(root, config.harness.guidance_path);
+  const reserved = reservedGuidanceFileNames(config);
+  return docs.filter((doc) => !reserved.has(path.basename(doc.path)));
 }

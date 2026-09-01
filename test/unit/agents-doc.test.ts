@@ -36,7 +36,7 @@ function makeConfig(overrides: Partial<StoreConfig> = {}): StoreConfig {
     disclosure: { internal_audiences: [], hard_walls: [], leak_markers: {} },
     ingest: { inbox_path: 'inbox/', tracking_params: [] },
     organize: { archive_path: 'archive/', rollup_stale_days: 7 },
-    harness: { skills_path: 'skills/', conventions_path: 'conventions/' },
+    harness: { skills_path: 'skills/', guidance_path: 'guidance/' },
     adapters: [],
     ...overrides,
   };
@@ -336,8 +336,8 @@ describe('checkAgentsMdDrift', () => {
     try {
       const { mkdir, writeFile: write } = await import('node:fs/promises');
       const config = makeConfig();
-      await mkdir(path.join(tmp.root, 'conventions'), { recursive: true });
-      await write(path.join(tmp.root, 'conventions/style.md'), '---\ntitle: Style\n---\nBody.\n');
+      await mkdir(path.join(tmp.root, 'guidance'), { recursive: true });
+      await write(path.join(tmp.root, 'guidance/style.md'), '---\ntitle: Style\n---\nBody.\n');
       const { buildAgentsConventionsSection } = await import('../../src/core/agents-doc.js');
       await buildAgentsConventionsSection(tmp.root, config);
 
@@ -354,15 +354,15 @@ describe('checkAgentsMdDrift', () => {
     try {
       const { mkdir, writeFile: write } = await import('node:fs/promises');
       const config = makeConfig();
-      await mkdir(path.join(tmp.root, 'conventions'), { recursive: true });
-      await write(path.join(tmp.root, 'conventions/style.md'), '---\ntitle: Style\n---\nOriginal.\n');
+      await mkdir(path.join(tmp.root, 'guidance'), { recursive: true });
+      await write(path.join(tmp.root, 'guidance/style.md'), '---\ntitle: Style\n---\nOriginal.\n');
       const { buildAgentsConventionsSection } = await import('../../src/core/agents-doc.js');
       await buildAgentsConventionsSection(tmp.root, config);
 
-      await write(path.join(tmp.root, 'conventions/style.md'), '---\ntitle: Style\n---\nChanged.\n');
+      await write(path.join(tmp.root, 'guidance/style.md'), '---\ntitle: Style\n---\nChanged.\n');
 
       const drift = await checkAgentsMdDrift(tmp.root, config);
-      expect(drift.driftedConventions).toEqual(['conventions/style.md']);
+      expect(drift.driftedConventions).toEqual(['guidance/style.md']);
     } finally {
       await tmp.cleanup();
     }
@@ -491,7 +491,7 @@ describe('exact rendered output', () => {
       "For a literal or entity question the catalog and graph do not answer (a specific string, an exact identifier, a phrase),",
       "use your own direct content-matching tool (e.g. grep/ripgrep) against the store, scoped to exclude:",
       "",
-      "`.contexture/`, `.worktrees/`, `catalog/`, `conventions/`, `identity/`, `skills/`",
+      "`.contexture/`, `.worktrees/`, `catalog/`, `guidance/`, `identity/`, `skills/`",
       "",
       "There is no `ctxr search` command. Ranked or semantic search is deferred to a future version — do not look for one.",
     ]);

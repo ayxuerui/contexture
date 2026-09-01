@@ -35,7 +35,7 @@ function makeConfig(overrides: Partial<StoreConfig['retrieval']['graph']> = {}):
     disclosure: { internal_audiences: [], hard_walls: [], leak_markers: {} },
     ingest: { inbox_path: 'inbox/', tracking_params: [] },
     organize: { archive_path: 'archive/', rollup_stale_days: 7 },
-    harness: { skills_path: 'skills/', conventions_path: 'conventions/' },
+    harness: { skills_path: 'skills/', guidance_path: 'guidance/' },
     adapters: [],
   };
 }

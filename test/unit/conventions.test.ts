@@ -21,7 +21,7 @@ function makeConfig(): StoreConfig {
     disclosure: { internal_audiences: [], hard_walls: [], leak_markers: {} },
     ingest: { inbox_path: 'inbox/', tracking_params: [] },
     organize: { archive_path: 'archive/', rollup_stale_days: 7 },
-    harness: { skills_path: 'skills/', conventions_path: 'conventions/' },
+    harness: { skills_path: 'skills/', guidance_path: 'guidance/' },
     adapters: [],
   };
 }
@@ -95,16 +95,44 @@ describe('scanConventions', () => {
   it('lists .md files sorted by filename, with metadata and body', async () => {
     const tmp = await makeTmpDir();
     try {
-      await mkdir(path.join(tmp.root, 'conventions'), { recursive: true });
-      await writeFile(path.join(tmp.root, 'conventions/b-style.md'), '---\ntitle: Style\ndescription: Prose rules.\n---\nBody text.\n');
-      await writeFile(path.join(tmp.root, 'conventions/a-rules.md'), '# Rules\n');
-      await writeFile(path.join(tmp.root, 'conventions/notes.txt'), 'not markdown');
+      await mkdir(path.join(tmp.root, 'guidance'), { recursive: true });
+      await writeFile(path.join(tmp.root, 'guidance/b-style.md'), '---\ntitle: Style\ndescription: Prose rules.\n---\nBody text.\n');
+      await writeFile(path.join(tmp.root, 'guidance/a-rules.md'), '# Rules\n');
+      await writeFile(path.join(tmp.root, 'guidance/notes.txt'), 'not markdown');
 
       const docs = await scanConventions(tmp.root, makeConfig());
       expect(docs).toEqual([
-        { path: 'conventions/a-rules.md', title: 'Rules', description: null, body: '# Rules\n' },
-        { path: 'conventions/b-style.md', title: 'Style', description: 'Prose rules.', body: 'Body text.\n' },
+        { path: 'guidance/a-rules.md', title: 'Rules', description: null, body: '# Rules\n' },
+        { path: 'guidance/b-style.md', title: 'Style', description: 'Prose rules.', body: 'Body text.\n' },
       ]);
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('excludes the configured mission document by basename (compose-store-guidance-documents)', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      await mkdir(path.join(tmp.root, 'guidance'), { recursive: true });
+      await writeFile(path.join(tmp.root, 'guidance/mission.md'), '# Mission\n');
+      await writeFile(path.join(tmp.root, 'guidance/custom-convention.md'), '---\ntitle: Custom\n---\n');
+
+      const config: StoreConfig = { ...makeConfig(), organize: { archive_path: 'archive/', rollup_stale_days: 7, mission_path: 'guidance/mission.md' } };
+      const docs = await scanConventions(tmp.root, config);
+      expect(docs.map((d) => d.path)).toEqual(['guidance/custom-convention.md']);
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('includes a file named like the mission document when no mission_path is configured for this store', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      await mkdir(path.join(tmp.root, 'guidance'), { recursive: true });
+      await writeFile(path.join(tmp.root, 'guidance/mission.md'), '# Mission\n');
+
+      const docs = await scanConventions(tmp.root, makeConfig());
+      expect(docs.map((d) => d.path)).toEqual(['guidance/mission.md']);
     } finally {
       await tmp.cleanup();
     }
@@ -133,7 +161,7 @@ describe('renderConventionsSection', () => {
 
   it('explains the mechanism and names the configured path when empty', () => {
     const lines = renderConventionsSection(makeConfig(), []).join('\n');
-    expect(lines).toContain('`conventions/`');
+    expect(lines).toContain('`guidance/`');
     expect(lines).toMatch(/no convention documents yet/i);
   });
 
@@ -162,7 +190,7 @@ describe('conventions section templates', () => {
       "## Store conventions",
       "",
       "This store declares no convention documents yet. Operator-authored conventions (content style, field",
-      "semantics, house rules) belong as markdown files under `conventions/` — each is",
+      "semantics, house rules) belong as markdown files under `guidance/` — each is",
       "inlined here in full on regeneration.",
       "",
       "A note that applies to only one agent harness (not every harness reading this store) belongs below that harness's own managed import in its own entry file, never here — every file in this directory is inlined into every harness's entry document equally.",

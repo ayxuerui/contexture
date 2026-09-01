@@ -242,7 +242,7 @@ export function renderConventionBlock(doc: ScannedDoc): string[] {
 export function renderConventionsSection(config: StoreConfig, conventions: readonly ScannedDoc[]): string[] {
   if (conventions.length === 0) {
     return agentsTemplate('store-conventions-empty')
-      .replaceAll('__CONVENTIONS_PATH__', config.harness.conventions_path)
+      .replaceAll('__CONVENTIONS_PATH__', config.harness.guidance_path)
       .split('\n');
   }
   const blocks = conventions.map(renderConventionBlock);
@@ -296,7 +296,7 @@ export async function checkAgentsMdDrift(root: string, config: StoreConfig): Pro
   const driftedConventions: string[] = [];
   if (freshConventionsSection !== conventionsRegion) {
     if (conventions.length === 0) {
-      driftedConventions.push(config.harness.conventions_path);
+      driftedConventions.push(config.harness.guidance_path);
     } else {
       for (const doc of conventions) {
         if (!conventionsRegion.includes(renderConventionBlock(doc).join('\n'))) driftedConventions.push(doc.path);

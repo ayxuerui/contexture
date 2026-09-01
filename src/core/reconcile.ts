@@ -1,4 +1,5 @@
 import path from 'node:path';
+import { DEFAULT_BASELINE_CONVENTION_FILE_NAME } from '../config/defaults.js';
 import type { StoreConfig } from '../config/schema.js';
 import type { RunEnv } from './env.js';
 import {
@@ -11,6 +12,7 @@ import {
   buildAgentsMissionSection,
   buildAgentsPlacementSection,
 } from './agents-doc.js';
+import { syncBaselineConvention } from './convention-doc.js';
 import { removeFencedRegionFromFile, reorderFencedRegionsInFile, upsertFencedRegionInFile } from './fs/fenced-region.js';
 import { configureHooksPath, installHooks } from './hooks.js';
 import { commentFence, DERIVED_GITIGNORE_FENCE, htmlCommentFence } from './markers.js';
@@ -60,6 +62,14 @@ export async function reconcileStore(env: RunEnv, root: string, config: StoreCon
   // removed the skill index), but because init/update must still deliver
   // the skill files to disk regardless of what AGENTS.md renders.
   changed.push(...(await syncShippedSkills(root, config)));
+
+  // Same reason, same ordering constraint as skills: the shipped baseline
+  // convention file must be current on disk BEFORE buildAgentsConventionsSection
+  // scans the guidance directory and inlines it (compose-store-guidance-documents).
+  note(
+    path.join(config.harness.guidance_path, DEFAULT_BASELINE_CONVENTION_FILE_NAME).split(path.sep).join('/'),
+    (await syncBaselineConvention(root, config)).changed,
+  );
 
   let agentsChanged = false;
   for (const build of [

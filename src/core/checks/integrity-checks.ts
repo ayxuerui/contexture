@@ -328,9 +328,9 @@ export const stagedAgentsMdInlinedContentCurrentCheck = defineCheck({
   scopes: ['staged'],
   async run(ctx) {
     const staged = ctx.staged ?? [];
-    const conventionsPrefix = ctx.config.harness.conventions_path.endsWith('/')
-      ? ctx.config.harness.conventions_path
-      : `${ctx.config.harness.conventions_path}/`;
+    const conventionsPrefix = ctx.config.harness.guidance_path.endsWith('/')
+      ? ctx.config.harness.guidance_path
+      : `${ctx.config.harness.guidance_path}/`;
     const missionPath = ctx.config.organize.mission_path;
 
     const relevantSourceStaged = staged.some((f) => f.path.startsWith(conventionsPrefix) || f.path === missionPath);

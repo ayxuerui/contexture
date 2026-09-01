@@ -30,7 +30,7 @@ function makeConfig(): StoreConfig {
     disclosure: { internal_audiences: [], hard_walls: [], leak_markers: {} },
     ingest: { inbox_path: 'inbox/', tracking_params: [] },
     organize: { archive_path: 'archive/', rollup_stale_days: 7 },
-    harness: { skills_path: 'skills/', conventions_path: 'conventions/' },
+    harness: { skills_path: 'skills/', guidance_path: 'guidance/' },
     adapters: [],
   };
 }
@@ -80,17 +80,17 @@ describe('verify --portable', () => {
     try {
       const store = await setUpStore(tmp.root);
       const { mkdir, writeFile: write } = await import('node:fs/promises');
-      await mkdir(path.join(tmp.root, 'conventions'), { recursive: true });
-      await write(path.join(tmp.root, 'conventions/style.md'), '---\ntitle: Style\n---\n\nOriginal.\n');
+      await mkdir(path.join(tmp.root, 'guidance'), { recursive: true });
+      await write(path.join(tmp.root, 'guidance/style.md'), '---\ntitle: Style\n---\n\nOriginal.\n');
       await buildAgentsConventionsSection(tmp.root, store.config); // AGENTS.md now reflects "Original."
 
-      await write(path.join(tmp.root, 'conventions/style.md'), '---\ntitle: Style\n---\n\nChanged.\n'); // edited without regenerating
+      await write(path.join(tmp.root, 'guidance/style.md'), '---\ntitle: Style\n---\n\nChanged.\n'); // edited without regenerating
 
       const outcome = await execute(store, { portable: true });
       expect(outcome.exitCode).toBe(ExitCode.CheckFailed);
       const failed = outcome.data?.steps.find((s) => s.status === 'fail');
       expect(failed?.operation).toContain('conventions');
-      expect(failed?.detail).toContain('conventions/style.md');
+      expect(failed?.detail).toContain('guidance/style.md');
     } finally {
       await tmp.cleanup();
     }

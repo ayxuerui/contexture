@@ -17,8 +17,13 @@ import { z } from 'zod';
  * `harness.procedures_path` -> `harness.skills_path`. HarnessSchema's
  * transform accepts the old key through this version so an unmigrated
  * store still loads (see schema.ts's HarnessSchema comment).
+ *
+ * Bumped to 4 by the conventions-to-guidance key rename migration
+ * (rename-conventions-path-to-guidance-path, 0004-rename-conventions-path-to-guidance-path):
+ * `harness.conventions_path` -> `harness.guidance_path`. HarnessSchema's
+ * transform accepts the old key through this version too, the same way.
  */
-export const SUPPORTED_SCHEMA_VERSION = 3;
+export const SUPPORTED_SCHEMA_VERSION = 4;
 
 export const TaxonomyLayerSchema = z.object({
   name: z.string().min(1),
@@ -165,23 +170,45 @@ const OrganizeSchema = z.object({
 });
 
 /**
- * harness-portability spec: the portable skill pack and operator convention
- * docs AGENTS.md's indexes point into.
+ * harness-portability spec: the portable skill pack and the guidance
+ * documents (a shipped baseline convention file, the operator's own
+ * convention files, and the mission document) AGENTS.md's generated
+ * sections read from and inline.
  *
  * rename-procedures-to-skills migration (0003): `skills_path` is the
  * current key; `procedures_path` is its pre-migration name, accepted here
  * so a store on schema 2 still loads (with a message pointing at `ctxr
  * migrate`, not a raw shape-validation error) rather than failing the
- * moment this schema starts requiring the new key. The transform below is
- * the ONLY place either spelling is read — every other consumer in the
- * codebase sees `config.harness.skills_path` and nothing else, so the old
- * key never leaks past config loading.
+ * moment this schema starts requiring the new key.
+ *
+ * rename-conventions-path-to-guidance-path migration (0004): `guidance_path`
+ * is the current key; `conventions_path` is its pre-migration name. Unlike
+ * `skills_path`, this key always had a workable default, so an unmigrated
+ * store loads silently onto that default rather than erroring — `ctxr
+ * migrate` moves the directory and rewrites the key, but nothing breaks if
+ * it hasn't run yet.
+ *
+ * The transform below is the ONLY place any of these spellings is read —
+ * every other consumer in the codebase sees `config.harness.skills_path` /
+ * `config.harness.guidance_path` and nothing else, so no old key ever leaks
+ * past config loading.
  */
 const HarnessSchema = z
   .object({
     skills_path: z.string().min(1).optional(),
     procedures_path: z.string().min(1).optional(),
-    conventions_path: z.string().min(1).default('.contexture/conventions/'),
+    guidance_path: z.string().min(1).optional(),
+    conventions_path: z.string().min(1).optional(),
+    /**
+     * compose-store-guidance-documents design.md D6: a size ceiling on
+     * AGENTS.md's inlined "Store conventions" section, guarding against
+     * unbounded growth now that its content is inlined rather than indexed
+     * (inline-conventions-and-mission). Optional with no schema-level
+     * default (falls back to `DEFAULT_CONVENTION_MAX_BYTES` at the one
+     * doctor check that reads it) so this stays purely additive — no
+     * existing `StoreConfig` object literal needs updating to compile.
+     */
+    convention_max_bytes: z.number().int().positive().optional(),
   })
   .transform((value, ctx) => {
     const skillsPath = value.skills_path ?? value.procedures_path;
@@ -193,7 +220,16 @@ const HarnessSchema = z
       });
       return z.NEVER;
     }
-    return { skills_path: skillsPath, conventions_path: value.conventions_path };
+    const guidancePath = value.guidance_path ?? value.conventions_path ?? '.contexture/guidance/';
+    // Spread, not a plain key, so the output type keeps `convention_max_bytes`
+    // genuinely optional (`key?: number`) rather than always-present-but-possibly-undefined
+    // (`key: number | undefined`) — the latter would require every existing
+    // `StoreConfig` object literal in the codebase to add the key just to compile.
+    return {
+      skills_path: skillsPath,
+      guidance_path: guidancePath,
+      ...(value.convention_max_bytes !== undefined ? { convention_max_bytes: value.convention_max_bytes } : {}),
+    };
   });
 
 /**

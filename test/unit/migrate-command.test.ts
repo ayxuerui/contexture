@@ -23,7 +23,7 @@ function makeV1Config(): StoreConfig {
     disclosure: { internal_audiences: [], hard_walls: [], leak_markers: {} },
     ingest: { inbox_path: 'inbox/', tracking_params: [] },
     organize: { archive_path: 'archive/', rollup_stale_days: 7 },
-    harness: { skills_path: 'skills/', conventions_path: 'conventions/' },
+    harness: { skills_path: 'skills/', guidance_path: 'guidance/' },
     adapters: [],
   };
 }
@@ -45,10 +45,10 @@ describe('migrate command', () => {
   it('reports no pending migrations for a store already at the current schema version', async () => {
     const tmp = await makeTmpDir();
     try {
-      const store: Store = { ...(await setUpV1Store(tmp.root)), config: { ...makeV1Config(), schema_version: 3, fields: { visibility: 'lens' } } };
+      const store: Store = { ...(await setUpV1Store(tmp.root)), config: { ...makeV1Config(), schema_version: 4, fields: { visibility: 'lens' } } };
       const outcome = await execute(store, {});
       expect(outcome.exitCode).toBe(ExitCode.Ok);
-      expect(outcome.data).toEqual({ currentVersion: 3, targetVersion: 3, applied: false, migrations: [] });
+      expect(outcome.data).toEqual({ currentVersion: 4, targetVersion: 4, applied: false, migrations: [] });
     } finally {
       await tmp.cleanup();
     }
@@ -81,7 +81,7 @@ describe('migrate command', () => {
       const outcome = await execute(store, {});
       expect(outcome.exitCode).toBe(ExitCode.Ok);
       expect(outcome.data?.applied).toBe(true);
-      expect(outcome.schemaVersion).toBe(3);
+      expect(outcome.schemaVersion).toBe(4);
 
       const after = await readFile(path.join(tmp.root, 'projects/a.md'), 'utf8');
       expect(after).toContain('lens: shared');
