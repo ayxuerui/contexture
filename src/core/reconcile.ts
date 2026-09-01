@@ -3,13 +3,15 @@ import type { StoreConfig } from '../config/schema.js';
 import type { RunEnv } from './env.js';
 import {
   agentsMdPath,
+  AGENTS_MD_SECTION_ORDER,
   buildAgentsCanonicalSection,
   buildAgentsCaptureSection,
   buildAgentsConventionsSection,
   buildAgentsLegRoutingSection,
+  buildAgentsMissionSection,
   buildAgentsPlacementSection,
 } from './agents-doc.js';
-import { removeFencedRegionFromFile, upsertFencedRegionInFile } from './fs/fenced-region.js';
+import { removeFencedRegionFromFile, reorderFencedRegionsInFile, upsertFencedRegionInFile } from './fs/fenced-region.js';
 import { configureHooksPath, installHooks } from './hooks.js';
 import { commentFence, DERIVED_GITIGNORE_FENCE, htmlCommentFence } from './markers.js';
 import { syncShippedSkills } from './skills.js';
@@ -53,8 +55,10 @@ export async function reconcileStore(env: RunEnv, root: string, config: StoreCon
     (await upsertFencedRegionInFile(gitignorePath, WORKTREES_GITIGNORE_FENCE, [config.session.worktrees_path])).changed,
   );
 
-  // Files the generated sections index (skills) must be current BEFORE the
-  // sections are rendered — the skill index is a disk scan.
+  // The owned skill copies are refreshed unconditionally here — not because
+  // any AGENTS.md section reads them anymore (inline-conventions-and-mission
+  // removed the skill index), but because init/update must still deliver
+  // the skill files to disk regardless of what AGENTS.md renders.
   changed.push(...(await syncShippedSkills(root, config)));
 
   let agentsChanged = false;
@@ -63,11 +67,17 @@ export async function reconcileStore(env: RunEnv, root: string, config: StoreCon
     buildAgentsCaptureSection,
     buildAgentsPlacementSection,
     buildAgentsCanonicalSection,
+    buildAgentsMissionSection,
     buildAgentsConventionsSection,
   ]) {
     if ((await build(root, config)).changed) agentsChanged = true;
   }
   if ((await removeFencedRegionFromFile(agentsMdPath(root), RETIRED_AGENTS_MD_IDENTITY_FENCE)).changed) agentsChanged = true;
+  // harness-portability spec "Generated sections render in a fixed order":
+  // reorders once every section fence above has been written/refreshed, so
+  // a first-time init and a subsequent update converge on the same layout.
+  // A no-op when the fences aren't all contiguous — see `reorderFencedRegions`.
+  if ((await reorderFencedRegionsInFile(agentsMdPath(root), AGENTS_MD_SECTION_ORDER)).changed) agentsChanged = true;
   note('AGENTS.md', agentsChanged);
 
   const { changed: hookFiles } = await installHooks(root, config.git.default_branch);

@@ -73,7 +73,7 @@ describe('adapters (real CLI)', () => {
     }
   });
 
-  it('deleting the AGENTS.md skill index entry for one operation makes verify --portable fail naming that operation', async () => {
+  it('deleting a managed AGENTS.md section makes verify --portable fail naming it', async () => {
     const tmp = await makeTmpDir();
     try {
       const env = hermeticGitEnv();
@@ -81,12 +81,18 @@ describe('adapters (real CLI)', () => {
 
       const agentsMdPath = path.join(tmp.root, 'AGENTS.md');
       const content = await readFile(agentsMdPath, 'utf8');
-      await writeFile(agentsMdPath, content.replace(/^- \[ctxr-connection-finding\]\(\.claude\/skills\/ctxr-connection-finding\/SKILL\.md\).*\n/m, ''));
+      // Strip the whole "Placing a new note" fenced section, markers included.
+      const stripped = content.replace(
+        /<!-- >>> contexture:placement.*?<!-- <<< contexture:placement <<< -->\n?/s,
+        '',
+      );
+      expect(stripped).not.toBe(content);
+      await writeFile(agentsMdPath, stripped);
 
       const result = await runCli(['verify', '--portable', '--json'], { cwd: tmp.root, env });
       expect(result.exitCode).not.toBe(0);
       const data = JSON.parse(result.stdout);
-      expect(data.findings[0].message).toContain('ctxr-connection-finding');
+      expect(data.findings[0].message).toContain('placement');
     } finally {
       await tmp.cleanup();
     }
@@ -119,9 +125,9 @@ describe('adapters (real CLI)', () => {
   });
 });
 
-/** entry-doc-generation task 3.2. */
+/** entry-doc-generation task 3.2, updated by inline-conventions-and-mission: conventions are inlined, not indexed; the skill index is gone entirely. */
 describe('entry-doc generation (real CLI)', () => {
-  it('a convention file and an operator-authored skill both get indexed on re-init', async () => {
+  it('a convention file is inlined in full on re-init; an operator-authored skill is not indexed at all', async () => {
     const tmp = await makeTmpDir();
     try {
       const env = hermeticGitEnv();
@@ -138,14 +144,16 @@ describe('entry-doc generation (real CLI)', () => {
         '---\nname: weekly-review\ndescription: Walk the health checks weekly.\n---\n\nSteps.\n',
       );
 
-      await runCli(['init'], { cwd: tmp.root, env }); // idempotent path regenerates the indexes
+      await runCli(['init'], { cwd: tmp.root, env }); // idempotent path regenerates the conventions section
       await runCli(['adapters', 'generate'], { cwd: tmp.root, env });
 
       const agentsMd = await readFile(path.join(tmp.root, 'AGENTS.md'), 'utf8');
-      expect(agentsMd).toContain('[House style](.contexture/conventions/house-style.md) — How notes are written here.');
-      expect(agentsMd).toContain('[weekly-review](.claude/skills/weekly-review/SKILL.md) — Walk the health checks weekly.');
-      expect(agentsMd).not.toContain('Bullet points, always.'); // referenced, never inlined
-      expect(agentsMd).not.toContain('Steps.'); // the skill body is not inlined either
+      expect(agentsMd).toContain('### House style');
+      expect(agentsMd).toContain('Bullet points, always.'); // now inlined, not referenced
+      expect(agentsMd).toContain('_Source: .contexture/conventions/house-style.md_');
+      expect(agentsMd).not.toContain('[House style]'); // no more link-style index entry
+      expect(agentsMd).not.toContain('weekly-review'); // the skill index is gone; skills are never named in AGENTS.md
+      expect(agentsMd).not.toContain('Steps.'); // the skill body is not inlined either — only conventions/mission are
 
       const verifyResult = await runCli(['verify', '--portable', '--json'], { cwd: tmp.root, env });
       expect(verifyResult.exitCode).toBe(0);
@@ -154,17 +162,24 @@ describe('entry-doc generation (real CLI)', () => {
     }
   });
 
-  it('verify --portable fails naming an operator skill whose index entry is missing', async () => {
+  it('verify --portable fails when a convention file changes without a matching AGENTS.md regeneration', async () => {
     const tmp = await makeTmpDir();
     try {
       const env = hermeticGitEnv();
       await runCli(['init'], { cwd: tmp.root, env });
-      // Added but never re-indexed: scan sees it, AGENTS.md does not.
-      await writeNote(tmp.root, '.claude/skills/unindexed/SKILL.md', '# Unindexed skill\n\nSteps.\n');
+      await writeNote(tmp.root, '.contexture/conventions/house-style.md', '---\ntitle: House style\n---\n\nOriginal text.\n');
+      await runCli(['init'], { cwd: tmp.root, env });
+
+      // Edit the source directly, bypassing `ctxr update` — AGENTS.md now drifts.
+      await writeNote(tmp.root, '.contexture/conventions/house-style.md', '---\ntitle: House style\n---\n\nChanged text.\n');
 
       const result = await runCli(['verify', '--portable', '--json'], { cwd: tmp.root, env });
       expect(result.exitCode).not.toBe(0);
-      expect(JSON.parse(result.stdout).findings[0].message).toContain('Unindexed skill');
+      expect(JSON.parse(result.stdout).findings[0].message).toContain('conventions');
+
+      await runCli(['update'], { cwd: tmp.root, env });
+      const after = await runCli(['verify', '--portable', '--json'], { cwd: tmp.root, env });
+      expect(after.exitCode).toBe(0);
     } finally {
       await tmp.cleanup();
     }

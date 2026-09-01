@@ -1,6 +1,7 @@
 import { existsSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
+import { buildAgentsMissionSection } from '../core/agents-doc.js';
 import type { CommandOutcome, CommandRequires } from '../core/command.js';
 import type { RunEnv } from '../core/env.js';
 import { NoteNotFoundError } from '../core/errors.js';
@@ -67,6 +68,14 @@ export async function execute(
     const note = await parseNote(absolutePath, relativePath);
     const frontmatter = { ...note.frontmatter, [ROLLED_UP_FIELD]: env.now().toISOString() };
     await writeFileAtomic(absolutePath, renderNoteText(frontmatter, note.body));
+
+    // inline-conventions-and-mission: a write to the configured mission path
+    // also refreshes AGENTS.md's inlined Mission section in this same
+    // operation, so the two never drift apart between this write and the
+    // store's next `ctxr update`.
+    if (relativePath === store.config.organize.mission_path) {
+      await buildAgentsMissionSection(store.root, store.config);
+    }
   }
 
   return {
