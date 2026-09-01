@@ -1,4 +1,4 @@
-import { mkdir, symlink } from 'node:fs/promises';
+import { mkdir, symlink, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import type { StoreConfig } from '../../src/config/schema.js';
@@ -197,5 +197,48 @@ describe('isWriteInScope (Claude Code write-gate)', () => {
       await tmp.cleanup();
       await outside.cleanup();
     }
+  });
+
+  describe('a root that is itself a linked worktree checkout', () => {
+    it('is in scope for ordinary store content — a session whose cwd is already the worktree must not be locked out', async () => {
+      const tmp = await makeTmpDir();
+      try {
+        await writeFile(path.join(tmp.root, '.git'), 'gitdir: /repo/.git/worktrees/sess1\n');
+
+        const result = await isWriteInScope(makeConfig(), tmp.root, 'AGENTS.md');
+        expect(result).toEqual({ inScope: true });
+      } finally {
+        await tmp.cleanup();
+      }
+    });
+
+    it('still denies a symlink escape from inside a linked worktree root', async () => {
+      const tmp = await makeTmpDir();
+      const outside = await makeTmpDir();
+      try {
+        await writeFile(path.join(tmp.root, '.git'), 'gitdir: /repo/.git/worktrees/sess1\n');
+        await mkdir(path.join(tmp.root, 'areas'), { recursive: true });
+        await symlink(outside.root, path.join(tmp.root, 'areas', 'linked'));
+
+        const result = await isWriteInScope(makeConfig(), tmp.root, 'areas/linked/note.md');
+        expect(result.inScope).toBe(false);
+        expect(result.reason).toContain('symbolic link');
+      } finally {
+        await tmp.cleanup();
+        await outside.cleanup();
+      }
+    });
+
+    it('a root whose .git is a directory (the main working tree) is not treated as a linked worktree', async () => {
+      const tmp = await makeTmpDir();
+      try {
+        await mkdir(path.join(tmp.root, '.git'), { recursive: true });
+
+        const result = await isWriteInScope(makeConfig(), tmp.root, 'AGENTS.md');
+        expect(result.inScope).toBe(false);
+      } finally {
+        await tmp.cleanup();
+      }
+    });
   });
 });
