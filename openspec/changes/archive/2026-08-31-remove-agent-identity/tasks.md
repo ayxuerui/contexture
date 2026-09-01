@@ -56,7 +56,7 @@
 ## 9. Version and release
 
 - [x] 9.1 Bump `package.json` and `src/version.ts` together to `0.3.0` (both files, per the lesson from the 0.2.0 release where only one was bumped).
-- [ ] 9.2 PR body names this as a breaking change and links the migration steps in `design.md`'s Migration Plan. Deferred until the PR is actually opened — not done in this pass since the branch isn't pushed yet.
+- [x] 9.2 PR body names this as a breaking change and links the migration steps in `design.md`'s Migration Plan. Done when the PR was opened and merged as #15 (merged 2026-08-31): its `## Breaking changes` section enumerates every removal — the `identity` command group, the `identity` config block, the identity-injection adapter kind, the generated AGENTS.md section, and `session capture`'s narrowing. DEVIATION: it inlines the operator-facing upgrade step (drop the `identity:` key; `doctor` names it as unrecognized) rather than linking `design.md`'s Migration Plan, which is the same guidance in the place a reader of the PR would actually see it. Checkbox ticked retroactively — the task was written before the branch was pushed, and nothing ever came back to it.
 
 ## 10. Land it
 
