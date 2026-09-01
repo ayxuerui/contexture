@@ -1,7 +1,7 @@
 import { PassThrough } from 'node:stream';
 import type { GitResult, GitRunner } from '../../src/core/git/exec.js';
 import type { Io, RunEnv } from '../../src/core/env.js';
-import type { ProfileChoice, Prompter } from '../../src/prompt/prompter.js';
+import type { HarnessChoice, ProfileChoice, Prompter } from '../../src/prompt/prompter.js';
 
 export function collectingStream(isTTY = false): PassThrough & { isTTY?: boolean } {
   const stream = new PassThrough() as PassThrough & { isTTY?: boolean };
@@ -23,15 +23,29 @@ export interface FakePrompterCall {
   defaultId: string;
 }
 
+export interface FakeHarnessPrompterCall {
+  message: string;
+  choices: readonly HarnessChoice[];
+  defaultIds: readonly string[];
+}
+
 export function fakePrompter(
   returnId: string,
   confirmResponse: boolean = true,
-): { prompter: Prompter; calls: FakePrompterCall[]; confirmCalls: { message: string }[] } {
+  harnessIds: string[] = ['claude-code'],
+): {
+  prompter: Prompter;
+  calls: FakePrompterCall[];
+  confirmCalls: { message: string }[];
+  harnessCalls: FakeHarnessPrompterCall[];
+} {
   const calls: FakePrompterCall[] = [];
   const confirmCalls: { message: string }[] = [];
+  const harnessCalls: FakeHarnessPrompterCall[] = [];
   return {
     calls,
     confirmCalls,
+    harnessCalls,
     prompter: {
       async selectProfile(input) {
         calls.push(input);
@@ -40,6 +54,10 @@ export function fakePrompter(
       async confirm(input) {
         confirmCalls.push(input);
         return confirmResponse;
+      },
+      async selectHarnesses(input) {
+        harnessCalls.push(input);
+        return harnessIds;
       },
     },
   };

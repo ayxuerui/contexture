@@ -81,7 +81,7 @@ describe('adapters (real CLI)', () => {
 
       const agentsMdPath = path.join(tmp.root, 'AGENTS.md');
       const content = await readFile(agentsMdPath, 'utf8');
-      await writeFile(agentsMdPath, content.replace(/^- \[ctxr-connection-finding\]\(\.claude\/skills\/ctxr-connection-finding\/SKILL\.md\).*\n/m, ''));
+      await writeFile(agentsMdPath, content.replace(/^- \[ctxr-connection-finding\]\(\.agents\/skills\/ctxr-connection-finding\/SKILL\.md\).*\n/m, ''));
 
       const result = await runCli(['verify', '--portable', '--json'], { cwd: tmp.root, env });
       expect(result.exitCode).not.toBe(0);
@@ -134,7 +134,7 @@ describe('entry-doc generation (real CLI)', () => {
       );
       await writeNote(
         tmp.root,
-        '.claude/skills/weekly-review/SKILL.md',
+        '.agents/skills/weekly-review/SKILL.md',
         '---\nname: weekly-review\ndescription: Walk the health checks weekly.\n---\n\nSteps.\n',
       );
 
@@ -143,7 +143,7 @@ describe('entry-doc generation (real CLI)', () => {
 
       const agentsMd = await readFile(path.join(tmp.root, 'AGENTS.md'), 'utf8');
       expect(agentsMd).toContain('[House style](.contexture/conventions/house-style.md) — How notes are written here.');
-      expect(agentsMd).toContain('[weekly-review](.claude/skills/weekly-review/SKILL.md) — Walk the health checks weekly.');
+      expect(agentsMd).toContain('[weekly-review](.agents/skills/weekly-review/SKILL.md) — Walk the health checks weekly.');
       expect(agentsMd).not.toContain('Bullet points, always.'); // referenced, never inlined
       expect(agentsMd).not.toContain('Steps.'); // the skill body is not inlined either
 
@@ -160,7 +160,7 @@ describe('entry-doc generation (real CLI)', () => {
       const env = hermeticGitEnv();
       await runCli(['init'], { cwd: tmp.root, env });
       // Added but never re-indexed: scan sees it, AGENTS.md does not.
-      await writeNote(tmp.root, '.claude/skills/unindexed/SKILL.md', '# Unindexed skill\n\nSteps.\n');
+      await writeNote(tmp.root, '.agents/skills/unindexed/SKILL.md', '# Unindexed skill\n\nSteps.\n');
 
       const result = await runCli(['verify', '--portable', '--json'], { cwd: tmp.root, env });
       expect(result.exitCode).not.toBe(0);

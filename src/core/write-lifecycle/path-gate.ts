@@ -76,7 +76,9 @@ function isUnderAnyPrefix(relativePath: string, prefixes: readonly string[]): bo
 function contextureOwnedPrefixes(config: StoreConfig): string[] {
   const prefixes = [config.catalog.path, config.harness.skills_path, config.harness.conventions_path];
   try {
-    for (const adapter of configuredAdapters(config, 'harness-generation')) prefixes.push(adapter.entryFileName);
+    for (const adapter of configuredAdapters(config, 'harness-generation')) {
+      if (adapter.entryFileName !== undefined) prefixes.push(adapter.entryFileName);
+    }
   } catch {
     // an adapter that fails to resolve is doctor's problem (adapters.compatibility) — never this gate's.
   }

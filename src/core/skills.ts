@@ -1,6 +1,9 @@
+import { createHash } from 'node:crypto';
 import { mkdir, readdir, readFile, rm } from 'node:fs/promises';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import type { StoreConfig, TaxonomyLayerConfig } from '../config/schema.js';
+import type { Finding } from './envelope.js';
 import { scanDocsDir, SKILL_FILE_NAME, type ScannedDoc } from './conventions.js';
 import { GRAPH_DOCUMENT_RELATIVE_PATH } from './graph/persist.js';
 import { writeFileAtomic } from './fs/atomic.js';
@@ -362,4 +365,166 @@ export async function syncShippedSkills(root: string, config: StoreConfig): Prom
     changed.push(path.join(config.harness.skills_path, entry.name, SKILL_FILE_NAME).split(path.sep).join('/'));
   }
   return changed;
+}
+
+/**
+ * harness-portability spec (vendored-craft-skills): the provenance record
+ * a vendored skill carries — packaged once per skill under
+ * `templates/vendor/<name>/provenance.json`, and written beside the
+ * installed copy at `<name>/.ctxr-vendored.json` with `ctxrVersion` added.
+ * This is the sole ownership mark for a vendored skill: contexture's
+ * managed-owner header cannot be injected into a third-party licensed
+ * file without modifying it and displacing the frontmatter the Agent
+ * Skills format requires at the very top of SKILL.md.
+ */
+export interface VendoredProvenance {
+  source: string;
+  subpath: string;
+  ref: string;
+  license: string;
+  /** sha256 of SKILL.md's content — the delivered file whose drift identifies an operator edit. */
+  sha256: string;
+  ctxrVersion?: string;
+}
+
+/** The sidecar filename recording a vendored skill's provenance, sibling to its SKILL.md. */
+export const VENDORED_PROVENANCE_FILE_NAME = '.ctxr-vendored.json';
+
+function vendorTemplatesDir(name: string): string {
+  return fileURLToPath(new URL(`../../templates/vendor/${name}`, import.meta.url));
+}
+
+function sha256(text: string): string {
+  return createHash('sha256').update(text, 'utf8').digest('hex');
+}
+
+/** Every file under `templates/vendor/<name>/` except its own provenance record, as relative-path -> content. */
+async function readVendoredPayload(name: string): Promise<{ files: Map<string, string>; provenance: VendoredProvenance }> {
+  const dir = vendorTemplatesDir(name);
+  const files = new Map<string, string>();
+
+  async function walk(sub: string): Promise<void> {
+    const entries = await readdir(path.join(dir, sub), { withFileTypes: true });
+    for (const entry of entries) {
+      const rel = sub ? `${sub}/${entry.name}` : entry.name;
+      if (entry.name === 'provenance.json' && sub === '') continue;
+      if (entry.isDirectory()) await walk(rel);
+      else files.set(rel, await readFile(path.join(dir, rel), 'utf8'));
+    }
+  }
+  await walk('');
+
+  const provenance = JSON.parse(await readFile(path.join(dir, 'provenance.json'), 'utf8')) as VendoredProvenance;
+  return { files, provenance };
+}
+
+async function readIfExists(absolutePath: string): Promise<string | undefined> {
+  try {
+    return await readFile(absolutePath, 'utf8');
+  } catch {
+    return undefined;
+  }
+}
+
+async function writeVendoredSkill(
+  skillDir: string,
+  payload: { files: Map<string, string>; provenance: VendoredProvenance },
+  ctxrVersion: string,
+): Promise<void> {
+  for (const [rel, content] of payload.files) {
+    const target = path.join(skillDir, rel);
+    await mkdir(path.dirname(target), { recursive: true });
+    await writeFileAtomic(target, content);
+  }
+  const record: VendoredProvenance = { ...payload.provenance, ctxrVersion };
+  await writeFileAtomic(path.join(skillDir, VENDORED_PROVENANCE_FILE_NAME), `${JSON.stringify(record, null, 2)}\n`);
+}
+
+/**
+ * Brings every vendored skill a store declares (`config.skills.vendored`)
+ * to the packaged version, and removes a previously-installed vendored
+ * skill a store no longer wants. Mirrors `syncShippedSkills`'s byte-stable,
+ * never-touch-operator-content contract, with one addition: a vendored
+ * skill whose delivered `SKILL.md` no longer matches its recorded hash is
+ * an operator edit, not drift — every file in its directory is left
+ * exactly as it is, and a finding names it rather than the path being
+ * reported as changed.
+ */
+export async function syncVendoredSkills(root: string, config: StoreConfig, ctxrVersion: string): Promise<{ changed: string[]; findings: Finding[] }> {
+  const changed: string[] = [];
+  const findings: Finding[] = [];
+  const skillsDir = path.join(root, config.harness.skills_path);
+  const wanted = new Set(config.skills.vendored);
+
+  async function currentHashMatches(skillDir: string, storedProvenance: VendoredProvenance): Promise<boolean> {
+    const onDisk = await readIfExists(path.join(skillDir, SKILL_FILE_NAME));
+    return onDisk !== undefined && sha256(onDisk) === storedProvenance.sha256;
+  }
+
+  for (const name of wanted) {
+    const relativeSkillDir = path.join(config.harness.skills_path, name).split(path.sep).join('/');
+    const skillDir = path.join(skillsDir, name);
+    const sidecarPath = path.join(skillDir, VENDORED_PROVENANCE_FILE_NAME);
+    const sidecarRaw = await readIfExists(sidecarPath);
+
+    if (sidecarRaw === undefined) {
+      const skillFileExists = (await readIfExists(path.join(skillDir, SKILL_FILE_NAME))) !== undefined;
+      if (skillFileExists) continue; // operator-authored: no provenance record, never touched
+
+      const payload = await readVendoredPayload(name);
+      await writeVendoredSkill(skillDir, payload, ctxrVersion);
+      for (const rel of [...payload.files.keys(), VENDORED_PROVENANCE_FILE_NAME]) {
+        changed.push(`${relativeSkillDir}/${rel}`);
+      }
+      continue;
+    }
+
+    const storedProvenance = JSON.parse(sidecarRaw) as VendoredProvenance;
+    if (!(await currentHashMatches(skillDir, storedProvenance))) {
+      findings.push({
+        code: 'skills.vendored_locally_modified',
+        severity: 'warning',
+        message: `"${relativeSkillDir}/${SKILL_FILE_NAME}" has been modified locally — left unchanged rather than refreshed.`,
+        subject: name,
+      });
+      continue;
+    }
+
+    const payload = await readVendoredPayload(name);
+    if (payload.provenance.sha256 === storedProvenance.sha256) continue; // already current
+
+    await writeVendoredSkill(skillDir, payload, ctxrVersion);
+    for (const rel of [...payload.files.keys(), VENDORED_PROVENANCE_FILE_NAME]) {
+      changed.push(`${relativeSkillDir}/${rel}`);
+    }
+  }
+
+  let entries: { name: string; isDirectory(): boolean }[] = [];
+  try {
+    entries = await readdir(skillsDir, { withFileTypes: true });
+  } catch {
+    entries = [];
+  }
+  for (const entry of entries) {
+    if (!entry.isDirectory() || wanted.has(entry.name)) continue;
+    const skillDir = path.join(skillsDir, entry.name);
+    const sidecarRaw = await readIfExists(path.join(skillDir, VENDORED_PROVENANCE_FILE_NAME));
+    if (sidecarRaw === undefined) continue; // not a vendored skill contexture manages
+
+    const storedProvenance = JSON.parse(sidecarRaw) as VendoredProvenance;
+    const relativeSkillDir = path.join(config.harness.skills_path, entry.name).split(path.sep).join('/');
+    if (await currentHashMatches(skillDir, storedProvenance)) {
+      await rm(skillDir, { recursive: true, force: true });
+      changed.push(relativeSkillDir);
+    } else {
+      findings.push({
+        code: 'skills.vendored_locally_modified',
+        severity: 'warning',
+        message: `"${relativeSkillDir}/${SKILL_FILE_NAME}" has been modified locally — left in place rather than removed for opting out.`,
+        subject: entry.name,
+      });
+    }
+  }
+
+  return { changed, findings };
 }

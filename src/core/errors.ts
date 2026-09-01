@@ -443,6 +443,19 @@ export class UnknownTaxonomyProfileError extends ContextureError {
   }
 }
 
+/** vendored-craft-skills spec: `--harness` names a harness this release does not ship an adapter for. */
+export class UnknownHarnessError extends ContextureError {
+  constructor(given: string, knownIds: readonly string[]) {
+    super(ExitCode.Usage, {
+      code: 'init.unknown_harness',
+      severity: 'error',
+      message: `Unknown harness "${given}". Known harnesses: ${knownIds.join(', ')} (or "none").`,
+      subject: given,
+      details: { knownIds },
+    });
+  }
+}
+
 /** publish spec: `ctxr publish gather` accepts exactly one subject selector. */
 export class PublishSelectorRequiredError extends ContextureError {
   constructor() {
