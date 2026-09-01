@@ -20,14 +20,14 @@ export interface UpdateData {
  * touched. Idempotent: a current store reports nothing changed.
  */
 export async function execute(env: RunEnv, store: Store): Promise<CommandOutcome<UpdateData>> {
-  const { changed } = await reconcileStore(env, store.root, store.config);
+  const { changed, findings } = await reconcileStore(env, store.root, store.config);
   const adapterFiles = await generateAdapterOutputs(store);
   const all = [...new Set([...changed, ...adapterFiles.filter((f) => f.changed).map((f) => f.path)])];
 
   return {
     exitCode: ExitCode.Ok,
     data: { changed: all },
-    findings: [],
+    findings,
     humanSummary: all.length === 0 ? 'Store is already up to date.' : `Updated ${all.length} contexture-owned file(s).`,
     storeRoot: store.root,
     schemaVersion: store.config.schema_version,

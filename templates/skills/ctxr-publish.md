@@ -45,9 +45,10 @@ handed out.
 
 Pick the shape the content actually needs — a status board, a timeline, a side-by-side comparison, an
 explainer with a live demo — not a rendering of the source notes in reading order. Contexture ships no
-renderer and no visual system on purpose: load whichever design-focused skill this store has configured
-or has installed, and follow it for the actual HTML, CSS, and visual language. If a sibling page already
-exists, read its stylesheet and inherit its palette and type scale before inventing a new one.
+renderer of its own: for visual direction, load the `frontend-design` skill this store carries by
+default (or whichever design-focused skill it's configured or installed instead), and follow it for the
+actual HTML, CSS, and visual language. If a sibling page already exists, read its stylesheet and
+inherit its palette and type scale before inventing a new one.
 
 ## 6. Verify the output invariants
 

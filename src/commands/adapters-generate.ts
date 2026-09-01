@@ -32,13 +32,15 @@ export async function generateAdapterOutputs(store: Store): Promise<AdaptersGene
   const files: AdaptersGenerateFileResult[] = [];
 
   for (const adapter of configuredAdapters(store.config, 'harness-generation')) {
-    const entryPath = path.join(store.root, adapter.entryFileName);
-    const { changed } = await upsertFencedRegionInFile(
-      entryPath,
-      harnessEntryFence(adapter.id),
-      adapter.render(agentsMdPath(store.root)),
-    );
-    files.push({ path: adapter.entryFileName, changed });
+    if (adapter.entryFileName !== undefined && adapter.render !== undefined) {
+      const entryPath = path.join(store.root, adapter.entryFileName);
+      const { changed } = await upsertFencedRegionInFile(
+        entryPath,
+        harnessEntryFence(adapter.id),
+        adapter.render(agentsMdPath(store.root)),
+      );
+      files.push({ path: adapter.entryFileName, changed });
+    }
 
     if (adapter.permissionConfig) {
       const input = {

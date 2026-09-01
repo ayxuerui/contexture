@@ -14,8 +14,9 @@ const HOOK_TARGET_PATH = '.claude/hooks/claude-code-write-gate.sh';
 export const claudeCodeHarnessAdapter: HarnessGenerationAdapter = {
   id: 'claude-code',
   kind: 'harness-generation',
-  interfaceVersion: 1,
+  interfaceVersion: 2,
   entryFileName: 'CLAUDE.md',
+  skillsDir: '.claude/skills/',
 
   render(agentsMdPath: string): string[] {
     return [`@${path.basename(agentsMdPath)}`];

@@ -50,7 +50,11 @@ const ALWAYS_SKIP_FILES = new Set(['AGENTS.md']);
  */
 function harnessEntryFiles(config: StoreConfig): Set<string> {
   try {
-    return new Set(configuredAdapters(config, 'harness-generation').map((a) => a.entryFileName));
+    return new Set(
+      configuredAdapters(config, 'harness-generation')
+        .map((a) => a.entryFileName)
+        .filter((name): name is string => name !== undefined),
+    );
   } catch {
     return new Set();
   }

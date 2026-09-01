@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { DEFAULT_PUBLISH_PATH } from './defaults.js';
+import { DEFAULT_PUBLISH_PATH, DEFAULT_VENDORED_SKILLS } from './defaults.js';
 
 /**
  * store-lifecycle spec: schema_version versions STORE STATE (config shape +
@@ -129,6 +129,16 @@ const PublishSchema = z.object({
 });
 
 /**
+ * harness-portability spec (vendored-craft-skills): which vendored
+ * third-party skills a store wants, defaulting to the shipped set so a
+ * `contexture.yaml` predating this key still parses. An empty list opts
+ * out entirely — same schema-optional-with-default shape as `publish`.
+ */
+const SkillsSchema = z.object({
+  vendored: z.array(z.string()).default([...DEFAULT_VENDORED_SKILLS]),
+});
+
+/**
  * disclosure-policy spec: "v1 keeps the disclosure ladder's shape with a
  * flat, user-defined value list" (design.md) — no registry syntax, just a
  * flat set of audience names the operator considers internal, and a flat
@@ -220,6 +230,8 @@ const AdapterDeclarationSchema = z.object({
   id: z.string().min(1),
   kind: AdapterKindSchema,
   module: z.string().min(1).optional(),
+  /** vendored-craft-skills spec: overrides a harness-generation adapter's declared skillsDir for this store; equal to the configured skills path means no bridge is created. */
+  skills_dir: z.string().min(1).optional(),
 });
 
 export const StoreConfigSchema = z
@@ -235,6 +247,7 @@ export const StoreConfigSchema = z
     write_lifecycle: WriteLifecycleSchema,
     catalog: CatalogSchema,
     publish: PublishSchema.default({ path: DEFAULT_PUBLISH_PATH }),
+    skills: SkillsSchema.default({ vendored: [...DEFAULT_VENDORED_SKILLS] }),
     disclosure: DisclosureSchema,
     ingest: IngestSchema,
     organize: OrganizeSchema,

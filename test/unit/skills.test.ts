@@ -41,6 +41,7 @@ function makeConfig(overrides: Partial<StoreConfig> = {}): StoreConfig {
     write_lifecycle: { diff_size_ceiling_lines: 2000, writable_paths: [] },
     catalog: { path: 'catalog/', section_max_bytes: 32768 },
     publish: { path: 'publish/' },
+    skills: { vendored: [] },
     disclosure: { internal_audiences: [], hard_walls: [], leak_markers: {} },
     ingest: { inbox_path: 'inbox/', tracking_params: [] },
     organize: { archive_path: 'archive/', rollup_stale_days: 7 },
@@ -84,6 +85,24 @@ describe('SKILLS', () => {
       expect(p.content).toContain(MANAGED_SKILL_HEADER);
       expect(p.content).toContain(`\n# ${p.name}\n`);
       expect(p.description).not.toMatch(/: /); // a plain YAML scalar — no "key: value" inside it
+    }
+  });
+
+  /**
+   * vendored-craft-skills spec: the content guards below (no shipped-profile
+   * or tier-word leakage, `ctxr` never `contexture`) apply to skills
+   * contexture AUTHORS — every one of them iterates `renderSkills(config)` /
+   * `SKILLS`. Vendored third-party content is redistributed as-is and was
+   * never written against those rules, so it must never flow through
+   * `renderSkills` — this is what makes the exemption structural rather
+   * than a guard someone has to remember to skip. Do not "fix" a future
+   * guard by widening it to also scan `templates/vendor/**`.
+   */
+  it('vendored skills are never part of SKILLS or renderSkills output — the guards below cannot see them', () => {
+    expect(SKILLS.some((s) => s.file === 'frontend-design')).toBe(false);
+    for (const p of renderSkills(makeConfig())) {
+      expect(p.file).not.toBe('frontend-design');
+      expect(p.content).not.toContain('templates/vendor');
     }
   });
 });
@@ -257,7 +276,8 @@ describe('owned-skills-expansion: each skill carries its load-bearing rule (task
     expect(s).toContain('ASK** stops the build; name the note to the operator and wait');
     expect(s).toContain('`ctxr publish new <slug>`');
     expect(s).toContain('refuses to overwrite an existing folder');
-    expect(s).toContain('Contexture ships no\nrenderer and no visual system on purpose');
+    expect(s).toContain('Contexture ships no\nrenderer of its own');
+    expect(s).toContain('`frontend-design` skill this store carries by');
     expect(s).toContain('excluded from retrieval by default');
     expect(s).toContain('`ctxr publish check <path>`');
   });

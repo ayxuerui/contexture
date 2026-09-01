@@ -33,6 +33,7 @@ function makeConfig(overrides: Partial<StoreConfig['retrieval']['graph']> = {}):
     write_lifecycle: { diff_size_ceiling_lines: 2000, writable_paths: [] },
     catalog: { path: 'catalog/', section_max_bytes: 32768 },
     publish: { path: 'publish/' },
+    skills: { vendored: [] },
     disclosure: { internal_audiences: [], hard_walls: [], leak_markers: {} },
     ingest: { inbox_path: 'inbox/', tracking_params: [] },
     organize: { archive_path: 'archive/', rollup_stale_days: 7 },

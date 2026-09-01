@@ -35,12 +35,18 @@ export const DEFAULT_VISIBILITY_CONTEXT = 'private';
 export const DEFAULT_DERIVED_PATHS = ['.contexture/cache/'] as const;
 
 /**
- * harness-portability spec (entry-doc-generation D5): contexture-owned
- * skills are copied here (`<slug>/SKILL.md`), defaulting to the directory
- * harnesses with skill auto-discovery read — one file, one hop. A store
- * driven by another harness points this at that harness's skills directory.
+ * harness-portability spec (vendored-craft-skills): the ecosystem's
+ * cross-harness canonical skills location — the directory the majority of
+ * agent runtimes read natively, with no bridge required. A harness that
+ * reads its own branded directory instead (e.g. Claude Code's
+ * `.claude/skills/`) gets that directory bridged to this one; see
+ * `core/harness/bridge.ts`. A store driven by no auto-discovering harness
+ * can still point this anywhere.
  */
-export const DEFAULT_SKILLS_PATH = '.claude/skills/';
+export const DEFAULT_SKILLS_PATH = '.agents/skills/';
+
+/** harness-portability spec (vendored-craft-skills): the shipped vendored skill set, installed by default and refreshed by update. */
+export const DEFAULT_VENDORED_SKILLS = ['frontend-design'] as const;
 
 /** harness-portability spec (entry-doc-generation): operator-authored convention docs, indexed by AGENTS.md. */
 export const DEFAULT_CONVENTIONS_PATH = '.contexture/conventions/';

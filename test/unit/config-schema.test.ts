@@ -2,7 +2,7 @@ import { readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_PUBLISH_PATH } from '../../src/config/defaults.js';
+import { DEFAULT_PUBLISH_PATH, DEFAULT_VENDORED_SKILLS } from '../../src/config/defaults.js';
 import { readConfig } from '../../src/config/load.js';
 import { InvalidConfigError, SchemaVersionMissingError, SchemaVersionNewerError } from '../../src/core/errors.js';
 import { CONFIG_FILE_NAME } from '../../src/core/root.js';
@@ -97,6 +97,35 @@ describe('readConfig', () => {
       await writeFile(path.join(tmp.root, CONFIG_FILE_NAME), text);
       const config = await readConfig(tmp.root);
       expect(config.publish.path).toBe(DEFAULT_PUBLISH_PATH);
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('resolves skills.vendored to the default when a pre-existing config declares no skills key (vendored-craft-skills spec)', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const text = [
+        'schema_version: 1',
+        'taxonomy: { profile: para, layers: [] }',
+        'fields: { visibility: scope }',
+        'visibility: { default_context: private, directory_defaults: {} }',
+        'derived: { paths: [] }',
+        'retrieval: { exclude_paths: [], relations: [], graph: { cluster_depth: 2, hub_top: 8, bridge_top: 10, orphan_exempt_clusters: [] } }',
+        'git: { default_branch: main }',
+        'session: { branch_prefix: session/, worktrees_path: .worktrees/ }',
+        'write_lifecycle: { diff_size_ceiling_lines: 2000, writable_paths: [] }',
+        'catalog: { path: catalog/, section_max_bytes: 32768 }',
+        'disclosure: { internal_audiences: [], hard_walls: [], leak_markers: {} }',
+        'ingest: { inbox_path: inbox/ }',
+        'organize: { archive_path: archive/ }',
+        'harness: { procedures_path: procedures/ }',
+        'adapters: []',
+        '',
+      ].join('\n');
+      await writeFile(path.join(tmp.root, CONFIG_FILE_NAME), text);
+      const config = await readConfig(tmp.root);
+      expect(config.skills.vendored).toEqual([...DEFAULT_VENDORED_SKILLS]);
     } finally {
       await tmp.cleanup();
     }

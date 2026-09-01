@@ -37,6 +37,9 @@ describe('init taxonomy prompt (interactive path)', () => {
         async confirm() {
           return true;
         },
+        async selectHarnesses() {
+          return ['claude-code'];
+        },
       };
       const env = makeFakeEnv({ prompter, io: interactiveIo(), env: GIT_IDENTITY_ENV });
 
@@ -67,6 +70,9 @@ describe('init taxonomy prompt (interactive path)', () => {
         async confirm() {
           return true;
         },
+        async selectHarnesses() {
+          return ['claude-code'];
+        },
       };
       const env = makeFakeEnv({ prompter, io: interactiveIo(), env: GIT_IDENTITY_ENV });
 
@@ -88,6 +94,9 @@ describe('init taxonomy prompt (interactive path)', () => {
         },
         async confirm() {
           return true;
+        },
+        async selectHarnesses() {
+          return ['claude-code'];
         },
       };
       const env = makeFakeEnv({ prompter, io: interactiveIo(), env: GIT_IDENTITY_ENV });
@@ -112,6 +121,9 @@ describe('init taxonomy prompt (interactive path)', () => {
         },
         async confirm() {
           return true;
+        },
+        async selectHarnesses() {
+          return ['claude-code'];
         },
       };
       const env = makeFakeEnv({ prompter, io: interactiveIo(), env: GIT_IDENTITY_ENV });

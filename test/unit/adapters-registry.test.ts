@@ -17,6 +17,7 @@ function makeConfig(adapters: AdapterDeclaration[]): StoreConfig {
     write_lifecycle: { diff_size_ceiling_lines: 2000, writable_paths: [] },
     catalog: { path: 'catalog/', section_max_bytes: 32768 },
     publish: { path: 'publish/' },
+    skills: { vendored: [] },
     disclosure: { internal_audiences: [], hard_walls: [], leak_markers: {} },
     ingest: { inbox_path: 'inbox/', tracking_params: [] },
     organize: { archive_path: 'archive/', rollup_stale_days: 7 },
@@ -59,9 +60,21 @@ describe('resolveAdapter', () => {
     }
   });
 
+  it('vendored-craft-skills spec: reports a stale (pre-v2) harness-generation adapter, naming both versions', () => {
+    const fixtureRegistry: Adapter[] = [{ id: 'old-harness', kind: 'harness-generation', interfaceVersion: 1 }];
+    try {
+      resolveAdapter({ id: 'old-harness', kind: 'harness-generation' }, fixtureRegistry);
+      expect.unreachable('expected AdapterVersionMismatchError');
+    } catch (err) {
+      expect(err).toBeInstanceOf(AdapterVersionMismatchError);
+      expect((err as Error).message).toContain('1');
+      expect((err as Error).message).toContain('2');
+    }
+  });
+
   it('accepts a fixture adapter of each of the two kinds when the version matches', () => {
     const fixtureRegistry: Adapter[] = [
-      { id: 'fixture-harness', kind: 'harness-generation', interfaceVersion: 1 },
+      { id: 'fixture-harness', kind: 'harness-generation', interfaceVersion: 2 },
       { id: 'fixture-forge', kind: 'forge', interfaceVersion: 2 },
     ];
     expect(resolveAdapter({ id: 'fixture-harness', kind: 'harness-generation' }, fixtureRegistry).id).toBe(
