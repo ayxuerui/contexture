@@ -35,6 +35,7 @@ import {
   buildAgentsCaptureSection,
   buildAgentsConventionsSection,
   buildAgentsLegRoutingSection,
+  buildAgentsMissionSection,
   buildAgentsPlacementSection,
   agentsMdPath,
 } from '../core/agents-doc.js';
@@ -224,11 +225,15 @@ async function runInitCore(env: RunEnv, flags: InitFlags): Promise<RunInitResult
   const gitignorePath = path.join(root, '.gitignore');
   await upsertFencedRegionInFile(gitignorePath, DERIVED_GITIGNORE_FENCE, config.derived.paths);
   await upsertFencedRegionInFile(gitignorePath, WORKTREES_GITIGNORE_FENCE, [config.session.worktrees_path]);
+  // harness-portability spec "Generated sections render in a fixed order":
+  // called in that order directly — a fresh AGENTS.md has no existing fences
+  // to reorder, so call order alone determines the file's section order.
+  await buildAgentsCanonicalSection(root, config);
+  await buildAgentsMissionSection(root, config);
   await buildAgentsLegRoutingSection(root, config);
   await buildAgentsCaptureSection(root, config);
   await buildAgentsPlacementSection(root, config);
   const skillFilesCreated = await syncShippedSkills(root, config);
-  await buildAgentsCanonicalSection(root, config);
   await buildAgentsConventionsSection(root, config);
 
   // One directory per configured layer with a .gitkeep — makes Zettelkasten's

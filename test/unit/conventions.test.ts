@@ -2,8 +2,8 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import type { StoreConfig } from '../../src/config/schema.js';
-import { renderConventionsSection } from '../../src/core/agents-doc.js';
-import { extractDocMetadata, scanConventions } from '../../src/core/conventions.js';
+import { renderConventionBlock, renderConventionsSection } from '../../src/core/agents-doc.js';
+import { extractDocMetadata, inlineDocBody, scanConventions } from '../../src/core/conventions.js';
 import { makeTmpDir } from '../helpers/tmp-store.js';
 
 function makeConfig(): StoreConfig {
@@ -27,9 +27,14 @@ function makeConfig(): StoreConfig {
 }
 
 describe('extractDocMetadata', () => {
-  it('prefers frontmatter title and description', () => {
+  it('prefers frontmatter title and description, and keeps the frontmatter-stripped body', () => {
     const doc = extractDocMetadata('---\ntitle: House Style\ndescription: How prose is written here.\n---\n# Ignored heading\n', 'conventions/style.md');
-    expect(doc).toEqual({ path: 'conventions/style.md', title: 'House Style', description: 'How prose is written here.' });
+    expect(doc).toEqual({
+      path: 'conventions/style.md',
+      title: 'House Style',
+      description: 'How prose is written here.',
+      body: '# Ignored heading\n',
+    });
   });
 
   it('falls back to the first heading, then the filename stem', () => {
@@ -44,6 +49,39 @@ describe('extractDocMetadata', () => {
   });
 });
 
+describe('inlineDocBody', () => {
+  it('drops a leading H1 that duplicates the title, and demotes remaining headings', () => {
+    const doc = extractDocMetadata('# Vault conventions\n\n## Folder Structure\n\nSome text.\n\n### Sub point\n', 'conventions/vault.md');
+    expect(inlineDocBody(doc, 2)).toEqual(['#### Folder Structure', '', 'Some text.', '', '##### Sub point']);
+  });
+
+  it('keeps a leading H1 that does not match the title', () => {
+    const doc = extractDocMetadata('# Something Else\n\nBody.\n', 'conventions/a.md');
+    const doc2 = { ...doc, title: 'A' };
+    expect(inlineDocBody(doc2, 1)).toEqual(['## Something Else', '', 'Body.']);
+  });
+
+  it('strips nested contexture fence markers but keeps their body', () => {
+    const raw =
+      '# Mission\n\nPreamble.\n\n<!-- >>> contexture:rollup (managed — do not edit) >>> -->\n## Primary mission\n\nDo the thing.\n<!-- <<< contexture:rollup <<< -->\n';
+    const doc = extractDocMetadata(raw, 'MISSION.md');
+    expect(inlineDocBody(doc, 1)).toEqual(['Preamble.', '', '### Primary mission', '', 'Do the thing.']);
+  });
+
+  it('is byte-stable across repeated calls on the same input', () => {
+    const doc = extractDocMetadata('# Title\n\n## Section\n\nText.\n', 'conventions/a.md');
+    const first = inlineDocBody(doc, 2);
+    const second = inlineDocBody(doc, 2);
+    expect(second).toEqual(first);
+  });
+
+  it('caps heading demotion at H6', () => {
+    const doc = extractDocMetadata('# T\n\n##### Deep\n', 'conventions/a.md');
+    const doc2 = { ...doc, title: 'Other' }; // mismatched title — the H1 is demoted like any other heading, not dropped
+    expect(inlineDocBody(doc2, 3)).toEqual(['#### T', '', '###### Deep']);
+  });
+});
+
 describe('scanConventions', () => {
   it('returns an empty list when the directory does not exist', async () => {
     const tmp = await makeTmpDir();
@@ -54,18 +92,18 @@ describe('scanConventions', () => {
     }
   });
 
-  it('lists .md files sorted by filename, with metadata', async () => {
+  it('lists .md files sorted by filename, with metadata and body', async () => {
     const tmp = await makeTmpDir();
     try {
       await mkdir(path.join(tmp.root, 'conventions'), { recursive: true });
-      await writeFile(path.join(tmp.root, 'conventions/b-style.md'), '---\ntitle: Style\ndescription: Prose rules.\n---\n');
+      await writeFile(path.join(tmp.root, 'conventions/b-style.md'), '---\ntitle: Style\ndescription: Prose rules.\n---\nBody text.\n');
       await writeFile(path.join(tmp.root, 'conventions/a-rules.md'), '# Rules\n');
       await writeFile(path.join(tmp.root, 'conventions/notes.txt'), 'not markdown');
 
       const docs = await scanConventions(tmp.root, makeConfig());
       expect(docs).toEqual([
-        { path: 'conventions/a-rules.md', title: 'Rules', description: null },
-        { path: 'conventions/b-style.md', title: 'Style', description: 'Prose rules.' },
+        { path: 'conventions/a-rules.md', title: 'Rules', description: null, body: '# Rules\n' },
+        { path: 'conventions/b-style.md', title: 'Style', description: 'Prose rules.', body: 'Body text.\n' },
       ]);
     } finally {
       await tmp.cleanup();
@@ -73,14 +111,24 @@ describe('scanConventions', () => {
   });
 });
 
+describe('renderConventionBlock', () => {
+  it('renders a heading, the inlined body, and a source line', () => {
+    const doc = extractDocMetadata('---\ntitle: Style\n---\nProse rules.\n', 'conventions/style.md');
+    expect(renderConventionBlock(doc)).toEqual(['### Style', '', 'Prose rules.', '', '_Source: conventions/style.md_']);
+  });
+});
+
 describe('renderConventionsSection', () => {
-  it('indexes each convention by title, path, and description', () => {
+  it('inlines each convention body under a heading naming its title, with a source line', () => {
     const lines = renderConventionsSection(makeConfig(), [
-      { path: 'conventions/style.md', title: 'Style', description: 'Prose rules.' },
-      { path: 'conventions/rules.md', title: 'Rules', description: null },
+      extractDocMetadata('---\ntitle: Style\n---\nProse rules.\n', 'conventions/style.md'),
+      extractDocMetadata('---\ntitle: Rules\n---\nDo this.\n', 'conventions/rules.md'),
     ]).join('\n');
-    expect(lines).toContain('- [Style](conventions/style.md) — Prose rules.');
-    expect(lines).toContain('- [Rules](conventions/rules.md)');
+    expect(lines).toContain('### Style');
+    expect(lines).toContain('Prose rules.');
+    expect(lines).toContain('_Source: conventions/style.md_');
+    expect(lines).toContain('### Rules');
+    expect(lines).toContain('Do this.');
   });
 
   it('explains the mechanism and names the configured path when empty', () => {
@@ -94,14 +142,14 @@ describe('renderConventionsSection', () => {
     expect(empty).toMatch(/only one agent harness/i);
 
     const populated = renderConventionsSection(makeConfig(), [
-      { path: 'conventions/style.md', title: 'Style', description: 'Prose rules.' },
+      extractDocMetadata('---\ntitle: Style\n---\nProse rules.\n', 'conventions/style.md'),
     ]).join('\n');
     expect(populated).toMatch(/only one agent harness/i);
   });
 });
 
 /**
- * extract-agents-doc-templates: the two conventions branches ship as two
+ * inline-conventions-and-mission: the two conventions branches ship as two
  * complete template files (`store-conventions.md`, `store-conventions-empty.md`)
  * rather than one file with a swapped middle, so each reads as a full
  * rendering of what an agent actually sees. That duplicates the trailing
@@ -115,34 +163,36 @@ describe('conventions section templates', () => {
       "",
       "This store declares no convention documents yet. Operator-authored conventions (content style, field",
       "semantics, house rules) belong as markdown files under `conventions/` — each is",
-      "indexed here on regeneration, referenced by path, never inlined.",
+      "inlined here in full on regeneration.",
       "",
-      "A note that applies to only one agent harness (not every harness reading this store) belongs below that harness's own managed import in its own entry file, never here — every file in this directory is indexed into every harness's entry document equally.",
+      "A note that applies to only one agent harness (not every harness reading this store) belongs below that harness's own managed import in its own entry file, never here — every file in this directory is inlined into every harness's entry document equally.",
     ]);
   });
 
-  it('renders the populated branch exactly', () => {
+  it('renders the populated branch exactly, for a single convention', () => {
     expect(
       renderConventionsSection(makeConfig(), [
-        { path: 'conventions/style.md', title: 'Style', description: 'Prose rules.' },
-        { path: 'conventions/rules.md', title: 'Rules', description: null },
+        extractDocMetadata('---\ntitle: Style\ndescription: Prose rules.\n---\nBody.\n', 'conventions/style.md'),
       ]),
     ).toEqual([
       "## Store conventions",
       "",
-      "Operator-authored conventions for this store — read the ones relevant to your task:",
+      "Operator-authored conventions for this store, inlined in full:",
       "",
-      "- [Style](conventions/style.md) — Prose rules.",
-      "- [Rules](conventions/rules.md)",
+      "### Style",
       "",
-      "A note that applies to only one agent harness (not every harness reading this store) belongs below that harness's own managed import in its own entry file, never here — every file in this directory is indexed into every harness's entry document equally.",
+      "Body.",
+      "",
+      "_Source: conventions/style.md_",
+      "",
+      "A note that applies to only one agent harness (not every harness reading this store) belongs below that harness's own managed import in its own entry file, never here — every file in this directory is inlined into every harness's entry document equally.",
     ]);
   });
 
   it('ends both branches with a byte-identical harness-specific-note paragraph', () => {
     const empty = renderConventionsSection(makeConfig(), []);
     const populated = renderConventionsSection(makeConfig(), [
-      { path: 'conventions/style.md', title: 'Style', description: 'Prose rules.' },
+      extractDocMetadata('---\ntitle: Style\n---\nBody.\n', 'conventions/style.md'),
     ]);
     expect(empty.at(-1)).toBe(populated.at(-1));
     expect(empty.at(-1)).toMatch(/only one agent harness/);

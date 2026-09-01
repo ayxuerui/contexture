@@ -219,8 +219,111 @@ export async function removeFencedRegionFromFile(filePath: string, fence: Fence)
   return { changed: result.changed };
 }
 
-const GENERIC_START_RE = />>>\s*contexture:(\S+)/;
-const GENERIC_END_RE = /<<<\s*contexture:(\S+)/;
+export interface FenceSpan {
+  fence: Fence;
+  startIdx: number;
+  endIdx: number;
+}
+
+function locateFence(lines: readonly string[], fence: Fence): FenceSpan | null {
+  const startIndices = indicesOf(lines, fence.start);
+  const endIndices = indicesOf(lines, fence.end);
+  if (startIndices.length === 0 && endIndices.length === 0) return null;
+  if (startIndices.length === 1 && endIndices.length === 1 && startIndices[0]! < endIndices[0]!) {
+    return { fence, startIdx: startIndices[0]!, endIdx: endIndices[0]! };
+  }
+  throw new FenceMismatch(`found ${startIndices.length} start marker(s) and ${endIndices.length} end marker(s) while reordering`);
+}
+
+export interface ReorderFencedRegionsResult {
+  text: string;
+  changed: boolean;
+  /** True when the fences present are not all separated by blank lines only — no change was made. */
+  blocked: boolean;
+}
+
+/**
+ * inline-conventions-and-mission (design.md "Reordering is opt-in-safe"):
+ * moves every fence from `orderedFences` that is present in `text` to match
+ * that order, but ONLY when every present fence is separated from its
+ * neighbor (in the file's current order) by nothing but blank lines — the
+ * conservative reading of "never silently relocate hand-written content
+ * relative to sections it was written to sit near." Each fence's own body is
+ * moved byte-for-byte; content before the first present fence and after the
+ * last is untouched. A fence from `orderedFences` absent from `text` is
+ * skipped, not an error. Fewer than two fences present is a no-op (nothing
+ * to reorder), and matching order already is `changed: false`.
+ */
+export function reorderFencedRegions(text: string, orderedFences: readonly Fence[]): ReorderFencedRegionsResult {
+  const trailingNewline = text.endsWith('\n');
+  const lines = text.length === 0 ? [] : text.split('\n');
+  if (trailingNewline) lines.pop();
+
+  const desiredOrder: FenceSpan[] = [];
+  for (const fence of orderedFences) {
+    const span = locateFence(lines, fence);
+    if (span) desiredOrder.push(span);
+  }
+  if (desiredOrder.length < 2) {
+    return { text, changed: false, blocked: false };
+  }
+
+  const byFileOrder = [...desiredOrder].sort((a, b) => a.startIdx - b.startIdx);
+  for (let i = 0; i < byFileOrder.length - 1; i += 1) {
+    const gapStart = byFileOrder[i]!.endIdx + 1;
+    const gapEnd = byFileOrder[i + 1]!.startIdx;
+    for (let j = gapStart; j < gapEnd; j += 1) {
+      if (lines[j] !== '') {
+        return { text, changed: false, blocked: true };
+      }
+    }
+  }
+
+  const alreadyInOrder = byFileOrder.every((span, i) => span.fence === desiredOrder[i]!.fence);
+  if (alreadyInOrder) {
+    return { text, changed: false, blocked: false };
+  }
+
+  const before = lines.slice(0, byFileOrder[0]!.startIdx);
+  const after = lines.slice(byFileOrder[byFileOrder.length - 1]!.endIdx + 1);
+
+  const rebuilt: string[] = [...before];
+  for (const [i, span] of desiredOrder.entries()) {
+    if (i > 0) rebuilt.push('');
+    rebuilt.push(...lines.slice(span.startIdx, span.endIdx + 1));
+  }
+  rebuilt.push(...after);
+
+  const result = finish(rebuilt, text);
+  return { ...result, blocked: false };
+}
+
+/** File-backed counterpart to `reorderFencedRegions` — a missing file has nothing to reorder. */
+export async function reorderFencedRegionsInFile(filePath: string, orderedFences: readonly Fence[]): Promise<{ changed: boolean; blocked: boolean }> {
+  let existing = '';
+  try {
+    existing = await readFile(filePath, 'utf8');
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
+    return { changed: false, blocked: false };
+  }
+
+  const result = reorderFencedRegions(existing, orderedFences);
+  if (result.changed) {
+    await writeFileAtomic(filePath, result.text);
+  }
+  return { changed: result.changed, blocked: result.blocked };
+}
+
+/**
+ * Comment-syntax-agnostic fence-marker detection, shared with `inlineDocBody`
+ * (`conventions.ts`) so a nested `contexture:<region>` fence copied out of a
+ * source file (e.g. a rollup fence inside a mission document) is stripped by
+ * the exact same rule `validateFenceIntegrity` uses to find one, rather than
+ * a second regex that could quietly drift from it.
+ */
+export const GENERIC_START_RE = />>>\s*contexture:(\S+)/;
+export const GENERIC_END_RE = /<<<\s*contexture:(\S+)/;
 
 /**
  * Pure validation, comment-syntax-agnostic (matches the `contexture:<region>`

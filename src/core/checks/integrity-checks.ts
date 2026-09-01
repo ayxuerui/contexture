@@ -2,12 +2,21 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { configuredAdapters, resolveAdapter } from '../../adapters/registry.js';
 import { StoreConfigSchema, SUPPORTED_SCHEMA_VERSION } from '../../config/schema.js';
-import { agentsMdPath } from '../agents-doc.js';
+import {
+  AGENTS_MD_CONVENTIONS_FENCE,
+  AGENTS_MD_MISSION_FENCE,
+  agentsMdPath,
+  checkAgentsMdDrift,
+  renderConventionsSection,
+  renderMissionSection,
+} from '../agents-doc.js';
 import { checkCatalogStale } from '../catalog/build.js';
+import { extractDocMetadata, scanConventions } from '../conventions.js';
 import type { Finding } from '../envelope.js';
-import { removeFencedRegion } from '../fs/fenced-region.js';
+import { readFencedRegion, removeFencedRegion } from '../fs/fenced-region.js';
 import { buildGraphFromNotes, graphBuildOptions } from '../graph/model.js';
 import { harnessEntryFence } from '../markers.js';
+import type { StagedFile } from './types.js';
 import { defineCheck } from './types.js';
 
 /**
@@ -240,6 +249,144 @@ export const noUnrecognizedConfigKeysCheck = defineCheck({
   },
 });
 
+/**
+ * harness-portability spec (inline-conventions-and-mission): "The entry
+ * document's inlined content matches its sources" — `AGENTS.md`'s inlined
+ * conventions/mission sections are derived content (rendered from
+ * `.contexture/conventions/*.md` and the configured mission path), so
+ * editing a source directly without regenerating `AGENTS.md` (e.g. bypassing
+ * `ctxr update`) leaves it silently stale. Reuses `checkAgentsMdDrift`, the
+ * same re-render-and-diff `ctxr verify --portable` uses, so the two commands
+ * can never disagree about whether a store is in sync.
+ */
+export const agentsMdInlinedContentCurrentCheck = defineCheck({
+  id: 'harness_portability.agents_md_inlined_content_current',
+  title: "AGENTS.md's inlined conventions and mission content match their source files",
+  severity: 'invariant',
+  capability: 'harness-portability',
+  scopes: ['store'],
+  async run(ctx) {
+    const drift = await checkAgentsMdDrift(ctx.storeRoot, ctx.config);
+    const findings: Finding[] = [
+      ...drift.driftedConventions.map((conventionPath) => ({
+        code: 'harness_portability.agents_md_convention_drifted',
+        severity: 'error' as const,
+        message: `AGENTS.md's "Store conventions" section no longer matches "${conventionPath}" — run \`ctxr update\`.`,
+        subject: conventionPath,
+      })),
+      ...(drift.driftedMission
+        ? [
+            {
+              code: 'harness_portability.agents_md_mission_drifted',
+              severity: 'error' as const,
+              message: `AGENTS.md's "Mission" section no longer matches "${drift.driftedMission}" — run \`ctxr update\`.`,
+              subject: drift.driftedMission,
+            },
+          ]
+        : []),
+    ];
+    return { status: findings.length > 0 ? 'fail' : 'pass', findings };
+  },
+});
+
+/**
+ * A path's staged (index) content when it's part of this commit, else its
+ * current on-disk content — the pre-commit-hook analogue of
+ * `checkAgentsMdDrift`'s working-tree reads, so a staged-but-not-yet-merged
+ * edit to a source file is seen even though nothing has been committed yet.
+ * `null` means the path doesn't exist in either the staged set or on disk
+ * (deleted, or staged as a deletion).
+ */
+async function stagedOrDiskContent(storeRoot: string, staged: readonly StagedFile[], relativePath: string): Promise<string | null> {
+  const stagedFile = staged.find((f) => f.path === relativePath);
+  if (stagedFile) return stagedFile.status === 'D' ? null : (stagedFile.content ?? null);
+  try {
+    return await readFile(path.join(storeRoot, relativePath), 'utf8');
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return null;
+    throw err;
+  }
+}
+
+/**
+ * write-lifecycle spec / harness-portability spec (inline-conventions-and-mission):
+ * "A commit that would leave the entry document stale is refused." The
+ * store-scope drift check above reads the working tree, which is the wrong
+ * source of truth for a pre-commit hook — an operator can edit a convention
+ * file, forget to run `ctxr update`, and `git add` only the convention file;
+ * the working tree would then have a regenerated AGENTS.md sitting right
+ * next to it only if they happened to run `ctxr update` first, which is
+ * exactly the step this check exists to enforce. So this reads STAGED
+ * content for any file this commit touches (falling back to disk for files
+ * the commit doesn't touch) and re-renders against that view instead.
+ */
+export const stagedAgentsMdInlinedContentCurrentCheck = defineCheck({
+  id: 'staged.agents_md_inlined_content_current',
+  title: 'A staged convention or mission change also stages a matching AGENTS.md regeneration',
+  severity: 'invariant',
+  capability: 'harness-portability',
+  scopes: ['staged'],
+  async run(ctx) {
+    const staged = ctx.staged ?? [];
+    const conventionsPrefix = ctx.config.harness.conventions_path.endsWith('/')
+      ? ctx.config.harness.conventions_path
+      : `${ctx.config.harness.conventions_path}/`;
+    const missionPath = ctx.config.organize.mission_path;
+
+    const relevantSourceStaged = staged.some((f) => f.path.startsWith(conventionsPrefix) || f.path === missionPath);
+    if (!relevantSourceStaged) return { status: 'pass', findings: [] };
+
+    const agentsMdStaged = staged.find((f) => f.path === 'AGENTS.md');
+    if (!agentsMdStaged || agentsMdStaged.content === undefined) {
+      return {
+        status: 'fail',
+        findings: [
+          {
+            code: 'staged.agents_md_inlined_content_current.not_staged',
+            severity: 'error',
+            message:
+              'This commit stages a change to an operator convention file or the mission document, but not AGENTS.md — run `ctxr update` and stage the result.',
+          },
+        ],
+      };
+    }
+
+    const conventions = await scanConventions(ctx.storeRoot, ctx.config);
+    const effectiveConventions = await Promise.all(
+      conventions.map(async (doc) => {
+        const raw = await stagedOrDiskContent(ctx.storeRoot, staged, doc.path);
+        return raw === null ? doc : extractDocMetadata(raw, doc.path);
+      }),
+    );
+    const freshConventions = renderConventionsSection(ctx.config, effectiveConventions).join('\n');
+    const stagedConventionsRegion = readFencedRegion(agentsMdStaged.content, AGENTS_MD_CONVENTIONS_FENCE).join('\n');
+
+    const findings: Finding[] = [];
+    if (freshConventions !== stagedConventionsRegion) {
+      findings.push({
+        code: 'staged.agents_md_inlined_content_current.conventions_mismatch',
+        severity: 'error',
+        message: 'The staged AGENTS.md does not reflect the staged convention file content — run `ctxr update` and re-stage AGENTS.md.',
+      });
+    }
+
+    if (missionPath) {
+      const missionRaw = await stagedOrDiskContent(ctx.storeRoot, staged, missionPath);
+      const freshMission = renderMissionSection(ctx.config, missionRaw).join('\n');
+      const stagedMissionRegion = readFencedRegion(agentsMdStaged.content, AGENTS_MD_MISSION_FENCE).join('\n');
+      if (freshMission !== stagedMissionRegion) {
+        findings.push({
+          code: 'staged.agents_md_inlined_content_current.mission_mismatch',
+          severity: 'error',
+          message: 'The staged AGENTS.md does not reflect the staged mission document content — run `ctxr update` and re-stage AGENTS.md.',
+        });
+      }
+    }
+
+    return { status: findings.length > 0 ? 'fail' : 'pass', findings };
+  },
+});
+
 export const INTEGRITY_CHECKS = [
   derivedArtifactStalenessCheck,
   graphDanglingLinksCheck,
@@ -247,4 +394,6 @@ export const INTEGRITY_CHECKS = [
   adapterCompatibilityCheck,
   harnessEntryNoDuplicateConventionTextCheck,
   noUnrecognizedConfigKeysCheck,
+  agentsMdInlinedContentCurrentCheck,
+  stagedAgentsMdInlinedContentCurrentCheck,
 ];
