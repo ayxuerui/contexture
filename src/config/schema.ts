@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { DEFAULT_PUBLISH_PATH } from './defaults.js';
 
 /**
  * store-lifecycle spec: schema_version versions STORE STATE (config shape +
@@ -117,6 +118,17 @@ const CatalogSchema = z.object({
 });
 
 /**
+ * publish spec (design.md): unlike every other tool-owned path field, this one is
+ * schema-optional with a default — a `contexture.yaml` written before this field
+ * existed has no `publish:` key at all, and `readConfig`'s strict `safeParse` has
+ * no default-merging, so a required field here would break every pre-existing
+ * store. `init` still writes it explicitly for a freshly generated config.
+ */
+const PublishSchema = z.object({
+  path: z.string().min(1).default(DEFAULT_PUBLISH_PATH),
+});
+
+/**
  * disclosure-policy spec: "v1 keeps the disclosure ladder's shape with a
  * flat, user-defined value list" (design.md) — no registry syntax, just a
  * flat set of audience names the operator considers internal, and a flat
@@ -222,6 +234,7 @@ export const StoreConfigSchema = z
     session: SessionSchema,
     write_lifecycle: WriteLifecycleSchema,
     catalog: CatalogSchema,
+    publish: PublishSchema.default({ path: DEFAULT_PUBLISH_PATH }),
     disclosure: DisclosureSchema,
     ingest: IngestSchema,
     organize: OrganizeSchema,

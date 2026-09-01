@@ -15,6 +15,9 @@ import * as entryAppendCommand from './commands/entry-append.js';
 import * as graphQueryCommand from './commands/graph-query.js';
 import * as initCommand from './commands/init.js';
 import * as noteResolveCommand from './commands/note-resolve.js';
+import * as publishGatherCommand from './commands/publish-gather.js';
+import * as publishCheckCommand from './commands/publish-check.js';
+import * as publishNewCommand from './commands/publish-new.js';
 import * as sessionAbandonCommand from './commands/session-abandon.js';
 import * as sessionCaptureCommand from './commands/session-capture.js';
 import * as sessionLandCommand from './commands/session-land.js';
@@ -490,6 +493,52 @@ export async function run(argv: readonly string[], env: RunEnv): Promise<ExitCod
       result = await runCommand('rollup.stale', runEnv, jsonMode, async () => {
         const store = await openStore(runEnv, { root });
         return rollupStaleCommand.execute(runEnv, store, { for: cmdOpts.for });
+      });
+    });
+
+  const publishCommand = program.command('publish').description('turn store content into a shareable page, gated by disclosure before any content is used');
+
+  publishCommand
+    .command('gather')
+    .description('resolve a subject (--under/--note/--entity/--as) to its note set and gate every note through disclosure')
+    .option('--under <prefix>', 'every retrievable note under this path prefix')
+    .option('--note <path>', 'exactly one note')
+    .option('--entity <name>', 'every note linking to this entity (same enumeration as rollup gather)')
+    .option('--as <context>', 'every note this named context can see')
+    .option('--audience <audience>', 'the audience the page would disclose content to (required)')
+    .action(async (cmdOpts: { under?: string; note?: string; entity?: string; as?: string; audience?: string }, cmd: Command) => {
+      const { runEnv, jsonMode, root } = deriveRunEnv(env, cmd);
+      result = await runCommand('publish.gather', runEnv, jsonMode, async () => {
+        const store = await openStore(runEnv, { root });
+        return publishGatherCommand.execute(runEnv, store, {
+          under: cmdOpts.under,
+          note: cmdOpts.note,
+          entity: cmdOpts.entity,
+          as: cmdOpts.as,
+          audience: cmdOpts.audience,
+        });
+      });
+    });
+
+  publishCommand
+    .command('new <slug>')
+    .description('scaffold a page folder with a sibling README, refusing a reserved or already-existing slug')
+    .action(async (slug: string, _cmdOpts: object, cmd: Command) => {
+      const { runEnv, jsonMode, root } = deriveRunEnv(env, cmd);
+      result = await runCommand('publish.new', runEnv, jsonMode, async () => {
+        const store = await openStore(runEnv, { root });
+        return publishNewCommand.execute(store, { slug });
+      });
+    });
+
+  publishCommand
+    .command('check <path>')
+    .description('the mechanized structural checks a published page must pass (no external references, viewport meta, print rule, provenance, sibling README, script syntax)')
+    .action(async (pagePath: string, _cmdOpts: object, cmd: Command) => {
+      const { runEnv, jsonMode, root } = deriveRunEnv(env, cmd);
+      result = await runCommand('publish.check', runEnv, jsonMode, async () => {
+        const store = await openStore(runEnv, { root });
+        return publishCheckCommand.execute(store, { path: pagePath });
       });
     });
 

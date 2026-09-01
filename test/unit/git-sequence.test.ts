@@ -59,6 +59,7 @@ describe('init git call sequence', () => {
           '.claude/skills/ctxr-session-capture/SKILL.md',
           '.claude/skills/ctxr-derived-artifacts/SKILL.md',
           '.claude/skills/ctxr-organize-audit/SKILL.md',
+          '.claude/skills/ctxr-publish/SKILL.md',
           '.githooks/pre-commit',
           '.githooks/pre-push',
         ],

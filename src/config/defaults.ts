@@ -77,6 +77,9 @@ export const DEFAULT_CATALOG_PATH = '.contexture/catalog/';
 /** context-catalog spec: a section exceeding this triggers a failing doctor check, not a silent slowdown. */
 export const DEFAULT_CATALOG_SECTION_MAX_BYTES = 32 * 1024;
 
+/** publish spec: where published pages live — tracked, authored-but-tool-owned, excluded from retrieval like the catalog and skill pack. */
+export const DEFAULT_PUBLISH_PATH = '.contexture/publish/';
+
 /** disclosure-policy spec: v1 ships with no audiences pre-declared internal, and no hard walls — an explicit, empty starting point the operator opts into. */
 export const DEFAULT_INTERNAL_AUDIENCES: readonly string[] = [];
 export const DEFAULT_HARD_WALLS: readonly HardWallConfig[] = [];

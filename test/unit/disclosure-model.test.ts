@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { StoreConfig } from '../../src/config/schema.js';
-import { evaluateDisclosure } from '../../src/core/disclosure/model.js';
+import { evaluateDisclosure, VERDICT_EXIT_CODE, worstVerdict, type DisclosureVerdict } from '../../src/core/disclosure/model.js';
+import { ExitCode } from '../../src/core/exit-codes.js';
 import type { Note } from '../../src/core/notes/list.js';
 
 function makeConfig(overrides: Partial<StoreConfig['disclosure']> = {}): StoreConfig {
@@ -15,6 +16,7 @@ function makeConfig(overrides: Partial<StoreConfig['disclosure']> = {}): StoreCo
     session: { branch_prefix: 'session/', worktrees_path: '.worktrees/', workspaces_external: false },
     write_lifecycle: { diff_size_ceiling_lines: 2000, writable_paths: [] },
     catalog: { path: 'catalog/', section_max_bytes: 32768 },
+    publish: { path: 'publish/' },
     disclosure: { internal_audiences: [], hard_walls: [], leak_markers: {}, ...overrides },
     ingest: { inbox_path: 'inbox/', tracking_params: [] },
     organize: { archive_path: 'archive/', rollup_stale_days: 7 },
@@ -92,6 +94,35 @@ describe('evaluateDisclosure', () => {
     });
     const result = evaluateDisclosure(config, note('projects/a.md', { scope: 'ctx-a' }), 'ctx-a');
     expect(result).toEqual({ verdict: 'deny', rung: 'hard_wall' });
+  });
+});
+
+describe('worstVerdict (disclosure-policy: a set of verdicts aggregates to its most restrictive member)', () => {
+  it('all-ALLOW aggregates to ALLOW', () => {
+    expect(worstVerdict(['allow', 'allow', 'allow'])).toBe('allow');
+  });
+
+  it('an ASK among ALLOWs, with no DENY, aggregates to ASK', () => {
+    expect(worstVerdict(['allow', 'ask', 'allow'])).toBe('ask');
+  });
+
+  it('a single DENY among many ALLOWs and ASKs aggregates to DENY', () => {
+    expect(worstVerdict(['allow', 'ask', 'deny', 'allow'])).toBe('deny');
+  });
+
+  it('an empty set aggregates to ALLOW', () => {
+    expect(worstVerdict([])).toBe('allow');
+  });
+
+  it('maps every aggregate to its own distinct, documented exit code via VERDICT_EXIT_CODE', () => {
+    const cases: Array<[DisclosureVerdict[], number]> = [
+      [['allow', 'allow'], ExitCode.Ok],
+      [['allow', 'ask'], ExitCode.DisclosureAsk],
+      [['allow', 'ask', 'deny'], ExitCode.DisclosureDeny],
+    ];
+    for (const [verdicts, expectedExitCode] of cases) {
+      expect(VERDICT_EXIT_CODE[worstVerdict(verdicts)]).toBe(expectedExitCode);
+    }
   });
 });
 

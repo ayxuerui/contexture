@@ -69,6 +69,8 @@ export function excludedPrefixesFor(config: StoreConfig): string[] {
     ...config.derived.paths,
     config.session.worktrees_path,
     config.catalog.path,
+    // Published pages are authored-but-tool-owned output, never a note (context-store spec).
+    config.publish.path,
     // Tool-owned instruction docs (skills, conventions) are never notes, wherever they live.
     config.harness.skills_path,
     config.harness.conventions_path,

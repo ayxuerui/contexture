@@ -263,6 +263,13 @@ const ORGANIZE_AUDIT: SkillSeed = {
   body: () => skillTemplate('ctxr-organize-audit').split('\n'),
 };
 
+const PUBLISH: SkillSeed = {
+  file: 'ctxr-publish',
+  name: 'Publish',
+  description: 'Turn store content into a shareable HTML page for a subtree, note, entity, or context, gating every source note through disclosure before any content is copied out.',
+  body: () => skillTemplate('ctxr-publish').split('\n'),
+};
+
 export const SKILLS: readonly SkillSeed[] = [
   INGEST_ORCHESTRATION,
   PLACEMENT,
@@ -276,6 +283,7 @@ export const SKILLS: readonly SkillSeed[] = [
   SESSION_CAPTURE,
   DERIVED_ARTIFACTS,
   ORGANIZE_AUDIT,
+  PUBLISH,
 ];
 
 /** The owned skills, rendered against one store's configuration — what `syncShippedSkills` writes. */
