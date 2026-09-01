@@ -3,6 +3,7 @@ import type { GitRunner } from './git/exec.js';
 import { extractLinkTargets } from './graph/model.js';
 import { htmlCommentFence } from './markers.js';
 import type { Note } from './notes/list.js';
+import { parseNote } from './notes/parse.js';
 
 /** The single fenced region `rollup write` writes into, and the frontmatter timestamp it stamps alongside it. */
 export const ROLLUP_FENCE = htmlCommentFence('rollup');
@@ -93,9 +94,28 @@ export function checkMissionStaleness(note: Note, staleDays: number, now: Date):
 }
 
 /**
+ * compose-store-guidance-documents: the mission document typically lives
+ * under the guidance directory, which is excluded from the store's note
+ * listing (tool-owned instruction docs are never notes — see
+ * `excludedPrefixesFor`), so it is read directly by path here rather than
+ * looked up in the `notes` array `findStaleRollups` already has. A missing
+ * file (never seeded, or a hand-configured path that doesn't exist yet)
+ * yields no candidate, the same as the old array-lookup did when nothing
+ * matched.
+ */
+async function readMissionNote(root: string, missionPath: string): Promise<Note | null> {
+  try {
+    return await parseNote(path.join(root, missionPath), missionPath);
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return null;
+    throw err;
+  }
+}
+
+/**
  * Every entity with a rollup section (optionally narrowed to one), reported
- * stale per `checkRollupStaleness`, plus — when `missionPath` names a note
- * that exists in `notes` — that one path via `checkMissionStaleness`
+ * stale per `checkRollupStaleness`, plus — when `missionPath` names a
+ * document that exists on disk — that one path via `checkMissionStaleness`
  * instead of the backlink-based entity scan, even when it carries no
  * `ROLLUP_FENCE` yet (an unwritten mission document must surface as
  * needing its first write, not be silently excluded by `hasRollupSection`).
@@ -120,7 +140,7 @@ export async function findStaleRollups(
   }
 
   if (options.missionPath && (!options.entity || options.entity === options.missionPath)) {
-    const missionNote = notes.find((n) => n.path === options.missionPath);
+    const missionNote = await readMissionNote(root, options.missionPath);
     if (missionNote) {
       const entry = checkMissionStaleness(missionNote, staleDays, now);
       // The mission rule OWNS this path once configured: it overrides the

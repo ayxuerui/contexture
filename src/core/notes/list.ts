@@ -69,9 +69,9 @@ export function excludedPrefixesFor(config: StoreConfig): string[] {
     ...config.derived.paths,
     config.session.worktrees_path,
     config.catalog.path,
-    // Tool-owned instruction docs (skills, conventions) are never notes, wherever they live.
+    // Tool-owned instruction docs (skills, guidance) are never notes, wherever they live.
     config.harness.skills_path,
-    config.harness.conventions_path,
+    config.harness.guidance_path,
   ];
 }
 

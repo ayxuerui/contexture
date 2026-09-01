@@ -16,11 +16,5 @@ Every write to this store happens inside a session worktree, never directly on t
 
 ### Identity and memory
 
-Identity, persona, and durable cross-session memory for the agent working this store belong to its harness, not to this store — the store holds knowledge and procedures, documented as portable markdown under `__SKILLS_PATH__` (see the skill index below), never a persona or memory file of its own.
+Identity, persona, and durable cross-session memory for the agent working this store belong to its harness, not to this store — the store holds knowledge and skills, documented as portable markdown under `__SKILLS_PATH__`, never a persona or memory file of its own.
 __MISSION_POINTER__
-
-### Skill index
-
-Judgment-driven operations, documented as portable markdown under `__SKILLS_PATH__` — read one directly, no harness-specific discovery required:
-
-__SKILL_INDEX__
