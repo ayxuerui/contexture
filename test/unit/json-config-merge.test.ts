@@ -80,4 +80,134 @@ describe('mergeJsonArrayLists', () => {
       await tmp.cleanup();
     }
   });
+
+  describe('remove option', () => {
+    it('removes exact matches only, leaving a near-miss string untouched', async () => {
+      const tmp = await makeTmpDir();
+      try {
+        const filePath = path.join(tmp.root, 'settings.json');
+        await mkdir(tmp.root, { recursive: true });
+        await writeFile(filePath, JSON.stringify({ permissions: { deny: ['a', 'ab', 'a-extra'] } }));
+
+        await mergeJsonArrayLists(filePath, { permissions: { deny: [] } }, { remove: { permissions: { deny: ['a'] } } });
+        const written = JSON.parse(await readFile(filePath, 'utf8'));
+        expect(written.permissions.deny).toEqual(['ab', 'a-extra']);
+      } finally {
+        await tmp.cleanup();
+      }
+    });
+
+    it('leaves a hand-added rule untouched even when the current patch would otherwise emit it', async () => {
+      const tmp = await makeTmpDir();
+      try {
+        const filePath = path.join(tmp.root, 'settings.json');
+        await mkdir(tmp.root, { recursive: true });
+        await writeFile(filePath, JSON.stringify({ permissions: { deny: ['hand-added'] } }));
+
+        await mergeJsonArrayLists(
+          filePath,
+          { permissions: { deny: ['generated'] } },
+          { remove: { permissions: { deny: ['some-other-retired-rule'] } } },
+        );
+        const written = JSON.parse(await readFile(filePath, 'utf8'));
+        expect(written.permissions.deny).toEqual(['hand-added', 'generated']);
+      } finally {
+        await tmp.cleanup();
+      }
+    });
+
+    it('drops a list key emptied by removal, but keeps a pre-existing intentional empty array', async () => {
+      const tmp = await makeTmpDir();
+      try {
+        const filePath = path.join(tmp.root, 'settings.json');
+        await mkdir(tmp.root, { recursive: true });
+        await writeFile(filePath, JSON.stringify({ permissions: { deny: ['stale-a', 'stale-b'], allow: [] } }));
+
+        await mergeJsonArrayLists(
+          filePath,
+          {},
+          { remove: { permissions: { deny: ['stale-a', 'stale-b'] } } },
+        );
+        const written = JSON.parse(await readFile(filePath, 'utf8'));
+        expect(written.permissions.deny).toBeUndefined();
+        expect(written.permissions.allow).toEqual([]);
+      } finally {
+        await tmp.cleanup();
+      }
+    });
+
+    it('is idempotent: a second call with the same patch and remove changes nothing', async () => {
+      const tmp = await makeTmpDir();
+      try {
+        const filePath = path.join(tmp.root, 'settings.json');
+        await mkdir(tmp.root, { recursive: true });
+        await writeFile(filePath, JSON.stringify({ permissions: { deny: ['stale', 'kept'] } }));
+
+        const patch = { permissions: { deny: ['kept', 'fresh'] } };
+        const remove = { permissions: { deny: ['stale'] } };
+        await mergeJsonArrayLists(filePath, patch, { remove });
+        const before = await readFile(filePath, 'utf8');
+
+        const { changed } = await mergeJsonArrayLists(filePath, patch, { remove });
+        const after = await readFile(filePath, 'utf8');
+        expect(changed).toBe(false);
+        expect(after).toBe(before);
+      } finally {
+        await tmp.cleanup();
+      }
+    });
+  });
+
+  describe('hook-matcher-entry lists', () => {
+    function hookEntry(command: string): { matcher: string; hooks: { type: string; command: string }[] } {
+      return { matcher: 'Edit|Write|NotebookEdit', hooks: [{ type: 'command', command }] };
+    }
+
+    it('appends a new hook entry when none with the same command exists', async () => {
+      const tmp = await makeTmpDir();
+      try {
+        const filePath = path.join(tmp.root, 'settings.json');
+        const { changed } = await mergeJsonArrayLists(filePath, { hooks: { PreToolUse: [hookEntry('/bin/gate.sh')] } });
+        expect(changed).toBe(true);
+        const written = JSON.parse(await readFile(filePath, 'utf8'));
+        expect(written.hooks.PreToolUse).toEqual([hookEntry('/bin/gate.sh')]);
+      } finally {
+        await tmp.cleanup();
+      }
+    });
+
+    it('replaces contexture\'s own entry in place on a second run, producing no duplicate', async () => {
+      const tmp = await makeTmpDir();
+      try {
+        const filePath = path.join(tmp.root, 'settings.json');
+        await mergeJsonArrayLists(filePath, { hooks: { PreToolUse: [hookEntry('/bin/gate.sh')] } });
+        const before = await readFile(filePath, 'utf8');
+
+        const { changed } = await mergeJsonArrayLists(filePath, { hooks: { PreToolUse: [hookEntry('/bin/gate.sh')] } });
+        const after = await readFile(filePath, 'utf8');
+        expect(changed).toBe(false);
+        expect(after).toBe(before);
+        const written = JSON.parse(after);
+        expect(written.hooks.PreToolUse).toHaveLength(1);
+      } finally {
+        await tmp.cleanup();
+      }
+    });
+
+    it('leaves an operator-added hook entry with a different command untouched', async () => {
+      const tmp = await makeTmpDir();
+      try {
+        const filePath = path.join(tmp.root, 'settings.json');
+        await mkdir(tmp.root, { recursive: true });
+        const operatorEntry = hookEntry('/home/me/my-hook.sh');
+        await writeFile(filePath, JSON.stringify({ hooks: { PreToolUse: [operatorEntry] } }));
+
+        await mergeJsonArrayLists(filePath, { hooks: { PreToolUse: [hookEntry('/bin/gate.sh')] } });
+        const written = JSON.parse(await readFile(filePath, 'utf8'));
+        expect(written.hooks.PreToolUse).toEqual([operatorEntry, hookEntry('/bin/gate.sh')]);
+      } finally {
+        await tmp.cleanup();
+      }
+    });
+  });
 });

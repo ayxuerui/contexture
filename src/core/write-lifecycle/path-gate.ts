@@ -13,6 +13,46 @@ function normalizePrefix(prefix: string): string {
   return prefix.replace(/\/+$/, '');
 }
 
+/**
+ * The resolution+symlink-escape logic every path gate in this store shares:
+ * lexically outside the root, escapes the root through a symlink on an
+ * existing ancestor, or genuinely inside (with the store-relative,
+ * forward-slash path a caller can then apply its own rule to).
+ */
+type StoreResolution =
+  | { kind: 'outside_store' }
+  | { kind: 'symlink_escape' }
+  | { kind: 'inside'; rel: string };
+
+async function resolveStorePath(root: string, relativePath: string): Promise<StoreResolution> {
+  const normalizedRoot = path.resolve(root);
+  const target = path.resolve(root, relativePath);
+  const rel = path.relative(normalizedRoot, target).split(path.sep).join('/');
+  if (rel === '' || rel.startsWith('..') || path.isAbsolute(rel)) {
+    return { kind: 'outside_store' };
+  }
+
+  // Walk up to the deepest EXISTING ancestor, but never past the store root itself: a root (or a
+  // whole store) that doesn't exist yet on disk has no symlink to escape through, and the lexical
+  // check above already confirmed the path is nominally inside it.
+  let ancestor = target;
+  while (ancestor !== normalizedRoot && !existsSync(ancestor)) {
+    const parent = path.dirname(ancestor);
+    if (parent === ancestor) break;
+    ancestor = parent;
+  }
+  if (existsSync(ancestor)) {
+    const realRoot = await realpath(normalizedRoot).catch(() => normalizedRoot);
+    const realAncestor = await realpath(ancestor).catch(() => ancestor);
+    const insideRoot = realAncestor === realRoot || realAncestor.startsWith(`${realRoot}${path.sep}`);
+    if (!insideRoot) {
+      return { kind: 'symlink_escape' };
+    }
+  }
+
+  return { kind: 'inside', rel };
+}
+
 function isUnderAnyPrefix(relativePath: string, prefixes: readonly string[]): boolean {
   return prefixes.some((prefix) => {
     const trimmed = normalizePrefix(prefix);
@@ -65,30 +105,14 @@ function sanctionedPrefixesFor(config: StoreConfig): string[] {
  * contexture-owned location passes.
  */
 export async function sanctionedPath(config: StoreConfig, root: string, relativePath: string): Promise<PathGateResult> {
-  const normalizedRoot = path.resolve(root);
-  const target = path.resolve(root, relativePath);
-  const rel = path.relative(normalizedRoot, target).split(path.sep).join('/');
-  if (rel === '' || rel.startsWith('..') || path.isAbsolute(rel)) {
+  const resolution = await resolveStorePath(root, relativePath);
+  if (resolution.kind === 'outside_store') {
     return { ok: false, reason: 'resolves outside the store' };
   }
-
-  // Walk up to the deepest EXISTING ancestor, but never past the store root itself: a root (or a
-  // whole store) that doesn't exist yet on disk has no symlink to escape through, and the lexical
-  // check above already confirmed the path is nominally inside it.
-  let ancestor = target;
-  while (ancestor !== normalizedRoot && !existsSync(ancestor)) {
-    const parent = path.dirname(ancestor);
-    if (parent === ancestor) break;
-    ancestor = parent;
+  if (resolution.kind === 'symlink_escape') {
+    return { ok: false, reason: 'escapes the store through a symbolic link' };
   }
-  if (existsSync(ancestor)) {
-    const realRoot = await realpath(normalizedRoot).catch(() => normalizedRoot);
-    const realAncestor = await realpath(ancestor).catch(() => ancestor);
-    const insideRoot = realAncestor === realRoot || realAncestor.startsWith(`${realRoot}${path.sep}`);
-    if (!insideRoot) {
-      return { ok: false, reason: 'escapes the store through a symbolic link' };
-    }
-  }
+  const { rel } = resolution;
 
   if (config.write_lifecycle.writable_paths.length === 0) {
     return { ok: true };
@@ -101,4 +125,40 @@ export async function sanctionedPath(config: StoreConfig, root: string, relative
     };
   }
   return { ok: true };
+}
+
+export interface WriteScopeResult {
+  inScope: boolean;
+  reason?: string;
+}
+
+/**
+ * The Claude Code write-gate hook's question: is `relativePath` safe for a
+ * session opened at the store root to edit directly? In scope when it
+ * resolves outside the store entirely (not this gate's concern — the
+ * store's canonical checkout is what it protects) or inside the configured
+ * session-worktree tree; out of scope, and denied, when it resolves inside
+ * the store root's own content, including when a symlink disguises the
+ * escape in either direction (reuses `resolveStorePath`'s escape check,
+ * same as `sanctionedPath`, so the two can never disagree on what counts as
+ * an escape).
+ */
+export async function isWriteInScope(config: StoreConfig, root: string, relativePath: string): Promise<WriteScopeResult> {
+  const resolution = await resolveStorePath(root, relativePath);
+  if (resolution.kind === 'outside_store') {
+    return { inScope: true };
+  }
+  if (resolution.kind === 'symlink_escape') {
+    return { inScope: false, reason: 'escapes the store through a symbolic link' };
+  }
+
+  const worktreesPrefix = normalizePrefix(config.session.worktrees_path);
+  const { rel } = resolution;
+  if (rel === worktreesPrefix || rel.startsWith(`${worktreesPrefix}/`)) {
+    return { inScope: true };
+  }
+  return {
+    inScope: false,
+    reason: `is in the store root at "${rel}", outside the active session worktree ("${config.session.worktrees_path}")`,
+  };
 }

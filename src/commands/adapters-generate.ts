@@ -4,7 +4,8 @@ import { configuredAdapters } from '../adapters/registry.js';
 import { agentsMdPath } from '../core/agents-doc.js';
 import { ExitCode } from '../core/exit-codes.js';
 import { upsertFencedRegionInFile } from '../core/fs/fenced-region.js';
-import { mergeJsonArrayLists } from '../core/json-config-merge.js';
+import { installTemplatedHookScript, resolveOwnBinPath } from '../core/hooks.js';
+import { mergeJsonArrayLists, type MergePatch, type RemovePatch } from '../core/json-config-merge.js';
 import { harnessEntryFence } from '../core/markers.js';
 import type { Store } from '../core/store.js';
 
@@ -40,18 +41,33 @@ export async function generateAdapterOutputs(store: Store): Promise<AdaptersGene
     files.push({ path: adapter.entryFileName, changed });
 
     if (adapter.permissionConfig) {
-      const permPath = path.join(store.root, adapter.permissionConfig.path);
-      const rules = adapter.permissionConfig.render({
+      const input = {
         root: store.root,
         worktreesPath: store.config.session.worktrees_path,
+        binPath: resolveOwnBinPath(),
+      };
+      let permChanged = false;
+
+      if (adapter.permissionConfig.hookFile) {
+        const { changed: hookScriptChanged } = await installTemplatedHookScript(
+          store.root,
+          adapter.permissionConfig.hookFile.targetPath,
+          adapter.permissionConfig.hookFile.templateFileName,
+          { __CONTEXTURE_BIN__: input.binPath },
+        );
+        permChanged = permChanged || hookScriptChanged;
+      }
+
+      const permPath = path.join(store.root, adapter.permissionConfig.path);
+      const rules = adapter.permissionConfig.render(input);
+      const retired = adapter.permissionConfig.retiredRules(input);
+      const { changed: rulesChanged } = await mergeJsonArrayLists(permPath, rules as MergePatch, {
+        remove: retired as RemovePatch,
       });
-      const { changed: permChanged } = await mergeJsonArrayLists(
-        permPath,
-        rules as Record<string, Record<string, readonly string[]>>,
-      );
+      permChanged = permChanged || rulesChanged;
+
       files.push({ path: adapter.permissionConfig.path, changed: permChanged });
     }
-
   }
 
   return files;
