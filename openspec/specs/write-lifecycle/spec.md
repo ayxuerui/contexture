@@ -107,6 +107,17 @@ Any command that writes a derived artifact (per the context-store derived-file d
 - **WHEN** a run merges the pull request but does not synchronize, or does not reap
 - **THEN** the report names a reason for each step it did not perform, whether or not that step was attempted
 
+### Requirement: External workspace ownership disables worktree reclamation
+When a store's configuration declares `session.workspaces_external: true`, `ctxr session reap` SHALL refuse to run, exiting non-zero and naming the configuration key as the reason, without inspecting or modifying any worktree. When the key is false or unset (the default), `ctxr session reap` SHALL behave exactly as it did before this key existed.
+
+#### Scenario: Reap refuses under external ownership
+- **WHEN** a store declares `session.workspaces_external: true` and `ctxr session reap` is run
+- **THEN** the command exits non-zero, names `session.workspaces_external` as the reason, and neither removes a worktree nor deletes a branch
+
+#### Scenario: Default behavior is unchanged
+- **WHEN** a store declares no `session.workspaces_external` key (or declares it `false`) and `ctxr session reap` is run
+- **THEN** it reaps merged, clean session worktrees exactly as it did before this key was introduced
+
 ### Requirement: Submission can rename the session branch
 `ctxr session submit --branch <name>` SHALL rename the current session branch to the given name before pushing and opening the pull request, and the worktree SHALL remain a recognized session worktree afterwards.
 
