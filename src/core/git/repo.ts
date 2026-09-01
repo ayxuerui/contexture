@@ -1,3 +1,4 @@
+import { readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
 import type { GitRunner } from './exec.js';
 
@@ -36,6 +37,31 @@ export async function findToplevel(git: GitRunner, cwd: string): Promise<Topleve
 export async function isInsideGitRepo(git: GitRunner, cwd: string): Promise<boolean> {
   const result = await git.run(['rev-parse', '--is-inside-work-tree'], { cwd, allowFailure: true });
   return result.exitCode === 0 && result.stdout.trim() === 'true';
+}
+
+/**
+ * Whether `root` is itself a linked worktree's checkout, as opposed to a
+ * repository's main working tree (or no git checkout at all) — detected the
+ * same way git itself distinguishes them, without a subprocess: in the main
+ * working tree `.git` is a directory; in a linked worktree it is a text file
+ * whose content starts with `gitdir: `. Synchronous and fs-only (no
+ * `GitRunner`) because write-lifecycle/path-gate.ts's `isWriteInScope` calls
+ * this on every gated tool call and has no git runner of its own to spare.
+ */
+export function isLinkedWorktreeRoot(root: string): boolean {
+  const gitPath = path.join(root, '.git');
+  let stat;
+  try {
+    stat = statSync(gitPath);
+  } catch {
+    return false;
+  }
+  if (!stat.isFile()) return false;
+  try {
+    return readFileSync(gitPath, 'utf8').trimStart().startsWith('gitdir:');
+  } catch {
+    return false;
+  }
 }
 
 /**

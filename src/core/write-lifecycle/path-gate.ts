@@ -3,6 +3,7 @@ import { realpath } from 'node:fs/promises';
 import path from 'node:path';
 import { configuredAdapters } from '../../adapters/registry.js';
 import type { StoreConfig } from '../../config/schema.js';
+import { isLinkedWorktreeRoot } from '../git/repo.js';
 
 export interface PathGateResult {
   ok: boolean;
@@ -142,6 +143,18 @@ export interface WriteScopeResult {
  * escape in either direction (reuses `resolveStorePath`'s escape check,
  * same as `sanctionedPath`, so the two can never disagree on what counts as
  * an escape).
+ *
+ * A `root` that is itself a linked worktree checkout is always in scope,
+ * regardless of `relativePath`: `openStore` resolves the store root by
+ * walking up from cwd for the nearest `contexture.yaml`, and every session
+ * worktree carries its own copy of that file — so a session whose cwd is
+ * already inside the worktree resolves the worktree itself as `root`, and
+ * without this carve-out every edit in it would read as "in the store root,
+ * outside the worktree" and be denied. The gate's actual job is protecting
+ * the canonical checkout; a linked worktree IS the sanctioned workspace,
+ * whichever directory a session happens to be driven from — this also
+ * covers `session.workspaces_external: true` stores, whose worktrees an
+ * external process may place outside `session.worktrees_path` entirely.
  */
 export async function isWriteInScope(config: StoreConfig, root: string, relativePath: string): Promise<WriteScopeResult> {
   const resolution = await resolveStorePath(root, relativePath);
@@ -155,6 +168,9 @@ export async function isWriteInScope(config: StoreConfig, root: string, relative
   const worktreesPrefix = normalizePrefix(config.session.worktrees_path);
   const { rel } = resolution;
   if (rel === worktreesPrefix || rel.startsWith(`${worktreesPrefix}/`)) {
+    return { inScope: true };
+  }
+  if (isLinkedWorktreeRoot(root)) {
     return { inScope: true };
   }
   return {
