@@ -51,12 +51,38 @@ describe('adapters generate command', () => {
       const store: Store = { root: tmp.root, config: makeConfig([{ id: 'claude-code', kind: 'harness-generation' }]) };
       await execute(store);
       const settings = JSON.parse(await readFile(path.join(tmp.root, '.claude/settings.json'), 'utf8'));
-      expect(settings.permissions.deny).toEqual(['Bash(git push:*)', 'Bash(git commit:*)']);
-      expect(settings.permissions.allow).toBeUndefined();
+      // The write gate is the PreToolUse hook alone. No `Bash(git …)` deny is emitted: `ctxr-submit`
+      // instructs `git commit`/`git push` directly, so denying them would forbid the shipped skill.
+      expect(settings.permissions?.deny).toBeUndefined();
+      expect(settings.permissions?.allow).toBeUndefined();
       expect(settings.hooks.PreToolUse[0]).toMatchObject({
         matcher: 'Edit|Write|NotebookEdit',
         hooks: [{ type: 'command', command: path.join(tmp.root, '.claude/hooks/claude-code-write-gate.sh') }],
       });
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('sheds the retired Bash(git \u2026) denies from a store generated before ctxr-submit drove git directly', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      await mkdir(path.join(tmp.root, '.claude'), { recursive: true });
+      await writeFile(
+        path.join(tmp.root, '.claude/settings.json'),
+        JSON.stringify({ permissions: { deny: ['Bash(git push:*)', 'Bash(git commit:*)'] } }, null, 2),
+      );
+
+      const store: Store = { root: tmp.root, config: makeConfig([{ id: 'claude-code', kind: 'harness-generation' }]) };
+      await execute(store);
+
+      // The convergence path every existing store takes on its next `ctxr update`: without this, the
+      // generated config would forbid the `git commit` / `git push` its own ctxr-submit skill instructs.
+      const settings = JSON.parse(await readFile(path.join(tmp.root, '.claude/settings.json'), 'utf8'));
+      expect(settings.permissions?.deny).toBeUndefined();
+      expect(settings.hooks.PreToolUse[0].hooks[0].command).toBe(
+        path.join(tmp.root, '.claude/hooks/claude-code-write-gate.sh'),
+      );
     } finally {
       await tmp.cleanup();
     }
@@ -67,8 +93,10 @@ describe('adapters generate command', () => {
     try {
       const store: Store = { root: tmp.root, config: makeConfig([{ id: 'claude-code', kind: 'harness-generation' }]) };
       await execute(store);
-      const settings = JSON.parse(await readFile(path.join(tmp.root, '.claude/settings.json'), 'utf8'));
-      expect((settings.permissions.deny as string[]).some((r) => r.startsWith('Write('))).toBe(false);
+      // Asserted against the raw file, not a `deny` list that no longer exists on a fresh store — this
+      // stays a real check (no Write() rule anywhere) rather than vacuously passing over an absent key.
+      const raw = await readFile(path.join(tmp.root, '.claude/settings.json'), 'utf8');
+      expect(raw).not.toContain('"Write(');
     } finally {
       await tmp.cleanup();
     }
@@ -127,7 +155,10 @@ describe('adapters generate command', () => {
       const store: Store = { root: tmp.root, config: makeConfig([{ id: 'claude-code', kind: 'harness-generation' }]) };
       await execute(store);
       const settings = JSON.parse(await readFile(path.join(tmp.root, '.claude/settings.json'), 'utf8'));
-      expect(settings.permissions.deny).toEqual(['Bash(git push:*)', 'Bash(git commit:*)', 'Bash(hand-added-rule:*)']);
+      // Both generations of retired rules are gone — the Write/Edit pair the PreToolUse hook replaced,
+      // and the `Bash(git …)` pair that used to force commits through `ctxr session submit`. Only the
+      // operator's own rule, which the generator never emitted, survives.
+      expect(settings.permissions.deny).toEqual(['Bash(hand-added-rule:*)']);
       expect(settings.permissions.allow).toBeUndefined();
       expect(settings.hooks.PreToolUse[0].hooks[0].command).toBe(path.join(tmp.root, '.claude/hooks/claude-code-write-gate.sh'));
 
