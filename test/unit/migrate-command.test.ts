@@ -17,7 +17,7 @@ function makeV1Config(): StoreConfig {
     derived: { paths: [] },
     retrieval: { exclude_paths: [], relations: [], graph: { cluster_depth: 2, hub_top: 8, bridge_top: 10, orphan_exempt_clusters: [] } },
     git: { default_branch: 'main' },
-    session: { branch_prefix: 'session/', worktrees_path: '.worktrees/', workspaces_external: false },
+    session: { branch_prefix: 'session/', worktrees_path: '.worktrees/' },
     write_lifecycle: { diff_size_ceiling_lines: 2000, writable_paths: [] },
     catalog: { path: 'catalog/', section_max_bytes: 32768 },
     publish: { path: 'publish/' },
@@ -47,10 +47,10 @@ describe('migrate command', () => {
   it('reports no pending migrations for a store already at the current schema version', async () => {
     const tmp = await makeTmpDir();
     try {
-      const store: Store = { ...(await setUpV1Store(tmp.root)), config: { ...makeV1Config(), schema_version: 4, fields: { visibility: 'lens' } } };
+      const store: Store = { ...(await setUpV1Store(tmp.root)), config: { ...makeV1Config(), schema_version: 5, fields: { visibility: 'lens' } } };
       const outcome = await execute(store, {});
       expect(outcome.exitCode).toBe(ExitCode.Ok);
-      expect(outcome.data).toEqual({ currentVersion: 4, targetVersion: 4, applied: false, migrations: [] });
+      expect(outcome.data).toEqual({ currentVersion: 5, targetVersion: 5, applied: false, migrations: [] });
     } finally {
       await tmp.cleanup();
     }
@@ -83,7 +83,7 @@ describe('migrate command', () => {
       const outcome = await execute(store, {});
       expect(outcome.exitCode).toBe(ExitCode.Ok);
       expect(outcome.data?.applied).toBe(true);
-      expect(outcome.schemaVersion).toBe(4);
+      expect(outcome.schemaVersion).toBe(5);
 
       const after = await readFile(path.join(tmp.root, 'projects/a.md'), 'utf8');
       expect(after).toContain('lens: shared');

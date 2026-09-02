@@ -18,17 +18,13 @@ import * as noteResolveCommand from './commands/note-resolve.js';
 import * as publishGatherCommand from './commands/publish-gather.js';
 import * as publishCheckCommand from './commands/publish-check.js';
 import * as publishNewCommand from './commands/publish-new.js';
-import * as sessionAbandonCommand from './commands/session-abandon.js';
 import * as sessionCaptureCommand from './commands/session-capture.js';
-import * as sessionLandCommand from './commands/session-land.js';
 import * as sessionListCommand from './commands/session-list.js';
-import * as sessionReapCommand from './commands/session-reap.js';
 import * as serveCommand from './commands/serve.js';
 import * as sessionStartCommand from './commands/session-start.js';
 import * as rollupGatherCommand from './commands/rollup-gather.js';
 import * as rollupStaleCommand from './commands/rollup-stale.js';
 import * as rollupWriteCommand from './commands/rollup-write.js';
-import * as sessionSubmitCommand from './commands/session-submit.js';
 import * as sourceAddAltCommand from './commands/source-add-alt.js';
 import * as sourceCheckCommand from './commands/source-check.js';
 import * as sourceHashCommand from './commands/source-hash.js';
@@ -629,21 +625,6 @@ export async function run(argv: readonly string[], env: RunEnv): Promise<ExitCod
     });
 
   sessionCommand
-    .command('submit')
-    .description('validate, commit, push, and open a pull request for the current session')
-    .option('--message <text>', 'commit message for any remaining staged changes')
-    .option('--title <text>', 'pull request title')
-    .option('--body <text>', 'pull request body')
-    .option('--branch <name>', 'rename the session branch before pushing, so a generated name never reaches the forge')
-    .action(async (cmdOpts: { message?: string; title?: string; body?: string; branch?: string }, cmd: Command) => {
-      const { runEnv, jsonMode, root } = deriveRunEnv(env, cmd);
-      result = await runCommand('session.submit', runEnv, jsonMode, async () => {
-        const store = await openStore(runEnv, { root });
-        return sessionSubmitCommand.execute(runEnv, store, cmdOpts);
-      });
-    });
-
-  sessionCommand
     .command('capture')
     .description('apply an approved end-of-session capture proposal: create or append notes')
     .requiredOption('--proposal <path>', 'a YAML file of approved note items')
@@ -656,38 +637,6 @@ export async function run(argv: readonly string[], env: RunEnv): Promise<ExitCod
     });
 
   sessionCommand
-    .command('land')
-    .description('complete a reviewed session: merge its pull request, sync the default branch, optionally reap the worktree')
-    .option('--pr <number>', 'the pull request number to land (default: the one for the current or --branch session)', (v) => Number.parseInt(v, 10))
-    .option('--branch <name>', 'the session branch to land (default: the current branch)')
-    .option('--yes', 'consent to the merge without an interactive prompt')
-    .option('--merge-method <method>', 'squash, merge, or rebase', 'squash')
-    .option('--reap', 'remove the session worktree afterward, if it is clean and the pull request merged')
-    .action(
-      async (
-        cmdOpts: { pr?: number; branch?: string; yes?: boolean; mergeMethod?: 'squash' | 'merge' | 'rebase'; reap?: boolean },
-        cmd: Command,
-      ) => {
-        const { runEnv, jsonMode, root } = deriveRunEnv(env, cmd);
-        result = await runCommand('session.land', runEnv, jsonMode, async () => {
-          const store = await openStore(runEnv, { root });
-          return sessionLandCommand.execute(runEnv, store, cmdOpts);
-        });
-      },
-    );
-
-  sessionCommand
-    .command('abandon <branch>')
-    .description('discard a session: remove its worktree and delete its branch')
-    .action(async (branch: string, _cmdOpts: object, cmd: Command) => {
-      const { runEnv, jsonMode, root } = deriveRunEnv(env, cmd);
-      result = await runCommand('session.abandon', runEnv, jsonMode, async () => {
-        const store = await openStore(runEnv, { root });
-        return sessionAbandonCommand.execute(runEnv, store, { branch });
-      });
-    });
-
-  sessionCommand
     .command('list')
     .description('list active session worktrees')
     .action(async (_cmdOpts: object, cmd: Command) => {
@@ -695,17 +644,6 @@ export async function run(argv: readonly string[], env: RunEnv): Promise<ExitCod
       result = await runCommand('session.list', runEnv, jsonMode, async () => {
         const store = await openStore(runEnv, { root });
         return sessionListCommand.execute(runEnv, store);
-      });
-    });
-
-  sessionCommand
-    .command('reap')
-    .description('reclaim merged, clean session worktrees')
-    .action(async (_cmdOpts: object, cmd: Command) => {
-      const { runEnv, jsonMode, root } = deriveRunEnv(env, cmd);
-      result = await runCommand('session.reap', runEnv, jsonMode, async () => {
-        const store = await openStore(runEnv, { root });
-        return sessionReapCommand.execute(runEnv, store);
       });
     });
 

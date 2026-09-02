@@ -35,4 +35,15 @@ time regardless — sequence those.
 
 ## Reclaiming
 
-__RECLAIMING_STEP__
+Scope with `ctxr session list` — it reports every worktree and branch this store recognizes as a session,
+whichever checkout you run it from. Reclaiming is always an explicit go, never automatic; never claim a
+worktree or branch was removed without having run the command yourself.
+
+For a session whose pull request merged: `git worktree remove <path>` then `git branch -d <branch>`, run
+from outside that worktree (no command can remove the directory it is running from — `git worktree list`
+names the canonical clone first). Leave both unforced — git already refuses on its own if the worktree is
+dirty or the branch isn't fully merged; a refusal means stop and look, not reach for `--force`.
+
+To deliberately discard a session instead — abandoning unmerged work — `git worktree remove --force <path>`
+then `git branch -D <branch>`. State plainly, before running it, that this destroys any uncommitted or
+unmerged work in that worktree; it needs its own explicit go, distinct from the merged-and-clean case above.

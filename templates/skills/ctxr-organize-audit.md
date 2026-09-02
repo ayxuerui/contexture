@@ -1,7 +1,7 @@
 1. Run `ctxr lint` for the full health report — orphan notes, broken links, uningested inbox material,
    catalog gaps. It always exits 0; its findings are observations for judgment, never a block.
 2. Run `ctxr doctor` for the invariants that DO block: catalog coverage, fail-closed visibility, hook
-   health, and more. Address doctor's failures before `ctxr session submit`; it runs the same checks.
+   health, and more. Address doctor's failures before `ctxr-submit`; it runs the same checks.
 
 ## Placement review
 
