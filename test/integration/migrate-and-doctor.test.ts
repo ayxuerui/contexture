@@ -17,13 +17,20 @@ async function pinToSchemaV1(root: string): Promise<void> {
   await writeFile(
     configPath,
     text
-      .replace('schema_version: 5', 'schema_version: 1')
+      // Version-agnostic on purpose: pinning against whatever `init` just
+      // wrote, rather than a hardcoded current version, so a schema bump
+      // can't silently turn this helper into a no-op and leave the test
+      // asserting against an already-current store.
+      .replace(/^schema_version: \d+$/m, 'schema_version: 1')
       .replace('visibility: lens', 'visibility: scope')
-      // A genuine v1 store predates both renames this suite exercises: the
-      // visibility-field key AND (rename-procedures-to-skills) the
+      // A genuine v1 store predates every rename this suite exercises: the
+      // visibility-field key; (rename-procedures-to-skills) the
       // harness.skills_path key, which was harness.procedures_path through
-      // schema_version 2.
-      .replace('skills_path:', 'procedures_path:'),
+      // schema_version 2; and (archive-destination-from-taxonomy) the
+      // organize.archive_destination key, which was organize.archive_path
+      // through schema_version 5.
+      .replace('skills_path:', 'procedures_path:')
+      .replace('archive_destination:', 'archive_path:'),
   );
 }
 

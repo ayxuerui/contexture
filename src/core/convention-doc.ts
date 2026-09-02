@@ -59,7 +59,7 @@ export function renderBaselineConvention(config: StoreConfig): string {
   let text = conventionTemplate('baseline-convention')
     .replaceAll('__VISIBILITY_FIELD__', config.fields.visibility)
     .replaceAll('__DEFAULT_CONTEXT__', config.visibility.default_context)
-    .replaceAll('__ARCHIVE_PATH__', config.organize.archive_path)
+    .replaceAll('__ARCHIVE_DESTINATION__', config.organize.archive_destination)
     .replaceAll('__DEFAULT_BRANCH__', config.git.default_branch)
     .replaceAll('__WORKTREES_PATH__', config.session.worktrees_path);
   text = substituteBlock(text, '__DIRECTORY_DEFAULTS_TABLE__', directoryDefaultsList(config));
