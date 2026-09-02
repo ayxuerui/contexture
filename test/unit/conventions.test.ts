@@ -1,9 +1,10 @@
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import type { StoreConfig } from '../../src/config/schema.js';
 import { renderConventionBlock, renderConventionsSection } from '../../src/core/agents-doc.js';
 import { extractDocMetadata, inlineDocBody, scanConventions } from '../../src/core/conventions.js';
+import { seedHouseConventionsFile, syncBaselineConventions } from '../../src/core/convention-doc.js';
 import { makeTmpDir } from '../helpers/tmp-store.js';
 
 function makeConfig(): StoreConfig {
@@ -117,11 +118,11 @@ describe('scanConventions', () => {
     try {
       await mkdir(path.join(tmp.root, 'guidance'), { recursive: true });
       await writeFile(path.join(tmp.root, 'guidance/mission.md'), '# Mission\n');
-      await writeFile(path.join(tmp.root, 'guidance/custom-convention.md'), '---\ntitle: Custom\n---\n');
+      await writeFile(path.join(tmp.root, 'guidance/house-conventions.md'), '---\ntitle: House\n---\n');
 
       const config: StoreConfig = { ...makeConfig(), organize: { archive_destination: 'archive/', rollup_stale_days: 7, mission_path: 'guidance/mission.md' } };
       const docs = await scanConventions(tmp.root, config);
-      expect(docs.map((d) => d.path)).toEqual(['guidance/custom-convention.md']);
+      expect(docs.map((d) => d.path)).toEqual(['guidance/house-conventions.md']);
     } finally {
       await tmp.cleanup();
     }
@@ -217,5 +218,76 @@ describe('conventions section templates', () => {
       "",
       "A note that applies to only one agent harness (not every harness reading this store) belongs below that harness's own managed import in its own entry file, never here — every file in this directory is inlined into every harness's entry document equally.",
     ]);
+  });
+});
+
+describe('syncBaselineConventions', () => {
+  const legacy = 'guidance/baseline-convention.md';
+  const current = 'guidance/baseline-conventions.md';
+  const managed = '<!-- Owned by contexture — written by `ctxr init`, refreshed by `ctxr update`. Do not edit. -->';
+
+  it('writes the plural filename and removes the managed file left at the old singular name', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      await mkdir(path.join(tmp.root, 'guidance'), { recursive: true });
+      await writeFile(path.join(tmp.root, legacy), `---\ntitle: Baseline conventions\n---\n${managed}\nStale.\n`);
+
+      const result = await syncBaselineConventions(tmp.root, makeConfig());
+      expect(result.changed).toBe(true);
+
+      // Left in place it would be inlined into AGENTS.md a second time, since
+      // scanConventions reads the guidance directory wholesale.
+      await expect(readFile(path.join(tmp.root, legacy), 'utf8')).rejects.toThrow();
+      expect(await readFile(path.join(tmp.root, current), 'utf8')).toContain('Baseline conventions');
+
+      const docs = await scanConventions(tmp.root, makeConfig());
+      expect(docs.map((d) => d.path)).toEqual([current]);
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('never removes an operator file that happens to sit at the old name', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      await mkdir(path.join(tmp.root, 'guidance'), { recursive: true });
+      await writeFile(path.join(tmp.root, legacy), '---\ntitle: Mine\n---\nHand-written, no managed header.\n');
+
+      await syncBaselineConventions(tmp.root, makeConfig());
+
+      expect(await readFile(path.join(tmp.root, legacy), 'utf8')).toContain('Hand-written');
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('is byte-stable once current, and reports no change', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      expect((await syncBaselineConventions(tmp.root, makeConfig())).changed).toBe(true);
+      const first = await readFile(path.join(tmp.root, current), 'utf8');
+
+      expect((await syncBaselineConventions(tmp.root, makeConfig())).changed).toBe(false);
+      expect(await readFile(path.join(tmp.root, current), 'utf8')).toBe(first);
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+});
+
+describe('seedHouseConventionsFile', () => {
+  it('seeds house-conventions.md once, then leaves the operator copy alone', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      expect((await seedHouseConventionsFile(tmp.root, makeConfig())).created).toBe(true);
+      const seeded = path.join(tmp.root, 'guidance/house-conventions.md');
+      expect(await readFile(seeded, 'utf8')).toContain('title: House conventions');
+
+      await writeFile(seeded, '---\ntitle: House conventions\n---\nOurs now.\n');
+      expect((await seedHouseConventionsFile(tmp.root, makeConfig())).created).toBe(false);
+      expect(await readFile(seeded, 'utf8')).toContain('Ours now.');
+    } finally {
+      await tmp.cleanup();
+    }
   });
 });

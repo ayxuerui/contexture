@@ -1,5 +1,5 @@
 ---
-title: Custom conventions
+title: House conventions
 description: This store's own conventions, on top of the shipped baseline.
 ---
 <!-- This store's own conventions — delete any prompt below that doesn't apply, and add your own sections freely. -->
