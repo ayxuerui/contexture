@@ -10,6 +10,8 @@ import {
   DEFAULT_ROLLUP_STALE_DAYS,
   DEFAULT_CATALOG_PATH,
   DEFAULT_CATALOG_SECTION_MAX_BYTES,
+  DEFAULT_PUBLISH_PATH,
+  DEFAULT_VENDORED_SKILLS,
   DEFAULT_BASELINE_CONVENTION_FILE_NAME,
   DEFAULT_CUSTOM_CONVENTION_FILE_NAME,
   DEFAULT_GUIDANCE_PATH,
@@ -32,7 +34,13 @@ import {
 } from '../config/defaults.js';
 import { configPathFor, readConfig } from '../config/load.js';
 import { renderStoreConfig } from '../config/render.js';
-import { SUPPORTED_SCHEMA_VERSION, TaxonomyLayerSchema, type StoreConfig, type TaxonomyLayerConfig } from '../config/schema.js';
+import {
+  SUPPORTED_SCHEMA_VERSION,
+  TaxonomyLayerSchema,
+  type AdapterDeclaration,
+  type StoreConfig,
+  type TaxonomyLayerConfig,
+} from '../config/schema.js';
 import {
   buildAgentsCanonicalSection,
   buildAgentsCaptureSection,
@@ -43,14 +51,17 @@ import {
   agentsMdPath,
 } from '../core/agents-doc.js';
 import { seedCustomConventionFile, syncBaselineConvention } from '../core/convention-doc.js';
-import { syncShippedSkills } from '../core/skills.js';
+import { syncShippedSkills, syncVendoredSkills } from '../core/skills.js';
+import { bridgeHarnessSkills } from '../core/harness/bridge.js';
 import { reconcileStore, WORKTREES_GITIGNORE_FENCE } from '../core/reconcile.js';
 import type { Finding } from '../core/envelope.js';
 import { isInteractive, type RunEnv } from '../core/env.js';
+import { CLI_VERSION } from '../version.js';
 import {
   GitIdentityMissingError,
   InvalidTaxonomyFileError,
   TaxonomySelectionConflictError,
+  UnknownHarnessError,
   UnknownTaxonomyProfileError,
 } from '../core/errors.js';
 import { ExitCode } from '../core/exit-codes.js';
@@ -68,6 +79,8 @@ export interface InitFlags {
   root?: string;
   profile?: string;
   taxonomy?: string;
+  /** Comma-separated harness-generation adapter ids, or "none". Unset means: prompt if interactive, else the default set. */
+  harness?: string;
 }
 
 export interface InitData {
@@ -134,6 +147,42 @@ async function resolveTaxonomy(env: RunEnv, flags: InitFlags): Promise<ResolvedT
   return { profileId: profile.id, layers: [...profile.layers] };
 }
 
+/**
+ * vendored-craft-skills spec ("the operator declares which harnesses a
+ * store targets, at setup"): the selectable harness-generation adapters,
+ * presented at init and never inferred by inspecting the host machine.
+ */
+const SELECTABLE_HARNESSES: readonly { id: string; name: string; description: string }[] = [
+  { id: 'claude-code', name: 'Claude Code', description: 'Generates CLAUDE.md importing AGENTS.md, plus a permission config with the write-gate hook.' },
+  { id: 'hermes-agent', name: 'Hermes', description: 'Reads AGENTS.md directly — no entry file generated.' },
+];
+
+const DEFAULT_HARNESS_IDS: readonly string[] = ['claude-code'];
+
+async function resolveHarnesses(env: RunEnv, flags: InitFlags): Promise<string[]> {
+  if (flags.harness !== undefined) {
+    const trimmed = flags.harness.trim();
+    if (trimmed === '' || trimmed === 'none') return [];
+    const ids = trimmed.split(',').map((s) => s.trim()).filter((s) => s.length > 0);
+    const known = new Set(SELECTABLE_HARNESSES.map((h) => h.id));
+    for (const id of ids) {
+      if (!known.has(id)) throw new UnknownHarnessError(id, [...known]);
+    }
+    return [...new Set(ids)];
+  }
+
+  if (isInteractive(env)) {
+    return env.prompter.selectHarnesses({
+      message: 'Which agent harnesses should this store target? (their skills directory is bridged to the canonical one)',
+      choices: SELECTABLE_HARNESSES,
+      defaultIds: DEFAULT_HARNESS_IDS,
+    });
+  }
+
+  // Non-interactive, nothing specified: the default set immediately — never prompt, never block.
+  return [...DEFAULT_HARNESS_IDS];
+}
+
 async function safeCurrentBranch(env: RunEnv, root: string): Promise<string | null> {
   try {
     return await currentBranch(env.git, root);
@@ -173,7 +222,7 @@ async function runInitCore(env: RunEnv, flags: InitFlags): Promise<RunInitResult
   if (existsSync(configPath)) {
     const config = await readConfig(root); // validates + gates schema_version
     // Reconciling an existing store is exactly `ctxr update`'s job — one shared implementation.
-    await reconcileStore(env, root, config);
+    const { findings: reconcileFindings } = await reconcileStore(env, root, config);
     return {
       data: {
         root,
@@ -191,12 +240,13 @@ async function runInitCore(env: RunEnv, flags: InitFlags): Promise<RunInitResult
         },
         schema_version: config.schema_version,
       },
-      findings: [],
+      findings: reconcileFindings,
     };
   }
 
   // --- Resolve taxonomy in memory, no writes yet -------------------------
   const taxonomy = await resolveTaxonomy(env, flags);
+  const harnessIds = await resolveHarnesses(env, flags);
 
   // --- Git preflight, still no writes -------------------------------------
   const toplevel = await findToplevel(env.git, root);
@@ -222,6 +272,13 @@ async function runInitCore(env: RunEnv, flags: InitFlags): Promise<RunInitResult
   // Works even pre-commit: git init leaves HEAD pointing at an unborn branch.
   const defaultBranch = (await safeCurrentBranch(env, root)) ?? 'main';
 
+  // The default forge adapter is untouched by --harness, which selects
+  // only harness-generation adapters (vendored-craft-skills spec).
+  const resolvedAdapters: AdapterDeclaration[] = [
+    ...DEFAULT_ADAPTERS.filter((a) => a.kind !== 'harness-generation'),
+    ...harnessIds.map((id): AdapterDeclaration => ({ id, kind: 'harness-generation' })),
+  ];
+
   const config: StoreConfig = {
     schema_version: SUPPORTED_SCHEMA_VERSION,
     taxonomy: { profile: taxonomy.profileId, layers: taxonomy.layers },
@@ -233,11 +290,13 @@ async function runInitCore(env: RunEnv, flags: InitFlags): Promise<RunInitResult
     session: { branch_prefix: DEFAULT_SESSION_BRANCH_PREFIX, worktrees_path: DEFAULT_WORKTREES_PATH, workspaces_external: DEFAULT_WORKSPACES_EXTERNAL },
     write_lifecycle: { diff_size_ceiling_lines: DEFAULT_DIFF_SIZE_CEILING_LINES, writable_paths: [] },
     catalog: { path: DEFAULT_CATALOG_PATH, section_max_bytes: DEFAULT_CATALOG_SECTION_MAX_BYTES },
+    publish: { path: DEFAULT_PUBLISH_PATH },
+    skills: { vendored: [...DEFAULT_VENDORED_SKILLS] },
     disclosure: { internal_audiences: [...DEFAULT_INTERNAL_AUDIENCES], hard_walls: [...DEFAULT_HARD_WALLS], leak_markers: {} },
     ingest: { inbox_path: DEFAULT_INBOX_PATH, tracking_params: [...DEFAULT_TRACKING_PARAMS] },
     organize: { archive_path: DEFAULT_ARCHIVE_PATH, rollup_stale_days: DEFAULT_ROLLUP_STALE_DAYS, mission_path: DEFAULT_MISSION_PATH },
     harness: { skills_path: DEFAULT_SKILLS_PATH, guidance_path: DEFAULT_GUIDANCE_PATH },
-    adapters: [...DEFAULT_ADAPTERS],
+    adapters: resolvedAdapters,
   };
   // Round-trips through the schema internally; throws before any byte is written if it doesn't.
   const configText = renderStoreConfig(config);
@@ -262,6 +321,9 @@ async function runInitCore(env: RunEnv, flags: InitFlags): Promise<RunInitResult
   await buildAgentsCaptureSection(root, config);
   await buildAgentsPlacementSection(root, config);
   const skillFilesCreated = await syncShippedSkills(root, config);
+  const { changed: vendoredSkillFilesCreated, findings: vendoredFindings } = await syncVendoredSkills(root, config, CLI_VERSION);
+  findings.push(...vendoredFindings);
+  const bridged = await bridgeHarnessSkills(root, config);
   await buildAgentsConventionsSection(root, config);
 
   const guidanceFilesCreated = [
@@ -289,12 +351,18 @@ async function runInitCore(env: RunEnv, flags: InitFlags): Promise<RunInitResult
   await configureHooksPath(env.git, root);
 
   const relConfigPath = path.relative(root, configPath);
+  // No trailing slash: `git add` refuses a directory pathspec ending in "/"
+  // when that path is a symlink ("pathspec is beyond a symbolic link"), which
+  // a symlink-mode bridge always is. The bare path stages the link itself.
+  const bridgedPaths = bridged.map((r) => r.path.replace(/\/+$/, ''));
   await addPaths(env.git, root, [
     relConfigPath,
     '.gitignore',
     path.relative(root, agentsMdPath(root)),
     ...layerGitkeeps,
     ...skillFilesCreated,
+    ...vendoredSkillFilesCreated,
+    ...bridgedPaths,
     ...guidanceFilesCreated,
     ...hookFiles,
   ]);
@@ -311,6 +379,8 @@ async function runInitCore(env: RunEnv, flags: InitFlags): Promise<RunInitResult
         path.relative(root, agentsMdPath(root)),
         ...layerGitkeeps,
         ...skillFilesCreated,
+        ...vendoredSkillFilesCreated,
+        ...bridgedPaths,
         ...guidanceFilesCreated,
         ...hookFiles,
       ],

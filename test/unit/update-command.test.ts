@@ -44,13 +44,13 @@ describe('ctxr update', () => {
     const tmp = await makeTmpDir();
     try {
       const { store, env } = await freshStore(tmp.root);
-      const skillPath = path.join(tmp.root, '.claude/skills/ctxr-placement/SKILL.md');
+      const skillPath = path.join(tmp.root, '.agents/skills/ctxr-placement/SKILL.md');
       await writeFile(skillPath, 'stale copy from an older contexture\n');
       const agentsPath = path.join(tmp.root, 'AGENTS.md');
       await writeFile(agentsPath, (await readFile(agentsPath, 'utf8')).replaceAll('`ctxr ', '`contexture '));
 
       const outcome = await update(env, store);
-      expect(outcome.data?.changed).toContain('.claude/skills/ctxr-placement/SKILL.md');
+      expect(outcome.data?.changed).toContain('.agents/skills/ctxr-placement/SKILL.md');
       expect(outcome.data?.changed).toContain('AGENTS.md');
       expect(await readFile(skillPath, 'utf8')).toContain(MANAGED_SKILL_HEADER);
       const agents = await readFile(agentsPath, 'utf8');
@@ -95,11 +95,11 @@ describe('ctxr update', () => {
     const tmp = await makeTmpDir();
     try {
       const { store, env } = await freshStore(tmp.root);
-      await mkdir(path.join(tmp.root, '.claude/skills/mine'), { recursive: true });
-      await writeFile(path.join(tmp.root, '.claude/skills/mine/SKILL.md'), '---\nname: mine\n---\nmine\n');
+      await mkdir(path.join(tmp.root, '.agents/skills/mine'), { recursive: true });
+      await writeFile(path.join(tmp.root, '.agents/skills/mine/SKILL.md'), '---\nname: mine\n---\nmine\n');
 
       await update(env, store);
-      expect(await readFile(path.join(tmp.root, '.claude/skills/mine/SKILL.md'), 'utf8')).toBe('---\nname: mine\n---\nmine\n');
+      expect(await readFile(path.join(tmp.root, '.agents/skills/mine/SKILL.md'), 'utf8')).toBe('---\nname: mine\n---\nmine\n');
     } finally {
       await tmp.cleanup();
     }

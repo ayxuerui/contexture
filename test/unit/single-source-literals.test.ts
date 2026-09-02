@@ -74,6 +74,8 @@ describe('single-source-literals guard', () => {
       session: { branch_prefix: 'session/', worktrees_path: '.worktrees/', workspaces_external: false },
       write_lifecycle: { diff_size_ceiling_lines: 2000, writable_paths: [] },
     catalog: { path: 'catalog/', section_max_bytes: 32768 },
+    publish: { path: 'publish/' },
+    skills: { vendored: [] },
     disclosure: { internal_audiences: [], hard_walls: [], leak_markers: {} },
     ingest: { inbox_path: 'inbox/', tracking_params: [] },
     organize: { archive_path: 'archive/', rollup_stale_days: 7 },
@@ -101,13 +103,15 @@ describe('single-source-literals guard', () => {
   });
 
   it('each external CLI tool has exactly one call site that spawns it', () => {
-    // git and gh are two different external tools with two different single
-    // homes — core/git/exec.ts for git (behind the GitRunner interface every
-    // other module depends on instead), adapters/forge/github.ts for gh
-    // (the forge adapter's own single-purpose module). The invariant this
+    // git, gh, and node --check are three different external tools with
+    // three different single homes — core/git/exec.ts for git (behind the
+    // GitRunner interface every other module depends on instead),
+    // adapters/forge/github.ts for gh (the forge adapter's own
+    // single-purpose module), core/publish/script-check.ts for node --check
+    // (publish check's embedded-script syntax pass). The invariant this
     // guards is "no ad hoc, scattered subprocess spawning," not "only one
     // file in the whole codebase may ever spawn anything."
-    const allow = ['core/git/exec.ts', 'adapters/forge/github.ts'];
+    const allow = ['core/git/exec.ts', 'adapters/forge/github.ts', 'core/publish/script-check.ts'];
     const hits = new Set([
       ...filesContainingSubstring("'node:child_process'", allow),
       ...filesContainingSubstring('"node:child_process"', allow),

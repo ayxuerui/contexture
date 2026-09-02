@@ -1,7 +1,7 @@
 import path from 'node:path';
 import type { CommandOutcome, CommandRequires } from '../core/command.js';
 import type { DisclosureRung, DisclosureVerdict } from '../core/disclosure/model.js';
-import { evaluateDisclosure } from '../core/disclosure/model.js';
+import { evaluateDisclosure, VERDICT_EXIT_CODE } from '../core/disclosure/model.js';
 import { scanNoteForLeaks, type LeakFinding } from '../core/disclosure/leak-scan.js';
 import type { RunEnv } from '../core/env.js';
 import { CheckAudienceRequiredError, NoteNotFoundError } from '../core/errors.js';
@@ -25,12 +25,6 @@ export interface CheckData {
   rung?: DisclosureRung;
   leaks?: LeakFinding[];
 }
-
-const VERDICT_EXIT_CODE: Record<DisclosureVerdict, number> = {
-  allow: ExitCode.Ok,
-  deny: ExitCode.DisclosureDeny,
-  ask: ExitCode.DisclosureAsk,
-};
 
 function toStoreRelativePath(env: RunEnv, store: Store, givenPath: string): string {
   const absolute = path.isAbsolute(givenPath) ? givenPath : path.resolve(env.cwd, givenPath);

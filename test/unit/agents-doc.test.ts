@@ -33,6 +33,8 @@ function makeConfig(overrides: Partial<StoreConfig> = {}): StoreConfig {
     session: { branch_prefix: 'session/', worktrees_path: '.worktrees/', workspaces_external: false },
     write_lifecycle: { diff_size_ceiling_lines: 2000, writable_paths: [] },
     catalog: { path: 'catalog/', section_max_bytes: 32768 },
+    publish: { path: 'publish/' },
+    skills: { vendored: [] },
     disclosure: { internal_audiences: [], hard_walls: [], leak_markers: {} },
     ingest: { inbox_path: 'inbox/', tracking_params: [] },
     organize: { archive_path: 'archive/', rollup_stale_days: 7 },
@@ -491,7 +493,7 @@ describe('exact rendered output', () => {
       "For a literal or entity question the catalog and graph do not answer (a specific string, an exact identifier, a phrase),",
       "use your own direct content-matching tool (e.g. grep/ripgrep) against the store, scoped to exclude:",
       "",
-      "`.contexture/`, `.worktrees/`, `catalog/`, `guidance/`, `identity/`, `skills/`",
+      "`.contexture/`, `.worktrees/`, `catalog/`, `guidance/`, `identity/`, `publish/`, `skills/`",
       "",
       "There is no `ctxr search` command. Ranked or semantic search is deferred to a future version — do not look for one.",
     ]);

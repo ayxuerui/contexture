@@ -442,3 +442,86 @@ export class UnknownTaxonomyProfileError extends ContextureError {
     });
   }
 }
+
+/** vendored-craft-skills spec: `--harness` names a harness this release does not ship an adapter for. */
+export class UnknownHarnessError extends ContextureError {
+  constructor(given: string, knownIds: readonly string[]) {
+    super(ExitCode.Usage, {
+      code: 'init.unknown_harness',
+      severity: 'error',
+      message: `Unknown harness "${given}". Known harnesses: ${knownIds.join(', ')} (or "none").`,
+      subject: given,
+      details: { knownIds },
+    });
+  }
+}
+
+/** publish spec: `ctxr publish gather` accepts exactly one subject selector. */
+export class PublishSelectorRequiredError extends ContextureError {
+  constructor() {
+    super(ExitCode.Usage, {
+      code: 'publish.selector_required',
+      severity: 'error',
+      message: '"ctxr publish gather" requires exactly one of --under, --note, --entity, or --as.',
+    });
+  }
+}
+
+export class PublishSelectorConflictError extends ContextureError {
+  constructor(given: readonly string[]) {
+    super(ExitCode.Usage, {
+      code: 'publish.selector_conflict',
+      severity: 'error',
+      message: `"ctxr publish gather" accepts exactly one subject selector; given: ${given.join(', ')}.`,
+      details: { given },
+    });
+  }
+}
+
+/** publish spec: the disclosure gate requires knowing the requesting audience, same as `ctxr check`. */
+export class PublishAudienceRequiredError extends ContextureError {
+  constructor() {
+    super(ExitCode.Usage, {
+      code: 'publish.audience_required',
+      severity: 'error',
+      message: '"ctxr publish gather" requires --audience.',
+    });
+  }
+}
+
+/** publish spec: a living page's slug must not collide with the reserved dated-snapshot naming pattern. */
+export class PublishReservedSlugError extends ContextureError {
+  constructor(slug: string) {
+    super(ExitCode.Usage, {
+      code: 'publish.reserved_slug',
+      severity: 'error',
+      message: `"${slug}" starts with a reserved date pattern (YYYY- or YYYY-MM-DD-) — that naming is reserved for frozen snapshots.`,
+      subject: slug,
+    });
+  }
+}
+
+/** publish spec: a page folder is never silently overwritten. */
+export class PublishSlugExistsError extends ContextureError {
+  constructor(slug: string, relativePath: string) {
+    super(ExitCode.Usage, {
+      code: 'publish.slug_exists',
+      severity: 'error',
+      message: `A page folder already exists at "${relativePath}" — "ctxr publish new" never overwrites an existing page.`,
+      subject: slug,
+      details: { path: relativePath },
+    });
+  }
+}
+
+/** publish spec: `ctxr publish check` needs a page's index.html to exist before it can check anything. */
+export class PublishPageNotFoundError extends ContextureError {
+  constructor(relativePath: string) {
+    super(ExitCode.Usage, {
+      code: 'publish.page_not_found',
+      severity: 'error',
+      message: `"${relativePath}" does not exist.`,
+      subject: relativePath,
+    });
+  }
+}

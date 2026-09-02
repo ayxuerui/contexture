@@ -1,4 +1,4 @@
-import { confirm, select } from '@inquirer/prompts';
+import { checkbox, confirm, select } from '@inquirer/prompts';
 import type { Prompter } from './prompter.js';
 
 /**
@@ -30,6 +30,20 @@ export function createInquirerPrompter(): Prompter {
 
     async confirm(input) {
       return confirm({ message: input.message, default: false }, { output: process.stderr });
+    },
+
+    async selectHarnesses(input) {
+      return checkbox(
+        {
+          message: input.message,
+          choices: input.choices.map((c) => ({
+            name: `${c.name} — ${c.description}`,
+            value: c.id,
+            checked: input.defaultIds.includes(c.id),
+          })),
+        },
+        { output: process.stderr },
+      );
     },
   };
 }

@@ -23,7 +23,7 @@ describe('cli-contract: shipped instructions name ctxr (real CLI)', () => {
       for (const hook of ['pre-commit', 'pre-push']) {
         surfaces.set(`.githooks/${hook}`, await readFile(path.join(tmp.root, '.githooks', hook), 'utf8'));
       }
-      const skillsDir = path.join(tmp.root, '.claude', 'skills');
+      const skillsDir = path.join(tmp.root, '.agents', 'skills');
       for (const dir of await readdir(skillsDir)) {
         surfaces.set(`skills/${dir}`, await readFile(path.join(skillsDir, dir, 'SKILL.md'), 'utf8'));
       }
