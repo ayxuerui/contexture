@@ -2,8 +2,6 @@
 title: Baseline conventions
 description: Contexture's shipped conventions, rendered from this store's own configuration.
 ---
-<!-- Owned by contexture — written by `ctxr init`, refreshed by `ctxr update`. Do not edit; add this store's own conventions in a separate file (e.g. custom-convention.md) instead. -->
-
 These are the rules that hold regardless of which operation you're doing; a skill states the procedure for one operation.
 
 ## Visibility

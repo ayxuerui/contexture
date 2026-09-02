@@ -38,8 +38,39 @@ body {
   font-weight: 600;
 }
 
+.ctxr-layout {
+  display: grid;
+  grid-template-columns: minmax(14rem, 18rem) minmax(0, 1fr);
+  align-items: start;
+}
+
+.ctxr-nav {
+  position: sticky;
+  top: 0;
+  max-height: 100vh;
+  overflow-y: auto;
+  padding: 1.5rem 1rem;
+  border-right: 1px solid var(--ctxr-border);
+  font-size: 0.9rem;
+}
+
+/* Stack the navigation above the content once two columns stop fitting. */
+@media (max-width: 52rem) {
+  .ctxr-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .ctxr-nav {
+    position: static;
+    max-height: none;
+    border-right: none;
+    border-bottom: 1px solid var(--ctxr-border);
+  }
+}
+
 main {
   max-width: 42rem;
+  min-width: 0;
   margin: 0 auto;
   padding: 1.5rem;
 }
@@ -62,13 +93,57 @@ pre code {
   padding: 0;
 }
 
-ul.ctxr-index {
+.ctxr-nav-area + .ctxr-nav-area {
+  margin-top: 1.25rem;
+}
+
+.ctxr-nav-heading {
+  margin: 0 0 0.35rem;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--ctxr-muted);
+}
+
+.ctxr-nav-heading a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.ctxr-nav-heading a:hover {
+  text-decoration: underline;
+}
+
+ul.ctxr-tree {
   list-style: none;
+  margin: 0;
   padding: 0;
 }
 
-ul.ctxr-index li {
-  padding: 0.25rem 0;
+ul.ctxr-tree li {
+  padding: 0.15rem 0;
+}
+
+/* Each nesting level indents against a rule, so depth reads at a glance. */
+ul.ctxr-tree ul.ctxr-tree {
+  margin-left: 0.3rem;
+  padding-left: 0.85rem;
+  border-left: 1px solid var(--ctxr-border);
+}
+
+.ctxr-tree summary {
+  cursor: pointer;
+  color: var(--ctxr-muted);
+}
+
+.ctxr-empty,
+.ctxr-summary {
+  color: var(--ctxr-muted);
+}
+
+.ctxr-empty {
+  margin: 0.15rem 0;
+  font-style: italic;
 }
 
 .ctxr-broken-link {

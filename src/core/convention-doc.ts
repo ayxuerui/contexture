@@ -1,9 +1,16 @@
-import { mkdir, readFile } from 'node:fs/promises';
+import { mkdir, readFile, rm } from 'node:fs/promises';
 import path from 'node:path';
-import { DEFAULT_BASELINE_CONVENTION_FILE_NAME, DEFAULT_CUSTOM_CONVENTION_FILE_NAME } from '../config/defaults.js';
+import {
+  DEFAULT_BASELINE_CONVENTIONS_FILE_NAME,
+  DEFAULT_HOUSE_CONVENTIONS_FILE_NAME,
+  LEGACY_BASELINE_CONVENTION_FILE_NAME,
+} from '../config/defaults.js';
 import type { StoreConfig } from '../config/schema.js';
 import { writeFileAtomic } from './fs/atomic.js';
 import { packagedTemplate, substituteBlock } from './templates.js';
+
+/** The header every contexture-owned guidance file carries; the guard on removing one. */
+const MANAGED_OWNER_MARKER = '<!-- Owned by contexture —';
 
 function conventionTemplate(name: string): string {
   return packagedTemplate('conventions', name);
@@ -46,17 +53,16 @@ function relationVocabularyLines(config: StoreConfig): string[] {
 }
 
 /**
- * compose-store-guidance-documents: the shipped baseline convention,
+ * compose-store-guidance-documents: the shipped baseline conventions,
  * rendered from this store's own configuration — never a shipped profile's
- * or one deployment's names. This is what `syncBaselineConvention` writes;
+ * or one deployment's names. This is what `renderConventionsSection` inlines;
  * it is never composed with anything else. `AGENTS.md`'s "Store
- * conventions" section (inline-conventions-and-mission's
- * `scanConventions`/`renderConventionsSection`) inlines it as one of
- * however many convention files the guidance directory holds, exactly like
- * any operator-authored one.
+ * conventions" section renders this directly as its first block, ahead of
+ * however many operator-authored files the guidance directory holds — the
+ * baseline itself is not one of them and has no file there.
  */
-export function renderBaselineConvention(config: StoreConfig): string {
-  let text = conventionTemplate('baseline-convention')
+export function renderBaselineConventions(config: StoreConfig): string {
+  let text = conventionTemplate('baseline-conventions')
     .replaceAll('__VISIBILITY_FIELD__', config.fields.visibility)
     .replaceAll('__DEFAULT_CONTEXT__', config.visibility.default_context)
     .replaceAll('__ARCHIVE_DESTINATION__', config.organize.archive_destination)
@@ -70,36 +76,50 @@ export function renderBaselineConvention(config: StoreConfig): string {
 }
 
 /**
- * compose-store-guidance-documents: contexture-owned, the same way a
- * shipped skill copy is (`syncShippedSkills` in skills.ts) — written by
- * `ctxr init`, rewritten wholesale by `ctxr update` on drift, never
- * hand-edited. A single file, so this is simpler than the skills sync (no
- * directory scan, no orphan cleanup): read-compare-write, reporting whether
- * it changed.
+ * The baseline is rendered straight into AGENTS.md by `renderConventionsSection`
+ * and is no longer a file in the guidance directory. Its bytes were already
+ * committed inside AGENTS.md, so a second tracked copy three directories away
+ * bought nothing and cost a diff on every config change — and having one
+ * tool-owned file among the operator's own is what made "do not edit this one,
+ * edit that one" a footgun in the first place.
+ *
+ * This removes the copy previous versions wrote, under either of its names, so
+ * a store that upgrades does not end up inlining the baseline twice: the
+ * guidance directory is scanned wholesale.
  */
-export async function syncBaselineConvention(root: string, config: StoreConfig): Promise<{ changed: boolean }> {
-  const target = path.join(root, config.harness.guidance_path, DEFAULT_BASELINE_CONVENTION_FILE_NAME);
-  const content = renderBaselineConvention(config);
-  let existing: string | undefined;
-  try {
-    existing = await readFile(target, 'utf8');
-  } catch {
-    existing = undefined;
+export async function removeManagedBaselineFile(root: string, config: StoreConfig): Promise<{ changed: boolean }> {
+  const guidanceDir = path.join(root, config.harness.guidance_path);
+  let changed = false;
+  for (const name of [DEFAULT_BASELINE_CONVENTIONS_FILE_NAME, LEGACY_BASELINE_CONVENTION_FILE_NAME]) {
+    if (await removeIfManaged(path.join(guidanceDir, name))) changed = true;
   }
-  if (existing === content) return { changed: false };
-  await mkdir(path.dirname(target), { recursive: true });
-  await writeFileAtomic(target, content);
-  return { changed: true };
+  return { changed };
 }
 
 /**
- * The operator's own convention source, seeded once with heading prompts
- * only — no content contexture would be guessing at — and never touched
- * again once it exists (unlike the baseline file, this one is
- * operator-owned).
+ * Guarded on the managed-owner header the same way `syncShippedSkills` guards
+ * its own orphan cleanup: a file an operator happens to have written at either
+ * name is never removed, and stays an ordinary convention document they own.
  */
-export async function seedCustomConventionFile(root: string, config: StoreConfig): Promise<{ created: boolean }> {
-  const target = path.join(root, config.harness.guidance_path, DEFAULT_CUSTOM_CONVENTION_FILE_NAME);
+async function removeIfManaged(target: string): Promise<boolean> {
+  let existing: string;
+  try {
+    existing = await readFile(target, 'utf8');
+  } catch {
+    return false;
+  }
+  if (!existing.includes(MANAGED_OWNER_MARKER)) return false;
+  await rm(target);
+  return true;
+}
+
+/**
+ * This store's own conventions — its house rules — seeded once with heading
+ * prompts only, no content contexture would be guessing at, and never touched
+ * again once it exists (unlike the baseline file, this one is operator-owned).
+ */
+export async function seedHouseConventionsFile(root: string, config: StoreConfig): Promise<{ created: boolean }> {
+  const target = path.join(root, config.harness.guidance_path, DEFAULT_HOUSE_CONVENTIONS_FILE_NAME);
   try {
     await readFile(target, 'utf8');
     return { created: false };
@@ -107,6 +127,6 @@ export async function seedCustomConventionFile(root: string, config: StoreConfig
     if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
   }
   await mkdir(path.dirname(target), { recursive: true });
-  await writeFileAtomic(target, `${conventionTemplate('custom-convention-seed')}\n`);
+  await writeFileAtomic(target, `${conventionTemplate('house-conventions-seed')}\n`);
   return { created: true };
 }

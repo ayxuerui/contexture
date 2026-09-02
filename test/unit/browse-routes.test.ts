@@ -2,7 +2,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import type { StoreConfig } from '../../src/config/schema.js';
-import { buildRouteTable, publishSlugs } from '../../src/core/browse/routes.js';
+import { buildRouteTable, publishPages } from '../../src/core/browse/routes.js';
 import type { Store } from '../../src/core/store.js';
 import { makeTmpDir } from '../helpers/tmp-store.js';
 
@@ -65,7 +65,7 @@ describe('buildRouteTable', () => {
     }
   });
 
-  it('includes every file under a published page folder, and groups slugs for the index', async () => {
+  it('includes every file under a published page folder, and reports the folder as a page', async () => {
     const tmp = await makeTmpDir();
     try {
       const store: Store = { root: tmp.root, config: makeConfig() };
@@ -74,7 +74,7 @@ describe('buildRouteTable', () => {
       const table = await buildRouteTable(store);
       expect(table.publishFiles.has('my-page/index.html')).toBe(true);
       expect(table.publishFiles.has('my-page/README.md')).toBe(true);
-      expect(publishSlugs(table)).toEqual(['my-page']);
+      expect(publishPages(table)).toEqual(['my-page']);
     } finally {
       await tmp.cleanup();
     }
@@ -108,13 +108,65 @@ describe('buildRouteTable', () => {
   });
 });
 
-describe('publishSlugs', () => {
+describe('publishPages', () => {
   it('returns an empty list when nothing has been published', async () => {
     const tmp = await makeTmpDir();
     try {
       const store: Store = { root: tmp.root, config: makeConfig() };
       const table = await buildRouteTable(store);
-      expect(publishSlugs(table)).toEqual([]);
+      expect(publishPages(table)).toEqual([]);
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('reports a page nested under directories at its full path', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const store: Store = { root: tmp.root, config: makeConfig() };
+      await write(tmp.root, '.contexture/publish/folder-a/folder-b/nested-page/index.html', '<html></html>');
+      await write(tmp.root, '.contexture/publish/folder-a/folder-b/nested-page/README.md', '# nested-page\n');
+      const table = await buildRouteTable(store);
+      expect(publishPages(table)).toEqual(['folder-a/folder-b/nested-page']);
+      expect(table.publishFiles.has('folder-a/folder-b/nested-page/index.html')).toBe(true);
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('reports a top-level page and a nested one side by side', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const store: Store = { root: tmp.root, config: makeConfig() };
+      await write(tmp.root, '.contexture/publish/top-page/index.html', '<html></html>');
+      await write(tmp.root, '.contexture/publish/folder-a/nested-page/index.html', '<html></html>');
+      const table = await buildRouteTable(store);
+      expect(publishPages(table)).toEqual(['folder-a/nested-page', 'top-page']);
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('does not report a directory that holds files but no index page', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const store: Store = { root: tmp.root, config: makeConfig() };
+      await write(tmp.root, '.contexture/publish/folder-a/README.md', '# not a page\n');
+      await write(tmp.root, '.contexture/publish/folder-a/real-page/index.html', '<html></html>');
+      const table = await buildRouteTable(store);
+      expect(publishPages(table)).toEqual(['folder-a/real-page']);
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('does not report a stray index page sitting directly in the publish path as a page', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const store: Store = { root: tmp.root, config: makeConfig() };
+      await write(tmp.root, '.contexture/publish/index.html', '<html></html>');
+      const table = await buildRouteTable(store);
+      expect(publishPages(table)).toEqual([]);
     } finally {
       await tmp.cleanup();
     }

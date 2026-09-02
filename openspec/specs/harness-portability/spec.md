@@ -2,31 +2,57 @@
 
 ## Purpose
 
-Keeps a contexture store operable from any agent harness — a coding agent with skill auto-discovery, one that reads only an entry document, a cron job, or a person at a terminal — by making the contexture-owned skills the portable surface: canonical content in the package, full copies in the store, delivered by `ctxr init` and refreshed by `ctxr update`, and indexed from the generated entry document. Those skills are decision procedures stated against whatever taxonomy, contexts, and relation vocabulary the store's `contexture.yaml` declares, never a shipped profile's or one deployment's names.
+Keeps a contexture store operable from any agent harness — a coding agent with skill auto-discovery, one that reads only an entry document, a cron job, or a person at a terminal — by making the contexture-owned skills the portable surface: canonical content in the package, full copies in the store, delivered by `ctxr init` and refreshed by `ctxr update`, and reachable from the generated entry document by path. Those skills are decision procedures stated against whatever taxonomy, contexts, and relation vocabulary the store's `contexture.yaml` declares, never a shipped profile's or one deployment's names.
 
 ## Requirements
 
-### Requirement: Operator conventions are referenced documents indexed by the entry document
-A store MAY carry operator-authored convention documents as markdown files at a configured path. The generated portion of `AGENTS.md` SHALL include an index of every convention file present — its title and, when declared, a one-line description, both read from the file's frontmatter with a fallback to its first heading or filename — and SHALL reference each by path rather than inlining its content. When no convention files exist, the section SHALL state where to add them.
+### Requirement: Operator conventions are inlined into the entry document
+A store MAY carry operator-authored convention documents as markdown files at a configured path. The generated "Store conventions" section of `AGENTS.md` SHALL inline the full body of every convention file present, with its frontmatter stripped, its headings demoted so the shallowest sits directly under the section's own heading, and a provenance line naming its source path. When no convention files exist, the section SHALL state where to add them.
 
-#### Scenario: A convention file appears in the index on regeneration
-- **WHEN** an operator adds a markdown file with a frontmatter title and description at the configured conventions path and the entry document is regenerated
-- **THEN** the `AGENTS.md` conventions index lists that title, description, and path, and the file's body is not copied into `AGENTS.md`
+#### Scenario: A convention file's body is inlined on regeneration
+- **WHEN** an operator adds a markdown file with a frontmatter title at the configured conventions path and the entry document is regenerated
+- **THEN** the `AGENTS.md` conventions section contains that file's full body under a heading naming its title, with a line naming its source path, and its own headings demoted one level below the section heading
 
 #### Scenario: An empty store still explains the mechanism
 - **WHEN** a store has no convention files and the entry document is generated
-- **THEN** the conventions section names the configured path and states that operator conventions added there will be indexed
+- **THEN** the conventions section names the configured path and states that operator conventions added there will be inlined
 
-### Requirement: The skill index reflects the files on disk
-The `AGENTS.md` skill index SHALL list every skill markdown file present at the configured skills path — the shipped pack and any operator-added files — deriving each entry's name and description from the file itself (frontmatter, first-heading, or filename fallback). Harness skill generation (per `contexture-home-layout`) SHALL cover the same scanned set. The portability test SHALL verify every scanned skill has an index entry.
+#### Scenario: Inlining is byte-stable
+- **WHEN** the entry document is regenerated against unchanged convention files
+- **THEN** the conventions section is byte-identical and regeneration reports no change
 
-#### Scenario: An operator-added skill joins the index
-- **WHEN** an operator adds a new skill file at the configured path and regeneration runs
-- **THEN** the `AGENTS.md` index lists it, identically to a shipped skill
+### Requirement: A shipped baseline convention is delivered into the guidance directory and refreshed by update
+A store SHALL carry a contexture-owned baseline convention file at a fixed filename under the configured guidance directory, rendered from the store's own configuration (the visibility field and its resolution order, configured directory defaults, the disclosure ladder, the configured relation vocabulary, archiving, git and session rules, directory-scoped convention discovery) — never a shipped profile's or one deployment's names. `init` SHALL write it; the update command SHALL rewrite it to match a fresh render whenever the template or the store's configuration changed, and SHALL leave every other file in the guidance directory (including the operator's own) untouched. Both SHALL be byte-stable when nothing has changed. The file SHALL be discoverable by the same mechanism that scans and inlines every other convention document into the generated entry document, requiring no composition step of its own.
 
-#### Scenario: Deleting a shipped skill's index entry still fails the portability test
-- **WHEN** a skill file exists on disk but its index entry is removed from `AGENTS.md`
-- **THEN** `verify --portable` exits non-zero naming that skill
+#### Scenario: A fresh init delivers the baseline convention
+- **WHEN** `contexture init` runs
+- **THEN** the configured guidance path contains the baseline convention file, and it is inlined into the generated entry document's conventions section alongside any other file present
+
+#### Scenario: A configuration change refreshes the baseline convention on update
+- **WHEN** a store's configuration changes in a way that affects the baseline convention's rendered content (for example, a new hard wall) and the update command runs
+- **THEN** the baseline convention file is rewritten to reflect the change, and the entry document's conventions section reflects it after regeneration
+
+#### Scenario: A second update with nothing changed is a no-op
+- **WHEN** the update command runs twice in a row with no configuration or template change between runs
+- **THEN** the second run reports no change to the baseline convention file
+
+### Requirement: An operator convention file is seeded with prompts only
+`init` SHALL seed one operator-authored convention file in the guidance directory, containing heading prompts for content specific to the store (placement distinctions, content style, tag vocabulary, store context) and no invented content. Once the file exists, it SHALL never be rewritten by `init` or the update command.
+
+#### Scenario: The seed is not overwritten on a later init or update
+- **WHEN** an operator has edited the seeded convention file and `init` or the update command runs again
+- **THEN** the file's content is unchanged
+
+### Requirement: A size budget with defined behavior at the limit
+The entry document's inlined conventions section SHALL have a configured maximum size (`harness.convention_max_bytes`, defaulting to a shipped constant) in `contexture.yaml`. `contexture doctor` SHALL fail when the section's rendered size exceeds that maximum, naming the current size and the configured budget.
+
+#### Scenario: An oversized conventions section fails doctor
+- **WHEN** the entry document's inlined conventions section's rendered size exceeds its configured maximum
+- **THEN** `contexture doctor` reports a failing check naming the current size and the configured budget
+
+#### Scenario: A store with no override uses the shipped default
+- **WHEN** a store's `contexture.yaml` declares no `harness.convention_max_bytes`
+- **THEN** the check measures the section against the shipped default budget
 
 ### Requirement: Contexture-owned skills are copied into the store and refreshed by update
 The shipped skills SHALL be contexture-owned: their canonical content ships with the tool, and a store SHALL carry a full copy of each at the configured skills path in the skill layout (`<slug>/SKILL.md`), marked as managed. `init` SHALL write them; a dedicated update command SHALL bring every contexture-owned file in a store — generated entry-document sections, managed ignore blocks, hooks, skill copies, and adapter outputs — to the installed tool version without touching operator-authored content. Both SHALL be byte-stable when nothing has changed.
@@ -36,7 +62,7 @@ The shipped skills SHALL be contexture-owned: their canonical content ships with
 - **THEN** the contexture-owned copy is rewritten to the installed version, the operator skill is byte-identical, and an immediately repeated update reports nothing changed
 
 ### Requirement: `AGENTS.md` is the canonical entry document
-Every context store SHALL carry an `AGENTS.md` file at its root that is the canonical, harness-agnostic index of the store's conventions and skills. A harness-specific entry file (for example, one named for a particular agent product) SHALL contain nothing beyond an import of `AGENTS.md` plus that harness's own extras, and SHALL NOT duplicate canonical content.
+Every context store SHALL carry an `AGENTS.md` file at its root that is the canonical, harness-agnostic entry document for the store — its fundamentals, its current mission when one is configured, and its full operating conventions, inlined rather than referenced, with no harness-specific extras. A harness-specific entry file (for example, one named for a particular agent product) SHALL contain nothing beyond an import of `AGENTS.md` plus that harness's own extras, and SHALL NOT duplicate canonical content.
 
 #### Scenario: A harness-specific entry file only imports
 - **WHEN** a store's `contexture.yaml` declares a harness-specific entry filename
@@ -44,15 +70,64 @@ Every context store SHALL carry an `AGENTS.md` file at its root that is the cano
 
 #### Scenario: Reading only `AGENTS.md` is sufficient
 - **WHEN** an agent with no harness-specific context reads `AGENTS.md` at a store's root
-- **THEN** it finds the root-resolution rule, the frontmatter schema pointer, the write-path rule, a statement that agent identity and durable cross-session memory belong to its harness rather than to this store, and an index of every store skill, without needing to read any other file
+- **THEN** it finds the root-resolution rule, the frontmatter schema pointer, the write-path rule, a statement that agent identity and durable cross-session memory belong to its harness rather than to this store, the store's current mission when one is configured, and the store's full operating conventions, without needing to read any other file
 
 #### Scenario: The canonical section names the mission document when configured
 - **WHEN** a store's `contexture.yaml` declares `organize.mission_path` and the entry document is regenerated
-- **THEN** the canonical section names that path as a document to load at session start, alongside the root-resolution rule, the frontmatter schema pointer, and the write-path rule
+- **THEN** the canonical section names that path as a document to load at session start, alongside the root-resolution rule, the frontmatter schema pointer, and the write-path rule — immediately followed by the "Mission" section carrying that document's full inlined body
 
 #### Scenario: No mission pointer when unconfigured
 - **WHEN** a store declares no `organize.mission_path` and the entry document is regenerated
 - **THEN** the canonical section names no mission document, and regenerating again reports no change
+
+### Requirement: The entry document inlines the mission document when configured
+When a store's `contexture.yaml` declares `organize.mission_path` and the note at that path exists, `AGENTS.md` SHALL carry a "Mission" section inlining that note's full body — frontmatter stripped, nested `contexture:` fence markers stripped so only the fence's content is copied, headings demoted so the shallowest sits directly under the section heading. When no mission path is configured, or the configured note does not exist, the section SHALL be absent entirely, and regenerating SHALL report no change once already absent.
+
+#### Scenario: Mission is inlined when configured
+- **WHEN** a store declares `organize.mission_path` and the entry document is regenerated
+- **THEN** `AGENTS.md` carries a "Mission" section containing that note's body, with any nested `contexture:` fence markers removed and only their content retained
+
+#### Scenario: No mission section when unconfigured
+- **WHEN** a store declares no `organize.mission_path` and the entry document is regenerated
+- **THEN** `AGENTS.md` carries no "Mission" section, and regenerating again reports no change
+
+#### Scenario: A rollup write refreshes the mission section in the same operation
+- **WHEN** `ctxr rollup write` succeeds against the configured mission path
+- **THEN** the entry document's "Mission" section is refreshed to match the newly written content before the command completes, with no separate regeneration step required
+
+### Requirement: The entry document's inlined content matches its sources
+`ctxr doctor` SHALL fail when `AGENTS.md`'s inlined conventions section or Mission section no longer matches the current content of its source file (a convention file changed after the last regeneration, or the mission document changed after its last rollup-triggered refresh), naming the drifted source. The pre-commit hook SHALL refuse a commit that stages a change to a convention file or to the configured mission document while leaving `AGENTS.md` stale relative to that change.
+
+#### Scenario: Doctor detects a drifted convention file
+- **WHEN** a convention file is edited directly (not through a commit that also regenerates `AGENTS.md`) and `ctxr doctor` runs
+- **THEN** it fails, naming the drifted convention file's path
+
+#### Scenario: Doctor detects a drifted mission document
+- **WHEN** the mission document is edited by a means other than `ctxr rollup write` and `ctxr doctor` runs
+- **THEN** it fails, naming the mission document's path
+
+#### Scenario: A commit that would leave the entry document stale is refused
+- **WHEN** a commit stages a change to a convention file or the mission document without a corresponding regeneration of `AGENTS.md`
+- **THEN** the pre-commit hook refuses the commit and names the file that would drift
+
+#### Scenario: A synchronized store passes
+- **WHEN** every convention file and the mission document match what `AGENTS.md` currently inlines
+- **THEN** `ctxr doctor` reports no drift finding
+
+### Requirement: Generated sections render in a fixed order
+The entry document's contexture-managed sections SHALL render, on a freshly initialized store, in a fixed order: store fundamentals, mission (when configured), retrieval routing, capture, placement, then store conventions. On an existing store whose managed sections are contiguous (separated only by blank lines), `ctxr update` SHALL reorder them to match. When hand-written content interrupts that contiguity, `ctxr update` SHALL leave the existing section order unchanged rather than reordering around foreign content, and SHALL report this via `ctxr lint` as an observation rather than a `ctxr doctor` failure — `doctor` runs only invariant-severity checks (per store-integrity's own "observation checks never fail a run"), so a non-blocking finding is a `lint` finding by construction, never a `doctor` one.
+
+#### Scenario: A first-time init writes sections in the fixed order
+- **WHEN** `ctxr init` runs against a store with no existing `AGENTS.md`
+- **THEN** the generated sections appear in the fixed order
+
+#### Scenario: A drifted but contiguous store converges on update
+- **WHEN** an existing store's managed sections are in a different order but are separated only by blank lines, and `ctxr update` runs
+- **THEN** the sections are reordered to match the fixed order, and hand-written content outside every managed section is preserved unchanged
+
+#### Scenario: Hand-written content between sections blocks reordering
+- **WHEN** hand-written content sits between two managed sections and `ctxr update` runs
+- **THEN** the existing order is left unchanged, and `ctxr lint` reports the interruption as an observation
 
 ### Requirement: The canonical section states the harness/store identity boundary
 The canonical section SHALL state, on every store regardless of configuration, that agent identity, persona, and durable cross-session memory are the harness's responsibility, not the store's — the store holds knowledge and skills. This statement SHALL reference paths (the skills path) rather than inlining any identity content, and SHALL NOT introduce a configuration key, command, or adapter kind for identity.
@@ -91,7 +166,7 @@ Reusable store skills SHALL be markdown files reachable by a documented path fro
 - **THEN** the agent can read and follow that skill's file directly, with no harness-specific adaptation required
 
 ### Requirement: Executable portability test
-The store SHALL provide a command that exercises core store operations — at minimum, a retrieval query, a derived-artifact build, and following one skill via the `AGENTS.md` index — from an environment with no harness-specific state present, and SHALL exit non-zero naming the first failing operation if any operation fails.
+The store SHALL provide a command that exercises core store operations — at minimum, a retrieval query, a derived-artifact build, and following one skill by path at the configured skills path — from an environment with no harness-specific state present, and SHALL exit non-zero naming the first failing operation if any operation fails. It SHALL also verify that every contexture-managed section of `AGENTS.md` is present and, when operator conventions or a mission document are configured, that their inlined content matches the source files on disk.
 
 #### Scenario: Portability test passes with no harness state
 - **WHEN** the portability test command runs in a freshly created worktree with no harness-specific configuration or state directories present
@@ -100,6 +175,10 @@ The store SHALL provide a command that exercises core store operations — at mi
 #### Scenario: Portability test names the failure
 - **WHEN** one of the exercised operations fails during the portability test
 - **THEN** the command exits non-zero and its output names which specific operation failed
+
+#### Scenario: Portability test catches drifted inlined content
+- **WHEN** a convention file or the configured mission document has changed on disk since `AGENTS.md` was last regenerated
+- **THEN** the portability test exits non-zero naming the drifted source
 
 ### Requirement: The shipped skills carry decision procedures
 contexture SHALL ship, as contexture-owned skills delivered by init and update, skills for: placement, ingest orchestration, connection finding, connection proposal, rollup, mission, session lifecycle, session capture, derived artifacts, organize audit, and publish. Each SHALL state its decision rules against the store's configured taxonomy, contexts, and relation vocabulary — never a shipped profile's layer names or any real context name — and SHALL name the command that verifies each step it asks for.
