@@ -31,11 +31,11 @@ describe('contexture archive / rollup / lint (real CLI)', () => {
       const archive = await runCli(['archive', 'projects/target.md', '--json'], { cwd: tmp.root, env });
       expect(archive.exitCode).toBe(0);
       const data = JSON.parse(archive.stdout).data;
-      expect(data.newPath).toBe('archive/target.md');
+      expect(data.newPath).toBe('archives/target.md');
       expect(data.linkingNotes.sort()).toEqual(['projects/a.md', 'projects/b.md']);
 
       await execFileAsync('git', ['commit', '-am', 'archive target'], { cwd: tmp.root, env });
-      const log = await execFileAsync('git', ['log', '--follow', '--oneline', '--', 'archive/target.md'], {
+      const log = await execFileAsync('git', ['log', '--follow', '--oneline', '--', 'archives/target.md'], {
         cwd: tmp.root,
         env,
       });
@@ -55,7 +55,7 @@ describe('contexture archive / rollup / lint (real CLI)', () => {
       await execFileAsync('git', ['commit', '-m', 'add note'], { cwd: tmp.root, env });
 
       await runCli(['archive', 'projects/a.md', '--json'], { cwd: tmp.root, env });
-      const content = await readFile(path.join(tmp.root, 'archive/a.md'), 'utf8');
+      const content = await readFile(path.join(tmp.root, 'archives/a.md'), 'utf8');
       expect(content).toContain('lens: ctx-a');
     } finally {
       await tmp.cleanup();

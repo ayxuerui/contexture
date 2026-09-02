@@ -31,7 +31,7 @@ function makeConfig(): StoreConfig {
     skills: { vendored: [] },
     disclosure: { internal_audiences: [], hard_walls: [], leak_markers: {} },
     ingest: { inbox_path: 'inbox/', tracking_params: [] },
-    organize: { archive_path: 'archive/', rollup_stale_days: 7 },
+    organize: { archive_destination: 'archive/', rollup_stale_days: 7 },
     harness: { skills_path: 'skills/', guidance_path: 'guidance/' },
     adapters: [],
   };
@@ -102,7 +102,7 @@ describe('verify --portable', () => {
     const tmp = await makeTmpDir();
     try {
       const { buildAgentsMissionSection } = await import('../../src/core/agents-doc.js');
-      const config = { ...makeConfig(), organize: { archive_path: 'archive/', rollup_stale_days: 7, mission_path: 'MISSION.md' } };
+      const config = { ...makeConfig(), organize: { archive_destination: 'archive/', rollup_stale_days: 7, mission_path: 'MISSION.md' } };
       const { mkdir, writeFile: write } = await import('node:fs/promises');
       await syncShippedSkills(tmp.root, config);
       await buildAgentsCanonicalSection(tmp.root, config);

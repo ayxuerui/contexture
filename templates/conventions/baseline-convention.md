@@ -45,7 +45,7 @@ __RELATION_VOCABULARY__
 
 ## Archiving
 
-`ctxr archive <path>` retires a note via a single tracked rename into `__ARCHIVE_PATH__`, preserving its git history and its visibility value unchanged — never a status tag on a note that stays in place. It reports every other note that links to the archived one, so those links can be reviewed; a dangling link left behind is not itself an error (see Links, above).
+`ctxr archive <path>` retires a note via a single tracked rename into `__ARCHIVE_DESTINATION__`, preserving its git history and its visibility value unchanged — never a status tag on a note that stays in place. It reports every other note that links to the archived one, so those links can be reviewed; a dangling link left behind is not itself an error (see Links, above).
 
 ## Git and sessions
 

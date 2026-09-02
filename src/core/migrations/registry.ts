@@ -1,3 +1,4 @@
+import { archiveDestinationFromTaxonomyMigration } from './archive-destination-from-taxonomy.js';
 import { dropForgeAndWorkspacesExternalMigration } from './drop-forge-and-workspaces-external.js';
 import { renameConventionsPathMigration } from './rename-conventions-path.js';
 import { renameProceduresPathMigration } from './rename-procedures-path.js';
@@ -10,6 +11,7 @@ export const MIGRATIONS: readonly Migration[] = [
   renameProceduresPathMigration,
   renameConventionsPathMigration,
   dropForgeAndWorkspacesExternalMigration,
+  archiveDestinationFromTaxonomyMigration,
 ];
 
 /** Every migration a store currently at `fromVersion` still needs to reach the CLI's supported version, in order. */
