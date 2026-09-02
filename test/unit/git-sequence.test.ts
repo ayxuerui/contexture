@@ -64,7 +64,6 @@ describe('init git call sequence', () => {
           '.agents/skills/frontend-design/SKILL.md',
           '.agents/skills/frontend-design/.ctxr-vendored.json',
           '.claude/skills',
-          '.contexture/guidance/baseline-conventions.md',
           '.contexture/guidance/house-conventions.md',
           '.contexture/guidance/mission.md',
           '.githooks/pre-commit',

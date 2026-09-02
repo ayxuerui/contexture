@@ -14,7 +14,7 @@ import {
   buildAgentsPlacementSection,
 } from './agents-doc.js';
 import type { Finding } from './envelope.js';
-import { syncBaselineConventions } from './convention-doc.js';
+import { removeManagedBaselineFile } from './convention-doc.js';
 import { removeFencedRegionFromFile, reorderFencedRegionsInFile, upsertFencedRegionInFile } from './fs/fenced-region.js';
 import { bridgeHarnessSkills } from './harness/bridge.js';
 import { configureHooksPath, installHooks } from './hooks.js';
@@ -93,7 +93,7 @@ export async function reconcileStore(env: RunEnv, root: string, config: StoreCon
   // scans the guidance directory and inlines it (compose-store-guidance-documents).
   note(
     path.join(config.harness.guidance_path, DEFAULT_BASELINE_CONVENTIONS_FILE_NAME).split(path.sep).join('/'),
-    (await syncBaselineConventions(root, config)).changed,
+    (await removeManagedBaselineFile(root, config)).changed,
   );
 
   let agentsChanged = false;
