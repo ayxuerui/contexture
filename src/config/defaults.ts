@@ -115,8 +115,14 @@ export const DEFAULT_INBOX_PATH = 'inbox/';
 /** store-primitives-from-migration-audit spec (D2): the shipped tracking-parameter list source check strips before comparing URL identities. */
 export const DEFAULT_TRACKING_PARAMS = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content', 'fbclid', 'gclid'];
 
-/** context-organize spec: archive's destination, decoupled from any taxonomy layer name. */
-export const DEFAULT_ARCHIVE_PATH = 'archive/';
+/**
+ * context-organize spec: archive's destination, decoupled from any taxonomy
+ * layer name. This is the fallback for a taxonomy that declares none of its
+ * own — a shipped profile with a retirement layer (PARA's Archives) supplies
+ * its `archiveDestination` at init instead, so a PARA store is never born
+ * pointing at a directory its own taxonomy doesn't declare.
+ */
+export const DEFAULT_ARCHIVE_DESTINATION = 'archive/';
 
 /** store-primitives-from-migration-audit spec (D4): grace period, in days, before a stale rollup is reported. */
 export const DEFAULT_ROLLUP_STALE_DAYS = 7;

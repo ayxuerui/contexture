@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { DEFAULT_PUBLISH_PATH, DEFAULT_VENDORED_SKILLS } from './defaults.js';
+import { DEFAULT_ARCHIVE_DESTINATION, DEFAULT_PUBLISH_PATH, DEFAULT_VENDORED_SKILLS } from './defaults.js';
 
 /**
  * store-lifecycle spec: schema_version versions STORE STATE (config shape +
@@ -24,7 +24,7 @@ import { DEFAULT_PUBLISH_PATH, DEFAULT_VENDORED_SKILLS } from './defaults.js';
  * `harness.conventions_path` -> `harness.guidance_path`. HarnessSchema's
  * transform accepts the old key through this version too, the same way.
  */
-export const SUPPORTED_SCHEMA_VERSION = 5;
+export const SUPPORTED_SCHEMA_VERSION = 6;
 
 export const TaxonomyLayerSchema = z.object({
   name: z.string().min(1),
@@ -167,21 +167,47 @@ const IngestSchema = z.object({
     .default(['utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content', 'fbclid', 'gclid']),
 });
 
-/** context-organize spec: archive's destination — independent of taxonomy layers, so it works under any profile. */
-const OrganizeSchema = z.object({
-  archive_path: z.string().min(1),
-  /** store-primitives-from-migration-audit spec (D4): the grace period, in days, before a stale rollup is reported — bounds noise from a backlink edited moments ago. */
-  rollup_stale_days: z.number().int().nonnegative().default(7),
-  /**
-   * context-organize spec: the store's standing current-state document
-   * (priorities, active builds, back burner, sunset candidates, debt).
-   * Unset by default — no mission mechanism until an operator opts in.
-   * Content is written via `ctxr rollup write` exactly like an entity
-   * rollup; `ctxr rollup stale` reports this one path stale on elapsed
-   * time rather than backlinks (see `checkMissionStaleness`).
-   */
-  mission_path: z.string().min(1).optional(),
-});
+/**
+ * context-organize spec: archive's destination — independent of taxonomy
+ * layers, so it works under any profile.
+ *
+ * archive-destination-from-taxonomy migration (0006): `archive_destination`
+ * is the current key; `archive_path` is its pre-migration name, accepted
+ * here so a store on schema 5 still loads. Like `harness.guidance_path` and
+ * unlike `harness.skills_path`, this key always had a workable default, so
+ * an unmigrated store loads silently onto that default rather than erroring
+ * — `ctxr migrate` rewrites the key (and, for a profile that declares a
+ * destination, the value) but nothing breaks before it runs.
+ *
+ * The transform below is the ONLY place the old spelling is read — every
+ * other consumer sees `config.organize.archive_destination` and nothing
+ * else, so `archive_path` never leaks past config loading.
+ */
+const OrganizeSchema = z
+  .object({
+    archive_destination: z.string().min(1).optional(),
+    archive_path: z.string().min(1).optional(),
+    /** store-primitives-from-migration-audit spec (D4): the grace period, in days, before a stale rollup is reported — bounds noise from a backlink edited moments ago. */
+    rollup_stale_days: z.number().int().nonnegative().default(7),
+    /**
+     * context-organize spec: the store's standing current-state document
+     * (priorities, active builds, back burner, sunset candidates, debt).
+     * Unset by default — no mission mechanism until an operator opts in.
+     * Content is written via `ctxr rollup write` exactly like an entity
+     * rollup; `ctxr rollup stale` reports this one path stale on elapsed
+     * time rather than backlinks (see `checkMissionStaleness`).
+     */
+    mission_path: z.string().min(1).optional(),
+  })
+  .transform((value) => ({
+    archive_destination: value.archive_destination ?? value.archive_path ?? DEFAULT_ARCHIVE_DESTINATION,
+    rollup_stale_days: value.rollup_stale_days,
+    // Spread, not a plain key, so the output type keeps `mission_path`
+    // genuinely optional (`key?: string`) rather than always-present-but-
+    // possibly-undefined — the latter would force every `StoreConfig`
+    // object literal in the codebase to add the key just to compile.
+    ...(value.mission_path !== undefined ? { mission_path: value.mission_path } : {}),
+  }));
 
 /**
  * harness-portability spec: the portable skill pack and the guidance

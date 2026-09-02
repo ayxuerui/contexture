@@ -44,7 +44,7 @@ function makeConfig(overrides: Partial<StoreConfig> = {}): StoreConfig {
     skills: { vendored: [] },
     disclosure: { internal_audiences: [], hard_walls: [], leak_markers: {} },
     ingest: { inbox_path: 'inbox/', tracking_params: [] },
-    organize: { archive_path: 'archive/', rollup_stale_days: 7 },
+    organize: { archive_destination: 'archive/', rollup_stale_days: 7 },
     harness: { skills_path: 'skills/', guidance_path: 'guidance/' },
     adapters: [],
     ...overrides,
@@ -183,9 +183,15 @@ describe('owned-skills-expansion: each skill carries its load-bearing rule (task
   it('session lifecycle: reclaiming is git-driven and scoped by session list, with no config branch left to diverge (session-keeps-only-what-git-cannot-do)', () => {
     const s = skills['ctxr-session-lifecycle'];
     expect(s).toContain('`ctxr session list`'); // the safe read that scopes the unsafe write
-    expect(s).toContain('`git worktree remove <path>` then `git branch -d <branch>`'); // merged-and-clean, unforced
+    expect(s).toContain('`git worktree remove <path>`'); // merged-and-clean, unforced
     expect(s).toContain('`git worktree remove --force <path>`'); // deliberate discard, forced and named as destructive
     expect(s).toContain('destroys any uncommitted or');
+    // Merged-ness comes from the forge, never git ancestry: a squash merge (GitHub's default) leaves the
+    // squashed commit off the branch tip, so `git branch -d` refuses every landed branch forever. Guidance
+    // that reads that refusal as "unmerged work" strands every session a squash-merging store ever landed.
+    expect(s).toContain('gh pr view <branch> --json state');
+    expect(s).toMatch(/squash/i);
+    expect(s).toContain('`git branch -D`'); // the correct finish once the forge confirmed the merge
     // no config key exists anymore to render a second, possibly-inconsistent variant of this skill
     expect(s).not.toContain('workspaces_external');
     expect(s).not.toContain('provided externally');
@@ -196,7 +202,7 @@ describe('owned-skills-expansion: each skill carries its load-bearing rule (task
     expect(s).toContain('creates a worktree on a fresh branch');
   });
 
-  it('submit: re-scans, runs the capture procedure exactly once, stages named paths, validates, gates, and ends in git push + gh pr create (session-keeps-only-what-git-cannot-do)', () => {
+  it('submit: re-scans, runs the capture procedure exactly once, stages named paths, validates, and ends in git push + gh pr create with no confirmation between (submit-is-its-own-consent)', () => {
     const s = skills['ctxr-submit'];
     expect(s).toContain('Re-scan (mandatory');
     expect((s?.match(/ctxr-session-capture/g) ?? []).length).toBe(1); // invoked once, not described twice
@@ -204,9 +210,15 @@ describe('owned-skills-expansion: each skill carries its load-bearing rule (task
     expect(s).toContain('`ctxr doctor`'); // store-scope validation, the same check submit used to run internally
     expect(s).toMatch(/\bgit commit\b/); // now an explicit step — nothing else commits on its behalf
     expect(s).toContain('`git branch -m "<name>"`'); // renames a generated branch before it reaches the forge
-    expect(s).toMatch(/plan consent\s+is not fire consent/);
     expect(s).toMatch(/\bgit push\b/);
-    expect(s).toContain('`gh pr create'); // the fire-gated external side effect, run directly
+    expect(s).toContain('`gh pr create'); // run directly — invoking submit is itself the consent for it
+    // submit-is-its-own-consent: no confirmation stands between the branch rename and the push. The
+    // gate on this path is `ctxr doctor` (step 5), which submit may not proceed past; land keeps its
+    // own merge confirmation, which is why the sentence is asserted absent HERE and present there.
+    expect(s).not.toMatch(/plan consent\s+is not fire consent/);
+    const body = s ?? ''; // an absent skill yields -1 for every index below, which fails these on its own
+    expect(body.indexOf('`git branch -m "<name>"`')).toBeLessThan(body.indexOf('git push'));
+    expect(body.indexOf('git push')).toBeLessThan(body.indexOf('`gh pr create'));
     expect(s).not.toContain('ctxr session submit'); // no such command exists anymore
     expect(s).toContain('Verify before any retry');
   });

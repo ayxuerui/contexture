@@ -33,8 +33,10 @@ function toStoreRelativePath(env: RunEnv, store: Store, givenPath: string): stri
  * read+delete+rewrite — so the note's frontmatter (including its
  * visibility field) is untouched by construction, and `git log --follow`
  * on the new path returns its full prior history. The destination lives
- * under `organize.archive_path`, independent of taxonomy layer names, so
- * this works identically under any configured taxonomy (task 7.1).
+ * under `organize.archive_destination`, independent of taxonomy layer names,
+ * so this works identically under any configured taxonomy (task 7.1). A
+ * shipped profile may seed that value at init
+ * (archive-destination-from-taxonomy), but nothing here reads the taxonomy.
  *
  * Wikilinks resolve by filename stem (context-retrieval spec), and archive
  * never changes a note's filename — only its directory — so no other
@@ -48,7 +50,7 @@ export async function execute(env: RunEnv, store: Store, flags: ArchiveFlags): P
 
   const stem = path.basename(relativePath, '.md');
   const newRelativePath = path
-    .join(store.config.organize.archive_path, path.basename(relativePath))
+    .join(store.config.organize.archive_destination, path.basename(relativePath))
     .split(path.sep)
     .join('/');
   const newAbsolutePath = path.join(store.root, newRelativePath);

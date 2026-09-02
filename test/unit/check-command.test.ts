@@ -26,7 +26,7 @@ function makeStore(root: string, disclosure: StoreConfig['disclosure'] = { inter
     skills: { vendored: [] },
     disclosure,
     ingest: { inbox_path: 'inbox/', tracking_params: [] },
-    organize: { archive_path: 'archive/', rollup_stale_days: 7 },
+    organize: { archive_destination: 'archive/', rollup_stale_days: 7 },
     harness: { skills_path: 'skills/', guidance_path: 'guidance/' },
     adapters: [],
   };

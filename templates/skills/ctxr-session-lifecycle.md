@@ -39,10 +39,18 @@ Scope with `ctxr session list` — it reports every worktree and branch this sto
 whichever checkout you run it from. Reclaiming is always an explicit go, never automatic; never claim a
 worktree or branch was removed without having run the command yourself.
 
-For a session whose pull request merged: `git worktree remove <path>` then `git branch -d <branch>`, run
-from outside that worktree (no command can remove the directory it is running from — `git worktree list`
-names the canonical clone first). Leave both unforced — git already refuses on its own if the worktree is
-dirty or the branch isn't fully merged; a refusal means stop and look, not reach for `--force`.
+Establish that the pull request actually merged before removing anything, and get that from the forge —
+`gh pr view <branch> --json state` reporting `MERGED` — not from git. If the store squash-merges (GitHub's
+default), the squashed commit is not the branch's tip, so git's ancestry test calls a landed branch
+unmerged forever: `git log <default>..<branch>` never empties and `git branch -d` never succeeds. Reading
+a refusal there as "unmerged work" strands every session the store has ever landed.
+
+With `MERGED` confirmed: `git worktree remove <path>`, then `git branch -d <branch>` — run from outside
+that worktree (no command can remove the directory it is running from — `git worktree list` names the
+canonical clone first). Leave the worktree removal unforced: it refuses on uncommitted work, and that
+refusal is real, so stop and look rather than reaching for `--force`. If `git branch -d` refuses on a
+pull request the forge says is merged, that is the squash case above, and `git branch -D` is the correct
+finish — the forge, not the ancestry graph, is what established the work is safe.
 
 To deliberately discard a session instead — abandoning unmerged work — `git worktree remove --force <path>`
 then `git branch -D <branch>`. State plainly, before running it, that this destroys any uncommitted or

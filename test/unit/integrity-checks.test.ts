@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 import {
   adapterCompatibilityCheck,
   derivedArtifactStalenessCheck,
-  graphDanglingLinksCheck,
+  graphAmbiguousLinksCheck,
   harnessEntryNoDuplicateConventionTextCheck,
   noUnrecognizedConfigKeysCheck,
   schemaVersionCurrencyCheck,
@@ -32,7 +32,7 @@ function makeConfig(overrides: Partial<StoreConfig> = {}): StoreConfig {
     skills: { vendored: [] },
     disclosure: { internal_audiences: [], hard_walls: [], leak_markers: {} },
     ingest: { inbox_path: 'inbox/', tracking_params: [] },
-    organize: { archive_path: 'archive/', rollup_stale_days: 7 },
+    organize: { archive_destination: 'archive/', rollup_stale_days: 7 },
     harness: { skills_path: 'skills/', guidance_path: 'guidance/' },
     adapters: [],
     ...overrides,
@@ -53,35 +53,45 @@ function makeCtx(
   };
 }
 
-describe('graphDanglingLinksCheck', () => {
+describe('graphAmbiguousLinksCheck', () => {
   it('is severity: invariant', () => {
-    expect(graphDanglingLinksCheck.severity).toBe('invariant');
+    expect(graphAmbiguousLinksCheck.severity).toBe('invariant');
   });
 
   it('carries a different check id than the lint-facing broken_links observation', () => {
-    expect(graphDanglingLinksCheck.id).toBe('graph.dangling_links');
-    expect(graphDanglingLinksCheck.id).not.toBe('organize.broken_links');
+    expect(graphAmbiguousLinksCheck.id).toBe('graph.ambiguous_links');
+    expect(graphAmbiguousLinksCheck.id).not.toBe('organize.broken_links');
   });
 
   it('skips when the graph has not been built', async () => {
-    const result = await graphDanglingLinksCheck.run(makeCtx({ graph: null }));
+    const result = await graphAmbiguousLinksCheck.run(makeCtx({ graph: null }));
     expect(result.status).toBe('skip');
   });
 
-  it('fails, naming the link, when the graph has a dangling link', async () => {
+  it('fails, naming the link, when the graph has an ambiguous link', async () => {
+    const graph: GraphBuildResult = {
+      nodes: [{ id: 'a.md', path: 'a.md', cluster: '(root)' }],
+      edges: [],
+      dangling: [{ from: 'a.md', target: 'ghost', reason: 'ambiguous' }],
+    };
+    const result = await graphAmbiguousLinksCheck.run(makeCtx({ graph }));
+    expect(result.status).toBe('fail');
+    expect(result.findings[0]?.subject).toBe('a.md');
+  });
+
+  it('passes when the graph has only not_found-reason dangling links', async () => {
     const graph: GraphBuildResult = {
       nodes: [{ id: 'a.md', path: 'a.md', cluster: '(root)' }],
       edges: [],
       dangling: [{ from: 'a.md', target: 'ghost', reason: 'not_found' }],
     };
-    const result = await graphDanglingLinksCheck.run(makeCtx({ graph }));
-    expect(result.status).toBe('fail');
-    expect(result.findings[0]?.subject).toBe('a.md');
+    const result = await graphAmbiguousLinksCheck.run(makeCtx({ graph }));
+    expect(result.status).toBe('pass');
   });
 
   it('passes when the graph has no dangling links', async () => {
     const graph: GraphBuildResult = { nodes: [{ id: 'a.md', path: 'a.md', cluster: '(root)' }], edges: [], dangling: [] };
-    const result = await graphDanglingLinksCheck.run(makeCtx({ graph }));
+    const result = await graphAmbiguousLinksCheck.run(makeCtx({ graph }));
     expect(result.status).toBe('pass');
   });
 });
