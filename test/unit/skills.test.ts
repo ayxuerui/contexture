@@ -228,6 +228,12 @@ describe('owned-skills-expansion: each skill carries its load-bearing rule (task
     expect(s).toMatch(/\bgit merge --ff-only\b/); // the canonical-clone sync
     expect(s).not.toMatch(/Never merge by hand/i); // design D6: the old ban is gone, gh pr merge is now the step
     expect(s).toMatch(/from outside the\s+worktree being removed/);
+    // Reclaiming is the default action, not an optional extra: `ctxr session reap` no longer exists to
+    // sweep up a worktree left behind, so the skill names no unowned "leave it to someone else" opt-out.
+    expect(s).toContain('the default action, not an optional extra');
+    expect(s).toMatch(/nothing sweeps up afterward/);
+    expect(s).not.toMatch(/whoever owns the worktree/);
+    expect(s).not.toMatch(/if you want to now/);
   });
 
   it('session capture: trigger/anti-trigger taxonomy, store-notes proposal, secret markers, report from writes', () => {

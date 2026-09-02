@@ -24,9 +24,11 @@ covers what surrounds both and is not repeated here.
    `git merge --ff-only origin/__DEFAULT_BRANCH__`. If that clone is on another branch, or the fast-forward
    fails (diverged from origin), report exactly that and stop — never check it out, reset it, or force the
    merge to make it comply.
-7. Reclaim the worktree if you want to now: see `ctxr-session-lifecycle`'s Reclaiming section
-   (`ctxr session list` to scope, then `git worktree remove` / `git branch -d`) — run it from outside the
-   worktree being removed. Otherwise leave cleanup to whoever owns the worktree.
+7. Reclaim the worktree: see `ctxr-session-lifecycle`'s Reclaiming section (`ctxr session list` to scope,
+   then `git worktree remove` / `git branch -d`) — run it from outside the worktree being removed. This is
+   the default action, not an optional extra: nothing sweeps up afterward, so a worktree left here is left
+   indefinitely. Skip it only for a reason you can name — you are standing inside it, it is not yours to
+   reclaim, or the operator asked you to leave it — and report that reason in step 8.
 8. Report exactly what happened — merged or not, synced or not (with why not), reclaimed or not (with why
    not). Never claim a merge or a cleanup you did not confirm yourself.
 
