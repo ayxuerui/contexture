@@ -133,6 +133,33 @@ export function extractLinkTargets(body: string): string[] {
  * link, consistent with "two same-named notes are a valid, expected state"
  * (the node-identity requirement's own scenario).
  */
+/**
+ * The filename-stem -> path(s) index every wikilink resolution in the
+ * system reads (the graph build here, and local-browsing-surface's
+ * link-resolver) — factored out so both consult exactly one index and can't
+ * silently diverge on what a stem resolves to.
+ */
+export function buildStemIndex(notes: readonly Note[]): Map<string, string[]> {
+  const stemIndex = new Map<string, string[]>();
+  for (const note of notes) {
+    const stem = path.basename(note.path, '.md');
+    const list = stemIndex.get(stem) ?? [];
+    list.push(note.path);
+    stemIndex.set(stem, list);
+  }
+  return stemIndex;
+}
+
+export type StemResolution = { path: string } | { reason: DanglingReason };
+
+/** Classifies a wikilink target against a stem index — exactly one match resolves, zero or many don't. */
+export function resolveStem(stemIndex: ReadonlyMap<string, string[]>, target: string): StemResolution {
+  const resolved = stemIndex.get(target);
+  if (!resolved) return { reason: 'not_found' };
+  if (resolved.length > 1) return { reason: 'ambiguous' };
+  return { path: resolved[0]! };
+}
+
 export function buildGraphFromNotes(notes: readonly Note[], options: GraphBuildOptions = {}): GraphBuildResult {
   const idCounts = new Map<string, number>();
   for (const note of notes) idCounts.set(note.path, (idCounts.get(note.path) ?? 0) + 1);
@@ -141,13 +168,7 @@ export function buildGraphFromNotes(notes: readonly Note[], options: GraphBuildO
     throw new GraphIdentityCollisionError(collisions);
   }
 
-  const stemIndex = new Map<string, string[]>();
-  for (const note of notes) {
-    const stem = path.basename(note.path, '.md');
-    const list = stemIndex.get(stem) ?? [];
-    list.push(note.path);
-    stemIndex.set(stem, list);
-  }
+  const stemIndex = buildStemIndex(notes);
 
   const depth = options.clusterDepth ?? DEFAULT_CLUSTER_DEPTH;
   const nodes: GraphNode[] = notes.map((n) => ({ id: n.path, path: n.path, cluster: clusterOf(n.path, depth) }));
@@ -156,13 +177,11 @@ export function buildGraphFromNotes(notes: readonly Note[], options: GraphBuildO
 
   for (const note of notes) {
     for (const { target, type } of extractLinks(note.body, options.relations ?? [])) {
-      const resolved = stemIndex.get(target);
-      if (!resolved) {
-        dangling.push({ from: note.path, target, reason: 'not_found' });
-      } else if (resolved.length > 1) {
-        dangling.push({ from: note.path, target, reason: 'ambiguous' });
+      const resolution = resolveStem(stemIndex, target);
+      if ('reason' in resolution) {
+        dangling.push({ from: note.path, target, reason: resolution.reason });
       } else {
-        edges.push({ src: note.path, dst: resolved[0]!, type });
+        edges.push({ src: note.path, dst: resolution.path, type });
       }
     }
   }

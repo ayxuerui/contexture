@@ -45,10 +45,12 @@
   "dependencies": {
     "@inquirer/prompts": "^8.7.0",
     "commander": "^15.0.0",
+    "markdown-it": "^15.0.1",
     "yaml": "^2.9.0",
     "zod": "^4.5.1"
   },
   "devDependencies": {
+    "@types/markdown-it": "^14.2.0",
     "@types/node": "^22.20.1",
     "typescript": "^7.0.2",
     "vitest": "^4.1.11"
