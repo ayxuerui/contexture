@@ -22,6 +22,8 @@ function makeStore(root: string, disclosure: StoreConfig['disclosure'] = { inter
     session: { branch_prefix: 'session/', worktrees_path: '.worktrees/', workspaces_external: false },
     write_lifecycle: { diff_size_ceiling_lines: 2000, writable_paths: [] },
     catalog: { path: 'catalog/', section_max_bytes: 32768 },
+    publish: { path: 'publish/' },
+    skills: { vendored: [] },
     disclosure,
     ingest: { inbox_path: 'inbox/', tracking_params: [] },
     organize: { archive_path: 'archive/', rollup_stale_days: 7 },

@@ -1,8 +1,16 @@
 import type { HardWallConfig, StoreConfig } from '../../config/schema.js';
+import { ExitCode } from '../exit-codes.js';
 import type { Note } from '../notes/list.js';
 import { canSee, resolveVisibility } from '../notes/visibility.js';
 
 export type DisclosureVerdict = 'allow' | 'deny' | 'ask';
+
+/** disclosure-policy spec: each tri-state verdict's own distinct, documented exit code — defined once for every caller (single-note or aggregate). */
+export const VERDICT_EXIT_CODE: Record<DisclosureVerdict, ExitCode> = {
+  allow: ExitCode.Ok,
+  deny: ExitCode.DisclosureDeny,
+  ask: ExitCode.DisclosureAsk,
+};
 
 export type DisclosureRung = 'hard_wall' | 'explicit_tag' | 'internal_visibility' | 'external_default';
 
@@ -55,4 +63,22 @@ export function evaluateDisclosure(config: StoreConfig, note: Note, audience: st
   }
 
   return { verdict: 'ask', rung: 'external_default' };
+}
+
+/** disclosure-policy spec: most-restrictive-member ordering, defined once for reuse by any caller batching verdicts across a set of notes. */
+const VERDICT_RESTRICTIVENESS: Record<DisclosureVerdict, number> = { deny: 2, ask: 1, allow: 0 };
+
+/**
+ * disclosure-policy spec: a set of verdicts aggregates to its most
+ * restrictive member — DENY outranks ASK, which outranks ALLOW. An empty
+ * set aggregates to ALLOW; callers that need to distinguish "nothing was
+ * evaluated" from "everything was evaluated and allowed" report the set's
+ * size separately, per the publish spec's empty-set scenario.
+ */
+export function worstVerdict(verdicts: readonly DisclosureVerdict[]): DisclosureVerdict {
+  let worst: DisclosureVerdict = 'allow';
+  for (const verdict of verdicts) {
+    if (VERDICT_RESTRICTIVENESS[verdict] > VERDICT_RESTRICTIVENESS[worst]) worst = verdict;
+  }
+  return worst;
 }

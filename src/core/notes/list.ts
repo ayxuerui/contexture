@@ -50,7 +50,11 @@ const ALWAYS_SKIP_FILES = new Set(['AGENTS.md']);
  */
 function harnessEntryFiles(config: StoreConfig): Set<string> {
   try {
-    return new Set(configuredAdapters(config, 'harness-generation').map((a) => a.entryFileName));
+    return new Set(
+      configuredAdapters(config, 'harness-generation')
+        .map((a) => a.entryFileName)
+        .filter((name): name is string => name !== undefined),
+    );
   } catch {
     return new Set();
   }
@@ -69,6 +73,8 @@ export function excludedPrefixesFor(config: StoreConfig): string[] {
     ...config.derived.paths,
     config.session.worktrees_path,
     config.catalog.path,
+    // Published pages are authored-but-tool-owned output, never a note (context-store spec).
+    config.publish.path,
     // Tool-owned instruction docs (skills, guidance) are never notes, wherever they live.
     config.harness.skills_path,
     config.harness.guidance_path,

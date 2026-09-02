@@ -10,6 +10,12 @@ export interface ProfileChoice {
   description: string;
 }
 
+export interface HarnessChoice {
+  id: string;
+  name: string;
+  description: string;
+}
+
 export interface Prompter {
   /**
    * Presents `choices` and returns the selected id. Implementations MUST
@@ -21,6 +27,18 @@ export interface Prompter {
     choices: readonly ProfileChoice[];
     defaultId: string;
   }): Promise<string>;
+
+  /**
+   * vendored-craft-skills spec ("the operator declares which harnesses a
+   * store targets, at setup"): presents `choices` and returns the selected
+   * ids — zero, one, or more. Implementations MUST render entirely to
+   * stderr, for the same --json-corruption reason as `selectProfile`.
+   */
+  selectHarnesses(input: {
+    message: string;
+    choices: readonly HarnessChoice[];
+    defaultIds: readonly string[];
+  }): Promise<string[]>;
 
   /**
    * session-submit-and-land spec: the fire gate before an external side

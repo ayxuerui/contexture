@@ -40,6 +40,8 @@ function makeConfig(overrides: Partial<StoreConfig> = {}): StoreConfig {
     session: { branch_prefix: 'session/', worktrees_path: '.worktrees/', workspaces_external: false },
     write_lifecycle: { diff_size_ceiling_lines: 2000, writable_paths: [] },
     catalog: { path: 'catalog/', section_max_bytes: 32768 },
+    publish: { path: 'publish/' },
+    skills: { vendored: [] },
     disclosure: { internal_audiences: [], hard_walls: [], leak_markers: {} },
     ingest: { inbox_path: 'inbox/', tracking_params: [] },
     organize: { archive_path: 'archive/', rollup_stale_days: 7 },
@@ -59,7 +61,7 @@ const SHIPPED_NAMES = [...new Set(SHIPPED_PROFILES.flatMap((p) => [p.name, ...p.
 const TIER_WORDS = ['personal', 'private', 'public', 'shared', 'internal', 'team', 'confidential'];
 
 describe('SKILLS', () => {
-  it('names the twelve owned skills, in index order', () => {
+  it('names the thirteen owned skills, in index order', () => {
     expect(SKILLS.map((p) => p.file)).toEqual([
       'ctxr-ingest-orchestration',
       'ctxr-placement',
@@ -73,6 +75,7 @@ describe('SKILLS', () => {
       'ctxr-session-capture',
       'ctxr-derived-artifacts',
       'ctxr-organize-audit',
+      'ctxr-publish',
     ]);
   });
 
@@ -82,6 +85,24 @@ describe('SKILLS', () => {
       expect(p.content).toContain(MANAGED_SKILL_HEADER);
       expect(p.content).toContain(`\n# ${p.name}\n`);
       expect(p.description).not.toMatch(/: /); // a plain YAML scalar — no "key: value" inside it
+    }
+  });
+
+  /**
+   * vendored-craft-skills spec: the content guards below (no shipped-profile
+   * or tier-word leakage, `ctxr` never `contexture`) apply to skills
+   * contexture AUTHORS — every one of them iterates `renderSkills(config)` /
+   * `SKILLS`. Vendored third-party content is redistributed as-is and was
+   * never written against those rules, so it must never flow through
+   * `renderSkills` — this is what makes the exemption structural rather
+   * than a guard someone has to remember to skip. Do not "fix" a future
+   * guard by widening it to also scan `templates/vendor/**`.
+   */
+  it('vendored skills are never part of SKILLS or renderSkills output — the guards below cannot see them', () => {
+    expect(SKILLS.some((s) => s.file === 'frontend-design')).toBe(false);
+    for (const p of renderSkills(makeConfig())) {
+      expect(p.file).not.toBe('frontend-design');
+      expect(p.content).not.toContain('templates/vendor');
     }
   });
 });
@@ -247,6 +268,20 @@ describe('owned-skills-expansion: each skill carries its load-bearing rule (task
     expect(s).toContain('Thesis-change rule');
   });
 
+  it('publish: gate before copy, ASK stops and names the note, identity fixed once, excluded from retrieval, craft delegated not invented', () => {
+    const s = skills['ctxr-publish'];
+    expect(s).toContain('Gate before copying anything out');
+    expect(s).toContain('`ctxr publish gather --audience <audience>`');
+    expect(s).toContain('DENY** notes contribute nothing');
+    expect(s).toContain('ASK** stops the build; name the note to the operator and wait');
+    expect(s).toContain('`ctxr publish new <slug>`');
+    expect(s).toContain('refuses to overwrite an existing folder');
+    expect(s).toContain('Contexture ships no\nrenderer of its own');
+    expect(s).toContain('`frontend-design` skill this store carries by');
+    expect(s).toContain('excluded from retrieval by default');
+    expect(s).toContain('`ctxr publish check <path>`');
+  });
+
   it('store-primitives-from-migration-audit: owned skills call the new verbs instead of a manual equivalent', () => {
     const s = skills;
     expect(s['ctxr-ingest-orchestration']).toContain('`drift`');
@@ -327,7 +362,7 @@ describe('syncShippedSkills', () => {
     try {
       const written = await syncShippedSkills(tmp.root, makeConfig());
       expect(written.sort()).toEqual(skillPaths(makeConfig()).sort());
-      expect(written).toHaveLength(12);
+      expect(written).toHaveLength(13);
       const placement = await readFile(path.join(tmp.root, 'skills/ctxr-placement/SKILL.md'), 'utf8');
       expect(placement).toContain('name: ctxr-placement');
       expect(placement).toContain('description:');
