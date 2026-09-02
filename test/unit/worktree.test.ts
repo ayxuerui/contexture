@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { addWorktree, fetchOrigin, hasRemote, parseWorktreeList } from '../../src/core/git/worktree.js';
+import { addWorktree, fetchOrigin, hasRemote, mainWorktreePath, parseWorktreeList } from '../../src/core/git/worktree.js';
 import { fakeGitRunner } from '../helpers/fake-env.js';
 
 describe('hasRemote', () => {
@@ -79,5 +79,27 @@ describe('parseWorktreeList', () => {
 
   it('returns an empty array for empty input', () => {
     expect(parseWorktreeList('')).toEqual([]);
+  });
+});
+
+describe('mainWorktreePath', () => {
+  it('returns the first-listed worktree, regardless of which one the command was invoked from', async () => {
+    const porcelain = [
+      'worktree /repo',
+      'HEAD abc123',
+      'branch refs/heads/main',
+      '',
+      'worktree /repo/.worktrees/session-x',
+      'HEAD def456',
+      'branch refs/heads/session/x',
+      '',
+    ].join('\n');
+    const { git } = fakeGitRunner(new Map([['worktree list --porcelain', { exitCode: 0, stdout: porcelain, stderr: '' }]]));
+    expect(await mainWorktreePath(git, '/repo/.worktrees/session-x')).toBe('/repo');
+  });
+
+  it('falls back to the passed cwd when there are no linked worktrees', async () => {
+    const { git } = fakeGitRunner(new Map([['worktree list --porcelain', { exitCode: 0, stdout: '', stderr: '' }]]));
+    expect(await mainWorktreePath(git, '/repo')).toBe('/repo');
   });
 });
