@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { DEFAULT_PUBLISH_PATH, DEFAULT_VENDORED_SKILLS } from './defaults.js';
+import { DEFAULT_ARCHIVE_DESTINATION, DEFAULT_PUBLISH_PATH, DEFAULT_VENDORED_SKILLS } from './defaults.js';
 
 /**
  * store-lifecycle spec: schema_version versions STORE STATE (config shape +
@@ -24,7 +24,7 @@ import { DEFAULT_PUBLISH_PATH, DEFAULT_VENDORED_SKILLS } from './defaults.js';
  * `harness.conventions_path` -> `harness.guidance_path`. HarnessSchema's
  * transform accepts the old key through this version too, the same way.
  */
-export const SUPPORTED_SCHEMA_VERSION = 4;
+export const SUPPORTED_SCHEMA_VERSION = 6;
 
 export const TaxonomyLayerSchema = z.object({
   name: z.string().min(1),
@@ -98,17 +98,9 @@ const GitSchema = z.object({
   default_branch: z.string().min(1),
 });
 
-/**
- * write-lifecycle spec: `workspaces_external: true` marks a store whose
- * session worktrees are created/removed by a process outside `ctxr` (e.g. an
- * external agent-runtime WebUI) — `ctxr session reap` refuses to run rather
- * than touch a worktree it does not own. Defaults to `false`, the prior
- * behavior, for every store that does not set it.
- */
 const SessionSchema = z.object({
   branch_prefix: z.string().min(1),
   worktrees_path: z.string().min(1),
-  workspaces_external: z.boolean().default(false),
 });
 
 /** session-capture-command spec (D5): declaring any path here turns the sanctioned-location gate on; empty (the default) leaves every in-store path accepted. */
@@ -175,21 +167,47 @@ const IngestSchema = z.object({
     .default(['utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content', 'fbclid', 'gclid']),
 });
 
-/** context-organize spec: archive's destination — independent of taxonomy layers, so it works under any profile. */
-const OrganizeSchema = z.object({
-  archive_path: z.string().min(1),
-  /** store-primitives-from-migration-audit spec (D4): the grace period, in days, before a stale rollup is reported — bounds noise from a backlink edited moments ago. */
-  rollup_stale_days: z.number().int().nonnegative().default(7),
-  /**
-   * context-organize spec: the store's standing current-state document
-   * (priorities, active builds, back burner, sunset candidates, debt).
-   * Unset by default — no mission mechanism until an operator opts in.
-   * Content is written via `ctxr rollup write` exactly like an entity
-   * rollup; `ctxr rollup stale` reports this one path stale on elapsed
-   * time rather than backlinks (see `checkMissionStaleness`).
-   */
-  mission_path: z.string().min(1).optional(),
-});
+/**
+ * context-organize spec: archive's destination — independent of taxonomy
+ * layers, so it works under any profile.
+ *
+ * archive-destination-from-taxonomy migration (0006): `archive_destination`
+ * is the current key; `archive_path` is its pre-migration name, accepted
+ * here so a store on schema 5 still loads. Like `harness.guidance_path` and
+ * unlike `harness.skills_path`, this key always had a workable default, so
+ * an unmigrated store loads silently onto that default rather than erroring
+ * — `ctxr migrate` rewrites the key (and, for a profile that declares a
+ * destination, the value) but nothing breaks before it runs.
+ *
+ * The transform below is the ONLY place the old spelling is read — every
+ * other consumer sees `config.organize.archive_destination` and nothing
+ * else, so `archive_path` never leaks past config loading.
+ */
+const OrganizeSchema = z
+  .object({
+    archive_destination: z.string().min(1).optional(),
+    archive_path: z.string().min(1).optional(),
+    /** store-primitives-from-migration-audit spec (D4): the grace period, in days, before a stale rollup is reported — bounds noise from a backlink edited moments ago. */
+    rollup_stale_days: z.number().int().nonnegative().default(7),
+    /**
+     * context-organize spec: the store's standing current-state document
+     * (priorities, active builds, back burner, sunset candidates, debt).
+     * Unset by default — no mission mechanism until an operator opts in.
+     * Content is written via `ctxr rollup write` exactly like an entity
+     * rollup; `ctxr rollup stale` reports this one path stale on elapsed
+     * time rather than backlinks (see `checkMissionStaleness`).
+     */
+    mission_path: z.string().min(1).optional(),
+  })
+  .transform((value) => ({
+    archive_destination: value.archive_destination ?? value.archive_path ?? DEFAULT_ARCHIVE_DESTINATION,
+    rollup_stale_days: value.rollup_stale_days,
+    // Spread, not a plain key, so the output type keeps `mission_path`
+    // genuinely optional (`key?: string`) rather than always-present-but-
+    // possibly-undefined — the latter would force every `StoreConfig`
+    // object literal in the codebase to add the key just to compile.
+    ...(value.mission_path !== undefined ? { mission_path: value.mission_path } : {}),
+  }));
 
 /**
  * harness-portability spec: the portable skill pack and the guidance
@@ -260,7 +278,7 @@ const HarnessSchema = z
  * v1 resolves every entry against the built-in adapter registry by
  * (kind, id).
  */
-const AdapterKindSchema = z.enum(['harness-generation', 'forge']);
+const AdapterKindSchema = z.enum(['harness-generation']);
 
 const AdapterDeclarationSchema = z.object({
   id: z.string().min(1),
@@ -269,6 +287,21 @@ const AdapterDeclarationSchema = z.object({
   /** vendored-craft-skills spec: overrides a harness-generation adapter's declared skillsDir for this store; equal to the configured skills path means no bridge is created. */
   skills_dir: z.string().min(1).optional(),
 });
+
+/**
+ * session-keeps-only-what-git-cannot-do (D2): removing the `forge` kind
+ * outright would make a store still declaring `{ kind: forge }` fail to
+ * load at all — a shape error, not a migration opportunity — since
+ * `readConfig` runs this schema before `ctxr migrate` can act. Mirrors
+ * `HarnessSchema`'s fallback-transform precedent: accept the legacy shape
+ * loosely, drop it here, and let the schema_version < 5 migration rewrite
+ * the YAML on disk. Any OTHER unrecognized kind is a genuine error and
+ * still fails loudly against `AdapterDeclarationSchema` below.
+ */
+const AdaptersFieldSchema = z
+  .array(z.object({ id: z.string().min(1), kind: z.string().min(1), module: z.string().min(1).optional() }))
+  .transform((declarations) => declarations.filter((d) => d.kind !== 'forge'))
+  .pipe(z.array(AdapterDeclarationSchema));
 
 export const StoreConfigSchema = z
   .object({
@@ -288,7 +321,7 @@ export const StoreConfigSchema = z
     ingest: IngestSchema,
     organize: OrganizeSchema,
     harness: HarnessSchema,
-    adapters: z.array(AdapterDeclarationSchema),
+    adapters: AdaptersFieldSchema,
   })
   .passthrough();
 

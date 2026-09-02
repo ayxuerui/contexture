@@ -13,14 +13,18 @@ a session, the conflict playbook, sequencing several pull requests) and is not r
    staged set matches the intended unit. Derived artifacts under the cache paths never stage.
 4. One coherent unit per pull request. If the session produced two disjoint units, say so and ask
    whether to split.
-5. Fire gate: `ctxr session submit` commits, pushes, and opens the pull request — an external side
-   effect, and plan consent is not fire consent. Present the branch, the title, and what rides it; wait
-   for an explicit go before running it.
-6. Run: `ctxr session submit --branch "<name>" --title "<title>" --body "<why / what changed /
-   verification / follow-ups>"`. Name a real branch with `--branch` — never let a generated name reach
-   the forge. It runs the full store validation first; fix a failure, never bypass it. If no forge is
-   reachable it still pushes and prints the manual pull-request instructions.
-7. Verify before any retry: a transport error can arrive AFTER the push or the pull-request open already
-   succeeded. Before retrying anything, `git ls-remote origin <branch>` and the forge's pull-request list
-   for the branch — never replay a push or a pull-request open blindly.
-8. Hand off: report the pull request, then point at `ctxr-land` for after review.
+5. Validate: run `ctxr doctor` (store scope, not `--staged` — a session's job is to leave the whole store
+   healthy, not merely pass one commit's gate). Fix a failure; never bypass it, and never proceed past it.
+6. Commit: `git commit -m "<message>"`, describing the unit staged in step 3.
+7. Name the branch: if it still carries a generated name, `git branch -m "<name>"` before pushing — never
+   let a generated name reach the forge.
+8. Run: `git push -u origin "<branch>"`, then `gh pr create --base __DEFAULT_BRANCH__ --title "<title>" --body
+   "<why / what changed / verification / follow-ups>"`. Do not stop to confirm first — the request to
+   submit is the consent for both, and `ctxr doctor` in step 5 is the gate on this path. If `gh` has no
+   reachable GitHub remote for this repository, `git push` still succeeds on its own — report the pushed
+   branch and give the operator the manual pull-request instructions instead of retrying `gh`.
+9. Verify before any retry: a transport error can arrive AFTER the push or the pull-request open already
+   succeeded. Before retrying anything, `git ls-remote origin <branch>` and `gh pr list --head <branch>` —
+   never replay a push or a pull-request open blindly.
+10. Hand off: report the pull request, then point at `ctxr-land` for after review — landing is a separate
+    decision and keeps its own explicit confirmation.

@@ -43,7 +43,49 @@ describe('readConfig', () => {
     }
   });
 
-  it('defaults workspaces_external to false and leaves mission_path undefined when neither key is declared', async () => {
+  it('reads a pre-migration archive_path onto archive_destination, and defaults when neither is declared', async () => {
+    // archive-destination-from-taxonomy migration (0006): a store still on
+    // schema 5 must load, not fail shape validation, so `ctxr migrate` can run.
+    for (const [organize, expected] of [
+      ['organize: { archive_path: retired/ }', 'retired/'],
+      ['organize: { archive_destination: archives/ }', 'archives/'],
+      // Both spellings present: the current key wins, never the legacy one.
+      ['organize: { archive_destination: archives/, archive_path: retired/ }', 'archives/'],
+      ['organize: {}', 'archive/'],
+    ] as const) {
+      const tmp = await makeTmpDir();
+      try {
+        const text = [
+          'schema_version: 5',
+          'taxonomy: { profile: para, layers: [] }',
+          'fields: { visibility: lens }',
+          'visibility: { default_context: private, directory_defaults: {} }',
+          'derived: { paths: [] }',
+          'retrieval: { exclude_paths: [], relations: [], graph: { cluster_depth: 2, hub_top: 8, bridge_top: 10, orphan_exempt_clusters: [] } }',
+          'git: { default_branch: main }',
+          'session: { branch_prefix: session/, worktrees_path: .worktrees/ }',
+          'write_lifecycle: { diff_size_ceiling_lines: 2000, writable_paths: [] }',
+          'catalog: { path: catalog/, section_max_bytes: 32768 }',
+          'disclosure: { internal_audiences: [], hard_walls: [], leak_markers: {} }',
+          'ingest: { inbox_path: inbox/ }',
+          organize,
+          'harness: { skills_path: skills/, guidance_path: guidance/ }',
+          'adapters: []',
+          '',
+        ].join('\n');
+        await writeFile(path.join(tmp.root, CONFIG_FILE_NAME), text);
+
+        const config = await readConfig(tmp.root);
+        expect(config.organize.archive_destination, organize).toBe(expected);
+        // The old spelling never survives config loading.
+        expect('archive_path' in config.organize).toBe(false);
+      } finally {
+        await tmp.cleanup();
+      }
+    }
+  });
+
+  it('leaves mission_path undefined when the key is not declared', async () => {
     const tmp = await makeTmpDir();
     try {
       const text = [
@@ -59,14 +101,13 @@ describe('readConfig', () => {
         'catalog: { path: catalog/, section_max_bytes: 32768 }',
         'disclosure: { internal_audiences: [], hard_walls: [], leak_markers: {} }',
         'ingest: { inbox_path: inbox/ }',
-        'organize: { archive_path: archive/ }',
+        'organize: { archive_destination: archive/ }',
         'harness: { procedures_path: procedures/ }',
         'adapters: []',
         '',
       ].join('\n');
       await writeFile(path.join(tmp.root, CONFIG_FILE_NAME), text);
       const config = await readConfig(tmp.root);
-      expect(config.session.workspaces_external).toBe(false);
       expect(config.organize.mission_path).toBeUndefined();
     } finally {
       await tmp.cleanup();
@@ -89,7 +130,7 @@ describe('readConfig', () => {
         'catalog: { path: catalog/, section_max_bytes: 32768 }',
         'disclosure: { internal_audiences: [], hard_walls: [], leak_markers: {} }',
         'ingest: { inbox_path: inbox/ }',
-        'organize: { archive_path: archive/ }',
+        'organize: { archive_destination: archive/ }',
         'harness: { procedures_path: procedures/ }',
         'adapters: []',
         '',
@@ -118,7 +159,7 @@ describe('readConfig', () => {
         'catalog: { path: catalog/, section_max_bytes: 32768 }',
         'disclosure: { internal_audiences: [], hard_walls: [], leak_markers: {} }',
         'ingest: { inbox_path: inbox/ }',
-        'organize: { archive_path: archive/ }',
+        'organize: { archive_destination: archive/ }',
         'harness: { procedures_path: procedures/ }',
         'adapters: []',
         '',
@@ -147,7 +188,7 @@ describe('readConfig', () => {
         'catalog: { path: catalog/, section_max_bytes: 32768 }',
         'disclosure: { internal_audiences: [], hard_walls: [], leak_markers: {} }',
         'ingest: { inbox_path: inbox/ }',
-        'organize: { archive_path: archive/ }',
+        'organize: { archive_destination: archive/ }',
         "identity: { path: identity/, files: {}, entry_delimiter: '' }",
         'harness: { procedures_path: procedures/ }',
         'adapters: []',
@@ -180,7 +221,7 @@ describe('harness.skills_path / procedures_path fallback (rename-procedures-to-s
         'catalog: { path: catalog/, section_max_bytes: 32768 }',
         'disclosure: { internal_audiences: [], hard_walls: [], leak_markers: {} }',
         'ingest: { inbox_path: inbox/ }',
-        'organize: { archive_path: archive/ }',
+        'organize: { archive_destination: archive/ }',
         'harness: { skills_path: .claude/skills/ }',
         'adapters: []',
       ].join('\n');
@@ -209,7 +250,7 @@ describe('harness.skills_path / procedures_path fallback (rename-procedures-to-s
         'catalog: { path: catalog/, section_max_bytes: 32768 }',
         'disclosure: { internal_audiences: [], hard_walls: [], leak_markers: {} }',
         'ingest: { inbox_path: inbox/ }',
-        'organize: { archive_path: archive/ }',
+        'organize: { archive_destination: archive/ }',
         'harness: { procedures_path: procedures/ }',
         'adapters: []',
       ].join('\n');
@@ -237,7 +278,7 @@ describe('harness.skills_path / procedures_path fallback (rename-procedures-to-s
         'catalog: { path: catalog/, section_max_bytes: 32768 }',
         'disclosure: { internal_audiences: [], hard_walls: [], leak_markers: {} }',
         'ingest: { inbox_path: inbox/ }',
-        'organize: { archive_path: archive/ }',
+        'organize: { archive_destination: archive/ }',
         'harness: { skills_path: .claude/skills/, procedures_path: old-procedures/ }',
         'adapters: []',
       ].join('\n');
@@ -265,7 +306,7 @@ describe('harness.skills_path / procedures_path fallback (rename-procedures-to-s
         'catalog: { path: catalog/, section_max_bytes: 32768 }',
         'disclosure: { internal_audiences: [], hard_walls: [], leak_markers: {} }',
         'ingest: { inbox_path: inbox/ }',
-        'organize: { archive_path: archive/ }',
+        'organize: { archive_destination: archive/ }',
         'harness: {}',
         'adapters: []',
       ].join('\n');
@@ -273,6 +314,64 @@ describe('harness.skills_path / procedures_path fallback (rename-procedures-to-s
       await expect(readConfig(tmp.root)).rejects.toMatchObject({
         message: expect.stringContaining('ctxr migrate'),
       });
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+});
+
+describe('adapters kind: forge / session.workspaces_external leniency (session-keeps-only-what-git-cannot-do D2)', () => {
+  it('loads a schema-4 config still declaring a legacy forge adapter and workspaces_external, dropping both', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const text = [
+        'schema_version: 4',
+        'taxonomy: { profile: para, layers: [] }',
+        'fields: { visibility: scope }',
+        'visibility: { default_context: private, directory_defaults: {} }',
+        'derived: { paths: [] }',
+        'retrieval: { exclude_paths: [], relations: [], graph: { cluster_depth: 2, hub_top: 8, bridge_top: 10, orphan_exempt_clusters: [] } }',
+        'git: { default_branch: main }',
+        'session: { branch_prefix: session/, worktrees_path: .worktrees/, workspaces_external: true }',
+        'write_lifecycle: { diff_size_ceiling_lines: 2000, writable_paths: [] }',
+        'catalog: { path: catalog/, section_max_bytes: 32768 }',
+        'disclosure: { internal_audiences: [], hard_walls: [], leak_markers: {} }',
+        'ingest: { inbox_path: inbox/ }',
+        'organize: { archive_destination: archive/ }',
+        'harness: { skills_path: skills/, guidance_path: guidance/ }',
+        'adapters: [{ id: github, kind: forge }, { id: claude-code, kind: harness-generation }]',
+      ].join('\n');
+      await writeFile(path.join(tmp.root, CONFIG_FILE_NAME), text);
+      const config = await readConfig(tmp.root);
+      expect(config.adapters).toEqual([{ id: 'claude-code', kind: 'harness-generation' }]);
+      expect((config.session as Record<string, unknown>).workspaces_external).toBeUndefined();
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('still rejects a genuinely unrecognized adapter kind', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const text = [
+        'schema_version: 4',
+        'taxonomy: { profile: para, layers: [] }',
+        'fields: { visibility: scope }',
+        'visibility: { default_context: private, directory_defaults: {} }',
+        'derived: { paths: [] }',
+        'retrieval: { exclude_paths: [], relations: [], graph: { cluster_depth: 2, hub_top: 8, bridge_top: 10, orphan_exempt_clusters: [] } }',
+        'git: { default_branch: main }',
+        'session: { branch_prefix: session/, worktrees_path: .worktrees/ }',
+        'write_lifecycle: { diff_size_ceiling_lines: 2000, writable_paths: [] }',
+        'catalog: { path: catalog/, section_max_bytes: 32768 }',
+        'disclosure: { internal_audiences: [], hard_walls: [], leak_markers: {} }',
+        'ingest: { inbox_path: inbox/ }',
+        'organize: { archive_destination: archive/ }',
+        'harness: { skills_path: skills/, guidance_path: guidance/ }',
+        'adapters: [{ id: something, kind: not-a-real-kind }]',
+      ].join('\n');
+      await writeFile(path.join(tmp.root, CONFIG_FILE_NAME), text);
+      await expect(readConfig(tmp.root)).rejects.toBeInstanceOf(InvalidConfigError);
     } finally {
       await tmp.cleanup();
     }

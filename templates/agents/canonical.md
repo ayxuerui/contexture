@@ -12,7 +12,7 @@ Every contexture command resolves the store root in this order: an explicit `--r
 
 ### Write path
 
-Every write to this store happens inside a session worktree, never directly on the default branch: `ctxr session start` creates one, then `ctxr session submit` validates, commits, pushes, and opens (or reports how to open) a pull request. Do not edit files in the store root directly.
+Every write to this store happens inside a session worktree, never directly on the default branch: `ctxr session start` creates one, then `ctxr-submit` validates with `ctxr doctor`, commits, pushes, and opens (or reports how to open) a pull request. Do not edit files in the store root directly.
 
 ### Identity and memory
 

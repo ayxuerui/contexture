@@ -1,4 +1,4 @@
-import { execFile } from 'node:child_process';
+import { execFile, spawn, type ChildProcess } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { hermeticGitEnv } from './git-env.js';
@@ -51,4 +51,45 @@ export async function runCli(args: readonly string[], opts: RunCliOptions): Prom
     );
     child.stdin?.end(opts.stdin ?? '');
   });
+}
+
+export interface RunCliBackgroundResult {
+  child: ChildProcess;
+  /** The first stdout line — a long-running command's one `--json` envelope, emitted before it starts serving. */
+  firstLine: string;
+}
+
+/**
+ * For a command that never exits on its own (`ctxr serve`): spawns the real
+ * built binary and resolves as soon as its first stdout line arrives,
+ * leaving the process running so the test can act on it (e.g. issue HTTP
+ * requests) before calling `stopCliBackground`. `runCli` above cannot be
+ * reused for this — it only resolves once the child has already exited.
+ */
+export async function runCliBackground(args: readonly string[], opts: RunCliOptions): Promise<RunCliBackgroundResult> {
+  const child = spawn('node', [BIN_PATH, ...args], { cwd: opts.cwd, env: opts.env ?? hermeticGitEnv() });
+  child.stdin.end();
+
+  const firstLine = await new Promise<string>((resolve, reject) => {
+    let buffer = '';
+    const onData = (chunk: Buffer): void => {
+      buffer += chunk.toString('utf8');
+      const newlineIndex = buffer.indexOf('\n');
+      if (newlineIndex !== -1) {
+        child.stdout.off('data', onData);
+        resolve(buffer.slice(0, newlineIndex));
+      }
+    };
+    child.stdout.on('data', onData);
+    child.once('error', reject);
+    child.once('exit', (code) => reject(new Error(`process exited before printing its envelope (code ${code})`)));
+  });
+
+  return { child, firstLine };
+}
+
+/** Sends SIGTERM and waits for the process to actually exit, so a test can assert clean shutdown. */
+export async function stopCliBackground(child: ChildProcess): Promise<void> {
+  child.kill('SIGTERM');
+  await new Promise<void>((resolve) => child.once('exit', () => resolve()));
 }

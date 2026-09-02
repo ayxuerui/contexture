@@ -35,7 +35,7 @@ describe('cli-contract: shipped instructions name ctxr (real CLI)', () => {
         expect(content, `${name} still instructs the reader to run contexture <command>`).not.toMatch(STALE_INVOCATION);
       }
       expect(surfaces.get('AGENTS.md')).toMatch(/`ctxr /);
-      expect(surfaces.get('.githooks/pre-push')).toContain("'ctxr session submit'");
+      expect(surfaces.get('.githooks/pre-push')).toContain('ctxr-submit skill');
       expect(surfaces.get('.githooks/pre-commit')).toContain('re-run `ctxr init` or `ctxr doctor`');
       const [skill] = [...surfaces.entries()].filter(([k]) => k.startsWith('skills/')).map(([, v]) => v);
       expect(skill).toContain('`ctxr update`');

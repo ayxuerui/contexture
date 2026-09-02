@@ -13,14 +13,14 @@ function makeConfig(adapters: AdapterDeclaration[]): StoreConfig {
     derived: { paths: [] },
     retrieval: { exclude_paths: [], relations: [], graph: { cluster_depth: 2, hub_top: 8, bridge_top: 10, orphan_exempt_clusters: [] } },
     git: { default_branch: 'main' },
-    session: { branch_prefix: 'session/', worktrees_path: '.worktrees/', workspaces_external: false },
+    session: { branch_prefix: 'session/', worktrees_path: '.worktrees/' },
     write_lifecycle: { diff_size_ceiling_lines: 2000, writable_paths: [] },
     catalog: { path: 'catalog/', section_max_bytes: 32768 },
     publish: { path: 'publish/' },
     skills: { vendored: [] },
     disclosure: { internal_audiences: [], hard_walls: [], leak_markers: {} },
     ingest: { inbox_path: 'inbox/', tracking_params: [] },
-    organize: { archive_path: 'archive/', rollup_stale_days: 7 },
+    organize: { archive_destination: 'archive/', rollup_stale_days: 7 },
     harness: { skills_path: 'skills/', guidance_path: 'guidance/' },
     adapters,
   };
@@ -28,36 +28,20 @@ function makeConfig(adapters: AdapterDeclaration[]): StoreConfig {
 
 describe('resolveAdapter', () => {
   it('resolves a real built-in adapter by (kind, id)', () => {
-    const found = resolveAdapter({ id: 'github', kind: 'forge' });
-    expect(found.id).toBe('github');
-    expect(found.kind).toBe('forge');
+    const found = resolveAdapter({ id: 'claude-code', kind: 'harness-generation' });
+    expect(found.id).toBe('claude-code');
+    expect(found.kind).toBe('harness-generation');
   });
 
   it('throws AdapterNotFoundError for an id not in the registry', () => {
-    expect(() => resolveAdapter({ id: 'nonexistent', kind: 'forge' })).toThrow(AdapterNotFoundError);
-  });
-
-  it('throws AdapterNotFoundError when the id exists but under a different kind', () => {
-    expect(() => resolveAdapter({ id: 'github', kind: 'harness-generation' })).toThrow(AdapterNotFoundError);
+    expect(() => resolveAdapter({ id: 'nonexistent', kind: 'harness-generation' })).toThrow(AdapterNotFoundError);
   });
 
   it('throws AdapterVersionMismatchError for a fixture adapter declaring an unsupported interface version', () => {
-    const fixtureRegistry: Adapter[] = [{ id: 'future-adapter', kind: 'forge', interfaceVersion: 99 }];
-    expect(() => resolveAdapter({ id: 'future-adapter', kind: 'forge' }, fixtureRegistry)).toThrow(
+    const fixtureRegistry: Adapter[] = [{ id: 'future-adapter', kind: 'harness-generation', interfaceVersion: 99 }];
+    expect(() => resolveAdapter({ id: 'future-adapter', kind: 'harness-generation' }, fixtureRegistry)).toThrow(
       AdapterVersionMismatchError,
     );
-  });
-
-  it('session-submit-and-land spec: reports a stale (pre-v2) forge adapter, naming both versions', () => {
-    const fixtureRegistry: Adapter[] = [{ id: 'old-forge', kind: 'forge', interfaceVersion: 1 }];
-    try {
-      resolveAdapter({ id: 'old-forge', kind: 'forge' }, fixtureRegistry);
-      expect.unreachable('expected AdapterVersionMismatchError');
-    } catch (err) {
-      expect(err).toBeInstanceOf(AdapterVersionMismatchError);
-      expect((err as Error).message).toContain('1');
-      expect((err as Error).message).toContain('2');
-    }
   });
 
   it('vendored-craft-skills spec: reports a stale (pre-v2) harness-generation adapter, naming both versions', () => {
@@ -72,36 +56,35 @@ describe('resolveAdapter', () => {
     }
   });
 
-  it('accepts a fixture adapter of each of the two kinds when the version matches', () => {
-    const fixtureRegistry: Adapter[] = [
-      { id: 'fixture-harness', kind: 'harness-generation', interfaceVersion: 2 },
-      { id: 'fixture-forge', kind: 'forge', interfaceVersion: 2 },
-    ];
+  it('accepts a fixture adapter when its declared version matches the supported one', () => {
+    const fixtureRegistry: Adapter[] = [{ id: 'fixture-harness', kind: 'harness-generation', interfaceVersion: 2 }];
     expect(resolveAdapter({ id: 'fixture-harness', kind: 'harness-generation' }, fixtureRegistry).id).toBe(
       'fixture-harness',
     );
-    expect(resolveAdapter({ id: 'fixture-forge', kind: 'forge' }, fixtureRegistry).id).toBe('fixture-forge');
   });
 });
 
 describe('configuredAdapters', () => {
   it('returns only adapters of the requested kind, in declared order', () => {
+    const fixtureRegistry: Adapter[] = [
+      { id: 'first', kind: 'harness-generation', interfaceVersion: 2 },
+      { id: 'second', kind: 'harness-generation', interfaceVersion: 2 },
+    ];
     const config = makeConfig([
-      { id: 'claude-code', kind: 'harness-generation' },
-      { id: 'github', kind: 'forge' },
+      { id: 'first', kind: 'harness-generation' },
+      { id: 'second', kind: 'harness-generation' },
     ]);
-    const forgeAdapters = configuredAdapters(config, 'forge');
-    expect(forgeAdapters).toHaveLength(1);
-    expect(forgeAdapters[0]?.id).toBe('github');
+    const found = configuredAdapters(config, 'harness-generation', fixtureRegistry);
+    expect(found.map((a) => a.id)).toEqual(['first', 'second']);
   });
 
   it('returns an empty list when no adapter of that kind is configured', () => {
-    const config = makeConfig([{ id: 'claude-code', kind: 'harness-generation' }]);
-    expect(configuredAdapters(config, 'forge')).toEqual([]);
+    const config = makeConfig([]);
+    expect(configuredAdapters(config, 'harness-generation')).toEqual([]);
   });
 
   it('propagates AdapterNotFoundError for a declared-but-unregistered adapter', () => {
-    const config = makeConfig([{ id: 'nonexistent', kind: 'forge' }]);
-    expect(() => configuredAdapters(config, 'forge')).toThrow(AdapterNotFoundError);
+    const config = makeConfig([{ id: 'nonexistent', kind: 'harness-generation' }]);
+    expect(() => configuredAdapters(config, 'harness-generation')).toThrow(AdapterNotFoundError);
   });
 });

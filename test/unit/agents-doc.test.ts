@@ -30,14 +30,14 @@ function makeConfig(overrides: Partial<StoreConfig> = {}): StoreConfig {
     derived: { paths: ['.contexture/'] },
     retrieval: { exclude_paths: ['identity/'], relations: [], graph: { cluster_depth: 2, hub_top: 8, bridge_top: 10, orphan_exempt_clusters: [] } },
     git: { default_branch: 'main' },
-    session: { branch_prefix: 'session/', worktrees_path: '.worktrees/', workspaces_external: false },
+    session: { branch_prefix: 'session/', worktrees_path: '.worktrees/' },
     write_lifecycle: { diff_size_ceiling_lines: 2000, writable_paths: [] },
     catalog: { path: 'catalog/', section_max_bytes: 32768 },
     publish: { path: 'publish/' },
     skills: { vendored: [] },
     disclosure: { internal_audiences: [], hard_walls: [], leak_markers: {} },
     ingest: { inbox_path: 'inbox/', tracking_params: [] },
-    organize: { archive_path: 'archive/', rollup_stale_days: 7 },
+    organize: { archive_destination: 'archive/', rollup_stale_days: 7 },
     harness: { skills_path: 'skills/', guidance_path: 'guidance/' },
     adapters: [],
     ...overrides,
@@ -190,10 +190,11 @@ describe('renderCanonicalSection', () => {
     expect(lines).toContain('`lens:`');
   });
 
-  it('states the write-path rule naming session start and session submit', () => {
+  it('states the write-path rule naming session start and the ctxr-submit skill', () => {
     const lines = renderCanonicalSection(makeConfig()).join('\n');
     expect(lines).toMatch(/session start/);
-    expect(lines).toMatch(/session submit/);
+    expect(lines).toMatch(/ctxr-submit/);
+    expect(lines).not.toContain('ctxr session submit');
   });
 
   it('no longer carries a skill index', () => {
@@ -227,7 +228,7 @@ describe('renderCanonicalSection', () => {
   });
 
   it('names the configured mission document, immediately after the boundary paragraph, only when set', () => {
-    const withMission = renderCanonicalSection(makeConfig({ organize: { archive_path: 'archive/', rollup_stale_days: 7, mission_path: 'MISSION.md' } })).join('\n');
+    const withMission = renderCanonicalSection(makeConfig({ organize: { archive_destination: 'archive/', rollup_stale_days: 7, mission_path: 'MISSION.md' } })).join('\n');
     expect(withMission).toContain('`MISSION.md`');
     expect(withMission).toMatch(/session start/);
 
@@ -274,12 +275,12 @@ describe('renderMissionSection / buildAgentsMissionSection', () => {
   });
 
   it('renders nothing when configured but the note does not exist', () => {
-    const config = makeConfig({ organize: { archive_path: 'archive/', rollup_stale_days: 7, mission_path: 'MISSION.md' } });
+    const config = makeConfig({ organize: { archive_destination: 'archive/', rollup_stale_days: 7, mission_path: 'MISSION.md' } });
     expect(renderMissionSection(config, null)).toEqual([]);
   });
 
   it('inlines the mission body under a "## Mission" heading with a source line, heading-demoted one level', () => {
-    const config = makeConfig({ organize: { archive_path: 'archive/', rollup_stale_days: 7, mission_path: 'MISSION.md' } });
+    const config = makeConfig({ organize: { archive_destination: 'archive/', rollup_stale_days: 7, mission_path: 'MISSION.md' } });
     const lines = renderMissionSection(config, '# Mission\n\n## Primary mission\n\nDo the thing.\n').join('\n');
     expect(lines).toContain('## Mission');
     expect(lines).toContain('### Primary mission');
@@ -288,7 +289,7 @@ describe('renderMissionSection / buildAgentsMissionSection', () => {
   });
 
   it('strips a nested contexture fence but keeps its content', () => {
-    const config = makeConfig({ organize: { archive_path: 'archive/', rollup_stale_days: 7, mission_path: 'MISSION.md' } });
+    const config = makeConfig({ organize: { archive_destination: 'archive/', rollup_stale_days: 7, mission_path: 'MISSION.md' } });
     const raw =
       '# Mission\n\n<!-- >>> contexture:rollup (managed — do not edit) >>> -->\n## Primary mission\n\nContent.\n<!-- <<< contexture:rollup <<< -->\n';
     const lines = renderMissionSection(config, raw).join('\n');
@@ -303,7 +304,7 @@ describe('renderMissionSection / buildAgentsMissionSection', () => {
       const { mkdir, writeFile: write } = await import('node:fs/promises');
       await mkdir(tmp.root, { recursive: true });
       await write(path.join(tmp.root, 'MISSION.md'), '# Mission\n\nCurrent priorities.\n');
-      const config = makeConfig({ organize: { archive_path: 'archive/', rollup_stale_days: 7, mission_path: 'MISSION.md' } });
+      const config = makeConfig({ organize: { archive_destination: 'archive/', rollup_stale_days: 7, mission_path: 'MISSION.md' } });
 
       const { changed } = await buildAgentsMissionSection(tmp.root, config);
       expect(changed).toBe(true);
@@ -321,7 +322,7 @@ describe('renderMissionSection / buildAgentsMissionSection', () => {
       const { mkdir, writeFile: write } = await import('node:fs/promises');
       await mkdir(tmp.root, { recursive: true });
       await write(path.join(tmp.root, 'MISSION.md'), '# Mission\n\nStable.\n');
-      const config = makeConfig({ organize: { archive_path: 'archive/', rollup_stale_days: 7, mission_path: 'MISSION.md' } });
+      const config = makeConfig({ organize: { archive_destination: 'archive/', rollup_stale_days: 7, mission_path: 'MISSION.md' } });
 
       await buildAgentsMissionSection(tmp.root, config);
       const { changed } = await buildAgentsMissionSection(tmp.root, config);
@@ -376,7 +377,7 @@ describe('checkAgentsMdDrift', () => {
       const { mkdir, writeFile: write } = await import('node:fs/promises');
       await mkdir(tmp.root, { recursive: true });
       await write(path.join(tmp.root, 'MISSION.md'), '# Mission\n\nOriginal.\n');
-      const config = makeConfig({ organize: { archive_path: 'archive/', rollup_stale_days: 7, mission_path: 'MISSION.md' } });
+      const config = makeConfig({ organize: { archive_destination: 'archive/', rollup_stale_days: 7, mission_path: 'MISSION.md' } });
       await buildAgentsMissionSection(tmp.root, config);
 
       await write(path.join(tmp.root, 'MISSION.md'), '# Mission\n\nChanged.\n');
@@ -570,7 +571,7 @@ describe('exact rendered output', () => {
       "",
       "### Write path",
       "",
-      "Every write to this store happens inside a session worktree, never directly on the default branch: `ctxr session start` creates one, then `ctxr session submit` validates, commits, pushes, and opens (or reports how to open) a pull request. Do not edit files in the store root directly.",
+      "Every write to this store happens inside a session worktree, never directly on the default branch: `ctxr session start` creates one, then `ctxr-submit` validates with `ctxr doctor`, commits, pushes, and opens (or reports how to open) a pull request. Do not edit files in the store root directly.",
       "",
       "### Identity and memory",
       "",
@@ -579,7 +580,7 @@ describe('exact rendered output', () => {
   });
 
   it('renders the canonical section with a mission document configured', () => {
-    const config = makeConfig({ organize: { archive_path: 'archive/', rollup_stale_days: 7, mission_path: 'MISSION.md' } });
+    const config = makeConfig({ organize: { archive_destination: 'archive/', rollup_stale_days: 7, mission_path: 'MISSION.md' } });
     const lines = renderCanonicalSection(config);
     expect(lines.at(-1)).toBe(
       'Load `MISSION.md` at the start of every session — this store\'s standing current-state document, kept current by the mission skill and written through `ctxr rollup write`; its full content follows in the "Mission" section below.',
@@ -588,7 +589,7 @@ describe('exact rendered output', () => {
   });
 
   it('renders the mission section', () => {
-    const config = makeConfig({ organize: { archive_path: 'archive/', rollup_stale_days: 7, mission_path: 'MISSION.md' } });
+    const config = makeConfig({ organize: { archive_destination: 'archive/', rollup_stale_days: 7, mission_path: 'MISSION.md' } });
     expect(renderMissionSection(config, '# Mission\n\nCurrent priorities.\n')).toEqual([
       "## Mission",
       "",

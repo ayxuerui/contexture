@@ -18,19 +18,41 @@ function isHookEntryList(value: MergeListValue): value is readonly HookMatcherEn
   return value.length > 0 && typeof value[0] === 'object' && value[0] !== null;
 }
 
+/** The filename a hook entry's command invokes, independent of the absolute path it's rooted at. */
+function hookCommandBasename(entry: HookMatcherEntry): string {
+  const command = entry.hooks[0]?.command;
+  return command ? path.basename(command) : '';
+}
+
 /**
  * Upserts each incoming hook-matcher entry into the existing list, matched
- * by its own `hooks[0].command` (the path to contexture's generated
- * script): replaced in place when found, so regeneration is idempotent,
- * appended otherwise. Any entry with a different command — an operator's
- * own hook — is left untouched.
+ * by `(matcher, hookCommandBasename)` rather than the full command string —
+ * deliberately blind to the absolute path prefix, since that prefix is
+ * whichever checkout most recently generated it (typically a session
+ * worktree) and so is not stable across runs even for the SAME logical
+ * rule (stabilize-write-gate-hook-path). The first matching existing entry
+ * is replaced in place (preserving its position, so an unrelated
+ * hand-added entry elsewhere in the array is never reordered); any further
+ * entries that also match are dropped, so a list that has already
+ * accumulated more than one stale copy of contexture's own entry (e.g. one
+ * per session worktree that ever regenerated it) converges to exactly one
+ * on this run, not just on a version bump. An entry with a different
+ * matcher or a different script basename — an operator's own hook — is
+ * always left untouched.
  */
 function mergeHookEntries(existing: readonly HookMatcherEntry[], incoming: readonly HookMatcherEntry[]): HookMatcherEntry[] {
   let result = [...existing];
   for (const entry of incoming) {
-    const command = entry.hooks[0]?.command;
-    const index = result.findIndex((candidate) => candidate.hooks?.[0]?.command === command);
-    result = index === -1 ? [...result, entry] : result.map((candidate, i) => (i === index ? entry : candidate));
+    const isSameHook = (candidate: HookMatcherEntry): boolean =>
+      candidate.matcher === entry.matcher && hookCommandBasename(candidate) === hookCommandBasename(entry);
+    let inserted = false;
+    result = result.flatMap((candidate) => {
+      if (!isSameHook(candidate)) return [candidate];
+      if (inserted) return []; // a further stale duplicate of the same rule — drop it
+      inserted = true;
+      return [entry]; // replace the first match in place
+    });
+    if (!inserted) result = [...result, entry];
   }
   return result;
 }

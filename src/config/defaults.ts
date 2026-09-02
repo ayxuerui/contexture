@@ -57,11 +57,23 @@ export const DEFAULT_VENDORED_SKILLS = ['frontend-design'] as const;
  */
 export const DEFAULT_GUIDANCE_PATH = '.contexture/guidance/';
 
-/** The shipped, contexture-owned baseline convention — never hand-edited; refreshed by `ctxr update` like a skill copy. */
-export const DEFAULT_BASELINE_CONVENTION_FILE_NAME = 'baseline-convention.md';
+/** The shipped, contexture-owned baseline conventions — never hand-edited; refreshed by `ctxr update` like a skill copy. */
+export const DEFAULT_BASELINE_CONVENTIONS_FILE_NAME = 'baseline-conventions.md';
 
-/** The operator-authored convention file seeded at init. */
-export const DEFAULT_CUSTOM_CONVENTION_FILE_NAME = 'custom-convention.md';
+/**
+ * The baseline file's pre-rename name. `syncBaselineConventions` removes it
+ * when it still carries the managed-owner header, so the rename leaves no
+ * orphan — the guidance directory is scanned wholesale, so an orphan would
+ * be inlined into AGENTS.md a second time rather than merely sitting unused.
+ */
+export const LEGACY_BASELINE_CONVENTION_FILE_NAME = 'baseline-convention.md';
+
+/**
+ * The operator-authored conventions file seeded at init: this store's house
+ * rules, layered on the shipped baseline and winning where the two speak to
+ * the same thing.
+ */
+export const DEFAULT_HOUSE_CONVENTIONS_FILE_NAME = 'house-conventions.md';
 
 /** context-organize spec: the store's standing current-state document's filename, under the guidance directory. */
 export const DEFAULT_MISSION_FILE_NAME = 'mission.md';
@@ -92,8 +104,6 @@ export const DEFAULT_WORKTREES_PATH = '.worktrees/';
 /** Branch names for session worktrees are prefixed so they're recognizable and sweep-safe. */
 export const DEFAULT_SESSION_BRANCH_PREFIX = 'session/';
 
-/** write-lifecycle spec: worktrees are ctxr-owned (not externally provided) unless a store opts in. */
-export const DEFAULT_WORKSPACES_EXTERNAL = false;
 
 /** write-lifecycle spec: pre-commit's diff-size ceiling, in total changed lines. */
 export const DEFAULT_DIFF_SIZE_CEILING_LINES = 2000;
@@ -117,20 +127,23 @@ export const DEFAULT_INBOX_PATH = 'inbox/';
 /** store-primitives-from-migration-audit spec (D2): the shipped tracking-parameter list source check strips before comparing URL identities. */
 export const DEFAULT_TRACKING_PARAMS = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content', 'fbclid', 'gclid'];
 
-/** context-organize spec: archive's destination, decoupled from any taxonomy layer name. */
-export const DEFAULT_ARCHIVE_PATH = 'archive/';
+/**
+ * context-organize spec: archive's destination, decoupled from any taxonomy
+ * layer name. This is the fallback for a taxonomy that declares none of its
+ * own — a shipped profile with a retirement layer (PARA's Archives) supplies
+ * its `archiveDestination` at init instead, so a PARA store is never born
+ * pointing at a directory its own taxonomy doesn't declare.
+ */
+export const DEFAULT_ARCHIVE_DESTINATION = 'archive/';
 
 /** store-primitives-from-migration-audit spec (D4): grace period, in days, before a stale rollup is reported. */
 export const DEFAULT_ROLLUP_STALE_DAYS = 7;
 
 /**
- * adapters spec: init registers both shipped builtins by default, so
- * out-of-the-box UX (a PR opened on session submit, a generated CLAUDE.md)
- * keeps working without the operator hand-writing config — each is just as
- * removable from this list as it was addable.
+ * adapters spec: init registers the shipped builtin by default, so
+ * out-of-the-box UX (a generated CLAUDE.md) keeps working without the
+ * operator hand-writing config — it is just as removable from this list as
+ * it was addable.
  */
-export const DEFAULT_ADAPTERS: readonly AdapterDeclaration[] = [
-  { id: 'github', kind: 'forge' },
-  { id: 'claude-code', kind: 'harness-generation' },
-];
+export const DEFAULT_ADAPTERS: readonly AdapterDeclaration[] = [{ id: 'claude-code', kind: 'harness-generation' }];
 

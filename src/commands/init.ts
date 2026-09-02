@@ -6,14 +6,13 @@ import { z } from 'zod';
 import type { CommandOutcome, CommandRequires } from '../core/command.js';
 import {
   DEFAULT_ADAPTERS,
-  DEFAULT_ARCHIVE_PATH,
+  DEFAULT_ARCHIVE_DESTINATION,
   DEFAULT_ROLLUP_STALE_DAYS,
   DEFAULT_CATALOG_PATH,
   DEFAULT_CATALOG_SECTION_MAX_BYTES,
   DEFAULT_PUBLISH_PATH,
   DEFAULT_VENDORED_SKILLS,
-  DEFAULT_BASELINE_CONVENTION_FILE_NAME,
-  DEFAULT_CUSTOM_CONVENTION_FILE_NAME,
+  DEFAULT_HOUSE_CONVENTIONS_FILE_NAME,
   DEFAULT_GUIDANCE_PATH,
   DEFAULT_DERIVED_PATHS,
   DEFAULT_DIFF_SIZE_CEILING_LINES,
@@ -29,7 +28,6 @@ import {
   DEFAULT_SESSION_BRANCH_PREFIX,
   DEFAULT_VISIBILITY_CONTEXT,
   DEFAULT_VISIBILITY_FIELD_KEY,
-  DEFAULT_WORKSPACES_EXTERNAL,
   DEFAULT_WORKTREES_PATH,
 } from '../config/defaults.js';
 import { configPathFor, readConfig } from '../config/load.js';
@@ -50,7 +48,7 @@ import {
   buildAgentsPlacementSection,
   agentsMdPath,
 } from '../core/agents-doc.js';
-import { seedCustomConventionFile, syncBaselineConvention } from '../core/convention-doc.js';
+import { seedHouseConventionsFile } from '../core/convention-doc.js';
 import { syncShippedSkills, syncVendoredSkills } from '../core/skills.js';
 import { bridgeHarnessSkills } from '../core/harness/bridge.js';
 import { reconcileStore, WORKTREES_GITIGNORE_FENCE } from '../core/reconcile.js';
@@ -71,7 +69,7 @@ import { addPaths, commitIfStaged, currentBranch, findToplevel, gitInit, hasGitI
 import { configureHooksPath, installHooks } from '../core/hooks.js';
 import { DERIVED_GITIGNORE_FENCE } from '../core/markers.js';
 import { resolveRootForInit } from '../core/root.js';
-import { defaultProfile, DEFAULT_PROFILE_ID, profileById, SHIPPED_PROFILES } from '../taxonomy/profiles.js';
+import { defaultProfile, DEFAULT_PROFILE_ID, profileById, SHIPPED_PROFILES, type TaxonomyProfile } from '../taxonomy/profiles.js';
 
 export const requires: CommandRequires = { store: 'absent' };
 
@@ -100,6 +98,26 @@ interface ResolvedTaxonomy {
   /** The value stored in contexture.yaml's taxonomy.profile — "custom" for a custom definition. */
   profileId: string;
   layers: TaxonomyLayerConfig[];
+  /**
+   * archive-destination-from-taxonomy: the profile's own archive destination,
+   * when it declares one. Undefined for a custom taxonomy and for any shipped
+   * profile without a retirement layer — those fall back to
+   * `DEFAULT_ARCHIVE_DESTINATION`.
+   */
+  archiveDestination?: string;
+}
+
+/**
+ * Spread rather than a plain key, so `archiveDestination` stays genuinely
+ * optional on `ResolvedTaxonomy` rather than always-present-but-possibly-
+ * undefined, matching how the config schema keeps its own optional fields.
+ */
+function fromProfile(profile: TaxonomyProfile): ResolvedTaxonomy {
+  return {
+    profileId: profile.id,
+    layers: [...profile.layers],
+    ...(profile.archiveDestination !== undefined ? { archiveDestination: profile.archiveDestination } : {}),
+  };
 }
 
 async function resolveTaxonomy(env: RunEnv, flags: InitFlags): Promise<ResolvedTaxonomy> {
@@ -129,7 +147,7 @@ async function resolveTaxonomy(env: RunEnv, flags: InitFlags): Promise<ResolvedT
         SHIPPED_PROFILES.map((p) => p.id),
       );
     }
-    return { profileId: profile.id, layers: [...profile.layers] };
+    return fromProfile(profile);
   }
 
   if (isInteractive(env)) {
@@ -139,12 +157,11 @@ async function resolveTaxonomy(env: RunEnv, flags: InitFlags): Promise<ResolvedT
       defaultId: DEFAULT_PROFILE_ID,
     });
     const profile = profileById(selectedId) ?? defaultProfile();
-    return { profileId: profile.id, layers: [...profile.layers] };
+    return fromProfile(profile);
   }
 
   // Non-interactive, nothing specified: PARA immediately — never prompt, never block.
-  const profile = defaultProfile();
-  return { profileId: profile.id, layers: [...profile.layers] };
+  return fromProfile(defaultProfile());
 }
 
 /**
@@ -287,14 +304,14 @@ async function runInitCore(env: RunEnv, flags: InitFlags): Promise<RunInitResult
     derived: { paths: [...DEFAULT_DERIVED_PATHS] },
     retrieval: { exclude_paths: [...DEFAULT_EXCLUDE_PATHS], relations: [...DEFAULT_RELATIONS], graph: { ...DEFAULT_GRAPH_SETTINGS, orphan_exempt_clusters: [] } },
     git: { default_branch: defaultBranch },
-    session: { branch_prefix: DEFAULT_SESSION_BRANCH_PREFIX, worktrees_path: DEFAULT_WORKTREES_PATH, workspaces_external: DEFAULT_WORKSPACES_EXTERNAL },
+    session: { branch_prefix: DEFAULT_SESSION_BRANCH_PREFIX, worktrees_path: DEFAULT_WORKTREES_PATH },
     write_lifecycle: { diff_size_ceiling_lines: DEFAULT_DIFF_SIZE_CEILING_LINES, writable_paths: [] },
     catalog: { path: DEFAULT_CATALOG_PATH, section_max_bytes: DEFAULT_CATALOG_SECTION_MAX_BYTES },
     publish: { path: DEFAULT_PUBLISH_PATH },
     skills: { vendored: [...DEFAULT_VENDORED_SKILLS] },
     disclosure: { internal_audiences: [...DEFAULT_INTERNAL_AUDIENCES], hard_walls: [...DEFAULT_HARD_WALLS], leak_markers: {} },
     ingest: { inbox_path: DEFAULT_INBOX_PATH, tracking_params: [...DEFAULT_TRACKING_PARAMS] },
-    organize: { archive_path: DEFAULT_ARCHIVE_PATH, rollup_stale_days: DEFAULT_ROLLUP_STALE_DAYS, mission_path: DEFAULT_MISSION_PATH },
+    organize: { archive_destination: taxonomy.archiveDestination ?? DEFAULT_ARCHIVE_DESTINATION, rollup_stale_days: DEFAULT_ROLLUP_STALE_DAYS, mission_path: DEFAULT_MISSION_PATH },
     harness: { skills_path: DEFAULT_SKILLS_PATH, guidance_path: DEFAULT_GUIDANCE_PATH },
     adapters: resolvedAdapters,
   };
@@ -308,8 +325,7 @@ async function runInitCore(env: RunEnv, flags: InitFlags): Promise<RunInitResult
 
   // Guidance-directory content must be current BEFORE the AGENTS.md sections
   // that read it (mission, store conventions) are built below.
-  await syncBaselineConvention(root, config);
-  const customConventionSeeded = await seedCustomConventionFile(root, config);
+  const houseConventionsSeeded = await seedHouseConventionsFile(root, config);
   const missionSeeded = config.organize.mission_path ? await seedMissionDocument(root, config.organize.mission_path) : null;
 
   // harness-portability spec "Generated sections render in a fixed order":
@@ -327,8 +343,7 @@ async function runInitCore(env: RunEnv, flags: InitFlags): Promise<RunInitResult
   await buildAgentsConventionsSection(root, config);
 
   const guidanceFilesCreated = [
-    path.join(config.harness.guidance_path, DEFAULT_BASELINE_CONVENTION_FILE_NAME),
-    ...(customConventionSeeded.created ? [path.join(config.harness.guidance_path, DEFAULT_CUSTOM_CONVENTION_FILE_NAME)] : []),
+    ...(houseConventionsSeeded.created ? [path.join(config.harness.guidance_path, DEFAULT_HOUSE_CONVENTIONS_FILE_NAME)] : []),
     ...(missionSeeded ? [missionSeeded] : []),
   ].map((p) => p.split(path.sep).join('/'));
 
