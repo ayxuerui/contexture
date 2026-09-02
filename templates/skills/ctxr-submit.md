@@ -18,14 +18,13 @@ a session, the conflict playbook, sequencing several pull requests) and is not r
 6. Commit: `git commit -m "<message>"`, describing the unit staged in step 3.
 7. Name the branch: if it still carries a generated name, `git branch -m "<name>"` before pushing — never
    let a generated name reach the forge.
-8. Fire gate: pushing the branch and opening the pull request are external side effects, and plan consent
-   is not fire consent. Present the branch, the title, and what rides it; wait for an explicit go before
-   running the next step.
-9. Run: `git push -u origin "<branch>"`, then `gh pr create --base __DEFAULT_BRANCH__ --title "<title>" --body
-   "<why / what changed / verification / follow-ups>"`. If `gh` has no reachable GitHub remote for this
-   repository, `git push` still succeeds on its own — report the pushed branch and give the operator the
-   manual pull-request instructions instead of retrying `gh`.
-10. Verify before any retry: a transport error can arrive AFTER the push or the pull-request open already
-    succeeded. Before retrying anything, `git ls-remote origin <branch>` and `gh pr list --head <branch>` —
-    never replay a push or a pull-request open blindly.
-11. Hand off: report the pull request, then point at `ctxr-land` for after review.
+8. Run: `git push -u origin "<branch>"`, then `gh pr create --base __DEFAULT_BRANCH__ --title "<title>" --body
+   "<why / what changed / verification / follow-ups>"`. Do not stop to confirm first — the request to
+   submit is the consent for both, and `ctxr doctor` in step 5 is the gate on this path. If `gh` has no
+   reachable GitHub remote for this repository, `git push` still succeeds on its own — report the pushed
+   branch and give the operator the manual pull-request instructions instead of retrying `gh`.
+9. Verify before any retry: a transport error can arrive AFTER the push or the pull-request open already
+   succeeded. Before retrying anything, `git ls-remote origin <branch>` and `gh pr list --head <branch>` —
+   never replay a push or a pull-request open blindly.
+10. Hand off: report the pull request, then point at `ctxr-land` for after review — landing is a separate
+    decision and keeps its own explicit confirmation.
