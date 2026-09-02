@@ -26,6 +26,8 @@ const SKILLS_ADDED_BY_THIS_RELEASE = [
   // session-submit-and-land:
   'ctxr-submit',
   'ctxr-land',
+  // publish-artifact-skill:
+  'ctxr-publish',
 ];
 
 /**
@@ -36,14 +38,14 @@ const SKILLS_ADDED_BY_THIS_RELEASE = [
  * `ctxr update`, and the next update is a no-op.
  */
 describe('owned skills: delivered by init, expanded by update', () => {
-  it('init writes all twelve owned skills with the managed header', async () => {
+  it('init writes all thirteen owned skills with the managed header', async () => {
     const tmp = await makeTmpDir();
     try {
       const env = makeFakeEnv({ cwd: tmp.root, env: GIT_IDENTITY });
       await init(env, { root: tmp.root, profile: 'para' });
-      expect(SKILLS).toHaveLength(12);
+      expect(SKILLS).toHaveLength(13);
       for (const p of SKILLS) {
-        const file = path.join(tmp.root, '.claude/skills', p.file, 'SKILL.md');
+        const file = path.join(tmp.root, '.agents/skills', p.file, 'SKILL.md');
         expect(existsSync(file), p.file).toBe(true);
         expect(await readFile(file, 'utf8')).toContain(MANAGED_SKILL_HEADER);
       }
@@ -65,9 +67,9 @@ describe('owned skills: delivered by init, expanded by update', () => {
       // index (inline-conventions-and-mission removed it), so there is
       // nothing about AGENTS.md itself to rewind for this scenario.
       for (const slug of SKILLS_ADDED_BY_THIS_RELEASE) {
-        await rm(path.join(tmp.root, '.claude/skills', slug), { recursive: true, force: true });
+        await rm(path.join(tmp.root, '.agents/skills', slug), { recursive: true, force: true });
       }
-      const placementPath = path.join(tmp.root, '.claude/skills/ctxr-placement/SKILL.md');
+      const placementPath = path.join(tmp.root, '.agents/skills/ctxr-placement/SKILL.md');
       await writeFile(
         placementPath,
         `---\nname: ctxr-placement\ndescription: Choose the right taxonomy layer for a new or relocated note in this contexture store.\n---\n\n${MANAGED_SKILL_HEADER}\n\n# Placement\n\n1. Read AGENTS.md.\n`,
@@ -75,10 +77,10 @@ describe('owned skills: delivered by init, expanded by update', () => {
 
       const outcome = await update(env, store);
       const changed = outcome.data?.changed ?? [];
-      for (const slug of SKILLS_ADDED_BY_THIS_RELEASE) expect(changed).toContain(`.claude/skills/${slug}/SKILL.md`);
-      expect(changed).toContain('.claude/skills/ctxr-placement/SKILL.md');
+      for (const slug of SKILLS_ADDED_BY_THIS_RELEASE) expect(changed).toContain(`.agents/skills/${slug}/SKILL.md`);
+      expect(changed).toContain('.agents/skills/ctxr-placement/SKILL.md');
       for (const slug of SKILLS_ADDED_BY_THIS_RELEASE) {
-        expect(existsSync(path.join(tmp.root, '.claude/skills', slug, 'SKILL.md'))).toBe(true);
+        expect(existsSync(path.join(tmp.root, '.agents/skills', slug, 'SKILL.md'))).toBe(true);
       }
       expect(await readFile(placementPath, 'utf8')).toContain('The collision test');
 

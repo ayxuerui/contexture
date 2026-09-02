@@ -109,7 +109,7 @@ describe('entry-doc generation (real CLI)', () => {
       );
       await writeNote(
         tmp.root,
-        '.claude/skills/weekly-review/SKILL.md',
+        '.agents/skills/weekly-review/SKILL.md',
         '---\nname: weekly-review\ndescription: Walk the health checks weekly.\n---\n\nSteps.\n',
       );
 

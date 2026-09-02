@@ -22,15 +22,20 @@ export interface Adapter<K extends AdapterKind = AdapterKind> {
  * these is a deliberate, breaking change to that kind's interface.
  */
 export const SUPPORTED_ADAPTER_INTERFACE_VERSION: Record<AdapterKind, number> = {
-  'harness-generation': 1,
+  // vendored-craft-skills spec: skillsDir joined the harness-generation interface at v2,
+  // and entryFileName/render became optional (a skills-only adapter needs neither).
+  'harness-generation': 2,
 };
 
 /**
  * A harness-generation adapter produces one harness-specific entry file
  * containing nothing beyond an import of AGENTS.md plus that harness's own
- * extras (harness-portability spec). `render()` returns exactly the lines
- * placed inside contexture's managed fenced region in that file — never the
- * whole file, so a hand-authored preamble outside the fence survives.
+ * extras (harness-portability spec), when it declares one at all —
+ * `entryFileName`/`render` are optional at v2 for a harness that reads the
+ * canonical entry document directly. `render()`, when present, returns
+ * exactly the lines placed inside contexture's managed fenced region in
+ * that file — never the whole file, so a hand-authored preamble outside the
+ * fence survives.
  */
 /**
  * `root` is the store's absolute filesystem path. Permission-rule paths are
@@ -48,9 +53,18 @@ export interface PermissionConfigInput {
 }
 
 export interface HarnessGenerationAdapter extends Adapter<'harness-generation'> {
-  /** The harness-specific file this adapter writes, relative to the store root (e.g. "CLAUDE.md"). */
-  entryFileName: string;
-  render(agentsMdPath: string): string[];
+  /**
+   * vendored-craft-skills spec: the store-relative directory this harness
+   * reads skills from (e.g. ".claude/skills/"). Contexture bridges this
+   * directory to the store's configured (canonical) skills path rather than
+   * writing skills here directly — never derived by inspecting the host
+   * machine, always the adapter's declaration (or a store's override, see
+   * AdapterDeclarationSchema.skills_dir).
+   */
+  skillsDir: string;
+  /** The harness-specific file this adapter writes, relative to the store root (e.g. "CLAUDE.md"). Omit for a harness that reads AGENTS.md directly — no entry file is generated for it. */
+  entryFileName?: string;
+  render?(agentsMdPath: string): string[];
   /** Optional: harnesses that support a structured permission config (task 8.4). */
   permissionConfig?: {
     /** Relative to the store root (e.g. ".claude/settings.json"). */

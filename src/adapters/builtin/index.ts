@@ -1,8 +1,9 @@
 import { claudeCodeHarnessAdapter } from '../harness/claude-code.js';
+import { hermesAgentHarnessAdapter } from '../harness/hermes-agent.js';
 import type { Adapter } from '../types.js';
 
 /**
  * Every adapter shipped with contexture itself, resolved by (kind, id)
  * against contexture.yaml's declared list.
  */
-export const BUILTIN_ADAPTERS: readonly Adapter[] = [claudeCodeHarnessAdapter];
+export const BUILTIN_ADAPTERS: readonly Adapter[] = [claudeCodeHarnessAdapter, hermesAgentHarnessAdapter];

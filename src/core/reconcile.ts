@@ -1,6 +1,7 @@
 import path from 'node:path';
 import { DEFAULT_BASELINE_CONVENTION_FILE_NAME } from '../config/defaults.js';
 import type { StoreConfig } from '../config/schema.js';
+import { CLI_VERSION } from '../version.js';
 import type { RunEnv } from './env.js';
 import {
   agentsMdPath,
@@ -12,11 +13,13 @@ import {
   buildAgentsMissionSection,
   buildAgentsPlacementSection,
 } from './agents-doc.js';
+import type { Finding } from './envelope.js';
 import { syncBaselineConvention } from './convention-doc.js';
 import { removeFencedRegionFromFile, reorderFencedRegionsInFile, upsertFencedRegionInFile } from './fs/fenced-region.js';
+import { bridgeHarnessSkills } from './harness/bridge.js';
 import { configureHooksPath, installHooks } from './hooks.js';
 import { commentFence, DERIVED_GITIGNORE_FENCE, htmlCommentFence } from './markers.js';
-import { syncShippedSkills } from './skills.js';
+import { syncShippedSkills, syncVendoredSkills } from './skills.js';
 
 export const WORKTREES_GITIGNORE_FENCE = commentFence('worktrees');
 
@@ -45,6 +48,8 @@ const RETIRED_AGENTS_MD_STORE_CONVENTIONS_FENCE = htmlCommentFence('store-conven
 export interface ReconcileResult {
   /** Store-relative paths written this run (an up-to-date store yields none). */
   changed: string[];
+  /** e.g. a vendored skill left in place because it was modified locally. */
+  findings: Finding[];
 }
 
 /**
@@ -73,6 +78,15 @@ export async function reconcileStore(env: RunEnv, root: string, config: StoreCon
   // removed the skill index), but because init/update must still deliver
   // the skill files to disk regardless of what AGENTS.md renders.
   changed.push(...(await syncShippedSkills(root, config)));
+  const vendoredResult = await syncVendoredSkills(root, config, CLI_VERSION);
+  changed.push(...vendoredResult.changed);
+  const findings: Finding[] = [...vendoredResult.findings];
+
+  // Bridges every declared harness's skills directory to the canonical
+  // path (creating, or repairing a broken one) — after the skills
+  // themselves are current, so a freshly created bridge or copy reflects
+  // this run's content, not a stale one.
+  changed.push(...(await bridgeHarnessSkills(root, config)).map((r) => r.path));
 
   // Same reason, same ordering constraint as skills: the shipped baseline
   // convention file must be current on disk BEFORE buildAgentsConventionsSection
@@ -106,5 +120,5 @@ export async function reconcileStore(env: RunEnv, root: string, config: StoreCon
   changed.push(...hookFiles);
   await configureHooksPath(env.git, root);
 
-  return { changed: [...new Set(changed)] };
+  return { changed: [...new Set(changed)], findings };
 }

@@ -15,6 +15,7 @@ import { extractDocMetadata, scanConventions } from '../conventions.js';
 import type { Finding } from '../envelope.js';
 import { readFencedRegion, removeFencedRegion } from '../fs/fenced-region.js';
 import { buildGraphFromNotes, graphBuildOptions } from '../graph/model.js';
+import { effectiveSkillsDir, isBridgeBroken } from '../harness/bridge.js';
 import { harnessEntryFence } from '../markers.js';
 import type { StagedFile } from './types.js';
 import { defineCheck } from './types.js';
@@ -157,6 +158,39 @@ export const adapterCompatibilityCheck = defineCheck({
   },
 });
 
+/**
+ * harness-portability spec (vendored-craft-skills): "a broken bridge is
+ * detected and repaired" — the read-only half. A harness whose effective
+ * directory already equals the configured skills path has no bridge to
+ * check (same as `bridgeHarnessSkills` skipping it, per the adapters spec's
+ * "no bridge is created" scenario).
+ */
+export const harnessSkillsBridgeCheck = defineCheck({
+  id: 'harness_portability.skills_bridge',
+  title: 'Every declared harness\'s skills directory resolves to the canonical skills path',
+  severity: 'invariant',
+  capability: 'harness-portability',
+  scopes: ['store'],
+  async run(ctx) {
+    const canonical = ctx.config.harness.skills_path;
+    const findings: Finding[] = [];
+    for (const adapter of configuredAdapters(ctx.config, 'harness-generation')) {
+      const harnessDir = effectiveSkillsDir(ctx.config, adapter.id, adapter.skillsDir);
+      if (harnessDir === canonical) continue;
+      if (await isBridgeBroken(ctx.storeRoot, canonical, harnessDir)) {
+        findings.push({
+          code: 'harness_portability.broken_bridge',
+          severity: 'error',
+          message: `"${harnessDir}" (${adapter.id}) does not resolve to the configured skills path "${canonical}" — run \`ctxr update\` to repair it.`,
+          subject: adapter.id,
+          details: { path: harnessDir, canonical },
+        });
+      }
+    }
+    return { status: findings.length > 0 ? 'fail' : 'pass', findings };
+  },
+});
+
 const MARKDOWN_HEADING_RE = /^#{1,6}\s+(.+)$/gm;
 
 function headingsOf(text: string): Set<string> {
@@ -205,6 +239,7 @@ export const harnessEntryNoDuplicateConventionTextCheck = defineCheck({
 
     const findings: Finding[] = [];
     for (const adapter of adapters) {
+      if (adapter.entryFileName === undefined) continue; // skills-only adapter — no entry file to check
       let entryContent: string;
       try {
         entryContent = await readFile(path.join(ctx.storeRoot, adapter.entryFileName), 'utf8');
@@ -393,6 +428,7 @@ export const INTEGRITY_CHECKS = [
   schemaVersionCurrencyCheck,
   adapterCompatibilityCheck,
   harnessEntryNoDuplicateConventionTextCheck,
+  harnessSkillsBridgeCheck,
   noUnrecognizedConfigKeysCheck,
   agentsMdInlinedContentCurrentCheck,
   stagedAgentsMdInlinedContentCurrentCheck,

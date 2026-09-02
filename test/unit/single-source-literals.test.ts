@@ -74,6 +74,8 @@ describe('single-source-literals guard', () => {
       session: { branch_prefix: 'session/', worktrees_path: '.worktrees/' },
       write_lifecycle: { diff_size_ceiling_lines: 2000, writable_paths: [] },
     catalog: { path: 'catalog/', section_max_bytes: 32768 },
+    publish: { path: 'publish/' },
+    skills: { vendored: [] },
     disclosure: { internal_audiences: [], hard_walls: [], leak_markers: {} },
     ingest: { inbox_path: 'inbox/', tracking_params: [] },
     organize: { archive_path: 'archive/', rollup_stale_days: 7 },
@@ -100,15 +102,18 @@ describe('single-source-literals guard', () => {
     expect(filesContainingSubstring('process.stdout', ['core/reporter.ts', 'core/env.ts'])).toEqual([]);
   });
 
-  it('git has exactly one call site that spawns it', () => {
-    // core/git/exec.ts is git's single home, behind the GitRunner interface
-    // every other module depends on instead. gh is no longer spawned by the
-    // CLI at all (session-keeps-only-what-git-cannot-do) — the forge adapter
-    // that once wrapped it is gone, and gh now runs only from skill-driven
-    // agent invocations, never from this codebase's own process. The
-    // invariant this guards is "no ad hoc, scattered subprocess spawning,"
-    // not "only one file in the whole codebase may ever spawn anything."
-    const allow = ['core/git/exec.ts'];
+  it('each external CLI tool has exactly one call site that spawns it', () => {
+    // git and node --check are two different external tools with two
+    // different single homes — core/git/exec.ts for git (behind the
+    // GitRunner interface every other module depends on instead),
+    // core/publish/script-check.ts for node --check (publish check's
+    // embedded-script syntax pass). gh is no longer spawned by the CLI at
+    // all (session-keeps-only-what-git-cannot-do) — the forge adapter that
+    // once wrapped it is gone, and gh now runs only from skill-driven agent
+    // invocations, never from this codebase's own process. The invariant
+    // this guards is "no ad hoc, scattered subprocess spawning," not "only
+    // one file in the whole codebase may ever spawn anything."
+    const allow = ['core/git/exec.ts', 'core/publish/script-check.ts'];
     const hits = new Set([
       ...filesContainingSubstring("'node:child_process'", allow),
       ...filesContainingSubstring('"node:child_process"', allow),

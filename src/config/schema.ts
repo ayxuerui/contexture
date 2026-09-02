@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { DEFAULT_PUBLISH_PATH, DEFAULT_VENDORED_SKILLS } from './defaults.js';
 
 /**
  * store-lifecycle spec: schema_version versions STORE STATE (config shape +
@@ -111,6 +112,27 @@ const WriteLifecycleSchema = z.object({
 const CatalogSchema = z.object({
   path: z.string().min(1),
   section_max_bytes: z.number().int().positive(),
+});
+
+/**
+ * publish spec (design.md): unlike every other tool-owned path field, this one is
+ * schema-optional with a default — a `contexture.yaml` written before this field
+ * existed has no `publish:` key at all, and `readConfig`'s strict `safeParse` has
+ * no default-merging, so a required field here would break every pre-existing
+ * store. `init` still writes it explicitly for a freshly generated config.
+ */
+const PublishSchema = z.object({
+  path: z.string().min(1).default(DEFAULT_PUBLISH_PATH),
+});
+
+/**
+ * harness-portability spec (vendored-craft-skills): which vendored
+ * third-party skills a store wants, defaulting to the shipped set so a
+ * `contexture.yaml` predating this key still parses. An empty list opts
+ * out entirely — same schema-optional-with-default shape as `publish`.
+ */
+const SkillsSchema = z.object({
+  vendored: z.array(z.string()).default([...DEFAULT_VENDORED_SKILLS]),
 });
 
 /**
@@ -236,6 +258,8 @@ const AdapterDeclarationSchema = z.object({
   id: z.string().min(1),
   kind: AdapterKindSchema,
   module: z.string().min(1).optional(),
+  /** vendored-craft-skills spec: overrides a harness-generation adapter's declared skillsDir for this store; equal to the configured skills path means no bridge is created. */
+  skills_dir: z.string().min(1).optional(),
 });
 
 /**
@@ -265,6 +289,8 @@ export const StoreConfigSchema = z
     session: SessionSchema,
     write_lifecycle: WriteLifecycleSchema,
     catalog: CatalogSchema,
+    publish: PublishSchema.default({ path: DEFAULT_PUBLISH_PATH }),
+    skills: SkillsSchema.default({ vendored: [...DEFAULT_VENDORED_SKILLS] }),
     disclosure: DisclosureSchema,
     ingest: IngestSchema,
     organize: OrganizeSchema,

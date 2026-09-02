@@ -16,6 +16,8 @@ function makeConfig(adapters: AdapterDeclaration[]): StoreConfig {
     session: { branch_prefix: 'session/', worktrees_path: '.worktrees/' },
     write_lifecycle: { diff_size_ceiling_lines: 2000, writable_paths: [] },
     catalog: { path: 'catalog/', section_max_bytes: 32768 },
+    publish: { path: 'publish/' },
+    skills: { vendored: [] },
     disclosure: { internal_audiences: [], hard_walls: [], leak_markers: {} },
     ingest: { inbox_path: 'inbox/', tracking_params: [] },
     organize: { archive_path: 'archive/', rollup_stale_days: 7 },
@@ -42,20 +44,20 @@ describe('resolveAdapter', () => {
     );
   });
 
-  it('reports a stale (pre-current) harness-generation adapter, naming both versions (session-keeps-only-what-git-cannot-do)', () => {
-    const fixtureRegistry: Adapter[] = [{ id: 'old-harness', kind: 'harness-generation', interfaceVersion: 0 }];
+  it('vendored-craft-skills spec: reports a stale (pre-v2) harness-generation adapter, naming both versions', () => {
+    const fixtureRegistry: Adapter[] = [{ id: 'old-harness', kind: 'harness-generation', interfaceVersion: 1 }];
     try {
       resolveAdapter({ id: 'old-harness', kind: 'harness-generation' }, fixtureRegistry);
       expect.unreachable('expected AdapterVersionMismatchError');
     } catch (err) {
       expect(err).toBeInstanceOf(AdapterVersionMismatchError);
-      expect((err as Error).message).toContain('0');
       expect((err as Error).message).toContain('1');
+      expect((err as Error).message).toContain('2');
     }
   });
 
   it('accepts a fixture adapter when its declared version matches the supported one', () => {
-    const fixtureRegistry: Adapter[] = [{ id: 'fixture-harness', kind: 'harness-generation', interfaceVersion: 1 }];
+    const fixtureRegistry: Adapter[] = [{ id: 'fixture-harness', kind: 'harness-generation', interfaceVersion: 2 }];
     expect(resolveAdapter({ id: 'fixture-harness', kind: 'harness-generation' }, fixtureRegistry).id).toBe(
       'fixture-harness',
     );
@@ -65,8 +67,8 @@ describe('resolveAdapter', () => {
 describe('configuredAdapters', () => {
   it('returns only adapters of the requested kind, in declared order', () => {
     const fixtureRegistry: Adapter[] = [
-      { id: 'first', kind: 'harness-generation', interfaceVersion: 1 },
-      { id: 'second', kind: 'harness-generation', interfaceVersion: 1 },
+      { id: 'first', kind: 'harness-generation', interfaceVersion: 2 },
+      { id: 'second', kind: 'harness-generation', interfaceVersion: 2 },
     ];
     const config = makeConfig([
       { id: 'first', kind: 'harness-generation' },
