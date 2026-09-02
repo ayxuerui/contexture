@@ -1,7 +1,10 @@
+import { mkdir, writeFile } from 'node:fs/promises';
+import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { checkMissionStaleness, checkRollupStaleness, findStaleRollups, hasRollupSection, ROLLED_UP_FIELD, ROLLUP_FENCE } from '../../src/core/rollup.js';
 import type { Note } from '../../src/core/notes/list.js';
 import { fakeGitRunner } from '../helpers/fake-env.js';
+import { makeTmpDir } from '../helpers/tmp-store.js';
 
 function entity(relPath: string, rolledUp: string | null, extra = ''): Note {
   const frontmatter: Record<string, unknown> = {};
@@ -121,27 +124,68 @@ describe('checkMissionStaleness (context-organize spec: generalize-identity-migr
   });
 });
 
+/**
+ * compose-store-guidance-documents: the mission document is now read
+ * directly from disk (it typically lives under the guidance directory,
+ * which is excluded from the note listing `findStaleRollups`'s other half
+ * still operates on in-memory) — these tests write a real file under a
+ * temp store root rather than relying on the `notes` array to carry it.
+ */
+async function writeMissionFile(root: string, relPath: string, rolledUp: string | null, extra = ''): Promise<void> {
+  const full = path.join(root, relPath);
+  await mkdir(path.dirname(full), { recursive: true });
+  const frontmatter = rolledUp !== null ? `---\n${ROLLED_UP_FIELD}: ${rolledUp}\n---\n` : '';
+  await writeFile(full, `${frontmatter}# Mission\n\n${extra}`);
+}
+
 describe('findStaleRollups (mission path)', () => {
   it('an unwritten mission document is included as a candidate even without a ROLLUP_FENCE', async () => {
-    const notes = [plainNote('MISSION.md', null)];
-    const git = gitWithDates({});
-    const results = await findStaleRollups(git, '/repo', notes, { missionPath: 'MISSION.md' }, 7, new Date('2026-06-01T00:00:00.000Z'));
-    expect(results.map((r) => r.entity)).toEqual(['MISSION.md']);
-    expect(results[0]?.newestBacklink).toBeNull();
+    const tmp = await makeTmpDir();
+    try {
+      await writeMissionFile(tmp.root, 'MISSION.md', null);
+      const git = gitWithDates({});
+      const results = await findStaleRollups(git, tmp.root, [], { missionPath: 'MISSION.md' }, 7, new Date('2026-06-01T00:00:00.000Z'));
+      expect(results.map((r) => r.entity)).toEqual(['MISSION.md']);
+      expect(results[0]?.newestBacklink).toBeNull();
+    } finally {
+      await tmp.cleanup();
+    }
   });
 
   it('an aged mission document is stale regardless of unrelated notes being recently modified', async () => {
-    const notes = [entity('MISSION.md', '2026-01-01T00:00:00.000Z'), entity('other.md', '2026-05-01T00:00:00.000Z')];
-    const git = gitWithDates({});
-    const results = await findStaleRollups(git, '/repo', notes, { missionPath: 'MISSION.md' }, 7, new Date('2026-02-01T00:00:00.000Z'));
-    expect(results.map((r) => r.entity)).toEqual(['MISSION.md']);
+    const tmp = await makeTmpDir();
+    try {
+      await writeMissionFile(tmp.root, 'MISSION.md', '2026-01-01T00:00:00.000Z');
+      const notes = [entity('other.md', '2026-05-01T00:00:00.000Z')];
+      const git = gitWithDates({});
+      const results = await findStaleRollups(git, tmp.root, notes, { missionPath: 'MISSION.md' }, 7, new Date('2026-02-01T00:00:00.000Z'));
+      expect(results.map((r) => r.entity)).toEqual(['MISSION.md']);
+    } finally {
+      await tmp.cleanup();
+    }
   });
 
   it('a freshly rolled-up mission document is not reported', async () => {
-    const notes = [entity('MISSION.md', '2026-01-30T00:00:00.000Z')];
-    const git = gitWithDates({});
-    const results = await findStaleRollups(git, '/repo', notes, { missionPath: 'MISSION.md' }, 7, new Date('2026-02-01T00:00:00.000Z'));
-    expect(results).toEqual([]);
+    const tmp = await makeTmpDir();
+    try {
+      await writeMissionFile(tmp.root, 'MISSION.md', '2026-01-30T00:00:00.000Z');
+      const git = gitWithDates({});
+      const results = await findStaleRollups(git, tmp.root, [], { missionPath: 'MISSION.md' }, 7, new Date('2026-02-01T00:00:00.000Z'));
+      expect(results).toEqual([]);
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('an unconfigured mission path (no file on disk) yields no mission candidate', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const git = gitWithDates({});
+      const results = await findStaleRollups(git, tmp.root, [], { missionPath: 'MISSION.md' }, 7, new Date());
+      expect(results).toEqual([]);
+    } finally {
+      await tmp.cleanup();
+    }
   });
 
   it('with no missionPath configured, the candidate set and results are unchanged from the pre-existing behavior', async () => {
@@ -157,10 +201,16 @@ describe('findStaleRollups (mission path)', () => {
     // "topic.md" carries a ROLLUP_FENCE (so the entity scan would normally
     // evaluate it) AND is the configured mission path — the mission rule
     // must own it exclusively, not double-report or blend rules.
-    const notes = [entity('topic.md', '2026-01-01T00:00:00.000Z'), backlink('a.md', 'topic')];
-    const git = gitWithDates({ 'a.md': '2026-03-01T00:00:00.000Z' }); // would be stale under the backlink rule
-    const results = await findStaleRollups(git, '/repo', notes, { missionPath: 'topic.md' }, 7, new Date('2026-01-05T00:00:00.000Z')); // fresh under the mission rule
-    expect(results).toEqual([]); // mission rule wins: fresh, not stale — not the backlink rule's stale verdict
+    const tmp = await makeTmpDir();
+    try {
+      await writeMissionFile(tmp.root, 'topic.md', '2026-01-01T00:00:00.000Z', `${ROLLUP_FENCE.start}\nsynthesis\n${ROLLUP_FENCE.end}\n`);
+      const notes = [entity('topic.md', '2026-01-01T00:00:00.000Z'), backlink('a.md', 'topic')];
+      const git = gitWithDates({ 'a.md': '2026-03-01T00:00:00.000Z' }); // would be stale under the backlink rule
+      const results = await findStaleRollups(git, tmp.root, notes, { missionPath: 'topic.md' }, 7, new Date('2026-01-05T00:00:00.000Z')); // fresh under the mission rule
+      expect(results).toEqual([]); // mission rule wins: fresh, not stale — not the backlink rule's stale verdict
+    } finally {
+      await tmp.cleanup();
+    }
   });
 });
 

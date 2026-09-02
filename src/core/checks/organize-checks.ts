@@ -1,5 +1,8 @@
+import { readFile } from 'node:fs/promises';
+import { AGENTS_MD_SECTION_ORDER, agentsMdPath } from '../agents-doc.js';
 import { checkCatalogCoverage } from '../catalog/build.js';
 import type { Finding } from '../envelope.js';
+import { reorderFencedRegions } from '../fs/fenced-region.js';
 import { orphans } from '../graph/query.js';
 import { hasSourceIdentity } from '../ingest/identity.js';
 import { findStaleRollups } from '../rollup.js';
@@ -123,4 +126,51 @@ export const rollupStaleCheck = defineCheck({
   },
 });
 
-export const ORGANIZE_CHECKS = [orphanNotesCheck, brokenLinksCheck, uningestedInboxCheck, catalogGapsLintCheck, rollupStaleCheck];
+/**
+ * harness-portability spec (inline-conventions-and-mission): "Generated
+ * sections render in a fixed order" — hand-written content interrupting the
+ * managed fences' contiguity blocks `ctxr update` from reordering them to
+ * the fixed layout (`reorderFencedRegions`' own conservative rule: never
+ * relocate content it can't be sure sits outside every managed section).
+ * Reported here as an observation, not by `doctor`: `doctor` runs only
+ * `severity: 'invariant'` checks (`src/commands/doctor.ts`), and a store
+ * whose sections are merely out of the preferred order still functions —
+ * this is exactly the report-don't-block condition lint exists for.
+ */
+export const agentsMdSectionOrderBlockedCheck = defineCheck({
+  id: 'harness_portability.agents_md_section_order_blocked',
+  title: "AGENTS.md's managed sections can be reordered to the standard layout",
+  severity: 'observation',
+  capability: 'harness-portability',
+  scopes: ['store'],
+  async run(ctx) {
+    let content: string;
+    try {
+      content = await readFile(agentsMdPath(ctx.storeRoot), 'utf8');
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
+      return { status: 'skip', skipReason: 'AGENTS.md has not been generated yet — run `ctxr update`', findings: [] };
+    }
+    const { blocked } = reorderFencedRegions(content, AGENTS_MD_SECTION_ORDER);
+    const findings: Finding[] = blocked
+      ? [
+          {
+            code: 'harness_portability.agents_md_section_order_blocked',
+            severity: 'info',
+            message:
+              'AGENTS.md has hand-written content between two managed sections, so `ctxr update` cannot reorder them to the standard layout. Move the hand-written content outside every managed section, then re-run `ctxr update`.',
+          },
+        ]
+      : [];
+    return { status: findings.length > 0 ? 'fail' : 'pass', findings };
+  },
+});
+
+export const ORGANIZE_CHECKS = [
+  orphanNotesCheck,
+  brokenLinksCheck,
+  uningestedInboxCheck,
+  catalogGapsLintCheck,
+  rollupStaleCheck,
+  agentsMdSectionOrderBlockedCheck,
+];

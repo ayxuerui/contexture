@@ -12,7 +12,9 @@ import {
   DEFAULT_CATALOG_SECTION_MAX_BYTES,
   DEFAULT_PUBLISH_PATH,
   DEFAULT_VENDORED_SKILLS,
-  DEFAULT_CONVENTIONS_PATH,
+  DEFAULT_BASELINE_CONVENTION_FILE_NAME,
+  DEFAULT_CUSTOM_CONVENTION_FILE_NAME,
+  DEFAULT_GUIDANCE_PATH,
   DEFAULT_DERIVED_PATHS,
   DEFAULT_DIFF_SIZE_CEILING_LINES,
   DEFAULT_EXCLUDE_PATHS,
@@ -20,6 +22,7 @@ import {
   DEFAULT_INBOX_PATH,
   DEFAULT_TRACKING_PARAMS,
   DEFAULT_INTERNAL_AUDIENCES,
+  DEFAULT_MISSION_PATH,
   DEFAULT_SKILLS_PATH,
   DEFAULT_RELATIONS,
   DEFAULT_GRAPH_SETTINGS,
@@ -43,9 +46,11 @@ import {
   buildAgentsCaptureSection,
   buildAgentsConventionsSection,
   buildAgentsLegRoutingSection,
+  buildAgentsMissionSection,
   buildAgentsPlacementSection,
   agentsMdPath,
 } from '../core/agents-doc.js';
+import { seedCustomConventionFile, syncBaselineConvention } from '../core/convention-doc.js';
 import { syncShippedSkills, syncVendoredSkills } from '../core/skills.js';
 import { bridgeHarnessSkills } from '../core/harness/bridge.js';
 import { reconcileStore, WORKTREES_GITIGNORE_FENCE } from '../core/reconcile.js';
@@ -186,6 +191,23 @@ async function safeCurrentBranch(env: RunEnv, root: string): Promise<string | nu
   }
 }
 
+/**
+ * compose-store-guidance-documents (context-organize delta): seeded once, at
+ * fresh init, so `ctxr rollup write`/`ctxr rollup stale` have a file to
+ * operate on from the start — an unwritten seed reports stale on elapsed
+ * time alone (`checkMissionStaleness`), which is the correct "write your
+ * first mission" signal, not a failure. Scoped to fresh init only: an
+ * existing store that opts in later by hand creates its own file, exactly
+ * as the pre-existing opt-in mechanism already required before this change.
+ */
+async function seedMissionDocument(root: string, missionPath: string): Promise<string | null> {
+  const target = path.join(root, missionPath);
+  if (existsSync(target)) return null;
+  await mkdir(path.dirname(target), { recursive: true });
+  await writeFileAtomic(target, '---\ntitle: Mission\n---\n# Mission\n');
+  return missionPath;
+}
+
 interface RunInitResult {
   data: InitData;
   findings: Finding[];
@@ -272,8 +294,8 @@ async function runInitCore(env: RunEnv, flags: InitFlags): Promise<RunInitResult
     skills: { vendored: [...DEFAULT_VENDORED_SKILLS] },
     disclosure: { internal_audiences: [...DEFAULT_INTERNAL_AUDIENCES], hard_walls: [...DEFAULT_HARD_WALLS], leak_markers: {} },
     ingest: { inbox_path: DEFAULT_INBOX_PATH, tracking_params: [...DEFAULT_TRACKING_PARAMS] },
-    organize: { archive_path: DEFAULT_ARCHIVE_PATH, rollup_stale_days: DEFAULT_ROLLUP_STALE_DAYS },
-    harness: { skills_path: DEFAULT_SKILLS_PATH, conventions_path: DEFAULT_CONVENTIONS_PATH },
+    organize: { archive_path: DEFAULT_ARCHIVE_PATH, rollup_stale_days: DEFAULT_ROLLUP_STALE_DAYS, mission_path: DEFAULT_MISSION_PATH },
+    harness: { skills_path: DEFAULT_SKILLS_PATH, guidance_path: DEFAULT_GUIDANCE_PATH },
     adapters: resolvedAdapters,
   };
   // Round-trips through the schema internally; throws before any byte is written if it doesn't.
@@ -283,6 +305,18 @@ async function runInitCore(env: RunEnv, flags: InitFlags): Promise<RunInitResult
   const gitignorePath = path.join(root, '.gitignore');
   await upsertFencedRegionInFile(gitignorePath, DERIVED_GITIGNORE_FENCE, config.derived.paths);
   await upsertFencedRegionInFile(gitignorePath, WORKTREES_GITIGNORE_FENCE, [config.session.worktrees_path]);
+
+  // Guidance-directory content must be current BEFORE the AGENTS.md sections
+  // that read it (mission, store conventions) are built below.
+  await syncBaselineConvention(root, config);
+  const customConventionSeeded = await seedCustomConventionFile(root, config);
+  const missionSeeded = config.organize.mission_path ? await seedMissionDocument(root, config.organize.mission_path) : null;
+
+  // harness-portability spec "Generated sections render in a fixed order":
+  // called in that order directly — a fresh AGENTS.md has no existing fences
+  // to reorder, so call order alone determines the file's section order.
+  await buildAgentsCanonicalSection(root, config);
+  await buildAgentsMissionSection(root, config);
   await buildAgentsLegRoutingSection(root, config);
   await buildAgentsCaptureSection(root, config);
   await buildAgentsPlacementSection(root, config);
@@ -290,8 +324,13 @@ async function runInitCore(env: RunEnv, flags: InitFlags): Promise<RunInitResult
   const { changed: vendoredSkillFilesCreated, findings: vendoredFindings } = await syncVendoredSkills(root, config, CLI_VERSION);
   findings.push(...vendoredFindings);
   const bridged = await bridgeHarnessSkills(root, config);
-  await buildAgentsCanonicalSection(root, config);
   await buildAgentsConventionsSection(root, config);
+
+  const guidanceFilesCreated = [
+    path.join(config.harness.guidance_path, DEFAULT_BASELINE_CONVENTION_FILE_NAME),
+    ...(customConventionSeeded.created ? [path.join(config.harness.guidance_path, DEFAULT_CUSTOM_CONVENTION_FILE_NAME)] : []),
+    ...(missionSeeded ? [missionSeeded] : []),
+  ].map((p) => p.split(path.sep).join('/'));
 
   // One directory per configured layer with a .gitkeep — makes Zettelkasten's
   // zero-layer shape visibly different from PARA's at a glance. This is a
@@ -324,6 +363,7 @@ async function runInitCore(env: RunEnv, flags: InitFlags): Promise<RunInitResult
     ...skillFilesCreated,
     ...vendoredSkillFilesCreated,
     ...bridgedPaths,
+    ...guidanceFilesCreated,
     ...hookFiles,
   ]);
 
@@ -341,6 +381,7 @@ async function runInitCore(env: RunEnv, flags: InitFlags): Promise<RunInitResult
         ...skillFilesCreated,
         ...vendoredSkillFilesCreated,
         ...bridgedPaths,
+        ...guidanceFilesCreated,
         ...hookFiles,
       ],
       unchanged: [],

@@ -48,8 +48,29 @@ export const DEFAULT_SKILLS_PATH = '.agents/skills/';
 /** harness-portability spec (vendored-craft-skills): the shipped vendored skill set, installed by default and refreshed by update. */
 export const DEFAULT_VENDORED_SKILLS = ['frontend-design'] as const;
 
-/** harness-portability spec (entry-doc-generation): operator-authored convention docs, indexed by AGENTS.md. */
-export const DEFAULT_CONVENTIONS_PATH = '.contexture/conventions/';
+/**
+ * harness-portability spec: the guidance directory holding contexture's
+ * shipped baseline convention file, the operator's own convention files
+ * (inlined into AGENTS.md's "Store conventions" section — see
+ * agents-doc.ts, from inline-conventions-and-mission), and (per
+ * context-organize) the mission document.
+ */
+export const DEFAULT_GUIDANCE_PATH = '.contexture/guidance/';
+
+/** The shipped, contexture-owned baseline convention — never hand-edited; refreshed by `ctxr update` like a skill copy. */
+export const DEFAULT_BASELINE_CONVENTION_FILE_NAME = 'baseline-convention.md';
+
+/** The operator-authored convention file seeded at init. */
+export const DEFAULT_CUSTOM_CONVENTION_FILE_NAME = 'custom-convention.md';
+
+/** context-organize spec: the store's standing current-state document's filename, under the guidance directory. */
+export const DEFAULT_MISSION_FILE_NAME = 'mission.md';
+
+/** context-organize spec: `organize.mission_path`'s shipped default — every store gets a mission document from `init` onward, seeded there. */
+export const DEFAULT_MISSION_PATH = `${DEFAULT_GUIDANCE_PATH}${DEFAULT_MISSION_FILE_NAME}`;
+
+/** store-integrity spec: AGENTS.md's inlined "Store conventions" section's size ceiling when `harness.convention_max_bytes` is unset. */
+export const DEFAULT_CONVENTION_MAX_BYTES = 32 * 1024;
 
 /** Paths excluded from every retrieval leg by default. */
 export const DEFAULT_EXCLUDE_PATHS = ['.contexture/'] as const;

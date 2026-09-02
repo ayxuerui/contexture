@@ -17,7 +17,7 @@ async function pinToSchemaV1(root: string): Promise<void> {
   await writeFile(
     configPath,
     text
-      .replace('schema_version: 3', 'schema_version: 1')
+      .replace('schema_version: 4', 'schema_version: 1')
       .replace('visibility: lens', 'visibility: scope')
       // A genuine v1 store predates both renames this suite exercises: the
       // visibility-field key AND (rename-procedures-to-skills) the

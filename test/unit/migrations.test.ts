@@ -1,6 +1,8 @@
+import { existsSync } from 'node:fs';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { renameConventionsPathMigration } from '../../src/core/migrations/rename-conventions-path.js';
 import { renameProceduresPathMigration } from '../../src/core/migrations/rename-procedures-path.js';
 import { renameVisibilityFieldMigration } from '../../src/core/migrations/rename-visibility-field.js';
 import { pendingMigrations } from '../../src/core/migrations/registry.js';
@@ -27,7 +29,7 @@ function makeV1Config(): StoreConfig {
     disclosure: { internal_audiences: [], hard_walls: [], leak_markers: {} },
     ingest: { inbox_path: 'inbox/', tracking_params: [] },
     organize: { archive_path: 'archive/', rollup_stale_days: 7 },
-    harness: { skills_path: 'procedures/', conventions_path: 'conventions/' },
+    harness: { skills_path: 'procedures/', guidance_path: 'conventions/' },
     adapters: [],
   };
 }
@@ -63,6 +65,30 @@ async function setUpV2StoreWithProceduresPath(root: string): Promise<Store> {
   return { root, config: await readConfig(root) };
 }
 
+async function setUpV3StoreWithConventionsPath(root: string, conventionsPath = '.contexture/conventions/'): Promise<Store> {
+  await mkdir(root, { recursive: true });
+  const text = [
+    'schema_version: 3',
+    'taxonomy: { profile: para, layers: [] }',
+    'fields: { visibility: lens }',
+    'visibility: { default_context: private, directory_defaults: {} }',
+    'derived: { paths: [] }',
+    'retrieval: { exclude_paths: [], relations: [], graph: { cluster_depth: 2, hub_top: 8, bridge_top: 10, orphan_exempt_clusters: [] } }',
+    'git: { default_branch: main }',
+    'session: { branch_prefix: session/, worktrees_path: .worktrees/ }',
+    'write_lifecycle: { diff_size_ceiling_lines: 2000, writable_paths: [] }',
+    'catalog: { path: catalog/, section_max_bytes: 32768 }',
+    'disclosure: { internal_audiences: [], hard_walls: [], leak_markers: {} }',
+    'ingest: { inbox_path: inbox/ }',
+    'organize: { archive_path: archive/ }',
+    `harness: { skills_path: skills/, conventions_path: ${conventionsPath} }`,
+    'adapters: []',
+    '',
+  ].join('\n');
+  await writeFile(path.join(root, 'contexture.yaml'), text);
+  return { root, config: await readConfig(root) };
+}
+
 async function writeNote(root: string, relPath: string, content: string): Promise<void> {
   const full = path.join(root, relPath);
   await mkdir(path.dirname(full), { recursive: true });
@@ -70,19 +96,24 @@ async function writeNote(root: string, relPath: string, content: string): Promis
 }
 
 describe('pendingMigrations', () => {
-  it('includes both migrations, in order, for a store at schema_version 1', () => {
+  it('includes all three migrations, in order, for a store at schema_version 1', () => {
     expect(pendingMigrations(1).map((m) => m.id)).toEqual([
       renameVisibilityFieldMigration.id,
       renameProceduresPathMigration.id,
+      renameConventionsPathMigration.id,
     ]);
   });
 
-  it('includes only the procedures-path rename for a store at schema_version 2', () => {
-    expect(pendingMigrations(2).map((m) => m.id)).toEqual([renameProceduresPathMigration.id]);
+  it('includes the procedures-path and conventions-path renames for a store at schema_version 2', () => {
+    expect(pendingMigrations(2).map((m) => m.id)).toEqual([renameProceduresPathMigration.id, renameConventionsPathMigration.id]);
+  });
+
+  it('includes only the conventions-path rename for a store at schema_version 3', () => {
+    expect(pendingMigrations(3).map((m) => m.id)).toEqual([renameConventionsPathMigration.id]);
   });
 
   it('is empty for a store already at the current schema version', () => {
-    expect(pendingMigrations(3)).toEqual([]);
+    expect(pendingMigrations(4)).toEqual([]);
   });
 });
 
@@ -213,7 +244,7 @@ describe('renameProceduresPathMigration', () => {
     }
   });
 
-  it('a v1 store runs the visibility rename then the procedures-path rename, in order', async () => {
+  it('a v1 store runs all three migrations, in order', async () => {
     const tmp = await makeTmpDir();
     try {
       const store = await setUpV1Store(tmp.root);
@@ -224,13 +255,118 @@ describe('renameProceduresPathMigration', () => {
         workingStore = { root: tmp.root, config: await readConfig(tmp.root) };
       }
 
-      expect(workingStore.config.schema_version).toBe(3);
+      expect(workingStore.config.schema_version).toBe(4);
       expect(workingStore.config.fields.visibility).toBe('lens');
       expect(workingStore.config.harness.skills_path).toBe('procedures/');
+      expect(workingStore.config.harness.guidance_path).toBe('conventions/');
 
       const configContent = await readFile(path.join(tmp.root, 'contexture.yaml'), 'utf8');
       expect(configContent).not.toContain('procedures_path');
+      expect(configContent).not.toContain('conventions_path');
       expect(pendingMigrations(workingStore.config.schema_version)).toEqual([]);
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+});
+
+describe('renameConventionsPathMigration', () => {
+  it('plan() reports only the config delta for an operator-customized path, and writes nothing (dry-run)', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const store = await setUpV3StoreWithConventionsPath(tmp.root, 'notes/conventions/');
+      const deltas = await renameConventionsPathMigration.plan(store);
+      expect(deltas).toEqual([
+        { path: 'contexture.yaml', description: 'rename harness.conventions_path to harness.guidance_path and set schema_version to 4' },
+      ]);
+
+      const configContent = await readFile(path.join(tmp.root, 'contexture.yaml'), 'utf8');
+      expect(configContent).toContain('schema_version: 3');
+      expect(configContent).toContain('conventions_path: notes/conventions/');
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('plan() also reports the directory move when the path sat at the old default', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const store = await setUpV3StoreWithConventionsPath(tmp.root);
+      const deltas = await renameConventionsPathMigration.plan(store);
+      expect(deltas.map((d) => d.path)).toEqual(['contexture.yaml', '.contexture/guidance/']);
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('apply() renames the key and bumps schema_version, preserving an operator-customized path verbatim', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const store = await setUpV3StoreWithConventionsPath(tmp.root, 'notes/conventions/');
+      const applied = await renameConventionsPathMigration.apply(store);
+      expect(applied).toEqual([
+        { path: 'contexture.yaml', description: 'rename harness.conventions_path to harness.guidance_path and set schema_version to 4' },
+      ]);
+
+      const configContent = await readFile(path.join(tmp.root, 'contexture.yaml'), 'utf8');
+      expect(configContent).not.toContain('conventions_path');
+      expect(configContent).toContain('guidance_path: notes/conventions/');
+      expect(configContent).toContain('schema_version: 4');
+
+      const config = await readConfig(tmp.root);
+      expect(config.schema_version).toBe(4);
+      expect(config.harness.guidance_path).toBe('notes/conventions/');
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('apply() moves the directory on disk when the path sat at the old default', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const store = await setUpV3StoreWithConventionsPath(tmp.root);
+      await writeNote(tmp.root, '.contexture/conventions/house-style.md', '---\ntitle: House style\n---\nBody.\n');
+
+      await renameConventionsPathMigration.apply(store);
+
+      expect(existsSync(path.join(tmp.root, '.contexture/conventions'))).toBe(false);
+      const moved = await readFile(path.join(tmp.root, '.contexture/guidance/house-style.md'), 'utf8');
+      expect(moved).toContain('House style');
+
+      const config = await readConfig(tmp.root);
+      expect(config.harness.guidance_path).toBe('.contexture/guidance/');
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('apply() at the old default with nothing on disk yet just rewrites the config', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const store = await setUpV3StoreWithConventionsPath(tmp.root);
+      const applied = await renameConventionsPathMigration.apply(store);
+      expect(applied.map((d) => d.path)).toEqual(['contexture.yaml', '.contexture/guidance/']);
+
+      const config = await readConfig(tmp.root);
+      expect(config.harness.guidance_path).toBe('.contexture/guidance/');
+      expect(existsSync(path.join(tmp.root, '.contexture/conventions'))).toBe(false);
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('is resumable: a second apply() on an already-migrated store changes nothing', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const store = await setUpV3StoreWithConventionsPath(tmp.root);
+      await renameConventionsPathMigration.apply(store);
+
+      const migratedConfig = await readConfig(tmp.root);
+      const second = await renameConventionsPathMigration.apply({ root: tmp.root, config: migratedConfig });
+      expect(second).toEqual([]);
+
+      const configContent = await readFile(path.join(tmp.root, 'contexture.yaml'), 'utf8');
+      expect(configContent).toContain('schema_version: 4');
     } finally {
       await tmp.cleanup();
     }

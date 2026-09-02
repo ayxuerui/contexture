@@ -49,8 +49,6 @@ describe('owned skills: delivered by init, expanded by update', () => {
         expect(existsSync(file), p.file).toBe(true);
         expect(await readFile(file, 'utf8')).toContain(MANAGED_SKILL_HEADER);
       }
-      const agents = await readFile(path.join(tmp.root, 'AGENTS.md'), 'utf8');
-      for (const p of SKILLS) expect(agents).toContain(`[${p.file}](.agents/skills/${p.file}/SKILL.md)`);
     } finally {
       await tmp.cleanup();
     }
@@ -64,18 +62,13 @@ describe('owned skills: delivered by init, expanded by update', () => {
       const store: Store = { root: tmp.root, config: await readConfig(tmp.root) };
       await update(env, store); // adapters' first outputs — makes the store current
 
-      // Rewind to the previous release's skill set: the five new ones absent, placement at its old four-line text.
+      // Rewind to the previous release's skill set: the five new ones absent,
+      // placement at its old four-line text. AGENTS.md carries no skill
+      // index (inline-conventions-and-mission removed it), so there is
+      // nothing about AGENTS.md itself to rewind for this scenario.
       for (const slug of SKILLS_ADDED_BY_THIS_RELEASE) {
         await rm(path.join(tmp.root, '.agents/skills', slug), { recursive: true, force: true });
       }
-      const agentsPath = path.join(tmp.root, 'AGENTS.md');
-      await writeFile(
-        agentsPath,
-        (await readFile(agentsPath, 'utf8'))
-          .split('\n')
-          .filter((line) => !SKILLS_ADDED_BY_THIS_RELEASE.some((slug) => line.includes(`[${slug}]`)))
-          .join('\n'),
-      );
       const placementPath = path.join(tmp.root, '.agents/skills/ctxr-placement/SKILL.md');
       await writeFile(
         placementPath,
@@ -86,9 +79,9 @@ describe('owned skills: delivered by init, expanded by update', () => {
       const changed = outcome.data?.changed ?? [];
       for (const slug of SKILLS_ADDED_BY_THIS_RELEASE) expect(changed).toContain(`.agents/skills/${slug}/SKILL.md`);
       expect(changed).toContain('.agents/skills/ctxr-placement/SKILL.md');
-      expect(changed).toContain('AGENTS.md'); // the skill index grew
-      const agents = await readFile(agentsPath, 'utf8');
-      for (const slug of SKILLS_ADDED_BY_THIS_RELEASE) expect(agents).toContain(`[${slug}](.agents/skills/${slug}/SKILL.md)`);
+      for (const slug of SKILLS_ADDED_BY_THIS_RELEASE) {
+        expect(existsSync(path.join(tmp.root, '.agents/skills', slug, 'SKILL.md'))).toBe(true);
+      }
       expect(await readFile(placementPath, 'utf8')).toContain('The collision test');
 
       expect((await update(env, store)).data?.changed).toEqual([]);

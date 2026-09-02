@@ -1,17 +1,21 @@
 import path from 'node:path';
+import { DEFAULT_BASELINE_CONVENTION_FILE_NAME } from '../config/defaults.js';
 import type { StoreConfig } from '../config/schema.js';
 import { CLI_VERSION } from '../version.js';
 import type { RunEnv } from './env.js';
 import {
   agentsMdPath,
+  AGENTS_MD_SECTION_ORDER,
   buildAgentsCanonicalSection,
   buildAgentsCaptureSection,
   buildAgentsConventionsSection,
   buildAgentsLegRoutingSection,
+  buildAgentsMissionSection,
   buildAgentsPlacementSection,
 } from './agents-doc.js';
 import type { Finding } from './envelope.js';
-import { removeFencedRegionFromFile, upsertFencedRegionInFile } from './fs/fenced-region.js';
+import { syncBaselineConvention } from './convention-doc.js';
+import { removeFencedRegionFromFile, reorderFencedRegionsInFile, upsertFencedRegionInFile } from './fs/fenced-region.js';
 import { bridgeHarnessSkills } from './harness/bridge.js';
 import { configureHooksPath, installHooks } from './hooks.js';
 import { commentFence, DERIVED_GITIGNORE_FENCE, htmlCommentFence } from './markers.js';
@@ -29,6 +33,17 @@ export const WORKTREES_GITIGNORE_FENCE = commentFence('worktrees');
  * contexture issue #14 tracks.
  */
 const RETIRED_AGENTS_MD_IDENTITY_FENCE = htmlCommentFence('agent-identity');
+
+/**
+ * compose-store-guidance-documents: the conventions fence was renamed from
+ * `store-conventions` to `conventions` (dropping the redundant "store-"
+ * prefix — every sibling fence/template already omits it, e.g. `canonical`,
+ * `placement`, `mission`). Same one-time cleanup shape as the identity
+ * retirement above: `buildAgentsConventionsSection` already writes the new
+ * `contexture:conventions` fence via the loop below, so this only needs to
+ * remove the orphaned old one.
+ */
+const RETIRED_AGENTS_MD_STORE_CONVENTIONS_FENCE = htmlCommentFence('store-conventions');
 
 export interface ReconcileResult {
   /** Store-relative paths written this run (an up-to-date store yields none). */
@@ -58,8 +73,10 @@ export async function reconcileStore(env: RunEnv, root: string, config: StoreCon
     (await upsertFencedRegionInFile(gitignorePath, WORKTREES_GITIGNORE_FENCE, [config.session.worktrees_path])).changed,
   );
 
-  // Files the generated sections index (skills) must be current BEFORE the
-  // sections are rendered — the skill index is a disk scan.
+  // The owned skill copies are refreshed unconditionally here — not because
+  // any AGENTS.md section reads them anymore (inline-conventions-and-mission
+  // removed the skill index), but because init/update must still deliver
+  // the skill files to disk regardless of what AGENTS.md renders.
   changed.push(...(await syncShippedSkills(root, config)));
   const vendoredResult = await syncVendoredSkills(root, config, CLI_VERSION);
   changed.push(...vendoredResult.changed);
@@ -71,17 +88,32 @@ export async function reconcileStore(env: RunEnv, root: string, config: StoreCon
   // this run's content, not a stale one.
   changed.push(...(await bridgeHarnessSkills(root, config)).map((r) => r.path));
 
+  // Same reason, same ordering constraint as skills: the shipped baseline
+  // convention file must be current on disk BEFORE buildAgentsConventionsSection
+  // scans the guidance directory and inlines it (compose-store-guidance-documents).
+  note(
+    path.join(config.harness.guidance_path, DEFAULT_BASELINE_CONVENTION_FILE_NAME).split(path.sep).join('/'),
+    (await syncBaselineConvention(root, config)).changed,
+  );
+
   let agentsChanged = false;
   for (const build of [
     buildAgentsLegRoutingSection,
     buildAgentsCaptureSection,
     buildAgentsPlacementSection,
     buildAgentsCanonicalSection,
+    buildAgentsMissionSection,
     buildAgentsConventionsSection,
   ]) {
     if ((await build(root, config)).changed) agentsChanged = true;
   }
   if ((await removeFencedRegionFromFile(agentsMdPath(root), RETIRED_AGENTS_MD_IDENTITY_FENCE)).changed) agentsChanged = true;
+  if ((await removeFencedRegionFromFile(agentsMdPath(root), RETIRED_AGENTS_MD_STORE_CONVENTIONS_FENCE)).changed) agentsChanged = true;
+  // harness-portability spec "Generated sections render in a fixed order":
+  // reorders once every section fence above has been written/refreshed, so
+  // a first-time init and a subsequent update converge on the same layout.
+  // A no-op when the fences aren't all contiguous — see `reorderFencedRegions`.
+  if ((await reorderFencedRegionsInFile(agentsMdPath(root), AGENTS_MD_SECTION_ORDER)).changed) agentsChanged = true;
   note('AGENTS.md', agentsChanged);
 
   const { changed: hookFiles } = await installHooks(root, config.git.default_branch);

@@ -6,7 +6,7 @@ import { runCli } from '../helpers/run-cli.js';
 import { makeTmpDir } from '../helpers/tmp-store.js';
 
 describe('vendored skills and the harness bridge (real CLI)', () => {
-  it('a store declaring both harnesses resolves both to the canonical skills path, with every skill readable through each, and AGENTS.md indexing only the canonical path', async () => {
+  it('a store declaring both harnesses resolves both to the canonical skills path, with every skill readable through each, and AGENTS.md naming only the canonical path', async () => {
     const tmp = await makeTmpDir();
     try {
       const env = hermeticGitEnv();
@@ -29,11 +29,12 @@ describe('vendored skills and the harness bridge (real CLI)', () => {
         expect(owned).toContain('name: ctxr-publish');
       }
 
-      // AGENTS.md indexes the canonical path only — never the harness-specific mirrors.
+      // AGENTS.md names the canonical path only — never the harness-specific mirrors
+      // (inline-conventions-and-mission removed the per-skill index entirely).
       const agentsMd = await readFile(path.join(tmp.root, 'AGENTS.md'), 'utf8');
-      expect(agentsMd).toContain('.agents/skills/frontend-design/SKILL.md');
-      expect(agentsMd).not.toContain('.claude/skills/frontend-design');
-      expect(agentsMd).not.toContain('.hermes/skills/frontend-design');
+      expect(agentsMd).toContain('.agents/skills/');
+      expect(agentsMd).not.toContain('.claude/skills');
+      expect(agentsMd).not.toContain('.hermes/skills');
 
       const verify = await runCli(['verify', '--portable', '--json'], { cwd: tmp.root, env });
       expect(verify.exitCode).toBe(0);

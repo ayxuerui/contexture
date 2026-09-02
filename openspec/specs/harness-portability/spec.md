@@ -44,7 +44,26 @@ Every context store SHALL carry an `AGENTS.md` file at its root that is the cano
 
 #### Scenario: Reading only `AGENTS.md` is sufficient
 - **WHEN** an agent with no harness-specific context reads `AGENTS.md` at a store's root
-- **THEN** it finds the root-resolution rule, the frontmatter schema pointer, the write-path rule, and an index of every store skill, without needing to read any other file
+- **THEN** it finds the root-resolution rule, the frontmatter schema pointer, the write-path rule, a statement that agent identity and durable cross-session memory belong to its harness rather than to this store, and an index of every store skill, without needing to read any other file
+
+#### Scenario: The canonical section names the mission document when configured
+- **WHEN** a store's `contexture.yaml` declares `organize.mission_path` and the entry document is regenerated
+- **THEN** the canonical section names that path as a document to load at session start, alongside the root-resolution rule, the frontmatter schema pointer, and the write-path rule
+
+#### Scenario: No mission pointer when unconfigured
+- **WHEN** a store declares no `organize.mission_path` and the entry document is regenerated
+- **THEN** the canonical section names no mission document, and regenerating again reports no change
+
+### Requirement: The canonical section states the harness/store identity boundary
+The canonical section SHALL state, on every store regardless of configuration, that agent identity, persona, and durable cross-session memory are the harness's responsibility, not the store's — the store holds knowledge and skills. This statement SHALL reference paths (the skills path) rather than inlining any identity content, and SHALL NOT introduce a configuration key, command, or adapter kind for identity.
+
+#### Scenario: The boundary statement is present on every store
+- **WHEN** the entry document is generated for a store, regardless of what its `contexture.yaml` declares
+- **THEN** the canonical section states that identity and durable cross-session memory belong to the harness, not the store, and names no identity file or path of its own
+
+#### Scenario: A second generation is byte-stable
+- **WHEN** the entry document is regenerated against unchanged configuration
+- **THEN** the boundary statement's text is unchanged and regeneration reports no change
 
 ### Requirement: Root resolution precedence
 Any contexture command SHALL resolve the store root in this order: an explicit `--root` argument; the `CONTEXTURE_ROOT` environment variable; walking up from the current working directory looking for `contexture.yaml`. If none resolves, the command SHALL exit non-zero naming that no store root was found, and SHALL NOT guess a fallback location.
@@ -83,7 +102,7 @@ The store SHALL provide a command that exercises core store operations — at mi
 - **THEN** the command exits non-zero and its output names which specific operation failed
 
 ### Requirement: The shipped skills carry decision procedures
-contexture SHALL ship, as contexture-owned skills delivered by init and update, skills for: placement, ingest orchestration, connection finding, connection proposal, rollup, session lifecycle, session capture, derived artifacts, organize audit, and publish. Each SHALL state its decision rules against the store's configured taxonomy, contexts, and relation vocabulary — never a shipped profile's layer names or any real context name — and SHALL name the command that verifies each step it asks for.
+contexture SHALL ship, as contexture-owned skills delivered by init and update, skills for: placement, ingest orchestration, connection finding, connection proposal, rollup, mission, session lifecycle, session capture, derived artifacts, organize audit, and publish. Each SHALL state its decision rules against the store's configured taxonomy, contexts, and relation vocabulary — never a shipped profile's layer names or any real context name — and SHALL name the command that verifies each step it asks for.
 
 #### Scenario: Placement teaches the visibility-collision test
 - **WHEN** a store is initialized
@@ -100,6 +119,10 @@ contexture SHALL ship, as contexture-owned skills delivered by init and update, 
 #### Scenario: Rollup refuses to create or to run thin
 - **WHEN** an agent follows the rollup skill against a name that resolves to no note, or to a dated or infrastructure note, or to fewer sources than the stated minimum
 - **THEN** the skill instructs it to stop and report rather than create the entity note, treat the non-entity as an entity, or write a thin rollup
+
+#### Scenario: Mission skill teaches the maintenance discipline
+- **WHEN** a store's configured taxonomy is passed to the mission skill
+- **THEN** the skill states that the document must be kept current from recent work and the store's taxonomy layers, that every active priority names its status, purpose, and next useful action, that back-burner items state why they are not active, and that sunset candidates and operational debt are carried as their own sections
 
 #### Scenario: Session lifecycle gates every external side effect
 - **WHEN** an agent follows the session-lifecycle skill
@@ -157,6 +180,17 @@ contexture SHALL ship `ctxr-submit` and `ctxr-land` as contexture-owned skills d
 #### Scenario: Update delivers both to an existing store
 - **WHEN** a store initialized before this change runs the update command
 - **THEN** both skills are present at the configured skills path with the managed header and the lifecycle skill no longer contains the submit or land steps
+
+### Requirement: The session-lifecycle skill reflects external workspace ownership
+When a store's configuration declares `session.workspaces_external: true`, the rendered session-lifecycle skill SHALL state that session worktrees are provided by an external process and that the procedure MUST NOT create, switch, unlock, remove, or prune one. When the key is false or unset, the rendered skill SHALL retain its existing worktree-lifecycle instructions unchanged.
+
+#### Scenario: External ownership is stated in the rendered skill
+- **WHEN** a store declares `session.workspaces_external: true` and the session-lifecycle skill is rendered
+- **THEN** the rendered text states that worktrees are externally provided and instructs against creating, switching, unlocking, removing, or pruning one
+
+#### Scenario: Default rendering is unchanged
+- **WHEN** a store declares no `session.workspaces_external` key (or declares it `false`) and the session-lifecycle skill is rendered
+- **THEN** the rendered text is identical to a store initialized before this change
 
 ### Requirement: The session-capture skill applies through the command
 The owned session-capture skill SHALL instruct the agent to write the approved items to a proposal file and run `ctxr session capture --proposal <file>`, and to take its report from the command's output.
