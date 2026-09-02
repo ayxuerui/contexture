@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { mkdir, readdir, readFile, rm } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { DEFAULT_HOUSE_CONVENTIONS_FILE_NAME } from '../config/defaults.js';
 import type { StoreConfig, TaxonomyLayerConfig } from '../config/schema.js';
 import type { Finding } from './envelope.js';
 import { scanDocsDir, SKILL_FILE_NAME, type ScannedDoc } from './conventions.js';
@@ -220,11 +221,23 @@ const SESSION_LIFECYCLE: SkillSeed = {
   body: (config) => skillTemplate('ctxr-session-lifecycle').replaceAll('__DEFAULT_BRANCH__', config.git.default_branch).split('\n'),
 };
 
+/** Where this store's operator-authored conventions live, for a skill to name by path. */
+function houseConventionsPath(config: StoreConfig): string {
+  return path
+    .join(config.harness.guidance_path, DEFAULT_HOUSE_CONVENTIONS_FILE_NAME)
+    .split(path.sep)
+    .join('/');
+}
+
 const SESSION_CAPTURE: SkillSeed = {
   file: 'ctxr-session-capture',
   name: 'Session capture',
-  description: 'At the end of a session, propose durable store notes in one message with per-item approval, then write only what was approved.',
-  body: () => skillTemplate('ctxr-session-capture').split('\n'),
+  description:
+    'At the end of a session, propose in one message both the durable notes it produced and any house convention it earned, with per-item approval, then write only what was approved.',
+  body: (config) =>
+    skillTemplate('ctxr-session-capture')
+      .replaceAll('__HOUSE_CONVENTIONS_PATH__', houseConventionsPath(config))
+      .split('\n'),
 };
 
 const DERIVED_ARTIFACTS: SkillSeed = {
