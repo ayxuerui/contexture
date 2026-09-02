@@ -1,13 +1,9 @@
-import { execFile } from 'node:child_process';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { promisify } from 'node:util';
 import { describe, expect, it } from 'vitest';
 import { hermeticGitEnv } from '../helpers/git-env.js';
 import { runCli } from '../helpers/run-cli.js';
 import { makeTmpDir } from '../helpers/tmp-store.js';
-
-const execFileAsync = promisify(execFile);
 
 async function writeNote(root: string, relPath: string, content: string): Promise<void> {
   const full = path.join(root, relPath);
@@ -16,13 +12,12 @@ async function writeNote(root: string, relPath: string, content: string): Promis
 }
 
 /**
- * Task 8.8's literal verification. The fourth clause — "the adapter
- * registry accepts a harness-generation and a forge adapter, and rejects a
- * fixture adapter declaring an unsupported interface version" — is covered
- * at the unit level (test/unit/adapters-registry.test.ts), since v1's
- * registry only resolves built-in adapters by (kind, id); there is no
- * real-CLI-reachable way to register a non-built-in fixture adapter to
- * exercise that path end to end.
+ * Task 8.8's literal verification. "The adapter registry accepts a
+ * harness-generation adapter and rejects a fixture adapter declaring an
+ * unsupported interface version" is covered at the unit level
+ * (test/unit/adapters-registry.test.ts), since v1's registry only resolves
+ * built-in adapters by (kind, id); there is no real-CLI-reachable way to
+ * register a non-built-in fixture adapter to exercise that path end to end.
  */
 describe('adapters (real CLI)', () => {
   it('adapters generate run twice in a row produces byte-identical harness files', async () => {
@@ -93,32 +88,6 @@ describe('adapters (real CLI)', () => {
       expect(result.exitCode).not.toBe(0);
       const data = JSON.parse(result.stdout);
       expect(data.findings[0].message).toContain('placement');
-    } finally {
-      await tmp.cleanup();
-    }
-  });
-
-  it("session submit degrades to manual-PR instructions with the default (github) forge adapter configured but unreachable", async () => {
-    const tmp = await makeTmpDir();
-    try {
-      const env = hermeticGitEnv();
-      await runCli(['init'], { cwd: tmp.root, env });
-      const remote = await makeTmpDir();
-      await execFileAsync('git', ['init', '--bare'], { cwd: remote.root, env });
-      await execFileAsync('git', ['remote', 'add', 'origin', remote.root], { cwd: tmp.root, env });
-
-      const start = JSON.parse((await runCli(['session', 'start', '--json'], { cwd: tmp.root, env })).stdout);
-      const worktree: string = start.data.worktree;
-      await writeNote(worktree, 'projects/a.md', '---\nlens: private\n---\nContent.\n');
-      await runCli(['catalog', 'build'], { cwd: worktree, env });
-      await execFileAsync('git', ['add', '.'], { cwd: worktree, env });
-
-      const submit = await runCli(['session', 'submit', '--json'], { cwd: worktree, env });
-      expect(submit.exitCode).toBe(0);
-      const data = JSON.parse(submit.stdout).data;
-      expect(data.pr).toBeNull();
-      expect(data.manualPrInstructions).toBeTruthy();
-      await remote.cleanup();
     } finally {
       await tmp.cleanup();
     }

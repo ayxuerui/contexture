@@ -37,7 +37,7 @@ function makeConfig(overrides: Partial<StoreConfig> = {}): StoreConfig {
     derived: { paths: [] },
     retrieval: { exclude_paths: ['skills/'], relations: [], graph: { cluster_depth: 2, hub_top: 8, bridge_top: 10, orphan_exempt_clusters: [] } },
     git: { default_branch: 'trunk' },
-    session: { branch_prefix: 'session/', worktrees_path: '.worktrees/', workspaces_external: false },
+    session: { branch_prefix: 'session/', worktrees_path: '.worktrees/' },
     write_lifecycle: { diff_size_ceiling_lines: 2000, writable_paths: [] },
     catalog: { path: 'catalog/', section_max_bytes: 32768 },
     publish: { path: 'publish/' },
@@ -162,7 +162,7 @@ describe('owned-skills-expansion: each skill carries its load-bearing rule (task
     expect(skillPaths(makeConfig())).toContain('skills/ctxr-mission/SKILL.md');
   });
 
-  it('session lifecycle: start, re-scan discipline, conflict playbook, sequencing, reclaiming — and none of ctxr-submit/ctxr-land\'s own steps (session-submit-and-land D4)', () => {
+  it('session lifecycle: start, re-scan discipline, conflict playbook, sequencing, reclaiming — and none of ctxr-submit/ctxr-land\'s own steps (session-keeps-only-what-git-cannot-do)', () => {
     const s = skills['ctxr-session-lifecycle'];
     expect(s).toContain('## Start');
     expect(s).toContain('## Re-scan before any plan');
@@ -171,8 +171,8 @@ describe('owned-skills-expansion: each skill carries its load-bearing rule (task
     expect(s).toContain('## Reclaiming');
     expect(s).toContain('`git log --oneline origin/trunk..HEAD`'); // the CONFIGURED default branch, not a hardcoded one
     expect(s).toContain('git rebase origin/trunk`');
-    expect(s).not.toMatch(/\bgit commit\b/); // D4: the CLI commits; no skill instructs a direct commit
-    expect(s).not.toMatch(/\bgit push\b(?! --force-with-lease)/);
+    expect(s).not.toMatch(/\bgit commit\b/); // committing is ctxr-submit's step, not this skill's
+    expect(s).not.toMatch(/\bgit push\b(?! --force-with-lease)/); // only the conflict playbook's force-with-lease push
     // this skill references the two seam verbs but does not repeat their steps
     expect(s).toContain('`ctxr-submit`');
     expect(s).toContain('`ctxr-land`');
@@ -180,45 +180,54 @@ describe('owned-skills-expansion: each skill carries its load-bearing rule (task
     expect(s).not.toContain('ctxr session land');
   });
 
-  it('session lifecycle: external workspace ownership states worktrees are externally provided when configured, and default rendering is unchanged (write-lifecycle spec)', () => {
-    const external = rendered(makeConfig({ session: { branch_prefix: 'session/', worktrees_path: '.worktrees/', workspaces_external: true } }))['ctxr-session-lifecycle'];
-    expect(external).toContain('provided externally');
-    expect(external).toMatch(/MUST NOT/);
-    expect(external).toContain('create, switch to, unlock, remove, or prune');
-    expect(external).not.toContain('`ctxr session reap` removes merged');
-    expect(external).not.toContain('ctxr session abandon');
-
-    const withoutFlag = rendered()['ctxr-session-lifecycle'];
-    expect(withoutFlag).toContain('`ctxr session reap` removes merged, clean worktrees');
-    expect(withoutFlag).not.toContain('provided externally');
+  it('session lifecycle: reclaiming is git-driven and scoped by session list, with no config branch left to diverge (session-keeps-only-what-git-cannot-do)', () => {
+    const s = skills['ctxr-session-lifecycle'];
+    expect(s).toContain('`ctxr session list`'); // the safe read that scopes the unsafe write
+    expect(s).toContain('`git worktree remove <path>` then `git branch -d <branch>`'); // merged-and-clean, unforced
+    expect(s).toContain('`git worktree remove --force <path>`'); // deliberate discard, forced and named as destructive
+    expect(s).toContain('destroys any uncommitted or');
+    // no config key exists anymore to render a second, possibly-inconsistent variant of this skill
+    expect(s).not.toContain('workspaces_external');
+    expect(s).not.toContain('provided externally');
+    expect(s).not.toMatch(/MUST NOT/);
+    // Start (which creates a worktree) and Reclaiming (which removes one) coexist without contradiction —
+    // the defect this replaces was Start unconditionally instructing creation while Reclaiming, under one
+    // config, forbade it in the same document. There is now exactly one rendering, so both always agree.
+    expect(s).toContain('creates a worktree on a fresh branch');
   });
 
-  it('submit: re-scans, runs the capture procedure exactly once, stages named paths, gates, and ends in ctxr session submit (session-submit-and-land)', () => {
+  it('submit: re-scans, runs the capture procedure exactly once, stages named paths, validates, gates, and ends in git push + gh pr create (session-keeps-only-what-git-cannot-do)', () => {
     const s = skills['ctxr-submit'];
     expect(s).toContain('Re-scan (mandatory');
     expect((s?.match(/ctxr-session-capture/g) ?? []).length).toBe(1); // invoked once, not described twice
     expect(s).toContain('never `git add -A`');
-    expect(s).toContain('plan consent is not fire consent');
-    expect(s).toContain('`ctxr session submit --branch');
+    expect(s).toContain('`ctxr doctor`'); // store-scope validation, the same check submit used to run internally
+    expect(s).toMatch(/\bgit commit\b/); // now an explicit step — nothing else commits on its behalf
+    expect(s).toContain('`git branch -m "<name>"`'); // renames a generated branch before it reaches the forge
+    expect(s).toMatch(/plan consent\s+is not fire consent/);
+    expect(s).toMatch(/\bgit push\b/);
+    expect(s).toContain('`gh pr create'); // the fire-gated external side effect, run directly
+    expect(s).not.toContain('ctxr session submit'); // no such command exists anymore
     expect(s).toContain('Verify before any retry');
-    expect(s).not.toMatch(/\bgit commit\b/);
-    expect(s).not.toMatch(/\bgit push\b/);
   });
 
-  it('land: ends in ctxr session land, names its target and where a reap runs, routes conflicts to the lifecycle skill, and never instructs a manual merge (session-submit-and-land, land-resolves-its-own-target)', () => {
+  it('land: reads pull-request state before any side effect, merges with gh, confirms after, syncs by fast-forward, and routes conflicts to the lifecycle skill (session-keeps-only-what-git-cannot-do)', () => {
     const s = skills['ctxr-land'];
-    expect(s).toContain('`ctxr session land`');
+    expect(s).not.toContain('ctxr session land'); // no such command exists anymore
     expect(s).toContain('ctxr-session-lifecycle');
-    expect(s).toContain('conflict');
-    // the target is named, never inferred from wherever the agent happens to stand
-    expect(s).toContain('`--branch <name>` or `--pr <n>`');
-    expect(s).toMatch(/rather than letting it fall back to the current\s+checkout/);
-    // and a reap runs from outside the worktree it removes
-    expect(s).toMatch(/from outside that worktree/);
-    expect(s).toMatch(/canonical clone/);
-    expect(s).toMatch(/Never merge by hand/i);
-    expect(s).not.toMatch(/\bgh pr merge\b/);
-    expect(s).not.toMatch(/\bgit merge\b/);
+    expect(s).toContain('conflict playbook');
+    // the target is named explicitly, never inferred from wherever the agent happens to stand
+    expect(s).toContain('a branch name or a pull-request number');
+    expect(s).toMatch(/rather than relying on whichever\s+checkout you happen to be standing in/);
+    expect(s).toContain('`gh pr view'); // state read before any side effect
+    expect(s).toMatch(/\bMERGEABLE\b/);
+    expect(s).toMatch(/\bCONFLICTING\b/);
+    expect(s).toMatch(/\bUNKNOWN\b/);
+    expect(s).toContain('`gh pr merge'); // step 5's actual mechanism — inverted from the old CLI-only ban
+    expect(s).toContain('re-read state'); // never trusts the merge command's exit code alone
+    expect(s).toMatch(/\bgit merge --ff-only\b/); // the canonical-clone sync
+    expect(s).not.toMatch(/Never merge by hand/i); // design D6: the old ban is gone, gh pr merge is now the step
+    expect(s).toMatch(/from outside the\s+worktree being removed/);
   });
 
   it('session capture: trigger/anti-trigger taxonomy, store-notes proposal, secret markers, report from writes', () => {

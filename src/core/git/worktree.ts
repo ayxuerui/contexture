@@ -29,29 +29,6 @@ export async function addWorktree(
   await git.run(['worktree', 'add', '-b', newBranch, worktreePath, startPoint], { cwd });
 }
 
-export async function removeWorktree(
-  git: GitRunner,
-  cwd: string,
-  worktreePath: string,
-  opts: { force?: boolean } = {},
-): Promise<void> {
-  const args = ['worktree', 'remove', worktreePath, ...(opts.force ? ['--force'] : [])];
-  await git.run(args, { cwd });
-}
-
-export async function pruneWorktrees(git: GitRunner, cwd: string): Promise<void> {
-  await git.run(['worktree', 'prune'], { cwd });
-}
-
-export async function deleteBranch(
-  git: GitRunner,
-  cwd: string,
-  branch: string,
-  opts: { force?: boolean } = {},
-): Promise<void> {
-  await git.run(['branch', opts.force ? '-D' : '-d', branch], { cwd });
-}
-
 export interface WorktreeInfo {
   path: string;
   branch: string | null;
@@ -91,6 +68,10 @@ export async function listWorktrees(git: GitRunner, cwd: string): Promise<Worktr
  * worktree the command was invoked from. Falls back to the passed cwd when the
  * list is empty rather than throwing — a repository with no linked worktrees
  * then behaves exactly as a caller that never asked.
+ *
+ * stabilize-write-gate-hook-path: used to anchor a generated enforcement
+ * primitive's own absolute invocation path (e.g. the write-gate hook command)
+ * at a location that outlives any single session worktree.
  */
 export async function mainWorktreePath(git: GitRunner, cwd: string): Promise<string> {
   const worktrees = await listWorktrees(git, cwd);
