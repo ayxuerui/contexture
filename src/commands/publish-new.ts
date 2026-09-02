@@ -2,7 +2,7 @@ import { existsSync } from 'node:fs';
 import { mkdir } from 'node:fs/promises';
 import path from 'node:path';
 import type { CommandOutcome, CommandRequires } from '../core/command.js';
-import { PublishReservedSlugError, PublishSlugExistsError } from '../core/errors.js';
+import { PublishInvalidSlugError, PublishReservedSlugError, PublishSlugExistsError } from '../core/errors.js';
 import { ExitCode } from '../core/exit-codes.js';
 import { writeFileAtomic } from '../core/fs/atomic.js';
 import type { Store } from '../core/store.js';
@@ -18,8 +18,24 @@ export interface PublishNewData {
   path: string;
 }
 
-/** publish spec: reserved for frozen snapshots — a living page's slug must never collide with this shape. */
+/** publish spec: reserved for frozen snapshots — a living page's own name must never collide with this shape. */
 const RESERVED_SLUG_PATTERN = /^\d{4}-/;
+
+/**
+ * browse-navigation-by-folder design.md D5: a slug may name a path of
+ * folders, so it is validated a segment at a time. Refusing an empty, `.`,
+ * `..`, or absolute segment is what keeps a slug from resolving anywhere
+ * but under the configured publish path — the command joined the slug on
+ * directly before, with no validation at all.
+ */
+function pageSegments(slug: string): string[] {
+  if (path.isAbsolute(slug)) throw new PublishInvalidSlugError(slug);
+  const segments = slug.split('/');
+  for (const segment of segments) {
+    if (segment === '' || segment === '.' || segment === '..') throw new PublishInvalidSlugError(slug);
+  }
+  return segments;
+}
 
 function pageSkeleton(slug: string, dateCreated: string): string {
   return [
@@ -72,14 +88,19 @@ function readmeSkeleton(slug: string, dateCreated: string): string {
 }
 
 /**
- * publish spec: fixes a page's identity once. Refuses a slug that collides
- * with the reserved dated-snapshot naming pattern, and never overwrites an
- * existing page folder — the caller updates in place by editing the
- * existing files directly, never by re-running this command.
+ * publish spec: fixes a page's identity once. Refuses a slug whose page name
+ * collides with the reserved dated-snapshot naming pattern or whose segments
+ * would resolve outside the publish path, and never overwrites an existing
+ * page folder — the caller updates in place by editing the existing files
+ * directly, never by re-running this command.
  */
 export async function execute(store: Store, flags: PublishNewFlags): Promise<CommandOutcome<PublishNewData>> {
-  if (RESERVED_SLUG_PATTERN.test(flags.slug)) {
-    throw new PublishReservedSlugError(flags.slug);
+  const segments = pageSegments(flags.slug);
+  // The final segment is the page's own identity; the ones before it are the
+  // directories it is filed under, which the reserved naming does not govern.
+  const pageName = segments[segments.length - 1]!;
+  if (RESERVED_SLUG_PATTERN.test(pageName)) {
+    throw new PublishReservedSlugError(flags.slug, pageName);
   }
 
   const relativePath = path.join(store.config.publish.path, flags.slug).split(path.sep).join('/');
@@ -90,8 +111,8 @@ export async function execute(store: Store, flags: PublishNewFlags): Promise<Com
 
   const dateCreated = new Date().toISOString().slice(0, 10);
   await mkdir(absolutePath, { recursive: true });
-  await writeFileAtomic(path.join(absolutePath, 'index.html'), pageSkeleton(flags.slug, dateCreated));
-  await writeFileAtomic(path.join(absolutePath, 'README.md'), readmeSkeleton(flags.slug, dateCreated));
+  await writeFileAtomic(path.join(absolutePath, 'index.html'), pageSkeleton(pageName, dateCreated));
+  await writeFileAtomic(path.join(absolutePath, 'README.md'), readmeSkeleton(pageName, dateCreated));
 
   return {
     exitCode: ExitCode.Ok,
