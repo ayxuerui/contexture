@@ -2,9 +2,14 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import type { StoreConfig } from '../../src/config/schema.js';
-import { renderConventionBlock, renderConventionsSection } from '../../src/core/agents-doc.js';
+import {
+  BASELINE_SOURCE_LABEL,
+  renderBaselineBlock,
+  renderConventionBlock,
+  renderConventionsSection,
+} from '../../src/core/agents-doc.js';
 import { extractDocMetadata, inlineDocBody, scanConventions } from '../../src/core/conventions.js';
-import { seedHouseConventionsFile, syncBaselineConventions } from '../../src/core/convention-doc.js';
+import { removeManagedBaselineFile, seedHouseConventionsFile } from '../../src/core/convention-doc.js';
 import { makeTmpDir } from '../helpers/tmp-store.js';
 
 function makeConfig(): StoreConfig {
@@ -162,10 +167,12 @@ describe('renderConventionsSection', () => {
     expect(lines).toContain('Do this.');
   });
 
-  it('explains the mechanism and names the configured path when empty', () => {
+  it('explains the mechanism and names the configured path when the store has added none of its own', () => {
     const lines = renderConventionsSection(makeConfig(), []).join('\n');
     expect(lines).toContain('`guidance/`');
-    expect(lines).toMatch(/no convention documents yet/i);
+    expect(lines).toMatch(/added none of its own yet/i);
+    // The baseline is always present, so "empty" now means "no operator files".
+    expect(lines).toContain('### Baseline conventions');
   });
 
   it('directs a harness-specific note to that harness\'s own entry file, not this directory', () => {
@@ -188,13 +195,17 @@ describe('renderConventionsSection', () => {
  * it could when it shipped as two separate template files.
  */
 describe('conventions section templates', () => {
-  it('renders the empty branch exactly', () => {
+  // The baseline block is composed in rather than transcribed: it is long, and
+  // its content is this store's config, which the dedicated tests above cover.
+  it('renders the no-operator-files branch exactly', () => {
     expect(renderConventionsSection(makeConfig(), [])).toEqual([
       "## Store conventions",
       "",
-      "This store declares no convention documents yet. Operator-authored conventions (content style, field",
-      "semantics, house rules) belong as markdown files under `guidance/` — each is",
-      "inlined here in full on regeneration.",
+      "contexture's shipped baseline, inlined in full. This store has added none of its own yet —",
+      "operator-authored conventions (content style, field semantics, house rules) belong as markdown",
+      "files under `guidance/`, each inlined here alongside the baseline.",
+      "",
+      ...renderBaselineBlock(makeConfig()),
       "",
       "A note that applies to only one agent harness (not every harness reading this store) belongs below that harness's own managed import in its own entry file, never here — every file in this directory is inlined into every harness's entry document equally.",
     ]);
@@ -208,7 +219,9 @@ describe('conventions section templates', () => {
     ).toEqual([
       "## Store conventions",
       "",
-      "Operator-authored conventions for this store, inlined in full:",
+      "contexture's shipped baseline and this store's own conventions, inlined in full:",
+      "",
+      ...renderBaselineBlock(makeConfig()),
       "",
       "### Style",
       "",
@@ -221,57 +234,77 @@ describe('conventions section templates', () => {
   });
 });
 
-describe('syncBaselineConventions', () => {
-  const legacy = 'guidance/baseline-convention.md';
+describe('the baseline renders into AGENTS.md instead of a file', () => {
   const current = 'guidance/baseline-conventions.md';
+  const legacy = 'guidance/baseline-convention.md';
   const managed = '<!-- Owned by contexture — written by `ctxr init`, refreshed by `ctxr update`. Do not edit. -->';
 
-  it('writes the plural filename and removes the managed file left at the old singular name', async () => {
+  it('inlines the baseline as the first block, sourced to the tool rather than a path', () => {
+    const section = renderConventionsSection(makeConfig(), []).join('\n');
+    expect(section).toContain('### Baseline conventions');
+    expect(section).toContain(`_Source: ${BASELINE_SOURCE_LABEL}_`);
+    // Never a path — there is no file to point at.
+    expect(section).not.toContain('guidance/baseline-conventions.md');
+    // Rendered from THIS store's config, not a shipped constant.
+    expect(section).toContain('The visibility field is `lens:`');
+  });
+
+  it('puts the baseline ahead of the operator files, and keeps them all', () => {
+    const own = { path: 'guidance/house-conventions.md', title: 'House conventions', description: null, body: 'Ours.\n' };
+    const section = renderConventionsSection(makeConfig(), [own]).join('\n');
+    expect(section.indexOf('### Baseline conventions')).toBeLessThan(section.indexOf('### House conventions'));
+    expect(section).toContain('Ours.');
+  });
+
+  it('removes the managed file under either name, so an upgraded store never inlines it twice', async () => {
+    for (const name of [current, legacy]) {
+      const tmp = await makeTmpDir();
+      try {
+        await mkdir(path.join(tmp.root, 'guidance'), { recursive: true });
+        await writeFile(path.join(tmp.root, name), `---\ntitle: Baseline conventions\n---\n${managed}\nStale.\n`);
+
+        expect((await removeManagedBaselineFile(tmp.root, makeConfig())).changed).toBe(true);
+        await expect(readFile(path.join(tmp.root, name), 'utf8')).rejects.toThrow();
+
+        // Nothing left for the wholesale directory scan to pick up.
+        expect(await scanConventions(tmp.root, makeConfig())).toEqual([]);
+      } finally {
+        await tmp.cleanup();
+      }
+    }
+  });
+
+  it('never removes an operator file sitting at either baseline name', async () => {
+    for (const name of [current, legacy]) {
+      const tmp = await makeTmpDir();
+      try {
+        await mkdir(path.join(tmp.root, 'guidance'), { recursive: true });
+        await writeFile(path.join(tmp.root, name), '---\ntitle: Mine\n---\nHand-written, no managed header.\n');
+
+        expect((await removeManagedBaselineFile(tmp.root, makeConfig())).changed).toBe(false);
+        expect(await readFile(path.join(tmp.root, name), 'utf8')).toContain('Hand-written');
+      } finally {
+        await tmp.cleanup();
+      }
+    }
+  });
+
+  it('is a no-op when there is nothing to remove', async () => {
     const tmp = await makeTmpDir();
     try {
-      await mkdir(path.join(tmp.root, 'guidance'), { recursive: true });
-      await writeFile(path.join(tmp.root, legacy), `---\ntitle: Baseline conventions\n---\n${managed}\nStale.\n`);
-
-      const result = await syncBaselineConventions(tmp.root, makeConfig());
-      expect(result.changed).toBe(true);
-
-      // Left in place it would be inlined into AGENTS.md a second time, since
-      // scanConventions reads the guidance directory wholesale.
-      await expect(readFile(path.join(tmp.root, legacy), 'utf8')).rejects.toThrow();
-      expect(await readFile(path.join(tmp.root, current), 'utf8')).toContain('Baseline conventions');
-
-      const docs = await scanConventions(tmp.root, makeConfig());
-      expect(docs.map((d) => d.path)).toEqual([current]);
+      expect((await removeManagedBaselineFile(tmp.root, makeConfig())).changed).toBe(false);
     } finally {
       await tmp.cleanup();
     }
   });
 
-  it('never removes an operator file that happens to sit at the old name', async () => {
-    const tmp = await makeTmpDir();
-    try {
-      await mkdir(path.join(tmp.root, 'guidance'), { recursive: true });
-      await writeFile(path.join(tmp.root, legacy), '---\ntitle: Mine\n---\nHand-written, no managed header.\n');
-
-      await syncBaselineConventions(tmp.root, makeConfig());
-
-      expect(await readFile(path.join(tmp.root, legacy), 'utf8')).toContain('Hand-written');
-    } finally {
-      await tmp.cleanup();
-    }
-  });
-
-  it('is byte-stable once current, and reports no change', async () => {
-    const tmp = await makeTmpDir();
-    try {
-      expect((await syncBaselineConventions(tmp.root, makeConfig())).changed).toBe(true);
-      const first = await readFile(path.join(tmp.root, current), 'utf8');
-
-      expect((await syncBaselineConventions(tmp.root, makeConfig())).changed).toBe(false);
-      expect(await readFile(path.join(tmp.root, current), 'utf8')).toBe(first);
-    } finally {
-      await tmp.cleanup();
-    }
+  it('tracks the store config: changing a rendered value changes the inlined block', () => {
+    const before = renderBaselineBlock(makeConfig()).join('\n');
+    const config = makeConfig();
+    config.organize = { ...config.organize, archive_destination: 'retired/' };
+    const after = renderBaselineBlock(config).join('\n');
+    expect(before).toContain('archive/');
+    expect(after).toContain('retired/');
   });
 });
 
