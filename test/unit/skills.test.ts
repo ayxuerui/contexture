@@ -121,6 +121,20 @@ describe('owned-skills-expansion: each skill carries its load-bearing rule (task
     expect(s).toContain('`ctxr note resolve <path>`');
   });
 
+  it('session capture: separates a rule from a fact, defaults to no, proposes removals, and never routes a convention through the notes command', () => {
+    const s = skills['ctxr-session-capture'];
+    expect(s).toContain('a note records that');
+    expect(s).toContain('The default answer is NO');
+    expect(s).toContain('Propose REMOVALS');
+    expect(s).toContain('not already in the shipped baseline');
+    // The bar's four clauses, and the write path: conventions are a direct
+    // edit, because `ctxr session capture` writes notes and stamps visibility.
+    expect(s).toContain('never the YAML above');
+    expect(s).toContain('same commit');
+    // The store's configured guidance path, not a hardcoded one.
+    expect(s).toContain('guidance/house-conventions.md');
+  });
+
   it('connection proposal: reads before it proposes, groups by the configured vocabulary with a single fallback group, confirms before writing', () => {
     const s = skills['ctxr-connection-proposal'];
     expect(s).toContain('Read every candidate before proposing it');
@@ -340,6 +354,16 @@ describe('owned-skills-expansion: each skill carries its load-bearing rule (task
   it('every skill names ctxr, never the project name, as the executable', () => {
     for (const [file, content] of Object.entries(skills)) {
       expect(content, file).not.toMatch(/`contexture [a-z]/);
+    }
+  });
+
+  it('no template placeholder survives rendering', () => {
+    // A seed that forgets its .replaceAll ships the literal __TOKEN__ to every
+    // store, in a file agents read as instructions. Guards every substitution,
+    // not just the ones that exist today.
+    for (const [file, content] of Object.entries(skills)) {
+      const leaked = content.match(/__[A-Z][A-Z0-9_]*__/g);
+      expect(leaked, `${file} leaked ${leaked?.join(', ')}`).toBeNull();
     }
   });
 });
