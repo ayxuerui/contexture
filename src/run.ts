@@ -548,7 +548,7 @@ export async function run(argv: readonly string[], env: RunEnv): Promise<ExitCod
       const { runEnv, jsonMode, root } = deriveRunEnv(env, cmd);
       result = await runCommand('adapters.generate', runEnv, jsonMode, async () => {
         const store = await openStore(runEnv, { root });
-        return adaptersGenerateCommand.execute(store);
+        return adaptersGenerateCommand.execute(runEnv, store);
       });
     });
 

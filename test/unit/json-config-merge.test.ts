@@ -209,5 +209,71 @@ describe('mergeJsonArrayLists', () => {
         await tmp.cleanup();
       }
     });
+
+    it('replaces a same-script entry whose absolute path differs, in place, producing no duplicate (stabilize-write-gate-hook-path)', async () => {
+      const tmp = await makeTmpDir();
+      try {
+        const filePath = path.join(tmp.root, 'settings.json');
+        await mkdir(tmp.root, { recursive: true });
+        // Same matcher, same script basename, different absolute path prefix —
+        // e.g. two different session worktrees that each once ran the generator.
+        await writeFile(
+          filePath,
+          JSON.stringify({ hooks: { PreToolUse: [hookEntry('/home/me/.worktrees/session-a/.claude/hooks/gate.sh')] } }),
+        );
+
+        const { changed } = await mergeJsonArrayLists(filePath, { hooks: { PreToolUse: [hookEntry('/home/me/.claude/hooks/gate.sh')] } });
+        expect(changed).toBe(true);
+        const written = JSON.parse(await readFile(filePath, 'utf8'));
+        expect(written.hooks.PreToolUse).toEqual([hookEntry('/home/me/.claude/hooks/gate.sh')]);
+      } finally {
+        await tmp.cleanup();
+      }
+    });
+
+    it('collapses more than one accumulated stale copy of the same script down to one, in the first one\'s position', async () => {
+      const tmp = await makeTmpDir();
+      try {
+        const filePath = path.join(tmp.root, 'settings.json');
+        await mkdir(tmp.root, { recursive: true });
+        const operatorEntry = hookEntry('/home/me/my-hook.sh');
+        await writeFile(
+          filePath,
+          JSON.stringify({
+            hooks: {
+              PreToolUse: [
+                hookEntry('/home/me/.worktrees/session-a/.claude/hooks/gate.sh'),
+                operatorEntry,
+                hookEntry('/home/me/.worktrees/session-b/.claude/hooks/gate.sh'),
+              ],
+            },
+          }),
+        );
+
+        await mergeJsonArrayLists(filePath, { hooks: { PreToolUse: [hookEntry('/home/me/.claude/hooks/gate.sh')] } });
+        const written = JSON.parse(await readFile(filePath, 'utf8'));
+        // Exactly one gate.sh entry survives, at the first stale entry's
+        // original position — the operator's unrelated entry is untouched.
+        expect(written.hooks.PreToolUse).toEqual([hookEntry('/home/me/.claude/hooks/gate.sh'), operatorEntry]);
+      } finally {
+        await tmp.cleanup();
+      }
+    });
+
+    it('leaves an operator hook with the same matcher but a different script basename untouched', async () => {
+      const tmp = await makeTmpDir();
+      try {
+        const filePath = path.join(tmp.root, 'settings.json');
+        await mkdir(tmp.root, { recursive: true });
+        const operatorEntry = hookEntry('/home/me/.claude/hooks/my-other-hook.sh');
+        await writeFile(filePath, JSON.stringify({ hooks: { PreToolUse: [operatorEntry] } }));
+
+        await mergeJsonArrayLists(filePath, { hooks: { PreToolUse: [hookEntry('/home/me/.claude/hooks/gate.sh')] } });
+        const written = JSON.parse(await readFile(filePath, 'utf8'));
+        expect(written.hooks.PreToolUse).toEqual([operatorEntry, hookEntry('/home/me/.claude/hooks/gate.sh')]);
+      } finally {
+        await tmp.cleanup();
+      }
+    });
   });
 });

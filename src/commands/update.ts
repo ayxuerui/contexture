@@ -21,7 +21,7 @@ export interface UpdateData {
  */
 export async function execute(env: RunEnv, store: Store): Promise<CommandOutcome<UpdateData>> {
   const { changed, findings } = await reconcileStore(env, store.root, store.config);
-  const adapterFiles = await generateAdapterOutputs(store);
+  const adapterFiles = await generateAdapterOutputs(env.git, store);
   const all = [...new Set([...changed, ...adapterFiles.filter((f) => f.changed).map((f) => f.path)])];
 
   return {
