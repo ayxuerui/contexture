@@ -29,7 +29,7 @@ function makeConfig(overrides: Partial<StoreConfig['retrieval']['graph']> = {}):
       graph: { cluster_depth: 2, hub_top: 8, bridge_top: 10, orphan_exempt_clusters: [], ...overrides },
     },
     git: { default_branch: 'main' },
-    session: { branch_prefix: 'session/', worktrees_path: '.worktrees/', workspaces_external: false },
+    session: { branch_prefix: 'session/', worktrees_path: '.worktrees/' },
     write_lifecycle: { diff_size_ceiling_lines: 2000, writable_paths: [] },
     catalog: { path: 'catalog/', section_max_bytes: 32768 },
     disclosure: { internal_audiences: [], hard_walls: [], leak_markers: {} },

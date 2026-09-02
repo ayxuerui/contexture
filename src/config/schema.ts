@@ -23,7 +23,7 @@ import { z } from 'zod';
  * `harness.conventions_path` -> `harness.guidance_path`. HarnessSchema's
  * transform accepts the old key through this version too, the same way.
  */
-export const SUPPORTED_SCHEMA_VERSION = 4;
+export const SUPPORTED_SCHEMA_VERSION = 5;
 
 export const TaxonomyLayerSchema = z.object({
   name: z.string().min(1),
@@ -97,17 +97,9 @@ const GitSchema = z.object({
   default_branch: z.string().min(1),
 });
 
-/**
- * write-lifecycle spec: `workspaces_external: true` marks a store whose
- * session worktrees are created/removed by a process outside `ctxr` (e.g. an
- * external agent-runtime WebUI) — `ctxr session reap` refuses to run rather
- * than touch a worktree it does not own. Defaults to `false`, the prior
- * behavior, for every store that does not set it.
- */
 const SessionSchema = z.object({
   branch_prefix: z.string().min(1),
   worktrees_path: z.string().min(1),
-  workspaces_external: z.boolean().default(false),
 });
 
 /** session-capture-command spec (D5): declaring any path here turns the sanctioned-location gate on; empty (the default) leaves every in-store path accepted. */
@@ -238,13 +230,28 @@ const HarnessSchema = z
  * v1 resolves every entry against the built-in adapter registry by
  * (kind, id).
  */
-const AdapterKindSchema = z.enum(['harness-generation', 'forge']);
+const AdapterKindSchema = z.enum(['harness-generation']);
 
 const AdapterDeclarationSchema = z.object({
   id: z.string().min(1),
   kind: AdapterKindSchema,
   module: z.string().min(1).optional(),
 });
+
+/**
+ * session-keeps-only-what-git-cannot-do (D2): removing the `forge` kind
+ * outright would make a store still declaring `{ kind: forge }` fail to
+ * load at all — a shape error, not a migration opportunity — since
+ * `readConfig` runs this schema before `ctxr migrate` can act. Mirrors
+ * `HarnessSchema`'s fallback-transform precedent: accept the legacy shape
+ * loosely, drop it here, and let the schema_version < 5 migration rewrite
+ * the YAML on disk. Any OTHER unrecognized kind is a genuine error and
+ * still fails loudly against `AdapterDeclarationSchema` below.
+ */
+const AdaptersFieldSchema = z
+  .array(z.object({ id: z.string().min(1), kind: z.string().min(1), module: z.string().min(1).optional() }))
+  .transform((declarations) => declarations.filter((d) => d.kind !== 'forge'))
+  .pipe(z.array(AdapterDeclarationSchema));
 
 export const StoreConfigSchema = z
   .object({
@@ -262,7 +269,7 @@ export const StoreConfigSchema = z
     ingest: IngestSchema,
     organize: OrganizeSchema,
     harness: HarnessSchema,
-    adapters: z.array(AdapterDeclarationSchema),
+    adapters: AdaptersFieldSchema,
   })
   .passthrough();
 

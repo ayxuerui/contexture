@@ -5,7 +5,7 @@ import type { StoreConfig } from '../config/schema.js';
 /**
  * write-lifecycle spec: session branch names are prefixed (configurable —
  * default "session/") and unique. Sortable by creation time, since that's
- * useful for reap/list ordering without needing to consult git history.
+ * useful for `session list`'s ordering without needing to consult git history.
  */
 export function generateSessionBranchName(config: StoreConfig, now: Date = new Date()): string {
   const stamp = now
@@ -22,17 +22,17 @@ export function isSessionBranch(config: StoreConfig, branch: string): boolean {
 }
 
 /**
- * session-submit-and-land spec: a worktree is ALSO recognized as a session
- * by where it lives, not only by its branch's name — `session submit
- * --branch <name>` renames the branch out from under the prefix, and a
- * renamed session must stay a session for `session list`/`session reap`.
+ * write-lifecycle spec: a worktree is ALSO recognized as a session by where
+ * it lives, not only by its branch's name — the `ctxr-submit` skill may
+ * rename a session's branch by hand (`git branch -m <name>`) before it
+ * reaches the forge, out from under the configured prefix, and a renamed
+ * session must stay recognizable to `session list`.
  *
  * Deliberately independent of any particular `store.root`: the worktree's
  * OWN path shape is the durable identity — its immediate parent directory
- * is named after the configured worktrees path — because the caller
- * checking this (e.g. `session land --reap`, run FROM the very worktree it
- * would remove) may itself resolve `store.root` to that same path, which
- * would make a storeRoot-relative comparison meaningless.
+ * is named after the configured worktrees path — because a caller checking
+ * this may itself be running from inside the very worktree in question,
+ * which would make a storeRoot-relative comparison meaningless.
  */
 export function isSessionWorktreePath(config: StoreConfig, worktreePath: string): boolean {
   const worktreesDirName = path.basename(config.session.worktrees_path);

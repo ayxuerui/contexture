@@ -51,7 +51,7 @@ __RELATION_VOCABULARY__
 
 Nothing reaches `__DEFAULT_BRANCH__` un-gated — every write happens inside a session worktree under `__WORKTREES_PATH__`, landed only through a reviewed pull request (see the Write path rule above).
 
-`ctxr session land` fast-forwards the store's canonical clone itself once a PR merges — wherever the command was invoked from — as long as that clone is on `__DEFAULT_BRANCH__` and can fast-forward cleanly from its remote; if it can't (diverged, no remote, or already elsewhere), the command reports why instead of forcing it, and the clone is never checked out, reset, or discarded to make it fast-forward.
+Landing (`ctxr-land`) fast-forwards the store's canonical clone itself once a PR merges — `git fetch origin && git merge --ff-only origin/__DEFAULT_BRANCH__`, run from that clone — as long as it is on `__DEFAULT_BRANCH__` and can fast-forward cleanly from its remote; if it can't (diverged, no remote, or already elsewhere), the skill reports why instead of forcing it, and the clone is never checked out, reset, or discarded to make it fast-forward.
 
 The pre-push hook refuses a direct push to `__DEFAULT_BRANCH__`; `CONTEXTURE_ALLOW_DEFAULT_BRANCH_PUSH=1` is its emergency override — for genuine emergencies, not routine use. A generated harness permission config (for example, a harness-generation adapter's `.claude/settings.json`) bakes in the absolute path of whichever checkout generated it, so it is correct for exactly that checkout and should not be committed as though it were portable; re-run the adapter's generate command in a new checkout instead.
 

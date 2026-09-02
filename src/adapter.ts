@@ -12,7 +12,6 @@
  * contexture's built-ins use, ready for that loading mechanism once it ships.
  */
 export type { Adapter, AdapterKind, HarnessGenerationAdapter } from './adapters/types.js';
-export type { ForgeAdapter, OpenPullRequestInput, OpenPullRequestResult } from './adapters/forge/types.js';
 
 import type { Adapter, AdapterKind } from './adapters/types.js';
 

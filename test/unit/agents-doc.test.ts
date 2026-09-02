@@ -30,7 +30,7 @@ function makeConfig(overrides: Partial<StoreConfig> = {}): StoreConfig {
     derived: { paths: ['.contexture/'] },
     retrieval: { exclude_paths: ['identity/'], relations: [], graph: { cluster_depth: 2, hub_top: 8, bridge_top: 10, orphan_exempt_clusters: [] } },
     git: { default_branch: 'main' },
-    session: { branch_prefix: 'session/', worktrees_path: '.worktrees/', workspaces_external: false },
+    session: { branch_prefix: 'session/', worktrees_path: '.worktrees/' },
     write_lifecycle: { diff_size_ceiling_lines: 2000, writable_paths: [] },
     catalog: { path: 'catalog/', section_max_bytes: 32768 },
     disclosure: { internal_audiences: [], hard_walls: [], leak_markers: {} },
@@ -188,10 +188,11 @@ describe('renderCanonicalSection', () => {
     expect(lines).toContain('`lens:`');
   });
 
-  it('states the write-path rule naming session start and session submit', () => {
+  it('states the write-path rule naming session start and the ctxr-submit skill', () => {
     const lines = renderCanonicalSection(makeConfig()).join('\n');
     expect(lines).toMatch(/session start/);
-    expect(lines).toMatch(/session submit/);
+    expect(lines).toMatch(/ctxr-submit/);
+    expect(lines).not.toContain('ctxr session submit');
   });
 
   it('no longer carries a skill index', () => {
@@ -568,7 +569,7 @@ describe('exact rendered output', () => {
       "",
       "### Write path",
       "",
-      "Every write to this store happens inside a session worktree, never directly on the default branch: `ctxr session start` creates one, then `ctxr session submit` validates, commits, pushes, and opens (or reports how to open) a pull request. Do not edit files in the store root directly.",
+      "Every write to this store happens inside a session worktree, never directly on the default branch: `ctxr session start` creates one, then `ctxr-submit` validates with `ctxr doctor`, commits, pushes, and opens (or reports how to open) a pull request. Do not edit files in the store root directly.",
       "",
       "### Identity and memory",
       "",

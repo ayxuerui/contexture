@@ -1,3 +1,4 @@
+import { dropForgeAndWorkspacesExternalMigration } from './drop-forge-and-workspaces-external.js';
 import { renameConventionsPathMigration } from './rename-conventions-path.js';
 import { renameProceduresPathMigration } from './rename-procedures-path.js';
 import { renameVisibilityFieldMigration } from './rename-visibility-field.js';
@@ -8,6 +9,7 @@ export const MIGRATIONS: readonly Migration[] = [
   renameVisibilityFieldMigration,
   renameProceduresPathMigration,
   renameConventionsPathMigration,
+  dropForgeAndWorkspacesExternalMigration,
 ];
 
 /** Every migration a store currently at `fromVersion` still needs to reach the CLI's supported version, in order. */

@@ -1,14 +1,13 @@
 /**
- * Reserved shape for the adapters capability's single contract, covering the
- * two v1 kinds — harness-generation, forge (a search kind is deferred to v2
- * alongside the visibility-field naming decision).
- *
- * Phase 2.5 ships a concrete GitHub forge adapter six phases before Phase 8.2
- * formally defines discovery. Reserving this shape now means Phase 2 builds
- * against it instead of inventing its own registration mechanism, and
- * Phase 8 extends this rather than retrofitting Phase 2's adapter into it.
+ * Reserved shape for the adapters capability's single contract. `forge`
+ * (GitHub pull-request read/merge) was removed once its only consumers,
+ * `ctxr session submit`/`land`, were replaced by the `ctxr-submit`/`ctxr-land`
+ * skills driving `git`/`gh` directly (session-keeps-only-what-git-cannot-do).
+ * A search kind is deferred to v2 alongside the visibility-field naming
+ * decision — the registration mechanism stays kind-generic for that reason,
+ * even with one kind currently registered.
  */
-export type AdapterKind = 'harness-generation' | 'forge';
+export type AdapterKind = 'harness-generation';
 
 export interface Adapter<K extends AdapterKind = AdapterKind> {
   kind: K;
@@ -24,8 +23,6 @@ export interface Adapter<K extends AdapterKind = AdapterKind> {
  */
 export const SUPPORTED_ADAPTER_INTERFACE_VERSION: Record<AdapterKind, number> = {
   'harness-generation': 1,
-  // session-submit-and-land spec (D5): pullRequest/mergePullRequest joined the forge interface at v2.
-  forge: 2,
 };
 
 /**
@@ -84,6 +81,5 @@ export interface HarnessGenerationAdapter extends Adapter<'harness-generation'> 
  */
 export interface AdapterForKind {
   'harness-generation': HarnessGenerationAdapter;
-  forge: import('./forge/types.js').ForgeAdapter;
 }
 

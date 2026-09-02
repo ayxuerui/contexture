@@ -25,7 +25,7 @@ function makeConfig(overrides: Partial<StoreConfig> = {}): StoreConfig {
     derived: { paths: [] },
     retrieval: { exclude_paths: [], relations: [], graph: { cluster_depth: 2, hub_top: 8, bridge_top: 10, orphan_exempt_clusters: [] } },
     git: { default_branch: 'main' },
-    session: { branch_prefix: 'session/', worktrees_path: '.worktrees/', workspaces_external: false },
+    session: { branch_prefix: 'session/', worktrees_path: '.worktrees/' },
     write_lifecycle: { diff_size_ceiling_lines: 2000, writable_paths: [] },
     catalog: { path: 'catalog/', section_max_bytes: 32768 },
     disclosure: { internal_audiences: [], hard_walls: [], leak_markers: {} },
@@ -107,13 +107,13 @@ describe('adapterCompatibilityCheck', () => {
   });
 
   it('passes when every declared adapter resolves', async () => {
-    const adapters: AdapterDeclaration[] = [{ id: 'github', kind: 'forge' }];
+    const adapters: AdapterDeclaration[] = [{ id: 'claude-code', kind: 'harness-generation' }];
     const result = await adapterCompatibilityCheck.run(makeCtx({ config: makeConfig({ adapters }) }));
     expect(result.status).toBe('pass');
   });
 
   it('fails, naming the adapter, when a declared adapter does not resolve', async () => {
-    const adapters: AdapterDeclaration[] = [{ id: 'nonexistent', kind: 'forge' }];
+    const adapters: AdapterDeclaration[] = [{ id: 'nonexistent', kind: 'harness-generation' }];
     const result = await adapterCompatibilityCheck.run(makeCtx({ config: makeConfig({ adapters }) }));
     expect(result.status).toBe('fail');
     expect(result.findings[0]?.subject).toBe('nonexistent');

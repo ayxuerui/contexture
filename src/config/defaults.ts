@@ -86,8 +86,6 @@ export const DEFAULT_WORKTREES_PATH = '.worktrees/';
 /** Branch names for session worktrees are prefixed so they're recognizable and sweep-safe. */
 export const DEFAULT_SESSION_BRANCH_PREFIX = 'session/';
 
-/** write-lifecycle spec: worktrees are ctxr-owned (not externally provided) unless a store opts in. */
-export const DEFAULT_WORKSPACES_EXTERNAL = false;
 
 /** write-lifecycle spec: pre-commit's diff-size ceiling, in total changed lines. */
 export const DEFAULT_DIFF_SIZE_CEILING_LINES = 2000;
@@ -115,13 +113,10 @@ export const DEFAULT_ARCHIVE_PATH = 'archive/';
 export const DEFAULT_ROLLUP_STALE_DAYS = 7;
 
 /**
- * adapters spec: init registers both shipped builtins by default, so
- * out-of-the-box UX (a PR opened on session submit, a generated CLAUDE.md)
- * keeps working without the operator hand-writing config — each is just as
- * removable from this list as it was addable.
+ * adapters spec: init registers the shipped builtin by default, so
+ * out-of-the-box UX (a generated CLAUDE.md) keeps working without the
+ * operator hand-writing config — it is just as removable from this list as
+ * it was addable.
  */
-export const DEFAULT_ADAPTERS: readonly AdapterDeclaration[] = [
-  { id: 'github', kind: 'forge' },
-  { id: 'claude-code', kind: 'harness-generation' },
-];
+export const DEFAULT_ADAPTERS: readonly AdapterDeclaration[] = [{ id: 'claude-code', kind: 'harness-generation' }];
 
