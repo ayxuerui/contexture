@@ -14,20 +14,26 @@ export const requires: CommandRequires = { store: 'required' };
 
 export interface ServeFlags {
   port: number;
+  host: string;
 }
 
 export interface ServeData {
   url: string;
   port: number;
+  host: string;
   root: string;
 }
 
 /**
- * local-browsing-surface design.md D1: the entire security boundary is
- * binding to loopback only — there is no flag or config key that can widen
- * this, on purpose.
+ * Defaults to loopback so an invocation with no `--host` keeps today's
+ * behavior exactly. `--host` exists for an operator who has deliberately
+ * decided to put something else (a reverse proxy, a tunnel sharing this
+ * process's network namespace) in front and knows what binding wider than
+ * loopback exposes — this command still applies no requester filtering of
+ * its own regardless of bind address; that judgment is entirely the
+ * caller's.
  */
-const LOOPBACK_HOST = '127.0.0.1';
+export const DEFAULT_HOST = '127.0.0.1';
 
 const CONTENT_TYPES: Readonly<Record<string, string>> = {
   '.html': 'text/html; charset=utf-8',
@@ -99,7 +105,7 @@ async function readDerivedDocument(absolutePath: string): Promise<{ text: string
 
 async function handleRequest(store: Store, stderr: NodeJS.WritableStream, req: IncomingMessage, res: ServerResponse): Promise<void> {
   const method = req.method ?? 'GET';
-  const pathname = decodeURIComponent(new URL(req.url ?? '/', `http://${LOOPBACK_HOST}`).pathname);
+  const pathname = decodeURIComponent(new URL(req.url ?? '/', 'http://localhost').pathname);
   stderr.write(`${method} ${pathname}\n`);
 
   if (method !== 'GET' && method !== 'HEAD') {
@@ -178,18 +184,19 @@ export async function execute(env: RunEnv, store: Store, flags: ServeFlags): Pro
     });
   });
 
+  const host = flags.host;
   await new Promise<void>((resolve, reject) => {
     server.once('error', reject);
-    server.listen(flags.port, LOOPBACK_HOST, resolve);
+    server.listen(flags.port, host, resolve);
   });
 
   const address = server.address();
   const port = typeof address === 'object' && address !== null ? address.port : flags.port;
-  const url = `http://${LOOPBACK_HOST}:${port}/`;
+  const url = `http://${host}:${port}/`;
 
   return {
     exitCode: ExitCode.Ok,
-    data: { url, port, root: store.root },
+    data: { url, port, host, root: store.root },
     findings: [],
     humanSummary: `serving ${store.root} at ${url}`,
     storeRoot: store.root,

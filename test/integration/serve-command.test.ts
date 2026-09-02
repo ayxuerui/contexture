@@ -74,6 +74,29 @@ describe('ctxr serve (real CLI)', () => {
     }
   }, 20_000);
 
+  it('binds to an explicit --host instead of the loopback default', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const env = hermeticGitEnv();
+      expect((await runCli(['init'], { cwd: tmp.root, env })).exitCode).toBe(0);
+
+      const { child, firstLine } = await runCliBackground(['serve', '--port', '0', '--host', '0.0.0.0', '--json'], { cwd: tmp.root, env });
+      try {
+        const envelope = JSON.parse(firstLine) as { data: { url: string; host: string; port: number } };
+        expect(envelope.data.host).toBe('0.0.0.0');
+        expect(envelope.data.url).toMatch(/^http:\/\/0\.0\.0\.0:\d+\/$/);
+
+        // 0.0.0.0 accepts connections on every interface, loopback included.
+        const res = await fetch(`http://127.0.0.1:${envelope.data.port}/`);
+        expect(res.status).toBe(200);
+      } finally {
+        await stopCliBackground(child);
+      }
+    } finally {
+      await tmp.cleanup();
+    }
+  }, 20_000);
+
   it('shows a build hint instead of a bare 404 when the graph has not been built yet', async () => {
     const tmp = await makeTmpDir();
     try {
