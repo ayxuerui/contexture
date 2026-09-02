@@ -183,9 +183,15 @@ describe('owned-skills-expansion: each skill carries its load-bearing rule (task
   it('session lifecycle: reclaiming is git-driven and scoped by session list, with no config branch left to diverge (session-keeps-only-what-git-cannot-do)', () => {
     const s = skills['ctxr-session-lifecycle'];
     expect(s).toContain('`ctxr session list`'); // the safe read that scopes the unsafe write
-    expect(s).toContain('`git worktree remove <path>` then `git branch -d <branch>`'); // merged-and-clean, unforced
+    expect(s).toContain('`git worktree remove <path>`'); // merged-and-clean, unforced
     expect(s).toContain('`git worktree remove --force <path>`'); // deliberate discard, forced and named as destructive
     expect(s).toContain('destroys any uncommitted or');
+    // Merged-ness comes from the forge, never git ancestry: a squash merge (GitHub's default) leaves the
+    // squashed commit off the branch tip, so `git branch -d` refuses every landed branch forever. Guidance
+    // that reads that refusal as "unmerged work" strands every session a squash-merging store ever landed.
+    expect(s).toContain('gh pr view <branch> --json state');
+    expect(s).toMatch(/squash/i);
+    expect(s).toContain('`git branch -D`'); // the correct finish once the forge confirmed the merge
     // no config key exists anymore to render a second, possibly-inconsistent variant of this skill
     expect(s).not.toContain('workspaces_external');
     expect(s).not.toContain('provided externally');
