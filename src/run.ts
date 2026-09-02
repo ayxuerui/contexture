@@ -23,6 +23,7 @@ import * as sessionCaptureCommand from './commands/session-capture.js';
 import * as sessionLandCommand from './commands/session-land.js';
 import * as sessionListCommand from './commands/session-list.js';
 import * as sessionReapCommand from './commands/session-reap.js';
+import * as serveCommand from './commands/serve.js';
 import * as sessionStartCommand from './commands/session-start.js';
 import * as rollupGatherCommand from './commands/rollup-gather.js';
 import * as rollupStaleCommand from './commands/rollup-stale.js';
@@ -565,6 +566,18 @@ export async function run(argv: readonly string[], env: RunEnv): Promise<ExitCod
       // stdout/exit code, not contexture's.
       const { runEnv, root } = deriveRunEnv(env, cmd);
       result = await adaptersWriteGateCommand.execute(runEnv, { root });
+    });
+
+  program
+    .command('serve')
+    .description('serve notes, catalog sections, the graph document, and published pages over loopback-only HTTP, for reading in a browser')
+    .option('--port <n>', 'port to bind (default: OS-assigned)', (v) => Number.parseInt(v, 10), 0)
+    .action(async (cmdOpts: { port: number }, cmd: Command) => {
+      const { runEnv, jsonMode, root } = deriveRunEnv(env, cmd);
+      result = await runCommand('serve', runEnv, jsonMode, async () => {
+        const store = await openStore(runEnv, { root });
+        return serveCommand.execute(runEnv, store, { port: cmdOpts.port });
+      });
     });
 
   program
