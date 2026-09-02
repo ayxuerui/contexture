@@ -36,6 +36,7 @@
 
 These cannot be exercised before the workflow file is on the default branch; they are the completion criteria after the pull request lands, not before.
 
-- [ ] 6.1 `gh workflow run vendor-check.yml` then `gh run watch` — the manual dispatch succeeds, reports `frontend-design: current`, and files no issue.
-- [ ] 6.2 `gh api repos/ayxuerui/contexture/issues --jq '[.[] | select(.labels[].name == "vendored-skill-update")] | length'` prints `0`, confirming the clean-state path opens nothing.
-- [ ] 6.3 Confirm Dependabot accepted the config: the `npm` ecosystem appears in the repository's dependency-graph Dependabot view with a recorded last-checked time, and the first grouped pull request lands with `ci.yml` green on both matrix Node versions.
+- [x] 6.1 `gh workflow run vendor-check.yml` then `gh run watch` — the manual dispatch succeeds, reports `frontend-design: current`, and files no issue.
+- [x] 6.2 `gh api repos/ayxuerui/contexture/issues --jq '[.[] | select(.labels[].name == "vendored-skill-update")] | length'` prints `0`, confirming the clean-state path opens nothing.
+- [x] 6.3a Confirm Dependabot accepted the config: post-merge, its update job ran the `npm_and_yarn` ecosystem, read both `production-dependencies` and `development-dependencies` groups correctly ("Found 2 group(s)"), and checked all seven declared dependencies. No update was needed for any of them, so no pull request was opened this run — nothing was currently outdated at merge time.
+- [ ] 6.3b The first grouped pull request lands with `ci.yml` green on both matrix Node versions. Deferred: this needs an actual minor/patch bump to become available upstream, which did not happen within this session. Verify whenever Dependabot's first `npm` group PR appears.
