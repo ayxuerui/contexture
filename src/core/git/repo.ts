@@ -105,11 +105,6 @@ export async function currentBranch(git: GitRunner, cwd: string): Promise<string
   return result.stdout.trim();
 }
 
-/** session-submit-and-land spec: renames the CURRENT branch (the checkout's HEAD moves with it) — used by `session submit --branch`. */
-export async function renameCurrentBranch(git: GitRunner, cwd: string, newName: string): Promise<void> {
-  await git.run(['branch', '-m', newName], { cwd });
-}
-
 /** Explicit pathspecs only — never `-A` — so `init` stages exactly the scaffold it wrote. */
 export async function addPaths(git: GitRunner, cwd: string, paths: readonly string[]): Promise<void> {
   if (paths.length === 0) return;
@@ -150,15 +145,4 @@ export async function commitIfStaged(
   await git.run(['commit', '-m', message], { cwd });
   const result = await git.run(['rev-parse', 'HEAD'], { cwd });
   return result.stdout.trim();
-}
-
-/** Pushes a session branch to the remote — never the default branch, which the installed hook refuses anyway. */
-export async function pushBranch(git: GitRunner, cwd: string, branch: string, remote = 'origin'): Promise<void> {
-  await git.run(['push', '--set-upstream', remote, branch], { cwd });
-}
-
-/** Whole-tree dirty check (staged AND unstaged) — distinct from hasStagedChanges, used by session reap. */
-export async function isWorkingTreeClean(git: GitRunner, cwd: string): Promise<boolean> {
-  const result = await git.run(['status', '--porcelain'], { cwd });
-  return result.stdout.trim().length === 0;
 }

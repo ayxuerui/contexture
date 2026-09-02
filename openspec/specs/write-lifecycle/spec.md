@@ -14,7 +14,7 @@ Defines how any write reaches the store: isolated in a CLI-managed session workt
 - **THEN** it creates a new git worktree on a new branch and prints that worktree's path, distinct from the canonical clone's path
 
 #### Scenario: Concurrent sessions do not collide
-- **WHEN** two `contexture session start` invocations run one after another without either being submitted or abandoned first
+- **WHEN** two `contexture session start` invocations run one after another without either reaching the default branch first
 - **THEN** each receives its own distinct worktree and branch, and work in one does not block or corrupt work in the other
 
 ### Requirement: Nothing commits to the default branch directly
@@ -39,17 +39,6 @@ The store SHALL install a version-controlled pre-commit hook that runs a staged-
 - **WHEN** all staged changes pass every pre-commit check
 - **THEN** the commit proceeds normally
 
-### Requirement: Session submission validates, commits, pushes, and opens review
-`contexture session submit` SHALL run the store's full validation (equivalent to `doctor --staged`), then commit, push the session's branch, and open a pull request via the configured forge adapter. It SHALL NOT push directly to the default branch under any circumstance.
-
-#### Scenario: A validated session opens a pull request
-- **WHEN** `contexture session submit` is run in a session worktree whose changes pass validation, with a forge adapter configured
-- **THEN** the branch is pushed and a pull request targeting the default branch is opened
-
-#### Scenario: A failing validation blocks submission
-- **WHEN** `contexture session submit` is run with changes that fail validation
-- **THEN** no commit, push, or pull request is made, and the command exits non-zero naming the validation failure
-
 ### Requirement: Shared append-only files use an append-via-queue
 A write that only appends to a shared, append-only file (such as a chronological log) SHALL be represented as a uniquely named, self-contained intent file in a queue directory, applied to the target file by a queue-reconciling operation, rather than by two concurrent sessions editing the same file's branch history directly.
 
@@ -66,64 +55,7 @@ Any command that writes a derived artifact (per the context-store derived-file d
 
 #### Scenario: A derived artifact never appears in a pull request diff
 - **WHEN** a session runs a command that rebuilds a derived artifact during its work
-- **THEN** `contexture session submit`'s resulting pull request contains no diff for that artifact
-
-### Requirement: A session can be landed end-to-end
-`ctxr session land` SHALL resolve its target branch before anything else, from exactly one source: `--branch <name>` names it outright; `--pr <n>` without `--branch` names it by way of that pull request's head branch; with neither, it is the branch checked out where the command was invoked. It SHALL resolve the target's pull request, report its number, title, and url, and branch on its state: open and mergeable → after an explicit gate, merge with the configured or requested method and confirm the forge reports merged; already merged → skip to synchronization; closed → stop; conflicting or unknown → stop with the conflict guidance. It SHALL then synchronize the default branch in the store's canonical clone — the repository's main worktree, whichever checkout the command was invoked from — by fast-forward only, reporting rather than forcing a clone that is on another branch or cannot fast-forward. With `--reap` it SHALL remove the session's worktree only when it was created by `session start`, is clean, and the pull request is merged, and SHALL refuse when the command is running from inside that worktree, naming the canonical clone as where to retry. The gate SHALL be an interactive confirmation or `--yes`; with `--no-input` and no `--yes` the command SHALL fail before any side effect. It SHALL refuse to land the default branch — before contacting the forge when the target came from `--branch` or from the invoking checkout, and on the head branch when the target came from `--pr` — and SHALL refuse when a target named by `--branch` or by the invoking checkout differs from the pull request's head branch. Its report SHALL name the outcome of every step and, for any step it did not perform, the reason. A retry SHALL re-read state and perform only the remaining steps.
-
-#### Scenario: A mergeable session lands
-- **WHEN** the session branch has an open, mergeable pull request and the gate is passed
-- **THEN** it is merged, the forge reports merged, the canonical clone's default branch is fast-forwarded, and the report names each step
-
-#### Scenario: A pull request named by number alone lands
-- **WHEN** the command is invoked with `--pr <n>` and no `--branch`, from a checkout that is on the default branch
-- **THEN** the target is that pull request's head branch, the invoking checkout's own branch is neither the target nor grounds for refusal, and the landing proceeds through the gate as usual
-
-#### Scenario: Landing from inside the session worktree still synchronizes
-- **WHEN** the command is invoked from the session worktree it is landing, and the canonical clone is on the default branch
-- **THEN** the pull request is merged and the canonical clone is fast-forwarded, and with `--reap` the worktree is left in place with the report naming both the reason and the canonical clone as where to retry
-
-#### Scenario: A conflicting session stops before any side effect
-- **WHEN** the pull request reports conflicts
-- **THEN** nothing is merged or removed and the command exits with a distinct error naming the conflict guidance
-
-#### Scenario: Non-interactive without consent
-- **WHEN** the command runs with `--no-input` and without `--yes`
-- **THEN** it exits with a distinct error before reading or changing anything on the forge
-
-#### Scenario: The default branch is refused however it was named
-- **WHEN** the target resolves to the default branch — named by `--branch`, checked out where the command was invoked, or carried as the head branch of the pull request named by `--pr`
-- **THEN** the command exits with a distinct error and merges nothing, and in the first two cases it does so without contacting the forge
-
-#### Scenario: A retry performs only what remains
-- **WHEN** a previous run merged the pull request but failed before synchronizing, and the command runs again
-- **THEN** it observes the merged state, skips the merge, synchronizes, and reports the merge as already done
-
-#### Scenario: A diverged root checkout is reported, not forced
-- **WHEN** the canonical clone — the checkout the default branch lives in, whichever checkout the command was invoked from — is on another branch or cannot fast-forward
-- **THEN** the command reports what it found and leaves that clone unchanged
-
-#### Scenario: Every step that did not happen says why
-- **WHEN** a run merges the pull request but does not synchronize, or does not reap
-- **THEN** the report names a reason for each step it did not perform, whether or not that step was attempted
-
-### Requirement: External workspace ownership disables worktree reclamation
-When a store's configuration declares `session.workspaces_external: true`, `ctxr session reap` SHALL refuse to run, exiting non-zero and naming the configuration key as the reason, without inspecting or modifying any worktree. When the key is false or unset (the default), `ctxr session reap` SHALL behave exactly as it did before this key existed.
-
-#### Scenario: Reap refuses under external ownership
-- **WHEN** a store declares `session.workspaces_external: true` and `ctxr session reap` is run
-- **THEN** the command exits non-zero, names `session.workspaces_external` as the reason, and neither removes a worktree nor deletes a branch
-
-#### Scenario: Default behavior is unchanged
-- **WHEN** a store declares no `session.workspaces_external` key (or declares it `false`) and `ctxr session reap` is run
-- **THEN** it reaps merged, clean session worktrees exactly as it did before this key was introduced
-
-### Requirement: Submission can rename the session branch
-`ctxr session submit --branch <name>` SHALL rename the current session branch to the given name before pushing and opening the pull request, and the worktree SHALL remain a recognized session worktree afterwards.
-
-#### Scenario: Rename before push
-- **WHEN** a session on a generated branch name submits with `--branch topic/x`
-- **THEN** the pushed branch and the pull request head are `topic/x`, and `session list` still shows the worktree
+- **THEN** the session's resulting pull request contains no diff for that artifact
 
 ### Requirement: The path gate
 A markdown path being staged or captured SHALL be refused when its canonical location is outside the store or when reaching it traverses a symbolic link whose target is outside the store. When configuration declares writable paths, such a path SHALL additionally be refused unless it falls under a configured taxonomy layer, the inbox, a declared writable path, or a contexture-owned location; with no declaration every in-store path is accepted. The staged path check (run by `doctor --staged` from the pre-commit hook) and the capture command SHALL apply the same rule.

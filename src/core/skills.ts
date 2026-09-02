@@ -202,47 +202,22 @@ const MISSION: SkillSeed = {
 const SUBMIT: SkillSeed = {
   file: 'ctxr-submit',
   name: 'Submit',
-  description: 'End a working session — re-scan, capture once, stage surgically, gate the external side effect, and open the reviewed pull request.',
+  description: 'End a working session — re-scan, capture once, stage surgically, validate, gate the external side effect, and open the reviewed pull request with git and gh.',
   body: (config) => skillTemplate('ctxr-submit').replaceAll('__DEFAULT_BRANCH__', config.git.default_branch).split('\n'),
 };
 
 const LAND: SkillSeed = {
   file: 'ctxr-land',
   name: 'Land',
-  description: 'Complete a reviewed session — merge its pull request, sync the default branch, and reclaim the worktree — one gated command, never a manual merge.',
+  description: 'Complete a reviewed session — read pull-request state, merge it with gh, sync the default branch, and reclaim the worktree — every step gated and named explicitly.',
   body: (config) => skillTemplate('ctxr-land').replaceAll('__DEFAULT_BRANCH__', config.git.default_branch).split('\n'),
 };
-
-/**
- * write-lifecycle spec: when `session.workspaces_external` is true, worktree
- * lifecycle is owned by a process outside `ctxr` (e.g. an external
- * agent-runtime WebUI) — the rendered skill must not instruct creating,
- * switching, unlocking, removing, or pruning one. False/unset keeps the
- * prior text byte-identical.
- */
-function reclaimingStep(config: StoreConfig): string[] {
-  if (config.session.workspaces_external) {
-    return [
-      'Session worktrees are provided externally (`session.workspaces_external: true`) — this skill MUST NOT',
-      'create, switch to, unlock, remove, or prune a worktree. `ctxr session reap` refuses to run under this',
-      'configuration; reclaiming worktrees is the external process\'s responsibility, not this skill\'s.',
-    ];
-  }
-  return [
-    '`ctxr session reap` removes merged, clean worktrees (or use `ctxr-land`\'s `--reap`); `ctxr session abandon',
-    '<branch>` discards work and needs an explicit go. Never claim cleanup happened without having run one.',
-  ];
-}
 
 const SESSION_LIFECYCLE: SkillSeed = {
   file: 'ctxr-session-lifecycle',
   name: 'Session lifecycle',
-  description: 'Start a session worktree, re-scan before any plan, resolve conflicts, and sequence multiple pull requests — the frame ctxr-submit and ctxr-land sit inside.',
-  body: (config) =>
-    skillTemplate('ctxr-session-lifecycle')
-      .replaceAll('__DEFAULT_BRANCH__', config.git.default_branch)
-      .replace('__RECLAIMING_STEP__', reclaimingStep(config).join('\n'))
-      .split('\n'),
+  description: 'Start a session worktree, re-scan before any plan, resolve conflicts, sequence multiple pull requests, and reclaim worktrees with git — the frame ctxr-submit and ctxr-land sit inside.',
+  body: (config) => skillTemplate('ctxr-session-lifecycle').replaceAll('__DEFAULT_BRANCH__', config.git.default_branch).split('\n'),
 };
 
 const SESSION_CAPTURE: SkillSeed = {

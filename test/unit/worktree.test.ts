@@ -1,13 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  addWorktree,
-  deleteBranch,
-  fetchOrigin,
-  hasRemote,
-  parseWorktreeList,
-  pruneWorktrees,
-  removeWorktree,
-} from '../../src/core/git/worktree.js';
+import { addWorktree, fetchOrigin, hasRemote, parseWorktreeList } from '../../src/core/git/worktree.js';
 import { fakeGitRunner } from '../helpers/fake-env.js';
 
 describe('hasRemote', () => {
@@ -36,24 +28,12 @@ describe('fetchOrigin', () => {
   });
 });
 
-describe('addWorktree / removeWorktree / pruneWorktrees / deleteBranch — argv shape', () => {
-  it('issues the expected git argv for each operation', async () => {
+describe('addWorktree — argv shape', () => {
+  it('issues the expected git argv', async () => {
     const { git, calls } = fakeGitRunner();
     await addWorktree(git, '/repo', '/repo/.worktrees/x', 'session/x', 'origin/main');
-    await removeWorktree(git, '/repo', '/repo/.worktrees/x');
-    await removeWorktree(git, '/repo', '/repo/.worktrees/y', { force: true });
-    await pruneWorktrees(git, '/repo');
-    await deleteBranch(git, '/repo', 'session/x');
-    await deleteBranch(git, '/repo', 'session/y', { force: true });
 
-    expect(calls).toEqual([
-      ['worktree', 'add', '-b', 'session/x', '/repo/.worktrees/x', 'origin/main'],
-      ['worktree', 'remove', '/repo/.worktrees/x'],
-      ['worktree', 'remove', '/repo/.worktrees/y', '--force'],
-      ['worktree', 'prune'],
-      ['branch', '-d', 'session/x'],
-      ['branch', '-D', 'session/y'],
-    ]);
+    expect(calls).toEqual([['worktree', 'add', '-b', 'session/x', '/repo/.worktrees/x', 'origin/main']]);
   });
 });
 
