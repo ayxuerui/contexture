@@ -2,8 +2,9 @@ import { readFile } from 'node:fs/promises';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import path from 'node:path';
 import { buildLinkResolver } from '../core/browse/link-resolver.js';
+import { renderIndexBody, renderNav } from '../core/browse/nav.js';
 import { escapeHtml, renderNoteBody } from '../core/browse/render.js';
-import { buildRouteTable, publishSlugs, type RouteTable } from '../core/browse/routes.js';
+import { buildRouteTable } from '../core/browse/routes.js';
 import { readStylesheet, renderShell } from '../core/browse/templates.js';
 import type { CommandOutcome, CommandRequires } from '../core/command.js';
 import type { RunEnv } from '../core/env.js';
@@ -63,30 +64,6 @@ function buildHint(command: string): string {
   return `<div class="ctxr-build-hint">Not built yet. Run <code>${escapeHtml(command)}</code> and reload.</div>`;
 }
 
-function renderIndex(table: RouteTable): string {
-  const notes = [...table.notes.keys()].sort();
-  const catalogSections = [...table.catalog.keys()].sort();
-  const slugs = publishSlugs(table);
-
-  const listItems = (items: readonly string[], hrefFor: (item: string) => string): string =>
-    items.length > 0
-      ? items.map((item) => `<li><a href="${hrefFor(item)}">${escapeHtml(item)}</a></li>`).join('\n')
-      : '<li>none yet</li>';
-
-  return [
-    '<h1>contexture</h1>',
-    `<p>${notes.length} note(s), ${catalogSections.length} catalog section(s), ${slugs.length} published page(s).</p>`,
-    '<h2>Notes</h2>',
-    `<ul class="ctxr-index">${listItems(notes, (p) => `/notes/${encodeURI(p)}`)}</ul>`,
-    '<h2>Catalog</h2>',
-    `<ul class="ctxr-index">${listItems(catalogSections, (id) => `/catalog/${encodeURIComponent(id)}`)}</ul>`,
-    '<h2>Graph</h2>',
-    '<p><a href="/graph">graph document</a></p>',
-    '<h2>Published pages</h2>',
-    `<ul class="ctxr-index">${listItems(slugs, (slug) => `/publish/${encodeURIComponent(slug)}/index.html`)}</ul>`,
-  ].join('\n');
-}
-
 function send(res: ServerResponse, method: string, status: number, contentType: string, body: string | Buffer): void {
   const buffer = Buffer.isBuffer(body) ? body : Buffer.from(body, 'utf8');
   res.writeHead(status, { 'Content-Type': contentType, 'Content-Length': buffer.length });
@@ -117,7 +94,7 @@ async function handleRequest(store: Store, stderr: NodeJS.WritableStream, req: I
   const resolveLink = buildLinkResolver([...table.notes.values()]);
 
   if (pathname === '/') {
-    send(res, method, 200, 'text/html; charset=utf-8', await renderShell('contexture', renderIndex(table)));
+    send(res, method, 200, 'text/html; charset=utf-8', await renderShell('contexture', renderIndexBody(table), renderNav(table)));
     return;
   }
 
@@ -129,7 +106,7 @@ async function handleRequest(store: Store, stderr: NodeJS.WritableStream, req: I
   if (pathname === '/graph') {
     const doc = await readDerivedDocument(table.graphDocumentPath);
     const body = 'hint' in doc ? buildHint('ctxr graph build') : renderNoteBody(doc.text, resolveLink);
-    send(res, method, 200, 'text/html; charset=utf-8', await renderShell('graph', body));
+    send(res, method, 200, 'text/html; charset=utf-8', await renderShell('graph', body, renderNav(table)));
     return;
   }
 
@@ -139,7 +116,7 @@ async function handleRequest(store: Store, stderr: NodeJS.WritableStream, req: I
       send(res, method, 404, 'text/plain; charset=utf-8', 'not found\n');
       return;
     }
-    send(res, method, 200, 'text/html; charset=utf-8', await renderShell(note.path, renderNoteBody(note.body, resolveLink)));
+    send(res, method, 200, 'text/html; charset=utf-8', await renderShell(note.path, renderNoteBody(note.body, resolveLink), renderNav(table)));
     return;
   }
 
@@ -152,7 +129,7 @@ async function handleRequest(store: Store, stderr: NodeJS.WritableStream, req: I
     }
     const doc = await readDerivedDocument(section.absolutePath);
     const body = 'hint' in doc ? buildHint('ctxr catalog build') : renderNoteBody(doc.text, resolveLink);
-    send(res, method, 200, 'text/html; charset=utf-8', await renderShell(sectionId, body));
+    send(res, method, 200, 'text/html; charset=utf-8', await renderShell(sectionId, body, renderNav(table)));
     return;
   }
 

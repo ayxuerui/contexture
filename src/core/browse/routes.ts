@@ -71,12 +71,24 @@ export async function buildRouteTable(store: Store): Promise<RouteTable> {
   return { notes, catalog, graphDocumentPath: graphDocumentPath(store), publishFiles };
 }
 
-/** The distinct top-level page folders under the publish route, for the index page. */
-export function publishSlugs(table: RouteTable): string[] {
-  const slugs = new Set<string>();
+/** The file every published-page directory carries, and the route the navigation links a page to. */
+export const PUBLISH_INDEX_FILE = 'index.html';
+
+/**
+ * browse-navigation-by-folder design.md D4: a published page is a directory
+ * holding an index page, at whatever depth it sits — not an immediate child
+ * of the publish path. A directory that only contains other pages is a
+ * grouping node with no page of its own, and a page nested several
+ * directories deep is addressable at its full path rather than collapsed
+ * onto a top-level ancestor that may hold no index page at all.
+ */
+export function publishPages(table: RouteTable): string[] {
+  const pages = new Set<string>();
   for (const urlPath of table.publishFiles.keys()) {
-    const slug = urlPath.split('/')[0];
-    if (slug) slugs.add(slug);
+    const separator = urlPath.lastIndexOf('/');
+    if (separator === -1) continue;
+    if (urlPath.slice(separator + 1) !== PUBLISH_INDEX_FILE) continue;
+    pages.add(urlPath.slice(0, separator));
   }
-  return [...slugs].sort();
+  return [...pages].sort();
 }
