@@ -31,7 +31,7 @@ function makeConfig(rollupStaleDays = 0, missionPath?: string): StoreConfig {
     skills: { vendored: [] },
     disclosure: { internal_audiences: [], hard_walls: [], leak_markers: {} },
     ingest: { inbox_path: 'inbox/', tracking_params: [] },
-    organize: { archive_path: 'archive/', rollup_stale_days: rollupStaleDays, mission_path: missionPath },
+    organize: { archive_destination: 'archive/', rollup_stale_days: rollupStaleDays, mission_path: missionPath },
     harness: { skills_path: 'skills/', guidance_path: 'guidance/' },
     adapters: [],
   };

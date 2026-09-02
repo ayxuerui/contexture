@@ -26,7 +26,7 @@ function makeConfig(): StoreConfig {
     skills: { vendored: [] },
     disclosure: { internal_audiences: [], hard_walls: [], leak_markers: {} },
     ingest: { inbox_path: 'inbox/', tracking_params: [] },
-    organize: { archive_path: 'archive/', rollup_stale_days: 7 },
+    organize: { archive_destination: 'archive/', rollup_stale_days: 7 },
     harness: { skills_path: 'skills/', guidance_path: 'guidance/' },
     adapters: [],
   };
@@ -45,7 +45,7 @@ function trackedGitResponses(relativePath: string): Map<string, GitResult> {
 }
 
 describe('archive command', () => {
-  it('moves a tracked note into organize.archive_path via a single git mv call', async () => {
+  it('moves a tracked note into organize.archive_destination via a single git mv call', async () => {
     const tmp = await makeTmpDir();
     try {
       const store: Store = { root: tmp.root, config: makeConfig() };

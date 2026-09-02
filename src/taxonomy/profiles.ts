@@ -24,6 +24,17 @@ export interface TaxonomyProfile {
   name: string;
   description: string;
   layers: readonly TaxonomyLayer[];
+  /**
+   * context-organize spec: where this profile's retired notes belong, when
+   * the profile has an opinion. Only a profile whose layers already include
+   * a retirement layer declares one — PARA's Archives; Zettelkasten has no
+   * layers at all and Diataxis's four are all live documentation, so both
+   * leave it unset and fall back to `DEFAULT_ARCHIVE_DESTINATION`. Declared
+   * here rather than derived at the archive command, because this module is
+   * the only place a shipped layer name may appear (see the header note) —
+   * `archive` stays taxonomy-agnostic and reads `organize.archive_destination`.
+   */
+  archiveDestination?: string;
 }
 
 export const SHIPPED_PROFILES: readonly TaxonomyProfile[] = [
@@ -39,6 +50,7 @@ export const SHIPPED_PROFILES: readonly TaxonomyProfile[] = [
       { name: 'Resources', path: 'resources', description: 'Topic libraries and reference material.' },
       { name: 'Archives', path: 'archives', description: 'Completed, abandoned, or inactive items.' },
     ],
+    archiveDestination: 'archives/',
   },
   {
     id: 'zettelkasten',

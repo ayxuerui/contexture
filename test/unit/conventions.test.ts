@@ -22,7 +22,7 @@ function makeConfig(): StoreConfig {
     skills: { vendored: [] },
     disclosure: { internal_audiences: [], hard_walls: [], leak_markers: {} },
     ingest: { inbox_path: 'inbox/', tracking_params: [] },
-    organize: { archive_path: 'archive/', rollup_stale_days: 7 },
+    organize: { archive_destination: 'archive/', rollup_stale_days: 7 },
     harness: { skills_path: 'skills/', guidance_path: 'guidance/' },
     adapters: [],
   };
@@ -119,7 +119,7 @@ describe('scanConventions', () => {
       await writeFile(path.join(tmp.root, 'guidance/mission.md'), '# Mission\n');
       await writeFile(path.join(tmp.root, 'guidance/custom-convention.md'), '---\ntitle: Custom\n---\n');
 
-      const config: StoreConfig = { ...makeConfig(), organize: { archive_path: 'archive/', rollup_stale_days: 7, mission_path: 'guidance/mission.md' } };
+      const config: StoreConfig = { ...makeConfig(), organize: { archive_destination: 'archive/', rollup_stale_days: 7, mission_path: 'guidance/mission.md' } };
       const docs = await scanConventions(tmp.root, config);
       expect(docs.map((d) => d.path)).toEqual(['guidance/custom-convention.md']);
     } finally {
