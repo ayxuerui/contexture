@@ -50,13 +50,17 @@ export const claudeCodeHarnessAdapter: HarnessGenerationAdapter = {
      * pre-commit path allowlist can never disagree about what counts as an
      * escape.
      */
-    render({ root }: PermissionConfigInput): Record<string, unknown> {
+    render({ mainRoot }: PermissionConfigInput): Record<string, unknown> {
       return {
         hooks: {
           PreToolUse: [
             {
               matcher: 'Edit|Write|NotebookEdit',
-              hooks: [{ type: 'command', command: path.join(root, HOOK_TARGET_PATH) }],
+              // Anchored at the main worktree, never the checkout currently
+              // running the generator (stabilize-write-gate-hook-path) — a
+              // session worktree is deleted once its own session lands, and
+              // a hook command that no longer resolves fails open silently.
+              hooks: [{ type: 'command', command: path.join(mainRoot, HOOK_TARGET_PATH) }],
             },
           ],
         },

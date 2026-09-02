@@ -61,3 +61,19 @@ export async function listWorktrees(git: GitRunner, cwd: string): Promise<Worktr
   const result = await git.run(['worktree', 'list', '--porcelain'], { cwd });
   return parseWorktreeList(result.stdout);
 }
+
+/**
+ * The store's canonical clone: git lists the repository's MAIN worktree first
+ * in `worktree list --porcelain`, so the first entry is it, whichever linked
+ * worktree the command was invoked from. Falls back to the passed cwd when the
+ * list is empty rather than throwing — a repository with no linked worktrees
+ * then behaves exactly as a caller that never asked.
+ *
+ * stabilize-write-gate-hook-path: used to anchor a generated enforcement
+ * primitive's own absolute invocation path (e.g. the write-gate hook command)
+ * at a location that outlives any single session worktree.
+ */
+export async function mainWorktreePath(git: GitRunner, cwd: string): Promise<string> {
+  const worktrees = await listWorktrees(git, cwd);
+  return worktrees[0]?.path ?? cwd;
+}

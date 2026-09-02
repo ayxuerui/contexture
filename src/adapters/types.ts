@@ -38,16 +38,27 @@ export const SUPPORTED_ADAPTER_INTERFACE_VERSION: Record<AdapterKind, number> = 
  * fence survives.
  */
 /**
- * `root` is the store's absolute filesystem path. Permission-rule paths are
- * anchored there (not written cwd-relative) because a session may be
+ * `root` is the checkout currently being reconciled — the store's absolute
+ * filesystem path, typically a session worktree. Permission-rule paths that
+ * describe the store's own tree (e.g. the worktree-scoping glob) are
+ * anchored there, not written cwd-relative, because a session may be
  * launched with its cwd already inside a worktree rather than at the store
  * root — a cwd-relative rule would then resolve against the wrong directory.
+ *
+ * `mainRoot` (stabilize-write-gate-hook-path) is the store's main/canonical
+ * worktree — the one persistent checkout that outlives any session worktree.
+ * Use this, never `root`, for any absolute path an enforcement primitive
+ * itself is invoked by (a hook command): `root` is deleted the moment the
+ * session worktree that generated it lands, so a path anchored there goes
+ * stale as soon as that happens.
+ *
  * `binPath` is this installation's own resolved CLI entrypoint, for a
  * harness whose config needs to shell out back to `ctxr` (a generated hook
  * script). See claude-code.ts's permissionConfig for the concrete case.
  */
 export interface PermissionConfigInput {
   root: string;
+  mainRoot: string;
   worktreesPath: string;
   binPath: string;
 }
