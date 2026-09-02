@@ -4,25 +4,37 @@
 
 Governs how store content — retrievable notes, the catalog, the graph's human-readable document, and
 published pages — is addressed by URL, rendered for a browser, and cross-linked, for a human reading
-their own store on their own machine. This capability is deliberately scoped to that single-operator,
-loopback-only posture: it defines no requester concept and enforces no per-requester filtering, which
-is what makes serving possible without first building a filtered per-requester materialization (see
-`context-projection`, proposed separately). A future networked, requester-scoped serving mode is out of
-scope here and would need its own capability built on that materialization, not an extension of this
-one's loopback assumption.
+their own store. This capability defines no requester concept and enforces no per-requester filtering,
+which is what makes serving possible without first building a filtered per-requester materialization
+(see `context-projection`, proposed separately) — a fact that holds regardless of which address the
+server is bound to. It binds to loopback by default; an operator MAY widen that bind address explicitly
+when they have arranged their own trusted front end (a firewall, a tunnel, a reverse proxy) to account
+for the filtering this capability still does not do. A networked, requester-scoped serving mode with its
+own filtering is out of scope here and would need its own capability built on that materialization, not
+an extension of this one's default.
 
 ## Requirements
 
-### Requirement: The server binds only to the loopback interface
-`ctxr serve` SHALL bind its HTTP listener to the loopback interface only, and SHALL provide no
-configuration flag or config key capable of widening that bind address. This is the entire security
-boundary this capability provides; no requirement in this capability SHALL be read as providing
-protection against a requester who can already reach the bound address.
+### Requirement: The server binds to loopback by default, widened only by explicit operator choice
+`ctxr serve` SHALL bind its HTTP listener to the loopback interface by default, and SHALL bind to a
+different address only when an explicit `--host <address>` option names one. No requirement in this
+capability SHALL be read as providing protection against a requester who can reach whichever address the
+server is actually bound to — the absence of per-requester filtering, rate limiting, and authentication
+applies identically no matter what address the server is bound to, and widening the bind address is a
+decision entirely the operator's to make and account for.
 
-#### Scenario: The listening address is loopback
-- **WHEN** `ctxr serve` starts
-- **THEN** the address it reports and binds to is a loopback address, and no command-line option or
-  configuration value changes that address
+#### Scenario: The default is loopback
+- **WHEN** `ctxr serve` starts with no `--host` given
+- **THEN** the address it reports and binds to is the loopback interface
+
+#### Scenario: An explicit --host widens the bind address
+- **WHEN** `ctxr serve --host <address>` names a bind address other than loopback
+- **THEN** the server binds there instead, and reports that address as the one it bound to
+
+#### Scenario: No filtering exists regardless of bind address
+- **WHEN** `ctxr serve` is bound to any address, loopback or otherwise
+- **THEN** every route responds identically to any requester who can reach that address — no requirement
+  in this capability distinguishes requesters by any means
 
 ### Requirement: Only read-only HTTP methods are served
 `ctxr serve` SHALL respond to `GET` and `HEAD` requests only. Every other HTTP method SHALL receive a

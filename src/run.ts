@@ -566,13 +566,14 @@ export async function run(argv: readonly string[], env: RunEnv): Promise<ExitCod
 
   program
     .command('serve')
-    .description('serve notes, catalog sections, the graph document, and published pages over loopback-only HTTP, for reading in a browser')
+    .description('serve notes, catalog sections, the graph document, and published pages over HTTP (loopback by default), for reading in a browser')
     .option('--port <n>', 'port to bind (default: OS-assigned)', (v) => Number.parseInt(v, 10), 0)
-    .action(async (cmdOpts: { port: number }, cmd: Command) => {
+    .option('--host <address>', 'address to bind — widening beyond the default exposes the server, with no requester filtering of its own, to whatever can reach that address', serveCommand.DEFAULT_HOST)
+    .action(async (cmdOpts: { port: number; host: string }, cmd: Command) => {
       const { runEnv, jsonMode, root } = deriveRunEnv(env, cmd);
       result = await runCommand('serve', runEnv, jsonMode, async () => {
         const store = await openStore(runEnv, { root });
-        return serveCommand.execute(runEnv, store, { port: cmdOpts.port });
+        return serveCommand.execute(runEnv, store, { port: cmdOpts.port, host: cmdOpts.host });
       });
     });
 
