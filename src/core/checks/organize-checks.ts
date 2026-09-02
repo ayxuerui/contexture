@@ -30,7 +30,15 @@ export const orphanNotesCheck = defineCheck({
   },
 });
 
-/** context-organize spec: "broken links" — the graph's dangling links (not_found or ambiguous), reported not failed. Shares detection with the doctor-facing invariant checks/integrity-checks.ts:graphDanglingLinksCheck under a different id (task 9.4: two ids, two severity lanes, one condition, never double-counted within a single run). */
+/**
+ * context-organize spec: "broken links" — a link that resolves to no note at all
+ * (`not_found`), reported not failed. `graph.dangling` also carries `ambiguous`-reason
+ * records (a link matching two or more notes' basenames), but those are
+ * checks/integrity-checks.ts:graphAmbiguousLinksCheck's alone (doctor, invariant): resolution
+ * is mechanically broken there, with an always-applicable fix, unlike a `not_found` link,
+ * which can't be told apart from a healthy forward reference — so this check filters
+ * `ambiguous` out rather than sharing it.
+ */
 export const brokenLinksCheck = defineCheck({
   id: 'organize.broken_links',
   title: 'Notes with dangling wikilinks',
@@ -40,13 +48,15 @@ export const brokenLinksCheck = defineCheck({
   async run(ctx) {
     const graph = await ctx.graph();
     if (!graph) return { status: 'skip', skipReason: GRAPH_SKIP_REASON, findings: [] };
-    const findings: Finding[] = graph.dangling.map((d) => ({
-      code: 'organize.broken_link',
-      severity: 'info',
-      message: `"${d.from}" links to "${d.target}", which is ${d.reason === 'ambiguous' ? 'ambiguous' : 'not found'}.`,
-      subject: d.from,
-      details: { target: d.target, reason: d.reason },
-    }));
+    const findings: Finding[] = graph.dangling
+      .filter((d) => d.reason === 'not_found')
+      .map((d) => ({
+        code: 'organize.broken_link',
+        severity: 'info',
+        message: `"${d.from}" links to "${d.target}", which is not found.`,
+        subject: d.from,
+        details: { target: d.target, reason: d.reason },
+      }));
     return { status: findings.length > 0 ? 'fail' : 'pass', findings };
   },
 });

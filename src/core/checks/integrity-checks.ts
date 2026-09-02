@@ -77,17 +77,23 @@ export const derivedArtifactStalenessCheck = defineCheck({
 });
 
 /**
- * store-integrity spec: "dangling links... (per context-retrieval)." A
+ * store-integrity spec: "ambiguous link resolution... (per context-retrieval)." A
  * genuine identity collision is NOT re-checked here — buildGraphFromNotes
  * refuses to persist a graph that has one (core/graph/model.ts), so a
  * persisted graph.json is proof by construction that none exists; there is
  * nothing for a doctor check to find after the fact.
+ *
+ * `graph.dangling` covers two reasons (core/graph/model.ts: DanglingReason).
+ * They're split by owner, not shared: a link that resolves to no note at all
+ * (`not_found`) can't be told apart from a healthy forward reference, so it's
+ * lint's alone (organize-checks.ts:brokenLinksCheck, observation, code
+ * organize.broken_link). A link that resolves ambiguously, to more than one
+ * note (`ambiguous`), is always a mechanical defect with a fix (alias
+ * syntax) — never a legitimate "leave it" case — so it's this check's alone.
  */
-// Shares detection with organize-checks.ts:brokenLinksCheck (lint, observation) under a
-// different id (task 9.4: two ids, two severity lanes, one condition, never double-counted).
-export const graphDanglingLinksCheck = defineCheck({
-  id: 'graph.dangling_links',
-  title: 'The graph has no dangling links',
+export const graphAmbiguousLinksCheck = defineCheck({
+  id: 'graph.ambiguous_links',
+  title: 'The graph has no ambiguous links',
   severity: 'invariant',
   capability: 'context-retrieval',
   scopes: ['store'],
@@ -96,13 +102,15 @@ export const graphDanglingLinksCheck = defineCheck({
     if (!graph) {
       return { status: 'skip', skipReason: 'graph has not been built yet — run `ctxr graph build`', findings: [] };
     }
-    const findings: Finding[] = graph.dangling.map((d) => ({
-      code: 'graph.dangling_link',
-      severity: 'error',
-      message: `"${d.from}" links to "${d.target}", which is ${d.reason === 'ambiguous' ? 'ambiguous' : 'not found'}.`,
-      subject: d.from,
-      details: { target: d.target, reason: d.reason },
-    }));
+    const findings: Finding[] = graph.dangling
+      .filter((d) => d.reason === 'ambiguous')
+      .map((d) => ({
+        code: 'graph.ambiguous_link',
+        severity: 'error',
+        message: `"${d.from}" links to "${d.target}", which is ambiguous.`,
+        subject: d.from,
+        details: { target: d.target, reason: d.reason },
+      }));
     return { status: findings.length > 0 ? 'fail' : 'pass', findings };
   },
 });
@@ -424,7 +432,7 @@ export const stagedAgentsMdInlinedContentCurrentCheck = defineCheck({
 
 export const INTEGRITY_CHECKS = [
   derivedArtifactStalenessCheck,
-  graphDanglingLinksCheck,
+  graphAmbiguousLinksCheck,
   schemaVersionCurrencyCheck,
   adapterCompatibilityCheck,
   harnessEntryNoDuplicateConventionTextCheck,

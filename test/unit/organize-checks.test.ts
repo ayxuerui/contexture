@@ -94,6 +94,17 @@ describe('brokenLinksCheck', () => {
     expect(result.status).toBe('fail');
     expect(result.findings[0]?.subject).toBe('a.md');
   });
+
+  it('does not report an ambiguous-reason dangling link — that is doctor\'s alone', async () => {
+    const graph: GraphBuildResult = {
+      nodes: [{ id: 'a.md', path: 'a.md', cluster: '(root)' }],
+      edges: [],
+      dangling: [{ from: 'a.md', target: 'ghost', reason: 'ambiguous' }],
+    };
+    const result = await brokenLinksCheck.run(makeCtx([], graph));
+    expect(result.status).toBe('pass');
+    expect(result.findings).toEqual([]);
+  });
 });
 
 describe('uningestedInboxCheck', () => {
