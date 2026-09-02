@@ -1,6 +1,6 @@
 {
   "name": "ctxr-cli",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "A context store that ingests, organizes, and retrieves context for any AI agent",
   "type": "module",
   "license": "MIT",
