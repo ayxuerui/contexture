@@ -57,11 +57,23 @@ export const DEFAULT_VENDORED_SKILLS = ['frontend-design'] as const;
  */
 export const DEFAULT_GUIDANCE_PATH = '.contexture/guidance/';
 
-/** The shipped, contexture-owned baseline convention — never hand-edited; refreshed by `ctxr update` like a skill copy. */
-export const DEFAULT_BASELINE_CONVENTION_FILE_NAME = 'baseline-convention.md';
+/** The shipped, contexture-owned baseline conventions — never hand-edited; refreshed by `ctxr update` like a skill copy. */
+export const DEFAULT_BASELINE_CONVENTIONS_FILE_NAME = 'baseline-conventions.md';
 
-/** The operator-authored convention file seeded at init. */
-export const DEFAULT_CUSTOM_CONVENTION_FILE_NAME = 'custom-convention.md';
+/**
+ * The baseline file's pre-rename name. `syncBaselineConventions` removes it
+ * when it still carries the managed-owner header, so the rename leaves no
+ * orphan — the guidance directory is scanned wholesale, so an orphan would
+ * be inlined into AGENTS.md a second time rather than merely sitting unused.
+ */
+export const LEGACY_BASELINE_CONVENTION_FILE_NAME = 'baseline-convention.md';
+
+/**
+ * The operator-authored conventions file seeded at init: this store's house
+ * rules, layered on the shipped baseline and winning where the two speak to
+ * the same thing.
+ */
+export const DEFAULT_HOUSE_CONVENTIONS_FILE_NAME = 'house-conventions.md';
 
 /** context-organize spec: the store's standing current-state document's filename, under the guidance directory. */
 export const DEFAULT_MISSION_FILE_NAME = 'mission.md';

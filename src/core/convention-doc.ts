@@ -1,9 +1,16 @@
-import { mkdir, readFile } from 'node:fs/promises';
+import { mkdir, readFile, rm } from 'node:fs/promises';
 import path from 'node:path';
-import { DEFAULT_BASELINE_CONVENTION_FILE_NAME, DEFAULT_CUSTOM_CONVENTION_FILE_NAME } from '../config/defaults.js';
+import {
+  DEFAULT_BASELINE_CONVENTIONS_FILE_NAME,
+  DEFAULT_HOUSE_CONVENTIONS_FILE_NAME,
+  LEGACY_BASELINE_CONVENTION_FILE_NAME,
+} from '../config/defaults.js';
 import type { StoreConfig } from '../config/schema.js';
 import { writeFileAtomic } from './fs/atomic.js';
 import { packagedTemplate, substituteBlock } from './templates.js';
+
+/** The header every contexture-owned guidance file carries; the guard on removing one. */
+const MANAGED_OWNER_MARKER = '<!-- Owned by contexture —';
 
 function conventionTemplate(name: string): string {
   return packagedTemplate('conventions', name);
@@ -46,17 +53,17 @@ function relationVocabularyLines(config: StoreConfig): string[] {
 }
 
 /**
- * compose-store-guidance-documents: the shipped baseline convention,
+ * compose-store-guidance-documents: the shipped baseline conventions,
  * rendered from this store's own configuration — never a shipped profile's
- * or one deployment's names. This is what `syncBaselineConvention` writes;
+ * or one deployment's names. This is what `syncBaselineConventions` writes;
  * it is never composed with anything else. `AGENTS.md`'s "Store
  * conventions" section (inline-conventions-and-mission's
  * `scanConventions`/`renderConventionsSection`) inlines it as one of
  * however many convention files the guidance directory holds, exactly like
  * any operator-authored one.
  */
-export function renderBaselineConvention(config: StoreConfig): string {
-  let text = conventionTemplate('baseline-convention')
+export function renderBaselineConventions(config: StoreConfig): string {
+  let text = conventionTemplate('baseline-conventions')
     .replaceAll('__VISIBILITY_FIELD__', config.fields.visibility)
     .replaceAll('__DEFAULT_CONTEXT__', config.visibility.default_context)
     .replaceAll('__ARCHIVE_DESTINATION__', config.organize.archive_destination)
@@ -77,29 +84,53 @@ export function renderBaselineConvention(config: StoreConfig): string {
  * directory scan, no orphan cleanup): read-compare-write, reporting whether
  * it changed.
  */
-export async function syncBaselineConvention(root: string, config: StoreConfig): Promise<{ changed: boolean }> {
-  const target = path.join(root, config.harness.guidance_path, DEFAULT_BASELINE_CONVENTION_FILE_NAME);
-  const content = renderBaselineConvention(config);
+export async function syncBaselineConventions(root: string, config: StoreConfig): Promise<{ changed: boolean }> {
+  const guidanceDir = path.join(root, config.harness.guidance_path);
+  const target = path.join(guidanceDir, DEFAULT_BASELINE_CONVENTIONS_FILE_NAME);
+  const content = renderBaselineConventions(config);
+  const removedLegacy = await removeLegacyBaselineFile(guidanceDir);
   let existing: string | undefined;
   try {
     existing = await readFile(target, 'utf8');
   } catch {
     existing = undefined;
   }
-  if (existing === content) return { changed: false };
+  if (existing === content) return { changed: removedLegacy };
   await mkdir(path.dirname(target), { recursive: true });
   await writeFileAtomic(target, content);
   return { changed: true };
 }
 
 /**
- * The operator's own convention source, seeded once with heading prompts
- * only — no content contexture would be guessing at — and never touched
- * again once it exists (unlike the baseline file, this one is
- * operator-owned).
+ * The baseline file was `baseline-convention.md` before the rename to the
+ * plural. Left in place it would not merely sit unused: `scanConventions`
+ * reads the guidance directory wholesale, so the stale copy would be inlined
+ * into AGENTS.md a second time alongside the current one.
+ *
+ * Guarded on the managed-owner header the same way `syncShippedSkills` guards
+ * its own orphan cleanup — a file an operator happens to have written at that
+ * name is never removed.
  */
-export async function seedCustomConventionFile(root: string, config: StoreConfig): Promise<{ created: boolean }> {
-  const target = path.join(root, config.harness.guidance_path, DEFAULT_CUSTOM_CONVENTION_FILE_NAME);
+async function removeLegacyBaselineFile(guidanceDir: string): Promise<boolean> {
+  const legacy = path.join(guidanceDir, LEGACY_BASELINE_CONVENTION_FILE_NAME);
+  let existing: string;
+  try {
+    existing = await readFile(legacy, 'utf8');
+  } catch {
+    return false;
+  }
+  if (!existing.includes(MANAGED_OWNER_MARKER)) return false;
+  await rm(legacy);
+  return true;
+}
+
+/**
+ * This store's own conventions — its house rules — seeded once with heading
+ * prompts only, no content contexture would be guessing at, and never touched
+ * again once it exists (unlike the baseline file, this one is operator-owned).
+ */
+export async function seedHouseConventionsFile(root: string, config: StoreConfig): Promise<{ created: boolean }> {
+  const target = path.join(root, config.harness.guidance_path, DEFAULT_HOUSE_CONVENTIONS_FILE_NAME);
   try {
     await readFile(target, 'utf8');
     return { created: false };
@@ -107,6 +138,6 @@ export async function seedCustomConventionFile(root: string, config: StoreConfig
     if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
   }
   await mkdir(path.dirname(target), { recursive: true });
-  await writeFileAtomic(target, `${conventionTemplate('custom-convention-seed')}\n`);
+  await writeFileAtomic(target, `${conventionTemplate('house-conventions-seed')}\n`);
   return { created: true };
 }
