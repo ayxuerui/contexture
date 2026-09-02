@@ -6,3 +6,25 @@ updates:
       interval: weekly
     commit-message:
       prefix: chore
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: chore
+    # keep-external-dependencies-current: minor/patch bumps are batched so
+    # routine churn is one PR per group per week; a major matches neither
+    # group and arrives on its own, with its own CI signal, rather than
+    # riding along inside a batch of patches where it is easy to approve
+    # without noticing.
+    groups:
+      production-dependencies:
+        dependency-type: production
+        update-types:
+          - minor
+          - patch
+      development-dependencies:
+        dependency-type: development
+        update-types:
+          - minor
+          - patch
