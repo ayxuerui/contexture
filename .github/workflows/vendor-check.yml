@@ -1,0 +1,111 @@
+name: Vendor check
+
+# keep-external-dependencies-current: scripts/vendor-skills.mjs --check only
+# guards against hand-editing the committed payload — it cannot notice that
+# upstream moved. This job runs the script's --outdated mode weekly and turns
+# the answer into a single reused tracking issue, so a maintainer is told
+# rather than having to remember to look. It never writes to repository
+# contents: the fix is one local command, reviewed as an ordinary pull
+# request.
+
+on:
+  schedule:
+    - cron: '17 6 * * 1' # every Monday, off the hour to avoid the :00 stampede
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: vendor-check
+  cancel-in-progress: false
+
+env:
+  GH_TOKEN: ${{ github.token }}
+  ISSUE_LABEL: vendored-skill-update
+
+jobs:
+  check:
+    name: check
+    if: github.repository == 'ayxuerui/contexture'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24'
+          package-manager-cache: false
+
+      # No `npm ci`: scripts/vendor-skills.mjs imports only Node builtins and
+      # shells out to `gh`, which is preinstalled on this runner. A watchdog's
+      # reliability should not depend on the dependency tree it watches.
+      - name: Run --outdated
+        id: outdated
+        run: |
+          set +e
+          node scripts/vendor-skills.mjs --outdated | tee /tmp/outdated.txt
+          echo "code=$?" >> "$GITHUB_OUTPUT"
+
+      - name: Fail loudly if the answer could not be determined
+        if: steps.outdated.outputs.code == '2'
+        run: |
+          echo "::error::vendor-skills.mjs --outdated could not determine whether the vendored payload is current — see the step output above"
+          exit 1
+
+      - name: Ensure the label exists
+        if: steps.outdated.outputs.code == '1'
+        run: |
+          gh label create "$ISSUE_LABEL" \
+            --repo "${{ github.repository }}" \
+            --color B60205 \
+            --description "The vendored skill payload has drifted from its tracked upstream" \
+            2>/dev/null || true
+
+      - name: File or update the tracking issue
+        if: steps.outdated.outputs.code == '1'
+        run: |
+          set -euo pipefail
+          body_file="$(mktemp)"
+          {
+            echo "\`node scripts/vendor-skills.mjs --outdated\` found the vendored skill payload out of date:"
+            echo
+            echo '```'
+            cat /tmp/outdated.txt
+            echo '```'
+            echo
+            echo "To refresh: \`node scripts/vendor-skills.mjs && npm test\`, then open a normal pull request."
+          } > "$body_file"
+
+          extra_labels=""
+          if grep -q "LICENSE CHANGED" /tmp/outdated.txt; then
+            extra_labels=",dependencies"
+            {
+              echo
+              echo "**A vendored \`LICENSE.txt\` changed upstream.** This changes redistribution terms and is a"
+              echo "decision, not a routine refresh — review the new license before re-vendoring."
+            } >> "$body_file"
+          fi
+
+          existing="$(gh issue list --repo "${{ github.repository }}" --label "$ISSUE_LABEL" --state open --json number --jq '.[0].number // empty')"
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --repo "${{ github.repository }}" --body-file "$body_file"
+          else
+            gh issue create --repo "${{ github.repository }}" \
+              --title "Vendored skill payload is out of date" \
+              --label "${ISSUE_LABEL}${extra_labels}" \
+              --body-file "$body_file"
+          fi
+
+      - name: Close the tracking issue if the payload is current again
+        if: steps.outdated.outputs.code == '0'
+        run: |
+          existing="$(gh issue list --repo "${{ github.repository }}" --label "$ISSUE_LABEL" --state open --json number --jq '.[0].number // empty')"
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --repo "${{ github.repository }}" --body "\`node scripts/vendor-skills.mjs --outdated\` now reports every vendored skill current. Closing."
+            gh issue close "$existing" --repo "${{ github.repository }}"
+          fi
