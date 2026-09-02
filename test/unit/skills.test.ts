@@ -202,7 +202,7 @@ describe('owned-skills-expansion: each skill carries its load-bearing rule (task
     expect(s).toContain('creates a worktree on a fresh branch');
   });
 
-  it('submit: re-scans, runs the capture procedure exactly once, stages named paths, validates, gates, and ends in git push + gh pr create (session-keeps-only-what-git-cannot-do)', () => {
+  it('submit: re-scans, runs the capture procedure exactly once, stages named paths, validates, and ends in git push + gh pr create with no confirmation between (submit-is-its-own-consent)', () => {
     const s = skills['ctxr-submit'];
     expect(s).toContain('Re-scan (mandatory');
     expect((s?.match(/ctxr-session-capture/g) ?? []).length).toBe(1); // invoked once, not described twice
@@ -210,9 +210,15 @@ describe('owned-skills-expansion: each skill carries its load-bearing rule (task
     expect(s).toContain('`ctxr doctor`'); // store-scope validation, the same check submit used to run internally
     expect(s).toMatch(/\bgit commit\b/); // now an explicit step — nothing else commits on its behalf
     expect(s).toContain('`git branch -m "<name>"`'); // renames a generated branch before it reaches the forge
-    expect(s).toMatch(/plan consent\s+is not fire consent/);
     expect(s).toMatch(/\bgit push\b/);
-    expect(s).toContain('`gh pr create'); // the fire-gated external side effect, run directly
+    expect(s).toContain('`gh pr create'); // run directly — invoking submit is itself the consent for it
+    // submit-is-its-own-consent: no confirmation stands between the branch rename and the push. The
+    // gate on this path is `ctxr doctor` (step 5), which submit may not proceed past; land keeps its
+    // own merge confirmation, which is why the sentence is asserted absent HERE and present there.
+    expect(s).not.toMatch(/plan consent\s+is not fire consent/);
+    const body = s ?? ''; // an absent skill yields -1 for every index below, which fails these on its own
+    expect(body.indexOf('`git branch -m "<name>"`')).toBeLessThan(body.indexOf('git push'));
+    expect(body.indexOf('git push')).toBeLessThan(body.indexOf('`gh pr create'));
     expect(s).not.toContain('ctxr session submit'); // no such command exists anymore
     expect(s).toContain('Verify before any retry');
   });
