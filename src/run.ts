@@ -520,7 +520,7 @@ export async function run(argv: readonly string[], env: RunEnv): Promise<ExitCod
 
   publishCommand
     .command('new <slug>')
-    .description('scaffold a page folder with a sibling README, refusing a reserved or already-existing slug')
+    .description('scaffold a page folder with a sibling README — the slug may name a path of folders under the publish path — refusing a reserved or already-existing slug')
     .action(async (slug: string, _cmdOpts: object, cmd: Command) => {
       const { runEnv, jsonMode, root } = deriveRunEnv(env, cmd);
       result = await runCommand('publish.new', runEnv, jsonMode, async () => {

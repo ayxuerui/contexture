@@ -12,7 +12,6 @@ import {
   DEFAULT_CATALOG_SECTION_MAX_BYTES,
   DEFAULT_PUBLISH_PATH,
   DEFAULT_VENDORED_SKILLS,
-  DEFAULT_BASELINE_CONVENTIONS_FILE_NAME,
   DEFAULT_HOUSE_CONVENTIONS_FILE_NAME,
   DEFAULT_GUIDANCE_PATH,
   DEFAULT_DERIVED_PATHS,
@@ -49,7 +48,7 @@ import {
   buildAgentsPlacementSection,
   agentsMdPath,
 } from '../core/agents-doc.js';
-import { seedHouseConventionsFile, syncBaselineConventions } from '../core/convention-doc.js';
+import { seedHouseConventionsFile } from '../core/convention-doc.js';
 import { syncShippedSkills, syncVendoredSkills } from '../core/skills.js';
 import { bridgeHarnessSkills } from '../core/harness/bridge.js';
 import { reconcileStore, WORKTREES_GITIGNORE_FENCE } from '../core/reconcile.js';
@@ -326,7 +325,6 @@ async function runInitCore(env: RunEnv, flags: InitFlags): Promise<RunInitResult
 
   // Guidance-directory content must be current BEFORE the AGENTS.md sections
   // that read it (mission, store conventions) are built below.
-  await syncBaselineConventions(root, config);
   const houseConventionsSeeded = await seedHouseConventionsFile(root, config);
   const missionSeeded = config.organize.mission_path ? await seedMissionDocument(root, config.organize.mission_path) : null;
 
@@ -345,7 +343,6 @@ async function runInitCore(env: RunEnv, flags: InitFlags): Promise<RunInitResult
   await buildAgentsConventionsSection(root, config);
 
   const guidanceFilesCreated = [
-    path.join(config.harness.guidance_path, DEFAULT_BASELINE_CONVENTIONS_FILE_NAME),
     ...(houseConventionsSeeded.created ? [path.join(config.harness.guidance_path, DEFAULT_HOUSE_CONVENTIONS_FILE_NAME)] : []),
     ...(missionSeeded ? [missionSeeded] : []),
   ].map((p) => p.split(path.sep).join('/'));
