@@ -91,7 +91,10 @@ export async function buildAgentsLegRoutingSection(root: string, config: StoreCo
 export const AGENTS_MD_CAPTURE_FENCE = htmlCommentFence('capture-and-ingest');
 
 export function renderCaptureSection(config: StoreConfig): string[] {
-  return agentsTemplate('capture-and-ingest').replaceAll('__INBOX_PATH__', config.ingest.inbox_path).split('\n');
+  return agentsTemplate('capture-and-ingest')
+    .replaceAll('__INBOX_PATH__', config.ingest.inbox_path)
+    .replaceAll('__CAPTURE_ROOT__', config.ingest.capture_root)
+    .split('\n');
 }
 
 export async function buildAgentsCaptureSection(root: string, config: StoreConfig): Promise<{ changed: boolean }> {

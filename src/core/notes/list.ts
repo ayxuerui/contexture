@@ -2,6 +2,7 @@ import { readdir } from 'node:fs/promises';
 import path from 'node:path';
 import { configuredAdapters } from '../../adapters/registry.js';
 import type { StoreConfig } from '../../config/schema.js';
+import { isUnderAnyPrefix } from '../fs/prefix.js';
 import { parseNote } from './parse.js';
 
 /** The note-enumeration seam every retrieval leg builds on. */
@@ -49,13 +50,6 @@ function harnessEntryFiles(config: StoreConfig): Set<string> {
   }
 }
 
-function isUnderAnyPrefix(relativePath: string, prefixes: readonly string[]): boolean {
-  return prefixes.some((prefix) => {
-    const trimmed = prefix.replace(/\/+$/, '');
-    return relativePath === trimmed || relativePath.startsWith(`${trimmed}/`);
-  });
-}
-
 export function excludedPrefixesFor(config: StoreConfig): string[] {
   return [
     ...config.retrieval.exclude_paths,
@@ -100,6 +94,26 @@ async function walk(
       results.push(relativePath);
     }
   }
+}
+
+/**
+ * retain-captures-as-provenance: every markdown capture in the tier, which is
+ * exactly the set `listNotes` refuses to return — the capture root is a
+ * declared retrieval exclusion, so the same walk that hides captures from
+ * retrieval is what enumerates them here. Dedupe needs this list and
+ * retrieval must never see it, so the two callers share the walker and
+ * differ only in which side of the exclusion they ask for.
+ *
+ * Non-markdown captures are skipped for the same reason `listNotes` skips
+ * them: only markdown can carry the frontmatter an identity lives in. A
+ * binary capture is represented here by its sidecar.
+ */
+export async function listCaptures(storeRoot: string, config: StoreConfig): Promise<Note[]> {
+  const captureRoot = path.join(storeRoot, config.ingest.capture_root);
+  const relativePaths: string[] = [];
+  await walk(captureRoot, storeRoot, [], new Set(), relativePaths);
+  relativePaths.sort();
+  return Promise.all(relativePaths.map((relativePath) => parseNote(path.join(storeRoot, relativePath), relativePath)));
 }
 
 /** Every retrievable note in the store: everything under a .md path, minus every declared exclusion. */

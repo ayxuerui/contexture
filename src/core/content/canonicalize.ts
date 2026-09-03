@@ -36,3 +36,16 @@ export function contentHash(raw: string, notePath = '(unknown)'): string {
 export function contentHashOfBody(body: string): string {
   return hashText(canonicalizeText(body));
 }
+
+/**
+ * context-ingest spec: the same primitive's binary variant, for a capture
+ * that is not markdown. Nothing is stripped and nothing is canonicalized —
+ * a PDF has no frontmatter to remove and no line endings to normalize, and
+ * rewriting its bytes to pretend otherwise would make the hash describe
+ * something the file is not. It is deliberately the same digest and the same
+ * 16-character prefix, so the two halves of the primitive are comparable
+ * artifacts even though only one of them canonicalizes.
+ */
+export function contentHashOfBytes(bytes: Uint8Array): string {
+  return createHash('sha256').update(bytes).digest('hex').slice(0, 16);
+}

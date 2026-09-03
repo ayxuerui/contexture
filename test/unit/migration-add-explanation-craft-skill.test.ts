@@ -25,9 +25,9 @@ function makeV6Config(vendored: string[]): StoreConfig {
     publish: { path: 'publish/' },
     skills: { vendored },
     disclosure: { internal_audiences: [], hard_walls: [], leak_markers: {} },
-    ingest: { inbox_path: 'inbox/', tracking_params: [] },
+    ingest: { inbox_path: 'raw/inbox/', capture_root: 'raw/', tracking_params: [] },
     organize: { archive_destination: 'archive/', rollup_stale_days: 7 },
-    harness: { skills_path: '.agents/skills/', guidance_path: '.contexture/guidance/' },
+    harness: { skills_path: '.agents/skills/', guidance_path: '.contexture/guidance/', convention_max_bytes: 32768 },
     adapters: [],
   };
 }

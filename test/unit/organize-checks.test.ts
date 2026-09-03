@@ -1,3 +1,5 @@
+import { mkdir, writeFile } from 'node:fs/promises';
+import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import type { StoreConfig } from '../../src/config/schema.js';
 import type { CheckContext } from '../../src/core/checks/types.js';
@@ -10,6 +12,7 @@ import {
 } from '../../src/core/checks/organize-checks.js';
 import { ROLLUP_FENCE } from '../../src/core/rollup.js';
 import type { GraphBuildResult } from '../../src/core/graph/model.js';
+import { makeTmpDir } from '../helpers/tmp-store.js';
 import type { Note } from '../../src/core/notes/list.js';
 
 function makeConfig(): StoreConfig {
@@ -24,9 +27,9 @@ function makeConfig(): StoreConfig {
     catalog: { path: 'catalog/', section_max_bytes: 32768 },
     publish: { path: 'publish/' },
     skills: { vendored: [] },
-    ingest: { inbox_path: 'inbox/', tracking_params: [] },
+    ingest: { inbox_path: 'raw/inbox/', capture_root: 'raw/', tracking_params: [] },
     organize: { archive_destination: 'archive/', rollup_stale_days: 7 },
-    harness: { skills_path: 'skills/', guidance_path: 'guidance/' },
+    harness: { skills_path: 'skills/', guidance_path: 'guidance/', convention_max_bytes: 32768 },
     adapters: [],
   };
 }
@@ -105,27 +108,93 @@ describe('brokenLinksCheck', () => {
 });
 
 describe('uningestedInboxCheck', () => {
+  async function ctxAt(root: string): Promise<CheckContext> {
+    return { ...makeCtx([]), storeRoot: root };
+  }
+
+  async function writeInboxFile(root: string, relPath: string, content = '# Captured\n'): Promise<void> {
+    const full = path.join(root, relPath);
+    await mkdir(path.dirname(full), { recursive: true });
+    await writeFile(full, content);
+  }
+
   it('is severity: observation', () => {
     expect(uningestedInboxCheck.severity).toBe('observation');
   });
 
-  it('flags an inbox note with no source-identity fields', async () => {
-    const notes: Note[] = [{ path: 'inbox/a.md', frontmatter: undefined, body: '' }];
-    const result = await uningestedInboxCheck.run(makeCtx(notes));
-    expect(result.status).toBe('fail');
-    expect(result.findings[0]?.subject).toBe('inbox/a.md');
+  it('flags a capture sitting in the inbox', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      await writeInboxFile(tmp.root, 'raw/inbox/a.md');
+      const result = await uningestedInboxCheck.run(await ctxAt(tmp.root));
+      expect(result.status).toBe('fail');
+      expect(result.findings[0]?.subject).toBe('raw/inbox/a.md');
+    } finally {
+      await tmp.cleanup();
+    }
   });
 
-  it('does not flag an inbox note that has already been ingested', async () => {
-    const notes: Note[] = [{ path: 'inbox/a.md', frontmatter: { source_id: 'x' }, body: '' }];
-    const result = await uningestedInboxCheck.run(makeCtx(notes));
-    expect(result.status).toBe('pass');
+  /**
+   * The condition is location, not frontmatter: a capture pipeline commonly
+   * writes a source type and id at capture time, and a capture is not a note,
+   * so nothing about its frontmatter says whether ingest has run.
+   */
+  it('flags a capture that already carries a source type and id', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      await writeInboxFile(tmp.root, 'raw/inbox/a.md', '---\nsource_type: article\nsource_id: src-1\n---\n# Captured\n');
+      const result = await uningestedInboxCheck.run(await ctxAt(tmp.root));
+      expect(result.status).toBe('fail');
+    } finally {
+      await tmp.cleanup();
+    }
   });
 
-  it('does not flag a note outside the inbox', async () => {
-    const notes: Note[] = [{ path: 'projects/a.md', frontmatter: undefined, body: '' }];
-    const result = await uningestedInboxCheck.run(makeCtx(notes));
-    expect(result.status).toBe('pass');
+  it('flags a non-markdown capture, which note enumeration would never see', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      await writeInboxFile(tmp.root, 'raw/inbox/deck.pdf', '%PDF-1.7\n');
+      const result = await uningestedInboxCheck.run(await ctxAt(tmp.root));
+      expect(result.findings[0]?.subject).toBe('raw/inbox/deck.pdf');
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('reports nested captures with their full path, sorted', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      await writeInboxFile(tmp.root, 'raw/inbox/202609/b.md');
+      await writeInboxFile(tmp.root, 'raw/inbox/a.md');
+      const result = await uningestedInboxCheck.run(await ctxAt(tmp.root));
+      expect(result.findings.map((f) => f.subject)).toEqual(['raw/inbox/202609/b.md', 'raw/inbox/a.md']);
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('passes once the inbox holds nothing but its .gitkeep', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      await writeInboxFile(tmp.root, 'raw/inbox/.gitkeep', '');
+      await writeInboxFile(tmp.root, 'raw/202609/retained.md');
+      await writeInboxFile(tmp.root, 'projects/a.md');
+      const result = await uningestedInboxCheck.run(await ctxAt(tmp.root));
+      expect(result.status).toBe('pass');
+      expect(result.findings).toEqual([]);
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('passes when the inbox does not exist at all', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const result = await uningestedInboxCheck.run(await ctxAt(tmp.root));
+      expect(result.status).toBe('pass');
+    } finally {
+      await tmp.cleanup();
+    }
   });
 });
 

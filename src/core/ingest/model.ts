@@ -1,4 +1,14 @@
-import type { Note } from '../notes/list.js';
+/**
+ * retain-captures-as-provenance: dedupe compares identity records, not notes.
+ * A record is a retained capture (where identity lives now) or a note stamped
+ * before the capture tier existed (where it used to). `Note` satisfies this
+ * structurally, so both lists feed the same evaluation unchanged.
+ */
+export interface IdentityRecord {
+  /** Path relative to the store root, forward-slash separated. */
+  path: string;
+  frontmatter: Record<string, unknown> | undefined;
+}
 import { canonicalizeSourceId } from './canonical-url.js';
 import { SOURCE_ALT_IDS_FIELD, SOURCE_HASH_FIELD, SOURCE_ID_FIELD } from './identity.js';
 
@@ -13,7 +23,7 @@ export interface SourceCheckResult {
   hash: string;
 }
 
-function recordedIds(note: Note): string[] {
+function recordedIds(note: IdentityRecord): string[] {
   const ids: string[] = [];
   const primary = note.frontmatter?.[SOURCE_ID_FIELD];
   if (typeof primary === 'string') ids.push(primary);
@@ -29,6 +39,11 @@ function recordedIds(note: Note): string[] {
  * order, stopping (and reporting `multiple_matches` rather than guessing)
  * the moment either stage finds more than one match.
  *
+ * retain-captures-as-provenance: `notes` is the store's identity records —
+ * every retained capture plus every note stamped before identity moved onto
+ * the capture — so excluding the capture tier from retrieval never narrows
+ * what dedupe can see.
+ *
  * store-primitives-from-migration-audit spec (D2): a source-id match
  * (primary OR an alternate `source add-alt` recorded) whose recorded hash
  * differs from the candidate's is `drift`, not `already_ingested` — the
@@ -37,7 +52,7 @@ function recordedIds(note: Note): string[] {
  * parameters, or a trailing slash still matches.
  */
 export function evaluateSourceCheck(
-  notes: readonly Note[],
+  notes: readonly IdentityRecord[],
   candidateHash: string,
   sourceId: string,
   trackingParams: readonly string[] = [],

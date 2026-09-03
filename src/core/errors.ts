@@ -194,6 +194,44 @@ export class ArchiveDestinationExistsError extends ContextureError {
   }
 }
 
+export class CaptureRootUndeterminedError extends ContextureError {
+  constructor(inboxPath: string) {
+    super(ExitCode.Usage, {
+      code: 'migrate.capture_root_undetermined',
+      severity: 'error',
+      message:
+        `Cannot determine a capture root for the configured inbox "${inboxPath}": it is a top-level ` +
+        'directory this store chose, so migrating it would either relocate an operator-chosen path or ' +
+        'exclude the store root from retrieval. Set ingest.capture_root by hand, with the inbox inside it, ' +
+        'then re-run migrate.',
+      subject: inboxPath,
+    });
+  }
+}
+
+export class CaptureFileMissingError extends ContextureError {
+  constructor(sidecarPath: string, capturePath: string) {
+    super(ExitCode.Usage, {
+      code: 'ingest.capture_file_missing',
+      severity: 'error',
+      message: `"${sidecarPath}" names capture file "${capturePath}", which does not exist.`,
+      subject: sidecarPath,
+      details: { capturePath },
+    });
+  }
+}
+
+export class CaptureDestinationExistsError extends ContextureError {
+  constructor(destinationPath: string) {
+    super(ExitCode.Usage, {
+      code: 'ingest.capture_destination_exists',
+      severity: 'error',
+      message: `Cannot retain the capture: "${destinationPath}" already exists.`,
+      subject: destinationPath,
+    });
+  }
+}
+
 export class AdapterNotFoundError extends ContextureError {
   constructor(kind: string, id: string) {
     super(ExitCode.Usage, {

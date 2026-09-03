@@ -3,17 +3,20 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { addExplanationCraftSkillMigration } from '../../src/core/migrations/add-explanation-craft-skill.js';
+import { configDefaultsAsTheConventionMigration } from '../../src/core/migrations/config-defaults-as-the-convention.js';
 import { dropAccessAxesMigration } from '../../src/core/migrations/drop-access-axes.js';
 import { archiveDestinationFromTaxonomyMigration } from '../../src/core/migrations/archive-destination-from-taxonomy.js';
 import { dropForgeAndWorkspacesExternalMigration } from '../../src/core/migrations/drop-forge-and-workspaces-external.js';
 import { renameConventionsPathMigration } from '../../src/core/migrations/rename-conventions-path.js';
 import { renameProceduresPathMigration } from '../../src/core/migrations/rename-procedures-path.js';
+import { retainCapturesAsProvenanceMigration } from '../../src/core/migrations/retain-captures-as-provenance.js';
 import { pendingMigrations } from '../../src/core/migrations/registry.js';
 import type { Store } from '../../src/core/store.js';
 import { readConfig } from '../../src/config/load.js';
 import { renderStoreConfig } from '../../src/config/render.js';
 import { SUPPORTED_SCHEMA_VERSION } from '../../src/config/schema.js';
 import type { StoreConfig } from '../../src/config/schema.js';
+import { CaptureRootUndeterminedError } from '../../src/core/errors.js';
 import { makeTmpDir } from '../helpers/tmp-store.js';
 
 function makeV1Config(): StoreConfig {
@@ -28,9 +31,9 @@ function makeV1Config(): StoreConfig {
     catalog: { path: 'catalog/', section_max_bytes: 32768 },
     publish: { path: 'publish/' },
     skills: { vendored: [] },
-    ingest: { inbox_path: 'inbox/', tracking_params: [] },
+    ingest: { inbox_path: 'raw/inbox/', capture_root: 'raw/', tracking_params: [] },
     organize: { archive_destination: 'archive/', rollup_stale_days: 7 },
-    harness: { skills_path: 'procedures/', guidance_path: 'conventions/' },
+    harness: { skills_path: 'procedures/', guidance_path: 'conventions/', convention_max_bytes: 32768 },
     adapters: [],
   };
 }
@@ -157,6 +160,8 @@ describe('pendingMigrations', () => {
     archiveDestinationFromTaxonomyMigration.id,
     addExplanationCraftSkillMigration.id,
     dropAccessAxesMigration.id,
+    retainCapturesAsProvenanceMigration.id,
+    configDefaultsAsTheConventionMigration.id,
   ];
 
   it('includes every migration, in order, for a store at schema_version 1', () => {
@@ -165,6 +170,17 @@ describe('pendingMigrations', () => {
 
   it('includes the same set for a store at schema_version 2, the retired step having no successor', () => {
     expect(pendingMigrations(2).map((m) => m.id)).toEqual(ALL);
+  });
+
+  it('includes the capture-tier and config-defaults migrations at schema_version 8', () => {
+    expect(pendingMigrations(8).map((m) => m.id)).toEqual([
+      retainCapturesAsProvenanceMigration.id,
+      configDefaultsAsTheConventionMigration.id,
+    ]);
+  });
+
+  it('includes only the config-defaults migration at schema_version 9', () => {
+    expect(pendingMigrations(9).map((m) => m.id)).toEqual([configDefaultsAsTheConventionMigration.id]);
   });
 
   it('drops the procedures-path migration for a store at schema_version 3', () => {
@@ -180,6 +196,8 @@ describe('pendingMigrations', () => {
       archiveDestinationFromTaxonomyMigration.id,
       addExplanationCraftSkillMigration.id,
       dropAccessAxesMigration.id,
+      retainCapturesAsProvenanceMigration.id,
+      configDefaultsAsTheConventionMigration.id,
     ]);
   });
 
@@ -187,11 +205,17 @@ describe('pendingMigrations', () => {
     expect(pendingMigrations(6).map((m) => m.id)).toEqual([
       addExplanationCraftSkillMigration.id,
       dropAccessAxesMigration.id,
+      retainCapturesAsProvenanceMigration.id,
+      configDefaultsAsTheConventionMigration.id,
     ]);
   });
 
   it('includes only the access-axis migration at schema_version 7', () => {
-    expect(pendingMigrations(7).map((m) => m.id)).toEqual([dropAccessAxesMigration.id]);
+    expect(pendingMigrations(7).map((m) => m.id)).toEqual([
+      dropAccessAxesMigration.id,
+      retainCapturesAsProvenanceMigration.id,
+      configDefaultsAsTheConventionMigration.id,
+    ]);
   });
 
   it('is empty for a store already at the current schema version', () => {
@@ -437,8 +461,10 @@ describe('dropForgeAndWorkspacesExternalMigration', () => {
       expect(configContent).not.toContain('forge');
       expect(configContent).not.toContain('workspaces_external');
       expect(configContent).toContain('schema_version: 5');
-      expect(configContent).toContain('claude-code');
 
+      // The surviving adapter list now equals the shipped default, so the file
+      // no longer restates it (config-defaults-as-the-convention) — what
+      // matters is what it resolves to.
       const config = await readConfig(tmp.root);
       expect(config.schema_version).toBe(5);
       expect(config.adapters).toEqual([{ id: 'claude-code', kind: 'harness-generation' }]);
@@ -575,6 +601,225 @@ describe('archiveDestinationFromTaxonomyMigration', () => {
       const migrated = { root: tmp.root, config: await readConfig(tmp.root) };
       expect(await archiveDestinationFromTaxonomyMigration.plan(migrated)).toEqual([]);
       expect(await archiveDestinationFromTaxonomyMigration.apply(migrated)).toEqual([]);
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+});
+
+describe('retainCapturesAsProvenanceMigration', () => {
+  async function setUpV8Store(root: string, inboxPath: string, excludePaths: string[] = []): Promise<Store> {
+    await mkdir(root, { recursive: true });
+    const text = [
+      'schema_version: 8',
+      'taxonomy: { profile: para, layers: [] }',
+      'derived: { paths: [] }',
+      `retrieval: { exclude_paths: [${excludePaths.join(', ')}], relations: [], graph: { cluster_depth: 2, hub_top: 8, bridge_top: 10, orphan_exempt_clusters: [] } }`,
+      'git: { default_branch: main }',
+      'session: { branch_prefix: session/, worktrees_path: .worktrees/ }',
+      'write_lifecycle: { diff_size_ceiling_lines: 2000, writable_paths: [] }',
+      'catalog: { path: catalog/, section_max_bytes: 32768 }',
+      `ingest: { inbox_path: ${inboxPath} }`,
+      'organize: { archive_destination: archive/ }',
+      'harness: { skills_path: skills/, guidance_path: guidance/ }',
+      'adapters: []',
+      '',
+    ].join('\n');
+    await writeFile(path.join(root, 'contexture.yaml'), text);
+    return { root, config: await readConfig(root) };
+  }
+
+  it('adopts the shipped default, declares the capture root, and excludes it', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const store = await setUpV8Store(tmp.root, 'inbox/');
+      await mkdir(path.join(tmp.root, 'inbox'), { recursive: true });
+      await writeFile(path.join(tmp.root, 'inbox', 'captured.md'), '# captured\n');
+
+      const planned = await retainCapturesAsProvenanceMigration.plan(store);
+      expect(planned.map((d) => d.description)).toEqual([
+        'add ingest.capture_root: raw/ and set schema_version to 9',
+        'adopt the shipped inbox default, moving ingest.inbox_path from inbox/ to raw/inbox/',
+        'move the inbox directory from inbox/ to raw/inbox/',
+        'add raw/ to retrieval.exclude_paths, so retained captures are never notes',
+      ]);
+      // plan() is a dry run: nothing on disk moved.
+      expect(existsSync(path.join(tmp.root, 'inbox', 'captured.md'))).toBe(true);
+
+      await retainCapturesAsProvenanceMigration.apply(store);
+
+      const migrated = await readConfig(tmp.root);
+      expect(migrated.schema_version).toBe(9);
+      expect(migrated.ingest.inbox_path).toBe('raw/inbox/');
+      expect(migrated.ingest.capture_root).toBe('raw/');
+      expect(migrated.retrieval.exclude_paths).toContain('raw/');
+      expect(existsSync(path.join(tmp.root, 'raw', 'inbox', 'captured.md'))).toBe(true);
+      expect(existsSync(path.join(tmp.root, 'inbox'))).toBe(false);
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('leaves a nested operator-chosen inbox alone and promotes its parent to the capture root', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const store = await setUpV8Store(tmp.root, 'staging/inbox/');
+      await retainCapturesAsProvenanceMigration.apply(store);
+
+      const migrated = await readConfig(tmp.root);
+      expect(migrated.ingest.inbox_path).toBe('staging/inbox/');
+      expect(migrated.ingest.capture_root).toBe('staging/');
+      expect(migrated.retrieval.exclude_paths).toContain('staging/');
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('refuses a top-level operator-chosen inbox before writing anything', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const store = await setUpV8Store(tmp.root, 'incoming/');
+      const before = await readFile(path.join(tmp.root, 'contexture.yaml'), 'utf8');
+
+      await expect(retainCapturesAsProvenanceMigration.plan(store)).rejects.toBeInstanceOf(CaptureRootUndeterminedError);
+      await expect(retainCapturesAsProvenanceMigration.apply(store)).rejects.toBeInstanceOf(CaptureRootUndeterminedError);
+      expect(await readFile(path.join(tmp.root, 'contexture.yaml'), 'utf8')).toBe(before);
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('does not duplicate an exclusion the store already declares', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const store = await setUpV8Store(tmp.root, 'inbox/', ['raw/']);
+      const planned = await retainCapturesAsProvenanceMigration.plan(store);
+      expect(planned.some((d) => d.description.includes('retrieval.exclude_paths'))).toBe(false);
+
+      await retainCapturesAsProvenanceMigration.apply(store);
+      const migrated = await readConfig(tmp.root);
+      expect(migrated.retrieval.exclude_paths.filter((p) => p === 'raw/')).toHaveLength(1);
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('resumes after an interruption between the directory move and the config write', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const store = await setUpV8Store(tmp.root, 'inbox/');
+      // The state an interrupted run leaves: the rename happened, the config did not.
+      await mkdir(path.join(tmp.root, 'raw', 'inbox'), { recursive: true });
+      await writeFile(path.join(tmp.root, 'raw', 'inbox', 'captured.md'), '# captured\n');
+
+      await retainCapturesAsProvenanceMigration.apply(store);
+
+      const migrated = await readConfig(tmp.root);
+      expect(migrated.schema_version).toBe(9);
+      expect(migrated.ingest.inbox_path).toBe('raw/inbox/');
+      expect(existsSync(path.join(tmp.root, 'raw', 'inbox', 'captured.md'))).toBe(true);
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('is a no-op once applied', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const store = await setUpV8Store(tmp.root, 'inbox/');
+      await retainCapturesAsProvenanceMigration.apply(store);
+      const applied = { root: tmp.root, config: await readConfig(tmp.root) };
+      expect(await retainCapturesAsProvenanceMigration.plan(applied)).toEqual([]);
+      expect(await retainCapturesAsProvenanceMigration.apply(applied)).toEqual([]);
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+});
+
+describe('configDefaultsAsTheConventionMigration', () => {
+  async function setUpFullyExplicitV9Store(root: string): Promise<Store> {
+    await mkdir(root, { recursive: true });
+    const text = [
+      'schema_version: 9',
+      'taxonomy: { profile: para, layers: [] }',
+      'derived: { paths: [.contexture/cache/] }',
+      'retrieval: { exclude_paths: [.contexture/, raw/], relations: [], graph: { cluster_depth: 2, hub_top: 8, bridge_top: 10, orphan_exempt_clusters: [] } }',
+      'git: { default_branch: main }',
+      'session: { branch_prefix: session/, worktrees_path: .worktrees/ }',
+      'write_lifecycle: { diff_size_ceiling_lines: 2000, writable_paths: [] }',
+      'catalog: { path: .contexture/catalog/, section_max_bytes: 32768 }',
+      'ingest: { inbox_path: raw/inbox/, capture_root: raw/ }',
+      'organize: { archive_destination: archives/, rollup_stale_days: 7 }',
+      'harness: { skills_path: .agents/skills/, guidance_path: .contexture/guidance/ }',
+      'adapters: [{ id: claude-code, kind: harness-generation }]',
+      '',
+    ].join('\n');
+    await writeFile(path.join(root, 'contexture.yaml'), text);
+    return { root, config: await readConfig(root) };
+  }
+
+  it('reports each key it would remove, and removes none of them during plan()', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const store = await setUpFullyExplicitV9Store(tmp.root);
+      const before = await readFile(path.join(tmp.root, 'contexture.yaml'), 'utf8');
+
+      const planned = await configDefaultsAsTheConventionMigration.plan(store);
+      const descriptions = planned.map((d) => d.description);
+      expect(descriptions[0]).toBe('set schema_version to 10');
+      expect(descriptions).toContain("remove ingest.inbox_path, which already holds contexture's shipped default");
+      expect(descriptions).toContain("remove session.worktrees_path, which already holds contexture's shipped default");
+      expect(descriptions).toContain("remove catalog.section_max_bytes, which already holds contexture's shipped default");
+      expect(await readFile(path.join(tmp.root, 'contexture.yaml'), 'utf8')).toBe(before);
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  /** The property the whole change rests on: pruning is not a behavior change. */
+  it('changes no resolved value', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const store = await setUpFullyExplicitV9Store(tmp.root);
+      const before = await readConfig(tmp.root);
+      await configDefaultsAsTheConventionMigration.apply(store);
+      const after = await readConfig(tmp.root);
+
+      expect(after).toEqual({ ...before, schema_version: 10 });
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('leaves an operator-chosen value in the file', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const store = await setUpFullyExplicitV9Store(tmp.root);
+      const text = (await readFile(path.join(tmp.root, 'contexture.yaml'), 'utf8')).replace(
+        'diff_size_ceiling_lines: 2000',
+        'diff_size_ceiling_lines: 500',
+      );
+      await writeFile(path.join(tmp.root, 'contexture.yaml'), text);
+      const restated = { root: tmp.root, config: await readConfig(tmp.root) };
+
+      await configDefaultsAsTheConventionMigration.apply(restated);
+      const written = await readFile(path.join(tmp.root, 'contexture.yaml'), 'utf8');
+      expect(written).toContain('diff_size_ceiling_lines: 500');
+      expect(written).not.toContain('worktrees_path');
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('is a no-op once applied', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const store = await setUpFullyExplicitV9Store(tmp.root);
+      await configDefaultsAsTheConventionMigration.apply(store);
+      const applied = { root: tmp.root, config: await readConfig(tmp.root) };
+      expect(await configDefaultsAsTheConventionMigration.plan(applied)).toEqual([]);
+      expect(await configDefaultsAsTheConventionMigration.apply(applied)).toEqual([]);
     } finally {
       await tmp.cleanup();
     }

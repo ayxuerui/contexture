@@ -1,9 +1,11 @@
 import { addExplanationCraftSkillMigration } from './add-explanation-craft-skill.js';
+import { configDefaultsAsTheConventionMigration } from './config-defaults-as-the-convention.js';
 import { archiveDestinationFromTaxonomyMigration } from './archive-destination-from-taxonomy.js';
 import { dropAccessAxesMigration } from './drop-access-axes.js';
 import { dropForgeAndWorkspacesExternalMigration } from './drop-forge-and-workspaces-external.js';
 import { renameConventionsPathMigration } from './rename-conventions-path.js';
 import { renameProceduresPathMigration } from './rename-procedures-path.js';
+import { retainCapturesAsProvenanceMigration } from './retain-captures-as-provenance.js';
 import type { Migration } from './types.js';
 
 /**
@@ -24,6 +26,8 @@ export const MIGRATIONS: readonly Migration[] = [
   archiveDestinationFromTaxonomyMigration,
   addExplanationCraftSkillMigration,
   dropAccessAxesMigration,
+  retainCapturesAsProvenanceMigration,
+  configDefaultsAsTheConventionMigration,
 ];
 
 /** Every migration a store currently at `fromVersion` still needs to reach the CLI's supported version, in order. */

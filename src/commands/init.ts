@@ -10,12 +10,14 @@ import {
   DEFAULT_ROLLUP_STALE_DAYS,
   DEFAULT_CATALOG_PATH,
   DEFAULT_CATALOG_SECTION_MAX_BYTES,
+  DEFAULT_CONVENTION_MAX_BYTES,
   DEFAULT_PUBLISH_PATH,
   DEFAULT_VENDORED_SKILLS,
   DEFAULT_HOUSE_CONVENTIONS_FILE_NAME,
   DEFAULT_GUIDANCE_PATH,
   DEFAULT_DERIVED_PATHS,
   DEFAULT_DIFF_SIZE_CEILING_LINES,
+  DEFAULT_CAPTURE_ROOT,
   DEFAULT_EXCLUDE_PATHS,
   DEFAULT_INBOX_PATH,
   DEFAULT_TRACKING_PARAMS,
@@ -303,9 +305,9 @@ async function runInitCore(env: RunEnv, flags: InitFlags): Promise<RunInitResult
     catalog: { path: DEFAULT_CATALOG_PATH, section_max_bytes: DEFAULT_CATALOG_SECTION_MAX_BYTES },
     publish: { path: DEFAULT_PUBLISH_PATH },
     skills: { vendored: [...DEFAULT_VENDORED_SKILLS] },
-    ingest: { inbox_path: DEFAULT_INBOX_PATH, tracking_params: [...DEFAULT_TRACKING_PARAMS] },
+    ingest: { inbox_path: DEFAULT_INBOX_PATH, capture_root: DEFAULT_CAPTURE_ROOT, tracking_params: [...DEFAULT_TRACKING_PARAMS] },
     organize: { archive_destination: taxonomy.archiveDestination ?? DEFAULT_ARCHIVE_DESTINATION, rollup_stale_days: DEFAULT_ROLLUP_STALE_DAYS, mission_path: DEFAULT_MISSION_PATH },
-    harness: { skills_path: DEFAULT_SKILLS_PATH, guidance_path: DEFAULT_GUIDANCE_PATH },
+    harness: { skills_path: DEFAULT_SKILLS_PATH, guidance_path: DEFAULT_GUIDANCE_PATH, convention_max_bytes: DEFAULT_CONVENTION_MAX_BYTES },
     adapters: resolvedAdapters,
   };
   // Round-trips through the schema internally; throws before any byte is written if it doesn't.
@@ -352,6 +354,14 @@ async function runInitCore(env: RunEnv, flags: InitFlags): Promise<RunInitResult
     await writeFileAtomic(gitkeepPath, '');
     layerGitkeeps.push(path.join(layer.path, '.gitkeep'));
   }
+
+  // context-ingest spec: the inbox, so a fresh store has somewhere to capture
+  // into. Kept by the same .gitkeep device as a layer, and tracked like one —
+  // the capture tier is provenance, never a derived path or an ignore entry.
+  const inboxDir = path.join(root, config.ingest.inbox_path);
+  await mkdir(inboxDir, { recursive: true });
+  await writeFileAtomic(path.join(inboxDir, '.gitkeep'), '');
+  layerGitkeeps.push(path.join(config.ingest.inbox_path, '.gitkeep'));
 
   // Version-controlled hooks (write-lifecycle spec): generated now, staged
   // and committed below alongside the rest of the scaffold.
