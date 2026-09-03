@@ -48,6 +48,13 @@ function checkPrintRule(html: string): PublishCheckFailure[] {
   return [{ check: 'print-rule', message: 'no @media print rule' }];
 }
 
+/** publish spec: the nav's page label reads this field (serve-page-names-theme-and-nav-toggle D1), so it must be enforced rather than merely hoped for. */
+function checkTitle(html: string): PublishCheckFailure[] {
+  const match = /<title[^>]*>([\s\S]*?)<\/title>/i.exec(html);
+  if (match && (match[1] ?? '').trim().length > 0) return [];
+  return [{ check: 'title', message: 'no non-empty <title> element' }];
+}
+
 function checkProvenanceLine(html: string): PublishCheckFailure[] {
   const hasDate = /\d{4}-\d{2}-\d{2}/.test(html);
   const hasReadmeLink = /href\s*=\s*["'][^"']*readme[^"']*["']/i.test(html);
@@ -109,6 +116,7 @@ export async function execute(store: Store, flags: PublishCheckFlags): Promise<C
     ...checkViewportMeta(html),
     ...checkPrintRule(html),
     ...checkProvenanceLine(html),
+    ...checkTitle(html),
     ...checkTagBalance(html),
   ];
 

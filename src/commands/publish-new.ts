@@ -37,6 +37,12 @@ function pageSegments(slug: string): string[] {
   return segments;
 }
 
+/**
+ * publish spec (serve-page-names-theme-and-nav-toggle): a page is served byte-verbatim, so it
+ * cannot receive the browsing surface's theme choice from the server — it can only honor the
+ * viewer's own system preference, declared here once so an author starts from a legible page
+ * under either preference rather than a light-only one.
+ */
 function pageSkeleton(slug: string, dateCreated: string): string {
   return [
     '<!doctype html>',
@@ -46,6 +52,15 @@ function pageSkeleton(slug: string, dateCreated: string): string {
     '<meta name="viewport" content="width=device-width, initial-scale=1">',
     `<title>${slug}</title>`,
     '<style>',
+    ':root {',
+    '  color-scheme: light dark;',
+    '  --page-fg: #1a1a1a;',
+    '  --page-bg: #ffffff;',
+    '}',
+    '@media (prefers-color-scheme: dark) {',
+    '  :root { --page-fg: #e8e8e8; --page-bg: #121212; }',
+    '}',
+    'body { color: var(--page-fg); background: var(--page-bg); }',
     '@media print {',
     '  .no-print { display: none; }',
     '}',
