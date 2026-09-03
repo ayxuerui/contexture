@@ -14,8 +14,11 @@ export interface ScriptSyntaxError {
 /**
  * publish spec: the sole spawn site for `node --check` (single-source-
  * literals guard), the same discipline core/git/exec.ts applies to git and
- * adapters/forge/github.ts applies to gh — one dedicated module per
- * external tool, never ad hoc subprocess spawning scattered across commands.
+ * core/harness/isolated-run.ts applies to re-executing this CLI — one
+ * dedicated module per external process, never ad hoc subprocess spawning
+ * scattered across commands. (The former gh spawn site went with the forge
+ * adapter; nothing in src/ spawns gh, and the portability test only resolves
+ * it on PATH.)
  */
 export async function checkScriptSyntax(scripts: readonly string[]): Promise<ScriptSyntaxError[]> {
   if (scripts.length === 0) return [];

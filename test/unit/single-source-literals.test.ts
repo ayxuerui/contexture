@@ -54,6 +54,19 @@ function filesContainingSubstring(substring: string, allow: readonly string[]): 
   return hits;
 }
 
+/** Source with comments removed, so a guard matches code rather than prose about code. */
+function codeOf(file: string): string {
+  return readFileSync(file, 'utf8')
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/\/\/.*$/gm, '');
+}
+
+function filesReadingInCode(substring: string, allow: readonly string[]): string[] {
+  return ALL_FILES.filter((file) => !allow.includes(relativeToSrc(file)) && codeOf(file).includes(substring)).map(
+    relativeToSrc,
+  );
+}
+
 describe('single-source-literals guard', () => {
   it('every shipped profile/layer name appears only in taxonomy/profiles.ts', () => {
     const names = new Set<string>();
@@ -92,6 +105,20 @@ describe('single-source-literals guard', () => {
     expect(filesContainingSubstring('process.stdout', ['core/reporter.ts', 'core/env.ts'])).toEqual([]);
   });
 
+  /**
+   * isolate-the-portability-test (task 5.1): `--portable` argues its isolation
+   * from the fact that nothing outside `core/env.ts` reaches for process state
+   * — every other module takes the environment it is given. That was a header
+   * comment; this makes it a failing test.
+   *
+   * Matched against code with comments stripped: several modules *document*
+   * that they never touch `process.env`, and a guard that its own rationale
+   * trips is not a guard.
+   */
+  it('no module outside core/env.ts reads process.env', () => {
+    expect(filesReadingInCode('process.env', ['core/env.ts'])).toEqual([]);
+  });
+
   it('each external CLI tool has exactly one call site that spawns it', () => {
     // git and node --check are two different external tools with two
     // different single homes — core/git/exec.ts for git (behind the
@@ -103,7 +130,7 @@ describe('single-source-literals guard', () => {
     // invocations, never from this codebase's own process. The invariant
     // this guards is "no ad hoc, scattered subprocess spawning," not "only
     // one file in the whole codebase may ever spawn anything."
-    const allow = ['core/git/exec.ts', 'core/publish/script-check.ts'];
+    const allow = ['core/git/exec.ts', 'core/publish/script-check.ts', 'core/harness/isolated-run.ts'];
     const hits = new Set([
       ...filesContainingSubstring("'node:child_process'", allow),
       ...filesContainingSubstring('"node:child_process"', allow),

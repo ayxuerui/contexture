@@ -60,7 +60,7 @@ describe('adapters (real CLI)', () => {
       expect(existsSync(path.join(worktree, 'CLAUDE.md'))).toBe(false);
       expect(existsSync(path.join(worktree, '.claude/settings.json'))).toBe(false);
 
-      const result = await runCli(['verify', '--portable', '--json'], { cwd: worktree, env });
+      const result = await runCli(['verify', '--json'], { cwd: worktree, env });
       expect(result.exitCode).toBe(0);
       expect(JSON.parse(result.stdout).data.steps.every((s: { status: string }) => s.status === 'pass')).toBe(true);
     } finally {
@@ -68,7 +68,7 @@ describe('adapters (real CLI)', () => {
     }
   });
 
-  it('deleting a managed AGENTS.md section makes verify --portable fail naming it', async () => {
+  it('deleting a managed AGENTS.md section makes verify fail naming it', async () => {
     const tmp = await makeTmpDir();
     try {
       const env = hermeticGitEnv();
@@ -84,7 +84,7 @@ describe('adapters (real CLI)', () => {
       expect(stripped).not.toBe(content);
       await writeFile(agentsMdPath, stripped);
 
-      const result = await runCli(['verify', '--portable', '--json'], { cwd: tmp.root, env });
+      const result = await runCli(['verify', '--json'], { cwd: tmp.root, env });
       expect(result.exitCode).not.toBe(0);
       const data = JSON.parse(result.stdout);
       expect(data.findings[0].message).toContain('placement');
@@ -124,14 +124,14 @@ describe('entry-doc generation (real CLI)', () => {
       expect(agentsMd).not.toContain('weekly-review'); // the skill index is gone; skills are never named in AGENTS.md
       expect(agentsMd).not.toContain('Steps.'); // the skill body is not inlined either — only conventions/mission are
 
-      const verifyResult = await runCli(['verify', '--portable', '--json'], { cwd: tmp.root, env });
+      const verifyResult = await runCli(['verify', '--json'], { cwd: tmp.root, env });
       expect(verifyResult.exitCode).toBe(0);
     } finally {
       await tmp.cleanup();
     }
   });
 
-  it('verify --portable fails when a convention file changes without a matching AGENTS.md regeneration', async () => {
+  it('verify fails when a convention file changes without a matching AGENTS.md regeneration', async () => {
     const tmp = await makeTmpDir();
     try {
       const env = hermeticGitEnv();
@@ -142,12 +142,12 @@ describe('entry-doc generation (real CLI)', () => {
       // Edit the source directly, bypassing `ctxr update` — AGENTS.md now drifts.
       await writeNote(tmp.root, '.contexture/guidance/house-style.md', '---\ntitle: House style\n---\n\nChanged text.\n');
 
-      const result = await runCli(['verify', '--portable', '--json'], { cwd: tmp.root, env });
+      const result = await runCli(['verify', '--json'], { cwd: tmp.root, env });
       expect(result.exitCode).not.toBe(0);
       expect(JSON.parse(result.stdout).findings[0].message).toContain('conventions');
 
       await runCli(['update'], { cwd: tmp.root, env });
-      const after = await runCli(['verify', '--portable', '--json'], { cwd: tmp.root, env });
+      const after = await runCli(['verify', '--json'], { cwd: tmp.root, env });
       expect(after.exitCode).toBe(0);
     } finally {
       await tmp.cleanup();

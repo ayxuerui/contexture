@@ -589,12 +589,12 @@ export async function run(argv: readonly string[], env: RunEnv): Promise<ExitCod
   program
     .command('verify')
     .description('exercise core store operations end to end, from an environment with no harness-specific state')
-    .option('--portable', 'the portability test: a retrieval query, a derived-artifact build, and following one skill')
+    .option('--portable', "verify the store's recorded commit in a disposable checkout, in a child process with no harness state reachable")
     .action(async (cmdOpts: { portable?: boolean }, cmd: Command) => {
       const { runEnv, jsonMode, root } = deriveRunEnv(env, cmd);
       result = await runCommand('verify', runEnv, jsonMode, async () => {
         const store = await openStore(runEnv, { root });
-        return verifyCommand.execute(store, { portable: cmdOpts.portable });
+        return verifyCommand.execute(runEnv, store, { portable: cmdOpts.portable });
       });
     });
 

@@ -2,7 +2,7 @@
 
 ### Requirement: Executable portability test
 The store SHALL provide a command that exercises core store operations — at minimum, a retrieval query,
-a derived-artifact build, a disclosure-gate evaluation, following one skill by path at the configured
+a derived-artifact build, a write-path gate evaluation, following one skill by path at the configured
 skills path, and confirming that the external tooling the shipped write-path skills invoke is present —
 and SHALL exit non-zero naming the first failing operation if any operation fails. It SHALL also verify that every
 contexture-managed section of `AGENTS.md` is present and, when operator conventions or a mission
@@ -48,9 +48,9 @@ configuration.
 - **WHEN** the portability test runs in isolated mode against a repository with no commit yet
 - **THEN** it exits non-zero naming that there is no commit to verify, and creates no checkout
 
-#### Scenario: The disclosure gate is exercised as a store operation
-- **WHEN** the portability test evaluates the disclosure gate for a note against a context the store does not declare
-- **THEN** the operation passes if the gate returns a verdict naming the rung that decided it, whichever verdict that is, and fails only if no verdict is produced
+#### Scenario: The write-path gate is exercised as a store operation
+- **WHEN** the portability test evaluates the write-path gate for a path that resolves outside the store
+- **THEN** the operation passes if the gate refuses it and names a reason, and fails only if no verdict is produced
 
 #### Scenario: Missing write-path tooling is reported by the portability test, not by the gate
 - **WHEN** the external tool that the shipped submit and land skills invoke is absent from the executable search path
