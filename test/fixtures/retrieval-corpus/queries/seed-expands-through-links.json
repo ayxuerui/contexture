@@ -1,0 +1,8 @@
+{
+  "id": "seed-expands-through-links",
+  "description": "A seed's one-hop neighbourhood, exercising all three gloss-vocabulary-coverage states against one declared vocabulary.",
+  "selector": { "seeds": ["projects/kickoff.md"] },
+  "hops": 1,
+  "expected": ["projects/kickoff.md", "areas/pricing.md", "archives/retro.md"],
+  "vocabulary": ["discount"]
+}

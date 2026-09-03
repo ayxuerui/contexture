@@ -1,0 +1,1 @@
+- [[Pricing]] (`areas/pricing.md`) — How we price, and when a discount applies.
