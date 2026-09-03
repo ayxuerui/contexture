@@ -12,26 +12,19 @@ different font. If a note would do the job, the note is the deliverable.
 
 ## 2. Name the subject, let the selector produce the set
 
-`ctxr publish gather` resolves a subject to its source notes — never a hand-picked list, which is how a
-walled note slips in unnoticed:
+`ctxr publish gather` resolves a subject to its source notes — never a hand-picked list, which is how
+an unintended note slips in unnoticed:
 
 - `--under <prefix>` — a store subtree
 - `--note <path>` — a single note
 - `--entity <name>` — every note linking to a concept, the same enumeration `ctxr rollup gather` uses
-- `--as <context>` — everything a named context can see
 
-## 3. Gate before copying anything out
+## 3. Decide what belongs on the page
 
-`ctxr publish gather --audience <audience>` evaluates every resolved note through the same tri-state
-disclosure verdict `ctxr check` uses, and reports the worst verdict in the set. Run it FIRST, before
-reading a single note for content:
-
-- **DENY** notes contribute nothing — not a title, not a count, not a paraphrase.
-- **ASK** stops the build; name the note to the operator and wait.
-- Only **ALLOW** content may be quoted or summarized into the page.
-
-Never infer a verdict from a note's resolved visibility on your own — an external audience's verdict
-requires an explicit tag or a human answer, not an inference from how widely a note is already visible.
+The store does not decide this for you. Read the resolved set and judge, note by note, whether its
+content belongs in front of this page's intended readers — a page written for an outside party must
+not carry material written about that party, or about anyone else who did not expect to be quoted.
+When you are unsure about a note, leave it out and name it to the operator rather than guessing.
 
 ## 4. Fix the identity once
 
@@ -45,10 +38,23 @@ handed out.
 
 Pick the shape the content actually needs — a status board, a timeline, a side-by-side comparison, an
 explainer with a live demo — not a rendering of the source notes in reading order. Contexture ships no
-renderer of its own: for visual direction, load the `frontend-design` skill this store carries by
-default (or whichever design-focused skill it's configured or installed instead), and follow it for the
-actual HTML, CSS, and visual language. If a sibling page already exists, read its stylesheet and
-inherit its palette and type scale before inventing a new one.
+renderer of its own and no house voice: both halves of the craft are delegated to a skill.
+
+**The form and its visual language.** Load the `frontend-design` skill this store carries by default
+(or whichever design-focused skill it's configured or installed instead) and follow it for the HTML,
+CSS, type, and palette — and for the interface's own words: labels, buttons, empty and error states.
+If a sibling page already exists, read its stylesheet and inherit its palette and type scale before
+inventing a new one.
+
+**The prose that explains the subject.** A page is read by someone who wasn't in the sessions the
+notes came from, so the notes' shorthand does not survive the copy out. Load the `eli5` skill this
+store carries by default (or whichever explanation-focused skill it's configured instead), settle who
+the reader is before writing, and pitch every definition, analogy, and level of detail at them.
+
+Both skills say "audience", and neither means step 3's. There, `--audience` names who the store is
+being asked to disclose to and the answer is a verdict; here it names how much a reader already knows
+and the answer is a register. A comprehension level is never a value you pass to `--audience`, and
+writing plainly never widens what the page may contain — the gate in step 3 already settled that.
 
 ## 6. Verify the output invariants
 
@@ -56,13 +62,12 @@ inherit its palette and type scale before inventing a new one.
 a viewport meta tag, at least one print rule, a provenance line, a sibling README, balanced tags, and
 valid syntax in every embedded script. It exits non-zero naming every failing check; fix all of them
 before reporting the page as ready. It answers only what's derivable from the file itself — the DO-test
-in step 1, the form choice in step 5, and factual accuracy stay judgment calls, not checker output.
+in step 1, the form and reader choices in step 5, and factual accuracy stay judgment calls, not checker output.
 
 ## 7. It's a page, not a note
 
 The published-pages location is excluded from retrieval by default — a page never becomes a source for
-anything else the store retrieves, and it never carries the visibility field (that would falsely signal
-it's indexed). Confirm with `ctxr lint` after landing.
+anything else the store retrieves. Confirm with `ctxr lint` after landing.
 
 ## 8. Provenance and drift
 

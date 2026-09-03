@@ -6,7 +6,6 @@ import type { StoreConfig } from '../../src/config/schema.js';
 import { ExitCode } from '../../src/core/exit-codes.js';
 import { InvalidCaptureProposalError } from '../../src/core/errors.js';
 import { parseNote } from '../../src/core/notes/parse.js';
-import { resolveVisibility } from '../../src/core/notes/visibility.js';
 import type { Store } from '../../src/core/store.js';
 import { makeTmpDir } from '../helpers/tmp-store.js';
 
@@ -14,8 +13,6 @@ function makeConfig(overrides: Partial<StoreConfig> = {}): StoreConfig {
   return {
     schema_version: 1,
     taxonomy: { profile: 'para', layers: [{ name: 'Areas', path: 'areas', description: 'Ongoing responsibilities.' }] },
-    fields: { visibility: 'scope' },
-    visibility: { default_context: 'private', directory_defaults: {}, contexts: {} },
     derived: { paths: ['.contexture/cache/'] },
     retrieval: { exclude_paths: ['.contexture/'], relations: [], graph: { cluster_depth: 2, hub_top: 8, bridge_top: 10, orphan_exempt_clusters: [] } },
     git: { default_branch: 'main' },
@@ -24,7 +21,6 @@ function makeConfig(overrides: Partial<StoreConfig> = {}): StoreConfig {
     catalog: { path: 'catalog/', section_max_bytes: 32768 },
     publish: { path: 'publish/' },
     skills: { vendored: [] },
-    disclosure: { internal_audiences: [], hard_walls: [], leak_markers: {} },
     ingest: { inbox_path: 'inbox/', tracking_params: [] },
     organize: { archive_destination: 'archive/', rollup_stale_days: 7 },
     harness: { skills_path: 'skills/', guidance_path: 'guidance/' },
@@ -161,7 +157,10 @@ describe('ctxr session capture (session-capture-command D1/D2)', () => {
     }
   });
 
-  it('a visibility value lands under the configured field key, and note resolve reports it as explicit', async () => {
+  // retire-the-access-axes (write-lifecycle delta): a proposal still carrying
+  // the retired `visibility:` key has it IGNORED, not refused — the item is
+  // written normally and no visibility key is stamped onto the note.
+  it('ignores a retired visibility key on a proposal item rather than refusing the item', async () => {
     const tmp = await makeTmpDir();
     try {
       const store: Store = { root: tmp.root, config: makeConfig() };
@@ -171,12 +170,13 @@ describe('ctxr session capture (session-capture-command D1/D2)', () => {
           '\n',
         ),
       );
-      await execute(store, { proposal: proposalPath });
+      const result = await execute(store, { proposal: proposalPath });
+      expect(result.data?.items).toEqual([{ id: 'A1', path: 'areas/scoped.md', outcome: 'wrote' }]);
 
       const note = await parseNote(path.join(tmp.root, 'areas/scoped.md'), 'areas/scoped.md');
-      expect(note.frontmatter?.scope).toBe('ctx-a');
-      const resolution = resolveVisibility(store.config, note);
-      expect(resolution).toEqual({ value: 'ctx-a', reason: 'explicit' });
+      expect(note.frontmatter?.scope).toBeUndefined();
+      expect(note.frontmatter?.visibility).toBeUndefined();
+      expect(note.frontmatter?.lens).toBeUndefined();
     } finally {
       await tmp.cleanup();
     }

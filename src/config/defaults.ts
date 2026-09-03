@@ -1,30 +1,4 @@
-import type { AdapterDeclaration, HardWallConfig } from './schema.js';
-
-/**
- * context-store spec: "The visibility field's frontmatter key is configurable
- * with a shipped default... No specification other than this one SHALL
- * assert the literal key name." This module is that one place, in code —
- * enforced by test/unit/single-source-literals.test.ts. Every other module
- * reads the key via StoreConfig.fields.visibility, never this constant
- * directly, and never the literal "scope" string.
- *
- * "scope" is provisional (design.md D7 / openspec/config.yaml): renaming it
- * is meant to be a config-default change plus a migration, never a spec or
- * code rewrite. Do not let this constant's value leak into any other file.
- */
-export const DEFAULT_VISIBILITY_FIELD_KEY = 'lens';
-
-/**
- * The visibility field key every store created before schema_version 2
- * used. Named here, once, purely as history for the rename migration
- * (core/migrations/rename-visibility-field.ts) to read from — this is the
- * one sanctioned place a superseded key value is allowed to live once it's
- * no longer the shipped default.
- */
-export const SCHEMA_V1_VISIBILITY_FIELD_KEY = 'scope';
-
-/** context-visibility spec rung 3: what a note's visibility fails closed to. */
-export const DEFAULT_VISIBILITY_CONTEXT = 'private';
+import type { AdapterDeclaration } from './schema.js';
 
 /**
  * context-store spec (contexture-home-layout): `.contexture/` is the tool's
@@ -45,8 +19,17 @@ export const DEFAULT_DERIVED_PATHS = ['.contexture/cache/'] as const;
  */
 export const DEFAULT_SKILLS_PATH = '.agents/skills/';
 
-/** harness-portability spec (vendored-craft-skills): the shipped vendored skill set, installed by default and refreshed by update. */
-export const DEFAULT_VENDORED_SKILLS = ['frontend-design'] as const;
+/**
+ * harness-portability spec (vendored-craft-skills): the shipped vendored skill
+ * set, installed by default and refreshed by update — one skill per craft axis
+ * a published page needs and contexture supplies none of (its visual form; the
+ * prose that explains its subject to a reader).
+ *
+ * Appended, never sorted in: the notices order, the paths init stages, and a
+ * store's rendered configuration all follow this order, so growing the set is
+ * a pure insertion rather than a reshuffle.
+ */
+export const DEFAULT_VENDORED_SKILLS = ['frontend-design', 'eli5'] as const;
 
 /**
  * harness-portability spec: the guidance directory holding contexture's
@@ -116,10 +99,6 @@ export const DEFAULT_CATALOG_SECTION_MAX_BYTES = 32 * 1024;
 
 /** publish spec: where published pages live — tracked, authored-but-tool-owned, excluded from retrieval like the catalog and skill pack. */
 export const DEFAULT_PUBLISH_PATH = '.contexture/publish/';
-
-/** disclosure-policy spec: v1 ships with no audiences pre-declared internal, and no hard walls — an explicit, empty starting point the operator opts into. */
-export const DEFAULT_INTERNAL_AUDIENCES: readonly string[] = [];
-export const DEFAULT_HARD_WALLS: readonly HardWallConfig[] = [];
 
 /** context-ingest spec: capture's landing zone — a normal, retrievable directory, not an exclusion. */
 export const DEFAULT_INBOX_PATH = 'inbox/';

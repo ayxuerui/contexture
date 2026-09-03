@@ -35,12 +35,12 @@ The catalog SHALL be organized into sections corresponding to the store's config
 - **WHEN** `contexture catalog show --section <path-prefix>` is invoked
 - **THEN** the output contains only entries whose note falls under that path prefix, not the full catalog
 
-### Requirement: Entries carry gloss and resolved visibility
-Each catalog entry SHALL record the note's resolved visibility alongside its identity and gloss, and `contexture catalog show --as <context>` SHALL omit entries whose resolved visibility the requesting context cannot see.
+### Requirement: Entries carry a gloss
+Each catalog entry SHALL record the note's authored gloss alongside its identity.
 
-#### Scenario: An unfiltered catalog read is not the default
-- **WHEN** `contexture catalog show --as ctx-a` is invoked
-- **THEN** entries for notes whose resolved visibility `ctx-a` cannot see — including their gloss text — do not appear in the output
+#### Scenario: An entry carries its gloss
+- **WHEN** `contexture catalog show` is invoked against a store whose catalog has authored glosses
+- **THEN** each entry appears with its identity and its gloss text
 
 ### Requirement: A size budget with defined behavior at the limit
 Each catalog section SHALL have a configured maximum size in `contexture.yaml`. `contexture doctor` SHALL fail when a section exceeds its configured maximum, naming the section and instructing that it be split.

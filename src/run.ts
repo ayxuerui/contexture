@@ -2,7 +2,6 @@ import { Command } from 'commander';
 import * as catalogBuildCommand from './commands/catalog-build.js';
 import * as catalogCheckCommand from './commands/catalog-check.js';
 import * as catalogShowCommand from './commands/catalog-show.js';
-import * as checkCommand from './commands/check.js';
 import * as adaptersGenerateCommand from './commands/adapters-generate.js';
 import * as adaptersWriteGateCommand from './commands/adapters-write-gate.js';
 import * as archiveCommand from './commands/archive.js';
@@ -14,7 +13,6 @@ import * as graphBuildCommand from './commands/graph-build.js';
 import * as entryAppendCommand from './commands/entry-append.js';
 import * as graphQueryCommand from './commands/graph-query.js';
 import * as initCommand from './commands/init.js';
-import * as noteResolveCommand from './commands/note-resolve.js';
 import * as publishGatherCommand from './commands/publish-gather.js';
 import * as publishCheckCommand from './commands/publish-check.js';
 import * as publishNewCommand from './commands/publish-new.js';
@@ -173,19 +171,6 @@ export async function run(argv: readonly string[], env: RunEnv): Promise<ExitCod
       });
     });
 
-  program
-    .command('check <path>')
-    .description('the disclosure-policy tri-state verdict (ALLOW/DENY/ASK) for a note and an audience, or --scan for a leak scan')
-    .option('--audience <audience>', 'the audience the content would be disclosed to (required unless --scan is given)')
-    .option('--scan', 'scan this note for content matching another context\'s markers that this note is not visible to')
-    .action(async (notePath: string, cmdOpts: { audience?: string; scan?: boolean }, cmd: Command) => {
-      const { runEnv, jsonMode, root } = deriveRunEnv(env, cmd);
-      result = await runCommand('check', runEnv, jsonMode, async () => {
-        const store = await openStore(runEnv, { root });
-        return checkCommand.execute(runEnv, store, { path: notePath, audience: cmdOpts.audience, scan: cmdOpts.scan });
-      });
-    });
-
   const entryCommand = program.command('entry').description('structured writes into a fenced region');
 
   entryCommand
@@ -198,18 +183,6 @@ export async function run(argv: readonly string[], env: RunEnv): Promise<ExitCod
       result = await runCommand('entry.append', runEnv, jsonMode, async () => {
         const store = await openStore(runEnv, { root });
         return entryAppendCommand.execute(runEnv, store, { path: notePath, region: cmdOpts.region, text: cmdOpts.text });
-      });
-    });
-
-  const noteCommand = program.command('note').description('inspect a single note');
-  noteCommand
-    .command('resolve <path>')
-    .description("resolve a note's visibility field and report why")
-    .action(async (notePath: string, _cmdOpts: object, cmd: Command) => {
-      const { runEnv, jsonMode, root } = deriveRunEnv(env, cmd);
-      result = await runCommand('note.resolve', runEnv, jsonMode, async () => {
-        const store = await openStore(runEnv, { root });
-        return noteResolveCommand.execute(runEnv, store, { path: notePath });
       });
     });
 
@@ -242,12 +215,11 @@ export async function run(argv: readonly string[], env: RunEnv): Promise<ExitCod
     .command('show')
     .description('print one catalog section')
     .requiredOption('--section <id>', 'the section id to print')
-    .option('--as <context>', 'filter by resolved visibility (wired in Phase 5)')
-    .action(async (cmdOpts: { section: string; as?: string }, cmd: Command) => {
+    .action(async (cmdOpts: { section: string }, cmd: Command) => {
       const { runEnv, jsonMode, root } = deriveRunEnv(env, cmd);
       result = await runCommand('catalog.show', runEnv, jsonMode, async () => {
         const store = await openStore(runEnv, { root });
-        return catalogShowCommand.execute(store, { section: cmdOpts.section, as: cmdOpts.as });
+        return catalogShowCommand.execute(store, { section: cmdOpts.section });
       });
     });
 
@@ -256,7 +228,7 @@ export async function run(argv: readonly string[], env: RunEnv): Promise<ExitCod
   graphCommand
     .command('build')
     .description('rebuild the graph artifact from every retrievable note')
-    .option('--emit-records', 'also emit a stable per-note record list {id, path, visibility, gloss, hash}')
+    .option('--emit-records', 'also emit a stable per-note record list {id, path, gloss, hash}')
     .action(async (cmdOpts: { emitRecords?: boolean }, cmd: Command) => {
       const { runEnv, jsonMode, root } = deriveRunEnv(env, cmd);
       result = await runCommand('graph.build', runEnv, jsonMode, async () => {
@@ -273,11 +245,10 @@ export async function run(argv: readonly string[], env: RunEnv): Promise<ExitCod
     .option('--depth <n>', 'hop count', (v) => Number.parseInt(v, 10), 1)
     .option('--direction <dir>', 'in, out, or both', 'both')
     .option('--type <name>', 'follow only edges of this type (a configured relation name, or link)')
-    .option('--as <context>', 'filter to notes visible to this context before traversal')
     .action(
       async (
         node: string,
-        cmdOpts: { depth: number; direction: 'in' | 'out' | 'both'; type?: string; as?: string },
+        cmdOpts: { depth: number; direction: 'in' | 'out' | 'both'; type?: string },
         cmd: Command,
       ) => {
         const { runEnv, jsonMode, root } = deriveRunEnv(env, cmd);
@@ -288,7 +259,6 @@ export async function run(argv: readonly string[], env: RunEnv): Promise<ExitCod
             depth: cmdOpts.depth,
             direction: cmdOpts.direction,
             type: cmdOpts.type,
-            as: cmdOpts.as,
           });
         });
       },
@@ -297,24 +267,22 @@ export async function run(argv: readonly string[], env: RunEnv): Promise<ExitCod
   graphQueryCommandGroup
     .command('path <from> <to>')
     .description('shortest path between two nodes, if one exists')
-    .option('--as <context>', 'filter to notes visible to this context before traversal')
-    .action(async (from: string, to: string, cmdOpts: { as?: string }, cmd: Command) => {
+    .action(async (from: string, to: string, _cmdOpts: object, cmd: Command) => {
       const { runEnv, jsonMode, root } = deriveRunEnv(env, cmd);
       result = await runCommand('graph.query.path', runEnv, jsonMode, async () => {
         const store = await openStore(runEnv, { root });
-        return graphQueryCommand.executePath(store, { from, to, as: cmdOpts.as });
+        return graphQueryCommand.executePath(store, { from, to });
       });
     });
 
   graphQueryCommandGroup
     .command('subgraph <ids...>')
     .description('the induced subgraph over the given node ids')
-    .option('--as <context>', 'filter to notes visible to this context before traversal')
-    .action(async (ids: string[], cmdOpts: { as?: string }, cmd: Command) => {
+    .action(async (ids: string[], _cmdOpts: object, cmd: Command) => {
       const { runEnv, jsonMode, root } = deriveRunEnv(env, cmd);
       result = await runCommand('graph.query.subgraph', runEnv, jsonMode, async () => {
         const store = await openStore(runEnv, { root });
-        return graphQueryCommand.executeSubgraph(store, { ids, as: cmdOpts.as });
+        return graphQueryCommand.executeSubgraph(store, { ids });
       });
     });
 
@@ -322,24 +290,22 @@ export async function run(argv: readonly string[], env: RunEnv): Promise<ExitCod
     .command('hubs')
     .description('nodes with the most backlinks')
     .option('--top <n>', 'how many to list', (v) => Number.parseInt(v, 10), 10)
-    .option('--as <context>', 'filter to notes visible to this context before ranking')
-    .action(async (cmdOpts: { top: number; as?: string }, cmd: Command) => {
+    .action(async (cmdOpts: { top: number }, cmd: Command) => {
       const { runEnv, jsonMode, root } = deriveRunEnv(env, cmd);
       result = await runCommand('graph.query.hubs', runEnv, jsonMode, async () => {
         const store = await openStore(runEnv, { root });
-        return graphQueryCommand.executeHubs(store, { top: cmdOpts.top, as: cmdOpts.as });
+        return graphQueryCommand.executeHubs(store, { top: cmdOpts.top });
       });
     });
 
   graphQueryCommandGroup
     .command('clusters')
     .description('every positional cluster with its note count')
-    .option('--as <context>', 'filter to notes visible to this context first')
-    .action(async (cmdOpts: { as?: string }, cmd: Command) => {
+    .action(async (_cmdOpts: object, cmd: Command) => {
       const { runEnv, jsonMode, root } = deriveRunEnv(env, cmd);
       result = await runCommand('graph.query.clusters', runEnv, jsonMode, async () => {
         const store = await openStore(runEnv, { root });
-        return graphQueryCommand.executeClusters(store, { as: cmdOpts.as });
+        return graphQueryCommand.executeClusters(store, {});
       });
     });
 
@@ -347,24 +313,22 @@ export async function run(argv: readonly string[], env: RunEnv): Promise<ExitCod
     .command('bridges')
     .description('notes that link into the most other clusters')
     .option('--top <n>', 'how many to list (default: the configured bridge limit)', (v) => Number.parseInt(v, 10))
-    .option('--as <context>', 'filter to notes visible to this context before ranking')
-    .action(async (cmdOpts: { top?: number; as?: string }, cmd: Command) => {
+    .action(async (cmdOpts: { top?: number }, cmd: Command) => {
       const { runEnv, jsonMode, root } = deriveRunEnv(env, cmd);
       result = await runCommand('graph.query.bridges', runEnv, jsonMode, async () => {
         const store = await openStore(runEnv, { root });
-        return graphQueryCommand.executeBridges(store, { top: cmdOpts.top, as: cmdOpts.as });
+        return graphQueryCommand.executeBridges(store, { top: cmdOpts.top });
       });
     });
 
   graphQueryCommandGroup
     .command('orphans')
     .description('nodes with no links in or out')
-    .option('--as <context>', 'filter to notes visible to this context first')
-    .action(async (cmdOpts: { as?: string }, cmd: Command) => {
+    .action(async (_cmdOpts: object, cmd: Command) => {
       const { runEnv, jsonMode, root } = deriveRunEnv(env, cmd);
       result = await runCommand('graph.query.orphans', runEnv, jsonMode, async () => {
         const store = await openStore(runEnv, { root });
-        return graphQueryCommand.executeOrphans(store, { as: cmdOpts.as });
+        return graphQueryCommand.executeOrphans(store, {});
       });
     });
 
@@ -494,17 +458,15 @@ export async function run(argv: readonly string[], env: RunEnv): Promise<ExitCod
       });
     });
 
-  const publishCommand = program.command('publish').description('turn store content into a shareable page, gated by disclosure before any content is used');
+  const publishCommand = program.command('publish').description('turn store content into a shareable page');
 
   publishCommand
     .command('gather')
-    .description('resolve a subject (--under/--note/--entity/--as) to its note set and gate every note through disclosure')
+    .description('resolve a subject (--under/--note/--entity) to its note set')
     .option('--under <prefix>', 'every retrievable note under this path prefix')
     .option('--note <path>', 'exactly one note')
     .option('--entity <name>', 'every note linking to this entity (same enumeration as rollup gather)')
-    .option('--as <context>', 'every note this named context can see')
-    .option('--audience <audience>', 'the audience the page would disclose content to (required)')
-    .action(async (cmdOpts: { under?: string; note?: string; entity?: string; as?: string; audience?: string }, cmd: Command) => {
+    .action(async (cmdOpts: { under?: string; note?: string; entity?: string }, cmd: Command) => {
       const { runEnv, jsonMode, root } = deriveRunEnv(env, cmd);
       result = await runCommand('publish.gather', runEnv, jsonMode, async () => {
         const store = await openStore(runEnv, { root });
@@ -512,8 +474,6 @@ export async function run(argv: readonly string[], env: RunEnv): Promise<ExitCod
           under: cmdOpts.under,
           note: cmdOpts.note,
           entity: cmdOpts.entity,
-          as: cmdOpts.as,
-          audience: cmdOpts.audience,
         });
       });
     });

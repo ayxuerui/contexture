@@ -82,7 +82,7 @@ describe('owned skills: delivered by init, expanded by update', () => {
       for (const slug of SKILLS_ADDED_BY_THIS_RELEASE) {
         expect(existsSync(path.join(tmp.root, '.agents/skills', slug, 'SKILL.md'))).toBe(true);
       }
-      expect(await readFile(placementPath, 'utf8')).toContain('The collision test');
+      expect(await readFile(placementPath, 'utf8')).toContain('What must never enter the store?');
 
       expect((await update(env, store)).data?.changed).toEqual([]);
     } finally {

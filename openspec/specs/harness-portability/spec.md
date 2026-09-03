@@ -22,14 +22,14 @@ A store MAY carry operator-authored convention documents as markdown files at a 
 - **THEN** the conventions section is byte-identical and regeneration reports no change
 
 ### Requirement: A shipped baseline convention is delivered into the guidance directory and refreshed by update
-A store SHALL carry a contexture-owned baseline convention file at a fixed filename under the configured guidance directory, rendered from the store's own configuration (the visibility field and its resolution order, configured directory defaults, the disclosure ladder, the configured relation vocabulary, archiving, git and session rules, directory-scoped convention discovery) — never a shipped profile's or one deployment's names. `init` SHALL write it; the update command SHALL rewrite it to match a fresh render whenever the template or the store's configuration changed, and SHALL leave every other file in the guidance directory (including the operator's own) untouched. Both SHALL be byte-stable when nothing has changed. The file SHALL be discoverable by the same mechanism that scans and inlines every other convention document into the generated entry document, requiring no composition step of its own.
+A store SHALL carry a contexture-owned baseline convention file at a fixed filename under the configured guidance directory, rendered from the store's own configuration (the configured relation vocabulary, archiving, git and session rules, directory-scoped convention discovery) — never a shipped profile's or one deployment's names. `init` SHALL write it; the update command SHALL rewrite it to match a fresh render whenever the template or the store's configuration changed, and SHALL leave every other file in the guidance directory (including the operator's own) untouched. Both SHALL be byte-stable when nothing has changed. The file SHALL be discoverable by the same mechanism that scans and inlines every other convention document into the generated entry document, requiring no composition step of its own.
 
 #### Scenario: A fresh init delivers the baseline convention
 - **WHEN** `contexture init` runs
 - **THEN** the configured guidance path contains the baseline convention file, and it is inlined into the generated entry document's conventions section alongside any other file present
 
 #### Scenario: A configuration change refreshes the baseline convention on update
-- **WHEN** a store's configuration changes in a way that affects the baseline convention's rendered content (for example, a new hard wall) and the update command runs
+- **WHEN** a store's configuration changes in a way that affects the baseline convention's rendered content (for example, a new relation name) and the update command runs
 - **THEN** the baseline convention file is rewritten to reflect the change, and the entry document's conventions section reflects it after regeneration
 
 #### Scenario: A second update with nothing changed is a no-op
@@ -180,12 +180,8 @@ The store SHALL provide a command that exercises core store operations — at mi
 - **WHEN** a convention file or the configured mission document has changed on disk since `AGENTS.md` was last regenerated
 - **THEN** the portability test exits non-zero naming the drifted source
 
-### Requirement: The shipped skills carry decision procedures
-contexture SHALL ship, as contexture-owned skills delivered by init and update, skills for: placement, ingest orchestration, connection finding, connection proposal, rollup, mission, session lifecycle, session capture, derived artifacts, organize audit, and publish. Each SHALL state its decision rules against the store's configured taxonomy, contexts, and relation vocabulary — never a shipped profile's layer names or any real context name — and SHALL name the command that verifies each step it asks for.
-
-#### Scenario: Placement teaches the visibility-collision test
-- **WHEN** a store is initialized
-- **THEN** its placement skill states that two locations whose configured visibility defaults differ must not be merged, and that visibility may override location for content bridging contexts
+### Requirement: The shipped skills carry decision procedures for the configured taxonomy
+contexture SHALL ship, as contexture-owned skills delivered by init and update, skills for: placement, ingest orchestration, connection finding, connection proposal, rollup, mission, session lifecycle, session capture, derived artifacts, organize audit, and publish. Each SHALL state its decision rules against the store's configured taxonomy and relation vocabulary — never a shipped profile's layer names — and SHALL name the command that verifies each step it asks for.
 
 #### Scenario: Placement's termination test follows the configured taxonomy
 - **WHEN** a store's configured taxonomy declares a layer whose description implies an end state
@@ -215,9 +211,17 @@ contexture SHALL ship, as contexture-owned skills delivered by init and update, 
 - **WHEN** an agent follows the derived-artifacts skill
 - **THEN** it runs the check form of a build before the build, sanity-checks the reported counts, and never edits inside a `contexture:` fenced region
 
-#### Scenario: Publish gates before it copies, and names the subject before scaffolding
+#### Scenario: Publish names the subject before scaffolding
 - **WHEN** an agent follows the publish skill to build a page for a subject
-- **THEN** it is instructed to run the disclosure gate over the subject's resolved note set before copying any content out, to treat an ASK verdict as a stop that names the note to the operator, and to fix the page's identity once via the naming command rather than hand-creating a folder
+- **THEN** it is instructed to resolve the subject's note set before copying any content out, and to fix the page's identity once via the naming command rather than hand-creating a folder
+
+#### Scenario: Publish delegates both halves of the craft rather than inventing either
+- **WHEN** an agent follows the publish skill past the point where the page's form is chosen
+- **THEN** it is instructed to take the page's visual language from the design-focused craft skill the store carries and its explanatory prose from the reader-calibration craft skill the store carries, rather than inventing either
+
+#### Scenario: Publish keeps the reader's level distinct from the disclosure audience
+- **WHEN** the publish skill instructs an agent to pitch a page's prose at a reader
+- **THEN** it states that the reader's level of existing knowledge is not the audience the disclosure gate evaluates, that a level of knowledge is never passed to the gate as an audience, and that pitching the prose more plainly never widens what the page may contain
 
 #### Scenario: Update delivers the expanded skill set to an existing store
 - **WHEN** a store initialized before this change runs the update command
@@ -272,9 +276,9 @@ The owned session-capture skill SHALL instruct the agent to write the approved i
 - **THEN** it names no identity file or path — the skill's contract covers store notes only, and identity is no longer a concept the skill or the command it invokes knows about
 
 ### Requirement: Vendored third-party skills are delivered and refreshed like owned ones
-contexture SHALL ship a set of third-party skills inside its published package and, at `ctxr init` and `ctxr update`, SHALL write each one a store declares into the store's skills directories. A vendored skill's own files SHALL be written byte-identical to the packaged copy — contexture SHALL NOT insert its managed-owner header, or any other contexture-authored content, into a file it did not author. Each vendored skill SHALL be accompanied by its upstream license file. This requirement is the only place the shipped vendored set is enumerated; no other requirement may name a vendored skill.
+contexture SHALL ship a set of third-party skills inside its published package and, at `ctxr init` and `ctxr update`, SHALL write each one a store declares into the store's skills directories. A vendored skill's own files SHALL be written byte-identical to the packaged copy — contexture SHALL NOT insert its managed-owner header, or any other contexture-authored content, into a file it did not author. Each vendored skill SHALL be accompanied by its upstream license file: the one published beside the skill where upstream publishes one there, and otherwise the upstream repository's own license file, taken at the same revision as the skill. This requirement is the only place the shipped vendored set is enumerated; no other requirement may name a vendored skill.
 
-The shipped set SHALL be, at minimum, one skill covering visual design direction for generated interfaces: `frontend-design`, redistributed from its upstream under Apache-2.0.
+The shipped set SHALL cover, at minimum, the two craft axes a published page needs and contexture supplies neither of: visual design direction for generated interfaces — `frontend-design`, redistributed from its upstream under Apache-2.0 — and calibrating an explanation to a stated reader — `eli5`, redistributed from its upstream under MIT. No vendored skill SHALL be required for any command to run.
 
 #### Scenario: Init delivers the vendored set
 - **WHEN** `ctxr init` completes on a store whose configuration lists a vendored skill
@@ -284,12 +288,24 @@ The shipped set SHALL be, at minimum, one skill covering visual design direction
 - **WHEN** a vendored skill is written into a store
 - **THEN** its `SKILL.md` contains no contexture-authored header and its first line is the start of the file's own frontmatter block
 
+#### Scenario: A license kept outside the skill's own directory still travels with it
+- **WHEN** the shipped set includes a skill whose upstream publishes no license file inside the skill's own directory
+- **THEN** the packaged and delivered skill directory still carries that upstream's license file verbatim, taken at the same revision as the skill itself
+
+#### Scenario: Every craft axis the publish skill delegates has a skill behind it
+- **WHEN** a store is initialized on the default configuration
+- **THEN** it carries one vendored skill for the visual form of a published page and one for calibrating that page's prose to a reader, and removing either from the store's declared list removes only that directory and changes no command's behavior
+
 ### Requirement: A vendored skill carries a provenance record that identifies it
-Each vendored skill directory SHALL contain a machine-readable provenance record written by contexture, recording at minimum the upstream source, the pinned upstream revision, the license identifier, and a content hash of the delivered skill file. Contexture SHALL treat a skill directory as vendored — and therefore as one it manages — if and only if that record is present, so that a directory without one is operator-authored and never touched.
+Each vendored skill directory SHALL contain a machine-readable provenance record written by contexture, recording at minimum the upstream source, the pinned upstream revision, the license identifier, and a content hash of the delivered skill file. Where the license was taken from outside the vendored subtree, the record SHALL also name the upstream path it came from, so the record accounts for every file delivered beside the skill. Contexture SHALL treat a skill directory as vendored — and therefore as one it manages — if and only if that record is present, so that a directory without one is operator-authored and never touched.
 
 #### Scenario: The provenance record accompanies the skill
 - **WHEN** a vendored skill is written into a store
 - **THEN** its directory contains a provenance record naming the upstream source, the pinned revision, the license, and a content hash
+
+#### Scenario: A separately sourced license is recorded as such
+- **WHEN** a vendored skill's license was taken from outside the subtree its provenance record names as the source
+- **THEN** that record also names the upstream path the license file was taken from
 
 #### Scenario: A directory with no provenance record is left alone
 - **WHEN** `ctxr update` runs against a store containing an operator-authored skill directory that carries neither the managed-owner header nor a provenance record

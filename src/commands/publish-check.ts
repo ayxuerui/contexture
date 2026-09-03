@@ -117,10 +117,6 @@ export async function execute(store: Store, flags: PublishCheckFlags): Promise<C
   } else {
     const readmeRaw = await readFile(readmePath, 'utf8');
     const readmeNote = parseNoteText(readmeRaw, readmeRelativePath);
-    const visibilityKey = store.config.fields.visibility;
-    if (readmeNote.frontmatter?.[visibilityKey] !== undefined) {
-      failures.push({ check: 'readme-frontmatter', message: `README declares the visibility field ("${visibilityKey}") — a published page is never a note` });
-    }
     if (readmeNote.frontmatter?.kind !== undefined) {
       failures.push({ check: 'readme-frontmatter', message: 'README declares a "kind" field — a page\'s kind is the folder name alone' });
     }

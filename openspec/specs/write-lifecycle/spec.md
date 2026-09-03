@@ -32,7 +32,7 @@ The store SHALL install a version-controlled pre-push hook, at `init` time, that
 The store SHALL install a version-controlled pre-commit hook that runs a staged-changes validation (schema conformance, fence integrity, a secret-pattern scan, a path allowlist, and a diff-size ceiling) and refuses the commit if any check fails, naming the specific violation.
 
 #### Scenario: A schema violation blocks the commit
-- **WHEN** a staged note violates the store's frontmatter schema (for example, an unresolvable visibility field value)
+- **WHEN** a staged note violates the store's frontmatter schema
 - **THEN** the pre-commit hook refuses the commit and names the violation
 
 #### Scenario: A clean commit proceeds
@@ -72,8 +72,8 @@ A markdown path being staged or captured SHALL be refused when its canonical loc
 - **WHEN** configuration declares writable paths and a proposal item targets a path under none of the sanctioned locations
 - **THEN** `session capture` refuses that item, writes nothing for it, and still applies the other items
 
-### Requirement: Capture applies an approved proposal item by item
-`ctxr session capture --proposal <file>` SHALL read a proposal of store notes, validate each item independently (path gate, frontmatter shape), write every valid item — creating a note, appending to an existing note without altering its prior content, writing the visibility field when a value is given — and report per item what was written, appended, refused with a reason, or skipped, computed from the writes performed. It SHALL exit non-zero when any item was refused and SHALL never scan or infer content beyond the proposal.
+### Requirement: Capture writes only what an approved proposal names
+`ctxr session capture --proposal <file>` SHALL read a proposal of store notes, validate each item independently (path gate, frontmatter shape), write every valid item — creating a note, or appending to an existing note without altering its prior content — and report per item what was written, appended, refused with a reason, or skipped, computed from the writes performed. It SHALL exit non-zero when any item was refused and SHALL never scan or infer content beyond the proposal.
 
 #### Scenario: One bad item does not block the rest
 - **WHEN** a proposal has three notes and one path fails the gate
@@ -82,7 +82,3 @@ A markdown path being staged or captured SHALL be refused when its canonical loc
 #### Scenario: Append preserves prior content
 - **WHEN** an item appends to an existing note
 - **THEN** the note's prior bytes are unchanged and the new content follows them
-
-#### Scenario: Visibility lands under the configured key
-- **WHEN** an item supplies a visibility value
-- **THEN** the created note carries it under the configured visibility field and `note resolve` reports the source as explicit
