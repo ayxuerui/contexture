@@ -1,10 +1,10 @@
-import { readFile } from 'node:fs/promises';
+import { readdir, readFile } from 'node:fs/promises';
+import path from 'node:path';
 import { AGENTS_MD_SECTION_ORDER, agentsMdPath } from '../agents-doc.js';
 import { checkCatalogCoverage } from '../catalog/build.js';
 import type { Finding } from '../envelope.js';
 import { reorderFencedRegions } from '../fs/fenced-region.js';
 import { orphans } from '../graph/query.js';
-import { hasSourceIdentity } from '../ingest/identity.js';
 import { findStaleRollups } from '../rollup.js';
 import { defineCheck } from './types.js';
 
@@ -61,7 +61,17 @@ export const brokenLinksCheck = defineCheck({
   },
 });
 
-/** context-ingest / context-organize: material captured but never stamped with source identity. */
+/**
+ * context-organize: material still sitting in the inbox.
+ *
+ * Read off the filesystem, not out of `ctx.notes()`. The inbox lives inside
+ * the capture tier, which is a declared retrieval exclusion, so a capture is
+ * not a note and note enumeration cannot see it — a version of this check
+ * that filtered notes would report nothing, forever, and look healthy doing
+ * it. Location is also the whole condition: a capture pipeline may write a
+ * source type and id at capture time, so absent frontmatter no longer
+ * distinguishes ingested from not. Leaving the inbox is what ingest does.
+ */
 export const uningestedInboxCheck = defineCheck({
   id: 'organize.uningested_inbox_material',
   title: 'Inbox material not yet ingested',
@@ -69,21 +79,39 @@ export const uningestedInboxCheck = defineCheck({
   capability: 'context-organize',
   scopes: ['store'],
   async run(ctx) {
-    const notes = await ctx.notes();
-    const prefix = ctx.config.ingest.inbox_path.endsWith('/')
-      ? ctx.config.ingest.inbox_path
-      : `${ctx.config.ingest.inbox_path}/`;
-    const findings: Finding[] = notes
-      .filter((note) => note.path.startsWith(prefix) && !hasSourceIdentity(note))
-      .map((note) => ({
+    const inboxPath = ctx.config.ingest.inbox_path;
+    const findings: Finding[] = (await filesUnder(path.join(ctx.storeRoot, inboxPath)))
+      .map((relativeToInbox) => `${inboxPath.replace(/\/+$/, '')}/${relativeToInbox}`)
+      .sort()
+      .map((capturePath) => ({
         code: 'organize.uningested_inbox_material',
         severity: 'info',
-        message: `"${note.path}" is in the inbox but has not been ingested.`,
-        subject: note.path,
+        message: `"${capturePath}" is in the inbox but has not been ingested.`,
+        subject: capturePath,
       }));
     return { status: findings.length > 0 ? 'fail' : 'pass', findings };
   },
 });
+
+/** Every file under `dir`, recursively, as forward-slash paths relative to it. An absent directory has none. */
+async function filesUnder(dir: string): Promise<string[]> {
+  let entries;
+  try {
+    entries = await readdir(dir, { withFileTypes: true });
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return [];
+    throw err;
+  }
+  const found: string[] = [];
+  for (const entry of entries) {
+    if (entry.isDirectory()) {
+      found.push(...(await filesUnder(path.join(dir, entry.name))).map((nested) => `${entry.name}/${nested}`));
+    } else if (entry.isFile() && entry.name !== '.gitkeep') {
+      found.push(entry.name);
+    }
+  }
+  return found;
+}
 
 /**
  * context-organize spec: "notes with no catalog entry as covered by

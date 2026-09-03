@@ -3,6 +3,7 @@ import { realpath } from 'node:fs/promises';
 import path from 'node:path';
 import { configuredAdapters } from '../../adapters/registry.js';
 import type { StoreConfig } from '../../config/schema.js';
+import { isUnderAnyPrefix } from '../fs/prefix.js';
 import { isLinkedWorktreeRoot } from '../git/repo.js';
 
 export interface PathGateResult {
@@ -54,13 +55,6 @@ async function resolveStorePath(root: string, relativePath: string): Promise<Sto
   return { kind: 'inside', rel };
 }
 
-function isUnderAnyPrefix(relativePath: string, prefixes: readonly string[]): boolean {
-  return prefixes.some((prefix) => {
-    const trimmed = normalizePrefix(prefix);
-    return relativePath === trimmed || relativePath.startsWith(`${trimmed}/`);
-  });
-}
-
 /**
  * session-capture-command spec (D5): locations contexture itself owns are
  * always sanctioned, regardless of writable_paths.
@@ -88,7 +82,11 @@ function contextureOwnedPrefixes(config: StoreConfig): string[] {
 function sanctionedPrefixesFor(config: StoreConfig): string[] {
   return [
     ...config.taxonomy.layers.map((layer) => layer.path),
-    config.ingest.inbox_path,
+    // retain-captures-as-provenance: the capture ROOT, not the inbox inside
+    // it — ingest's own write moves a capture out of the inbox and into the
+    // tier's dated directory, which a store declaring writable_paths would
+    // otherwise refuse.
+    config.ingest.capture_root,
     ...config.write_lifecycle.writable_paths,
     ...contextureOwnedPrefixes(config),
   ];
@@ -104,8 +102,8 @@ function sanctionedPrefixesFor(config: StoreConfig): string[] {
  * directory's symlinks are followed. The sanctioned-location rule is
  * opt-in — with `write_lifecycle.writable_paths` empty (the default),
  * every in-store path is accepted; once any path is declared, only a
- * configured taxonomy layer, the inbox, a declared writable path, or a
- * contexture-owned location passes.
+ * configured taxonomy layer, the capture tier, a declared writable path, or
+ * a contexture-owned location passes.
  */
 export async function sanctionedPath(config: StoreConfig, root: string, relativePath: string): Promise<PathGateResult> {
   const resolution = await resolveStorePath(root, relativePath);
@@ -124,7 +122,8 @@ export async function sanctionedPath(config: StoreConfig, root: string, relative
   if (!isUnderAnyPrefix(rel, sanctionedPrefixesFor(config))) {
     return {
       ok: false,
-      reason: 'is not under a configured taxonomy layer, the inbox, a declared writable path, or a contexture-owned location',
+      reason:
+        'is not under a configured taxonomy layer, the capture tier, a declared writable path, or a contexture-owned location',
     };
   }
   return { ok: true };

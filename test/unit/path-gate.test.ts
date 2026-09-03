@@ -17,9 +17,9 @@ function makeConfig(writablePaths: string[] = []): StoreConfig {
     catalog: { path: 'catalog/', section_max_bytes: 32768 },
     publish: { path: 'publish/' },
     skills: { vendored: [] },
-    ingest: { inbox_path: 'inbox/', tracking_params: [] },
+    ingest: { inbox_path: 'raw/inbox/', capture_root: 'raw/', tracking_params: [] },
     organize: { archive_destination: 'archive/', rollup_stale_days: 7 },
-    harness: { skills_path: 'skills/', guidance_path: 'guidance/' },
+    harness: { skills_path: 'skills/', guidance_path: 'guidance/', convention_max_bytes: 32768 },
     adapters: [],
   };
 }
@@ -108,7 +108,30 @@ describe('sanctionedPath (session-capture-command D5)', () => {
     it('accepts the inbox', async () => {
       const tmp = await makeTmpDir();
       try {
-        expect(await sanctionedPath(makeConfig(['notes/']), tmp.root, 'inbox/x.md')).toEqual({ ok: true });
+        expect(await sanctionedPath(makeConfig(['notes/']), tmp.root, 'raw/inbox/x.md')).toEqual({ ok: true });
+      } finally {
+        await tmp.cleanup();
+      }
+    });
+
+    // retain-captures-as-provenance: ingest's own write lands here, outside
+    // the inbox but inside the capture tier, so gating on the inbox alone
+    // would refuse the move that retains a capture.
+    it('accepts a retained capture in the tier, outside the inbox', async () => {
+      const tmp = await makeTmpDir();
+      try {
+        expect(await sanctionedPath(makeConfig(['notes/']), tmp.root, 'raw/202609/x.md')).toEqual({ ok: true });
+      } finally {
+        await tmp.cleanup();
+      }
+    });
+
+    it('still refuses a path outside every sanctioned location', async () => {
+      const tmp = await makeTmpDir();
+      try {
+        const result = await sanctionedPath(makeConfig(['notes/']), tmp.root, 'elsewhere/x.md');
+        expect(result.ok).toBe(false);
+        expect(result.reason).toContain('the capture tier');
       } finally {
         await tmp.cleanup();
       }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { canonicalizeBody, canonicalizeText, contentHash, contentHashOfBody } from '../../src/core/content/canonicalize.js';
+import { canonicalizeBody, canonicalizeText, contentHash, contentHashOfBody, contentHashOfBytes } from '../../src/core/content/canonicalize.js';
 
 describe('canonicalizeText', () => {
   it('normalizes CRLF and lone CR to LF', () => {
@@ -59,5 +59,22 @@ describe('contentHash / contentHashOfBody', () => {
   it('contentHashOfBody matches contentHash for an already-stripped body', () => {
     const raw = '---\ntitle: A\n---\n# Body\n';
     expect(contentHashOfBody('# Body\n')).toBe(contentHash(raw));
+  });
+});
+
+describe('contentHashOfBytes', () => {
+  it('is stable and the same width as the text hash', () => {
+    const bytes = new Uint8Array([0x25, 0x50, 0x44, 0x46, 0x2d, 0x31, 0x2e, 0x37]);
+    expect(contentHashOfBytes(bytes)).toBe(contentHashOfBytes(new Uint8Array(bytes)));
+    expect(contentHashOfBytes(bytes)).toHaveLength(contentHash('# Body\n').length);
+  });
+
+  it('does not canonicalize: a trailing newline changes the hash', () => {
+    // The text primitive collapses trailing blank lines; the byte one must not,
+    // or it would describe something the file is not.
+    const withNewline = new TextEncoder().encode('data\n');
+    const without = new TextEncoder().encode('data');
+    expect(contentHashOfBytes(withNewline)).not.toBe(contentHashOfBytes(without));
+    expect(contentHashOfBody('data\n')).toBe(contentHashOfBody('data'));
   });
 });

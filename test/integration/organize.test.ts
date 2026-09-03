@@ -147,7 +147,11 @@ describe('contexture archive / rollup / lint (real CLI)', () => {
     try {
       const env = hermeticGitEnv();
       await runCli(['init'], { cwd: tmp.root, env });
-      await writeNote(tmp.root, 'inbox/raw.md', 'Just captured.\n');
+      // A capture in the inbox, and — separately — a note the catalog has not
+      // caught up with. The capture no longer produces the second finding: it
+      // is not a note, so it cannot be a catalog gap.
+      await writeNote(tmp.root, 'raw/inbox/raw.md', 'Just captured.\n');
+      await writeNote(tmp.root, 'projects/uncatalogued.md', '# Uncatalogued\n');
 
       const result = await runCli(['lint', '--json'], { cwd: tmp.root, env });
       expect(result.exitCode).toBe(0);

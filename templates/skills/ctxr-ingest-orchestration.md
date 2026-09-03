@@ -1,15 +1,16 @@
 Ingest is synthesis, not filing. The question is what the store should know after this source, not where
 to put the file — "create a new note" is one option among several, never the default.
 
-1. Capture: write a plain markdown file directly into the inbox (see AGENTS.md's capture section) — no
-   provenance frontmatter; contexture assigns it at ingest.
+1. Capture: write the material into the inbox (see AGENTS.md's capture section). It may already carry
+   `source_type` and `source_id`; it must carry neither `source_hash` nor `ingested`, which ingest assigns.
+   The capture is kept — it is the store's record of what arrived, and it never becomes the note.
 2. Check: run `ctxr source check <path> --source-id <id>` and read the verdict — `new`, `already_ingested`,
    `drift` (same identity, the source's content moved — read what changed and decide whether to update the
    note, then `ctxr source stamp <path> --id <id>` once resolved), `alternate_source_match`, or
    `multiple_matches`. On `multiple_matches`, stop and resolve the ambiguity yourself; never guess which
-   existing note it is. A legacy note with an identity but no hash on file: `ctxr source stamp` backfills
-   it. A source re-published under a new URL you've confirmed is the same material:
-   `ctxr source add-alt <path> --id <new-id>` on the existing note, not a second ingest.
+   existing record it is. A record with an identity but no hash on file: `ctxr source stamp` backfills it.
+   A source re-published under a new URL you've confirmed is the same material:
+   `ctxr source add-alt <path> --id <new-id>` on the existing capture, not a second ingest.
 3. Read the source fully. Then read the existing cluster BEFORE writing anything: the catalog section for
    the domain (`ctxr catalog show --section <id>`), every related note in it (all of them, not one or two),
    and the graph (`ctxr graph build`, then read the graph document it writes at
@@ -36,7 +37,12 @@ to put the file — "create a new note" is one option among several, never the d
      headline is worse than either alone.
    - Source discipline: a field the source does not confirm is "not reported" — never inferred from
      silence in either direction.
-5. Write: for a new note, `ctxr ingest <path> --source-type <type> --source-id <id>` (stamps provenance and
-   gives it a catalog entry). Updates to existing notes are ordinary edits that preserve prior content
-   (a deliberate ingest despite an `alternate_source_match` is the same command).
-6. Verify: `ctxr lint` (orphans, broken links, leftover inbox material) and `ctxr catalog check`.
+5. Write the note the decision calls for — create it, expand it, merge, restructure, or add a section —
+   preserving prior content in every case but the deliberate rewrite.
+6. Register the source against whatever note you just wrote:
+   `ctxr ingest <path> --into <note> --source-type <type> --source-id <id>`. Every row of the table above
+   ends here, not just the first: the command retains the capture under the capture tier's month, freezes
+   its hash, cites it from the note, and rebuilds the catalog. A note that was expanded rather than created
+   records its provenance exactly as a new one does, and a note built from several sources cites all of
+   them. A deliberate ingest despite an `alternate_source_match` is the same command.
+7. Verify: `ctxr lint` (orphans, broken links, material still in the inbox) and `ctxr catalog check`.

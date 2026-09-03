@@ -1,5 +1,7 @@
 # Contexture (`ctxr`)
 
+[![npm](https://img.shields.io/npm/v/ctxr-cli)](https://www.npmjs.com/package/ctxr-cli) [![CI](https://github.com/ayxuerui/contexture/actions/workflows/ci.yml/badge.svg)](https://github.com/ayxuerui/contexture/actions/workflows/ci.yml) [![license](https://img.shields.io/npm/l/ctxr-cli)](LICENSE)
+
 **Your agents' long-term knowledge — they write it, you review it before it lands.**
 
 Contexture turns a git repository into shared, durable knowledge, and ships the operating procedures an AI agent needs to work it: what to do with a new source, where a note belongs, when a synthesis has gone stale, how a change gets reviewed and landed. Every write lands the way code does — in a branch, past a health check, through a pull request you approve.
@@ -16,7 +18,7 @@ npm install -g ctxr-cli
 
 Requires Node 22.13 or newer.
 
-The npm package is `ctxr-cli`, the executable it installs is `ctxr`, and the project is Contexture. Everything a store contains keeps the project name — `contexture.yaml`, the `.contexture/` home directory, `CONTEXTURE_*` environment variables — while `ctxr` is what you type. A `contexture` alias executable is also installed for compatibility; docs and generated files always say `ctxr`.
+The package is `ctxr-cli`, the command it installs is `ctxr`, and the project is Contexture — which is why a store’s own files keep the full name (`contexture.yaml`, `.contexture/`, `CONTEXTURE_*`). A `contexture` alias executable is installed too; docs and generated files always say `ctxr`.
 
 ## Quickstart
 
@@ -46,7 +48,7 @@ ctxr init --profile para --harness claude-code
 After `ctxr init --profile para`, plus `ctxr adapters generate`:
 
 ```
-contexture.yaml               single source of truth: schema_version, taxonomy, every path below
+contexture.yaml               single source of truth — what this store chose; the rest takes shipped defaults
 AGENTS.md                     generated entry document — six managed sections
 CLAUDE.md                     harness entry file; a one-line managed import of AGENTS.md
 .claude/
@@ -63,12 +65,13 @@ CLAUDE.md                     harness entry file; a one-line managed import of A
   pre-commit                  runs `doctor --staged`
   pre-push                    refuses a push to the default branch
 projects/ areas/ resources/ archives/     the taxonomy's layers
+raw/inbox/                    where captured material lands, before ingest
 ```
 
 These appear the first time they're needed rather than at init:
 
 ```
-inbox/                        where captured material lands, before ingest
+raw/<YYYYMM>/                 retained captures, one directory per month of ingest
 .contexture/catalog/*.md      one section per layer, plus uncategorized — tracked in git
 .contexture/publish/          published pages
 .contexture/cache/            gitignored — graph.json and the human-readable graph.md
@@ -79,7 +82,7 @@ Two distinctions make the rest of this readable:
 
 **Derived vs. authored.** Never hand-edit inside a `contexture:<region>` fence — the next build overwrites it. Edits *outside* a fence survive every rebuild, and that's where they belong: the catalog generates each note's entry line but preserves the one-line gloss you write next to it, forever.
 
-**`.contexture/` is not content.** The store's own home directory, the skills directory, and the worktrees path are excluded from every retrieval leg by default (`retrieval.exclude_paths`), so the store's plumbing never shows up as an answer to a question about the store's subject matter.
+**`.contexture/` is not content, and neither is `raw/`.** The store's own home directory, the skills directory, and the worktrees path are excluded from every retrieval leg by default (`retrieval.exclude_paths`), so the store's plumbing never shows up as an answer to a question about the store's subject matter. `raw/` — the capture tier — is excluded for a different reason: what arrived is not yet what you know. It is tracked in git all the same, because a retained capture is the provenance behind a note.
 
 ## How agents drive it
 
@@ -185,18 +188,21 @@ Four of these are the moves knowledge work is made of: **capture** what arrives,
 
 ### 1. Capture — get material in without duplicating it
 
-Capture is just writing a markdown file into `inbox/`; no CLI wraps it. The file must carry none of `source_type`, `source_id`, `source_hash`, or `ingested` — contexture assigns those once, at ingest, and never before. Then:
+Capture is just writing the material into `raw/inbox/`; no CLI wraps it. It may already carry `source_type` and `source_id` — whatever fetched it usually knows them — but never `source_hash` or `ingested`, which contexture assigns once, at ingest. Then:
 
 ```sh
-ctxr source check inbox/note.md --source-id https://example.com/a
-ctxr ingest inbox/note.md --source-type article --source-id https://example.com/a
+ctxr source check raw/inbox/note.md --source-id https://example.com/a
+# ...read the cluster, decide, write or extend the note...
+ctxr ingest raw/inbox/note.md --into resources/topic.md --source-type article --source-id https://example.com/a
 ```
 
-`source check` returns one of five verdicts: `new`, `already_ingested`, `drift` (same source, its content moved — read what changed before deciding), `alternate_source_match` (this content is already here under a different identity), or `multiple_matches` — which exits non-zero and means *stop and resolve the ambiguity yourself*, never guess which existing note it is. URLs are canonicalized first, with tracking parameters stripped (`ingest.tracking_params`). `ctxr source stamp` backfills a legacy note; `ctxr source add-alt` records material re-published at a new URL, rather than ingesting it twice.
+`source check` returns one of five verdicts: `new`, `already_ingested`, `drift` (same source, its content moved — read what changed before deciding), `alternate_source_match` (this content is already here under a different identity), or `multiple_matches` — which exits non-zero and means *stop and resolve the ambiguity yourself*, never guess which existing record it is. URLs are canonicalized first, with tracking parameters stripped (`ingest.tracking_params`). `ctxr source stamp` backfills a record with no hash on file; `ctxr source add-alt` records material re-published at a new URL, rather than ingesting it twice.
 
-`ctxr ingest` stamps the four identity fields in place and rebuilds the catalog, so the result already has an entry.
+`ctxr ingest` stamps the four identity fields **onto the capture**, moves it out of the inbox into `raw/<YYYYMM>/`, records its path in the destination note's `sources` list, and rebuilds the catalog. The note carries no source identity of its own, which is what lets it be rewritten, merged or restructured without invalidating the frozen hash — and what lets one note cite the several captures it was built from. `--into` is required: ingest never creates the note, because deciding what the store should know is the work.
 
-The commands are the easy part. `ctxr-ingest-orchestration` exists because ingest is **synthesis, not filing** — "create a new note" is one option among several, and the skill's decision table (new note / expand an existing one / merge two / restructure / add a section to a hub) is the actual work. `ctxr-placement` decides where the result lives, and says why.
+Material that isn't markdown can't carry frontmatter, so it travels with a markdown sidecar naming it in `capture_file`; the hash is taken over that file's bytes and the two move together.
+
+The commands are the easy part. `ctxr-ingest-orchestration` exists because ingest is **synthesis, not filing** — "create a new note" is one option among several, and the skill's decision table (new note / expand an existing one / merge two / restructure / add a section to a hub) is the actual work. Every row of that table ends in the same `ingest` call, so provenance is recorded whichever one you take. `ctxr-placement` decides where the result lives, and says why.
 
 ### 2. Retrieve — three legs, no ranker
 
@@ -217,7 +223,7 @@ There is no `ctxr search`, and no semantic ranking. That's deliberate, not missi
 ### 3. Organize — keep it navigable as it grows
 
 ```sh
-ctxr lint          # observations — orphans, broken links, uningested inbox material; always exits 0
+ctxr lint          # observations — orphans, broken links, material still in the inbox; always exits 0
 ctxr doctor        # invariants — exits non-zero, and gates every commit
 ctxr catalog check --stale
 ctxr archive <path>
@@ -274,6 +280,18 @@ ctxr verify --portable # prove the store works from a harness with no harness-sp
 
 `schema_version` in `contexture.yaml` versions *store state* — the config shape and frontmatter conventions — as a monotonic integer independent of the npm package version. A store recorded at a newer schema than your CLI supports is refused rather than half-read.
 
+### The config records decisions, not values
+
+A generated `contexture.yaml` is short, and that's the design: **any key it doesn't declare takes contexture's shipped default.** So everything the file *does* contain is a choice someone made, and a store that simply agrees with a convention follows it as the convention improves — a later release that changes a shipped default reaches every store that never overrode it, with no migration.
+
+Three kinds of key are always written out, because no constant could be right for them:
+
+- **Store facts** — `taxonomy`, and `git.default_branch`, which records whatever branch your repository actually uses rather than a guess.
+- **Taxonomy-derived** — `organize.archive_destination`, resolved from the profile at init. Defaulting it to a flat constant would send a PARA store's archived notes to `archive/` while its own taxonomy declares `archives/`.
+- **Opt-ins** — `organize.mission_path`, where *not* declaring the key is what says the store has no mission document.
+
+To pin a value against a future default change, declare it. `ctxr migrate` removes keys that merely restate a default; it never changes what any key resolves to.
+
 ## Command reference
 
 | Command | What it does |
@@ -284,7 +302,7 @@ ctxr verify --portable # prove the store works from a harness with no harness-sp
 | `catalog build \| check \| show` | Build, verify coverage, print a section |
 | `graph build` | Rebuild the wikilink graph and its document |
 | `graph query …` | `neighbors`, `path`, `subgraph`, `hubs`, `clusters`, `bridges`, `orphans` |
-| `ingest <path>` | Stamp source identity onto an inbox file |
+| `ingest <path> --into <note>` | Retain a capture with its source identity, and cite it from a note |
 | `source hash \| check \| stamp \| add-alt` | Dedupe and source identity, ahead of ingest |
 | `archive <path>` | Retire a note via one tracked rename |
 | `entry append <path>` | Append a line into a `contexture:<region>` fenced region |
@@ -301,30 +319,6 @@ Every command accepts `--root <path>`, `--json`, and `--no-input`. The store roo
 
 Exit codes are a fixed taxonomy, so scripts and hooks can rely on them: `0` success, `1` an internal error (a bug), `2` a usage error (bad arguments, no store root, not a git repository), `3` a check that ran correctly and found a real problem. Success never masks a finding — `doctor` and `catalog check` exit `3` on a violation, never `0`.
 
-## Development
+## Contributing
 
-```sh
-npm run build
-npm test
-npm run typecheck
-```
-
-Behavior changes are specified before they're implemented: see `openspec/specs/` for the capability specs and `openspec/changes/` for in-flight proposals. Prose that ships into a store — skill bodies, `AGENTS.md` sections — is authored as markdown under `templates/`, never as string literals in TypeScript.
-
-## Releasing
-
-Publishing to npm is automated: merging to `main` publishes whenever `package.json`'s version isn't
-already on the registry, via [`.github/workflows/release.yml`](.github/workflows/release.yml).
-Ordinary merges are a no-op — only a version bump triggers a publish.
-
-To cut a release:
-
-```sh
-git checkout -b chore/release-X.Y.Z
-npm version X.Y.Z --no-git-tag-version   # bumps package.json and package-lock.json together
-# hand-edit src/version.ts's CLI_VERSION to match X.Y.Z
-```
-
-Open a PR and merge it. The workflow then builds, tests, publishes to npm (via trusted publishing —
-no stored token), tags the commit `vX.Y.Z`, and creates a GitHub Release. `test/unit/version-sync.test.ts`
-guards against `CLI_VERSION` drifting from `package.json`'s version on every PR.
+Build, test, the spec-first workflow, and the release process are in [CONTRIBUTING.md](CONTRIBUTING.md). Contexture is MIT licensed — see [LICENSE](LICENSE).
