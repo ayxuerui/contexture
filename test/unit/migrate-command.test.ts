@@ -12,8 +12,6 @@ function makeV1Config(): StoreConfig {
   return {
     schema_version: 1,
     taxonomy: { profile: 'para', layers: [{ name: 'Projects', path: 'projects', description: 'Active work.' }] },
-    fields: { visibility: 'scope' },
-    visibility: { default_context: 'private', directory_defaults: {}, contexts: {} },
     derived: { paths: [] },
     retrieval: { exclude_paths: [], relations: [], graph: { cluster_depth: 2, hub_top: 8, bridge_top: 10, orphan_exempt_clusters: [] } },
     git: { default_branch: 'main' },
@@ -22,7 +20,6 @@ function makeV1Config(): StoreConfig {
     catalog: { path: 'catalog/', section_max_bytes: 32768 },
     publish: { path: 'publish/' },
     skills: { vendored: [] },
-    disclosure: { internal_audiences: [], hard_walls: [], leak_markers: {} },
     ingest: { inbox_path: 'inbox/', tracking_params: [] },
     organize: { archive_destination: 'archive/', rollup_stale_days: 7 },
     harness: { skills_path: 'skills/', guidance_path: 'guidance/' },
@@ -47,10 +44,10 @@ describe('migrate command', () => {
   it('reports no pending migrations for a store already at the current schema version', async () => {
     const tmp = await makeTmpDir();
     try {
-      const store: Store = { ...(await setUpV1Store(tmp.root)), config: { ...makeV1Config(), schema_version: 6, fields: { visibility: 'lens' } } };
+      const store: Store = { ...(await setUpV1Store(tmp.root)), config: { ...makeV1Config(), schema_version: 7 } };
       const outcome = await execute(store, {});
       expect(outcome.exitCode).toBe(ExitCode.Ok);
-      expect(outcome.data).toEqual({ currentVersion: 6, targetVersion: 6, applied: false, migrations: [] });
+      expect(outcome.data).toEqual({ currentVersion: 7, targetVersion: 7, applied: false, migrations: [] });
     } finally {
       await tmp.cleanup();
     }
@@ -74,19 +71,21 @@ describe('migrate command', () => {
     }
   });
 
-  it('a real run applies the migration and reports the new schema version', async () => {
+  it('a real run applies the migration, reports the new schema version, and rewrites no note', async () => {
     const tmp = await makeTmpDir();
     try {
       const store = await setUpV1Store(tmp.root);
       await writeNote(tmp.root, 'projects/a.md', '---\nscope: shared\n---\nContent.\n');
+      const before = await readFile(path.join(tmp.root, 'projects/a.md'), 'utf8');
 
       const outcome = await execute(store, {});
       expect(outcome.exitCode).toBe(ExitCode.Ok);
       expect(outcome.data?.applied).toBe(true);
-      expect(outcome.schemaVersion).toBe(6);
+      expect(outcome.schemaVersion).toBe(7);
 
+      // design.md D7: no migration in the chain touches note frontmatter.
       const after = await readFile(path.join(tmp.root, 'projects/a.md'), 'utf8');
-      expect(after).toContain('lens: shared');
+      expect(after).toBe(before);
     } finally {
       await tmp.cleanup();
     }

@@ -6,37 +6,6 @@ description: Contexture's shipped conventions, rendered from this store's own co
 
 These are the rules that hold regardless of which operation you're doing; a skill states the procedure for one operation.
 
-## Visibility
-
-The visibility field is `__VISIBILITY_FIELD__:`. It resolves in this order: (1) an explicit value in the note's own frontmatter; (2) a directory default declared in `contexture.yaml` for the note's path; (3) failing both, the configured default context, `__DEFAULT_CONTEXT__` — run `ctxr note resolve <path>` to see which step produced a given note's value.
-
-Configured directory defaults:
-
-__DIRECTORY_DEFAULTS_TABLE__
-
-If a note's placement is ambiguous between two contexts, resolve to the more restrictive one rather than guessing broad — promote it later if it proves reusable.
-
-Exclusion from retrieval (`retrieval.exclude_paths`, the leg-routing section above) is a path decision, never a visibility value — a path being excluded and a note's visibility are two independent axes. Do not invent a visibility value to mean "not indexed"; if a location should never be retrieved, its path belongs in `retrieval.exclude_paths`, not in a note's visibility field.
-
-## Disclosure
-
-`ctxr check <path> --audience <name>` decides whether a note's content may flow to an external audience, evaluated in this fixed order — a rung, once it produces a verdict, is final:
-
-1. **Hard walls** — configured rules matching the note's path or the audience, evaluated before anything else.
-2. **Explicit audience tag** — an `audience:` value on the note matching the requested audience.
-3. **Internal-audience rule** — derived from the note's resolved visibility, for an audience configured as internal.
-4. **External default** — no rule matched: **ASK**, never a silent ALLOW or DENY.
-
-Configured hard walls:
-
-__HARD_WALLS_LIST__
-
-Configured internal audiences:
-
-__INTERNAL_AUDIENCES_LIST__
-
-Run `ctxr check <path> --scan` to check one note for a marker leaking across a wall.
-
 ## Links and the relation vocabulary
 
 Wikilinks (`[[Note Name]]`) are the edge substrate the graph is built from. A dangling link — pointing at a note that doesn't yet exist — is a candidate for a new note or a typo, not an error; nothing about it needs fixing before a commit.
@@ -45,7 +14,7 @@ __RELATION_VOCABULARY__
 
 ## Archiving
 
-`ctxr archive <path>` retires a note via a single tracked rename into `__ARCHIVE_DESTINATION__`, preserving its git history and its visibility value unchanged — never a status tag on a note that stays in place. It reports every other note that links to the archived one, so those links can be reviewed; a dangling link left behind is not itself an error (see Links, above).
+`ctxr archive <path>` retires a note via a single tracked rename into `__ARCHIVE_DESTINATION__`, preserving its git history and its frontmatter unchanged — never a status tag on a note that stays in place. It reports every other note that links to the archived one, so those links can be reviewed; a dangling link left behind is not itself an error (see Links, above).
 
 ## Git and sessions
 

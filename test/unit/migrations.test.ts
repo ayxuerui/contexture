@@ -2,11 +2,11 @@ import { existsSync } from 'node:fs';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { dropAccessAxesMigration } from '../../src/core/migrations/drop-access-axes.js';
 import { archiveDestinationFromTaxonomyMigration } from '../../src/core/migrations/archive-destination-from-taxonomy.js';
 import { dropForgeAndWorkspacesExternalMigration } from '../../src/core/migrations/drop-forge-and-workspaces-external.js';
 import { renameConventionsPathMigration } from '../../src/core/migrations/rename-conventions-path.js';
 import { renameProceduresPathMigration } from '../../src/core/migrations/rename-procedures-path.js';
-import { renameVisibilityFieldMigration } from '../../src/core/migrations/rename-visibility-field.js';
 import { pendingMigrations } from '../../src/core/migrations/registry.js';
 import type { Store } from '../../src/core/store.js';
 import { readConfig } from '../../src/config/load.js';
@@ -18,8 +18,6 @@ function makeV1Config(): StoreConfig {
   return {
     schema_version: 1,
     taxonomy: { profile: 'para', layers: [{ name: 'Projects', path: 'projects', description: 'Active work.' }] },
-    fields: { visibility: 'scope' },
-    visibility: { default_context: 'private', directory_defaults: {}, contexts: {} },
     derived: { paths: [] },
     retrieval: { exclude_paths: [], relations: [], graph: { cluster_depth: 2, hub_top: 8, bridge_top: 10, orphan_exempt_clusters: [] } },
     git: { default_branch: 'main' },
@@ -28,7 +26,6 @@ function makeV1Config(): StoreConfig {
     catalog: { path: 'catalog/', section_max_bytes: 32768 },
     publish: { path: 'publish/' },
     skills: { vendored: [] },
-    disclosure: { internal_audiences: [], hard_walls: [], leak_markers: {} },
     ingest: { inbox_path: 'inbox/', tracking_params: [] },
     organize: { archive_destination: 'archive/', rollup_stale_days: 7 },
     harness: { skills_path: 'procedures/', guidance_path: 'conventions/' },
@@ -148,13 +145,15 @@ async function writeNote(root: string, relPath: string, content: string): Promis
 }
 
 describe('pendingMigrations', () => {
+  // The 1 -> 2 migration was retired with the visibility field it renamed
+  // (retire-the-access-axes D7), so the chain starts at 2 -> 3 for a v1 store.
   it('includes all five migrations, in order, for a store at schema_version 1', () => {
     expect(pendingMigrations(1).map((m) => m.id)).toEqual([
-      renameVisibilityFieldMigration.id,
       renameProceduresPathMigration.id,
       renameConventionsPathMigration.id,
       dropForgeAndWorkspacesExternalMigration.id,
       archiveDestinationFromTaxonomyMigration.id,
+      dropAccessAxesMigration.id,
     ]);
   });
 
@@ -164,6 +163,7 @@ describe('pendingMigrations', () => {
       renameConventionsPathMigration.id,
       dropForgeAndWorkspacesExternalMigration.id,
       archiveDestinationFromTaxonomyMigration.id,
+      dropAccessAxesMigration.id,
     ]);
   });
 
@@ -172,6 +172,7 @@ describe('pendingMigrations', () => {
       renameConventionsPathMigration.id,
       dropForgeAndWorkspacesExternalMigration.id,
       archiveDestinationFromTaxonomyMigration.id,
+      dropAccessAxesMigration.id,
     ]);
   });
 
@@ -179,85 +180,23 @@ describe('pendingMigrations', () => {
     expect(pendingMigrations(4).map((m) => m.id)).toEqual([
       dropForgeAndWorkspacesExternalMigration.id,
       archiveDestinationFromTaxonomyMigration.id,
+      dropAccessAxesMigration.id,
     ]);
   });
 
-  it('includes only the archive-destination migration for a store at schema_version 5', () => {
-    expect(pendingMigrations(5).map((m) => m.id)).toEqual([archiveDestinationFromTaxonomyMigration.id]);
+  it('includes the archive-destination and access-axis migrations for a store at schema_version 5', () => {
+    expect(pendingMigrations(5).map((m) => m.id)).toEqual([
+      archiveDestinationFromTaxonomyMigration.id,
+      dropAccessAxesMigration.id,
+    ]);
+  });
+
+  it('includes only the access-axis migration for a store at schema_version 6', () => {
+    expect(pendingMigrations(6).map((m) => m.id)).toEqual([dropAccessAxesMigration.id]);
   });
 
   it('is empty for a store already at the current schema version', () => {
-    expect(pendingMigrations(6)).toEqual([]);
-  });
-});
-
-describe('renameVisibilityFieldMigration', () => {
-  it('plan() reports every note carrying the old key, plus the config change, with nothing written', async () => {
-    const tmp = await makeTmpDir();
-    try {
-      const store = await setUpV1Store(tmp.root);
-      await writeNote(tmp.root, 'projects/a.md', '---\nscope: shared\n---\nContent.\n');
-      await writeNote(tmp.root, 'projects/b.md', '---\ntitle: No visibility field\n---\nContent.\n');
-
-      const deltas = await renameVisibilityFieldMigration.plan(store);
-      expect(deltas.map((d) => d.path).sort()).toEqual(['contexture.yaml', 'projects/a.md']);
-
-      const noteContent = await readFile(path.join(tmp.root, 'projects/a.md'), 'utf8');
-      expect(noteContent).toContain('scope: shared');
-      const configContent = await readFile(path.join(tmp.root, 'contexture.yaml'), 'utf8');
-      expect(configContent).toContain('schema_version: 1');
-    } finally {
-      await tmp.cleanup();
-    }
-  });
-
-  it('apply() renames the field on every affected note and bumps the config', async () => {
-    const tmp = await makeTmpDir();
-    try {
-      const store = await setUpV1Store(tmp.root);
-      await writeNote(tmp.root, 'projects/a.md', '---\nscope: shared\ntitle: Keep me\n---\nContent.\n');
-      await writeNote(tmp.root, 'projects/b.md', '---\ntitle: No visibility field\n---\nContent.\n');
-
-      await renameVisibilityFieldMigration.apply(store);
-
-      const noteA = await readFile(path.join(tmp.root, 'projects/a.md'), 'utf8');
-      expect(noteA).toContain('lens: shared');
-      expect(noteA).not.toContain('scope:');
-      expect(noteA).toContain('title: Keep me');
-
-      const noteB = await readFile(path.join(tmp.root, 'projects/b.md'), 'utf8');
-      expect(noteB).toContain('title: No visibility field');
-      expect(noteB).not.toContain('lens:');
-
-      const config = await readConfig(tmp.root);
-      expect(config.schema_version).toBe(2);
-      expect(config.fields.visibility).toBe('lens');
-    } finally {
-      await tmp.cleanup();
-    }
-  });
-
-  it('is resumable: applying twice is idempotent and only touches what still needs it', async () => {
-    const tmp = await makeTmpDir();
-    try {
-      const store = await setUpV1Store(tmp.root);
-      await writeNote(tmp.root, 'projects/a.md', '---\nscope: shared\n---\nContent.\n');
-      await writeNote(tmp.root, 'projects/b.md', '---\nscope: private\n---\nContent.\n');
-
-      // Simulate an interruption: only b.md got renamed, config never bumped.
-      await writeNote(tmp.root, 'projects/b.md', '---\nlens: private\n---\nContent.\n');
-
-      const resumed = await renameVisibilityFieldMigration.apply(store);
-      expect(resumed.map((d) => d.path)).toEqual(['projects/a.md', 'contexture.yaml']);
-
-      const config = await readConfig(tmp.root);
-      expect(config.schema_version).toBe(2);
-
-      const second = await renameVisibilityFieldMigration.apply({ root: tmp.root, config });
-      expect(second).toEqual([]);
-    } finally {
-      await tmp.cleanup();
-    }
+    expect(pendingMigrations(7)).toEqual([]);
   });
 });
 
@@ -322,6 +261,10 @@ describe('renameProceduresPathMigration', () => {
     const tmp = await makeTmpDir();
     try {
       const store = await setUpV1Store(tmp.root);
+      // A genuine v1 note carries the visibility key under its v1 spelling.
+      // Nothing in the chain may rewrite it any more (design.md D3/D7).
+      await writeNote(tmp.root, 'projects/a.md', '---\nscope: shared\ntitle: Keep me\n---\nContent.\n');
+      const noteBefore = await readFile(path.join(tmp.root, 'projects/a.md'), 'utf8');
 
       let workingStore = store;
       for (const migration of pendingMigrations(workingStore.config.schema_version)) {
@@ -329,8 +272,11 @@ describe('renameProceduresPathMigration', () => {
         workingStore = { root: tmp.root, config: await readConfig(tmp.root) };
       }
 
-      expect(workingStore.config.schema_version).toBe(6);
-      expect(workingStore.config.fields.visibility).toBe('lens');
+      expect(workingStore.config.schema_version).toBe(7);
+      // drop-access-axes removes the fields:/visibility:/disclosure: blocks at 6 -> 7.
+      expect((workingStore.config as { fields?: unknown }).fields).toBeUndefined();
+      expect((workingStore.config as { visibility?: unknown }).visibility).toBeUndefined();
+      expect((workingStore.config as { disclosure?: unknown }).disclosure).toBeUndefined();
       expect(workingStore.config.harness.skills_path).toBe('procedures/');
       expect(workingStore.config.harness.guidance_path).toBe('conventions/');
       // The v1 fixture is a PARA store still on the shipped archive/ default,
@@ -342,6 +288,9 @@ describe('renameProceduresPathMigration', () => {
       expect(configContent).not.toContain('conventions_path');
       expect(configContent).not.toContain('archive_path');
       expect(pendingMigrations(workingStore.config.schema_version)).toEqual([]);
+
+      // No migration in the chain touches a note.
+      expect(await readFile(path.join(tmp.root, 'projects/a.md'), 'utf8')).toBe(noteBefore);
     } finally {
       await tmp.cleanup();
     }

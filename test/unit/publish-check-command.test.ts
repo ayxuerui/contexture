@@ -12,8 +12,6 @@ function makeConfig(): StoreConfig {
   return {
     schema_version: 1,
     taxonomy: { profile: 'para', layers: [] },
-    fields: { visibility: 'scope' },
-    visibility: { default_context: 'private', directory_defaults: {}, contexts: {} },
     derived: { paths: [] },
     retrieval: { exclude_paths: [], relations: [], graph: { cluster_depth: 2, hub_top: 8, bridge_top: 10, orphan_exempt_clusters: [] } },
     git: { default_branch: 'main' },
@@ -22,7 +20,6 @@ function makeConfig(): StoreConfig {
     catalog: { path: 'catalog/', section_max_bytes: 32768 },
     publish: { path: 'publish/' },
     skills: { vendored: [] },
-    disclosure: { internal_audiences: [], hard_walls: [], leak_markers: {} },
     ingest: { inbox_path: 'inbox/', tracking_params: [] },
     organize: { archive_destination: 'archive/', rollup_stale_days: 7 },
     harness: { skills_path: 'skills/', guidance_path: 'guidance/' },
@@ -118,17 +115,16 @@ describe('publish check', () => {
     }
   });
 
-  it('fails when the sibling README declares the visibility field or a kind field', async () => {
+  it('fails when the sibling README declares a kind field', async () => {
     const tmp = await makeTmpDir();
     try {
       const store: Store = { root: tmp.root, config: makeConfig() };
-      const readme = '---\nscope: personal\nkind: living\n---\n# page\n';
+      const readme = '---\nkind: living\n---\n# page\n';
       const htmlPath = await writePage(tmp.root, 'tagged-readme', GOOD_HTML, readme);
 
       const outcome = await executeCheck(store, { path: htmlPath });
       expect(outcome.exitCode).toBe(ExitCode.CheckFailed);
       const messages = outcome.data?.failures.filter((f) => f.check === 'readme-frontmatter').map((f) => f.message) ?? [];
-      expect(messages.some((m) => m.includes('visibility field'))).toBe(true);
       expect(messages.some((m) => m.includes('"kind"'))).toBe(true);
     } finally {
       await tmp.cleanup();

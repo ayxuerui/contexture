@@ -21,8 +21,7 @@ async function pinToSchemaV1(root: string): Promise<void> {
       // wrote, rather than a hardcoded current version, so a schema bump
       // can't silently turn this helper into a no-op and leave the test
       // asserting against an already-current store.
-      .replace(/^schema_version: \d+$/m, 'schema_version: 1')
-      .replace('visibility: lens', 'visibility: scope')
+      .replace(/^schema_version: \d+$/m, 'schema_version: 1\nfields:\n  visibility: scope')
       // A genuine v1 store predates every rename this suite exercises: the
       // visibility-field key; (rename-procedures-to-skills) the
       // harness.skills_path key, which was harness.procedures_path through
@@ -51,8 +50,10 @@ describe('migrate and doctor aggregation (real CLI)', () => {
       expect(result.exitCode).toBe(0);
       const data = JSON.parse(result.stdout).data;
       expect(data.applied).toBe(false);
-      const paths = data.migrations[0].deltas.map((d: { path: string }) => d.path).sort();
-      expect(paths).toEqual(['contexture.yaml', 'projects/a.md']);
+      // Every pending migration is config-only now: the one that rewrote note
+      // frontmatter was retired with the field it renamed (design.md D7).
+      const paths = data.migrations.flatMap((m: { deltas: { path: string }[] }) => m.deltas.map((d) => d.path));
+      expect([...new Set(paths)]).toEqual(['contexture.yaml']);
 
       const configAfter = await readFile(path.join(tmp.root, 'contexture.yaml'), 'utf8');
       const noteAfter = await readFile(path.join(tmp.root, 'projects/a.md'), 'utf8');
@@ -63,21 +64,46 @@ describe('migrate and doctor aggregation (real CLI)', () => {
     }
   });
 
-  it('running the rename migration for real, then resolving a note visibility, works under the new key with no other code change', async () => {
+  // retire-the-access-axes design.md D3: the migration removes the retired
+  // config blocks and rewrites NO note, so a note still carrying a retired
+  // visibility key survives byte-identically and stays fully retrievable.
+  // That reversibility is what makes the removal a deferral rather than a
+  // one-way door.
+  it('migrating a store carrying the retired visibility key leaves every note byte-identical and still retrievable', async () => {
     const tmp = await makeTmpDir();
     try {
       const env = hermeticGitEnv();
       await runCli(['init'], { cwd: tmp.root, env });
-      await pinToSchemaV1(tmp.root);
-      await writeNote(tmp.root, 'projects/a.md', '---\nscope: shared\n---\nContent.\n');
+      await writeNote(tmp.root, 'projects/a.md', '---\nlens: shared\ntitle: A\n---\nContent.\n');
+      const before = await readFile(path.join(tmp.root, 'projects/a.md'), 'utf8');
+
+      // Pin one version behind so drop-access-axes is genuinely pending.
+      const configPath = path.join(tmp.root, 'contexture.yaml');
+      const pinned = (await readFile(configPath, 'utf8'))
+        .replace(/^schema_version: \d+$/m, 'schema_version: 6\nfields:\n  visibility: lens\nvisibility:\n  default_context: private\n  directory_defaults: {}\n  contexts: {}\ndisclosure:\n  internal_audiences: []\n  hard_walls: []\n  leak_markers: {}');
+      await writeFile(configPath, pinned);
 
       const migrate = await runCli(['migrate', '--json'], { cwd: tmp.root, env });
       expect(migrate.exitCode).toBe(0);
 
-      const resolve = await runCli(['note', 'resolve', 'projects/a.md', '--json'], { cwd: tmp.root, env });
-      expect(resolve.exitCode).toBe(0);
-      const data = JSON.parse(resolve.stdout).data;
-      expect(data).toEqual({ path: 'projects/a.md', visibility: 'shared', reason: 'explicit' });
+      // The note is untouched, retired key and all.
+      expect(await readFile(path.join(tmp.root, 'projects/a.md'), 'utf8')).toBe(before);
+
+      // The config lost exactly the three retired blocks.
+      const after = await readFile(configPath, 'utf8');
+      expect(after).toContain('schema_version: 7');
+      expect(after).not.toMatch(/^fields:/m);
+      expect(after).not.toMatch(/^visibility:/m);
+      expect(after).not.toMatch(/^disclosure:/m);
+
+      // Every retrieval leg still returns the note.
+      const records = await runCli(['graph', 'build', '--emit-records', '--json'], { cwd: tmp.root, env });
+      expect(records.exitCode).toBe(0);
+      expect(JSON.parse(records.stdout).data.records.map((r: { path: string }) => r.path)).toEqual(['projects/a.md']);
+
+      const gather = await runCli(['publish', 'gather', '--under', 'projects', '--json'], { cwd: tmp.root, env });
+      expect(gather.exitCode).toBe(0);
+      expect(JSON.parse(gather.stdout).data.notes.map((n: { path: string }) => n.path)).toEqual(['projects/a.md']);
     } finally {
       await tmp.cleanup();
     }

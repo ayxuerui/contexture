@@ -20,8 +20,6 @@ function makeConfig(overrides: Partial<StoreConfig['retrieval']['graph']> = {}):
   return {
     schema_version: 1,
     taxonomy: { profile: 'custom', layers: [{ name: 'Alpha', path: 'alpha', description: 'x' }] },
-    fields: { visibility: 'scope' },
-    visibility: { default_context: 'ctx-default', directory_defaults: {}, contexts: {} },
     derived: { paths: [] },
     retrieval: {
       exclude_paths: ['.contexture/'], // as every real store: the cache the build writes into must not be re-read as notes
@@ -34,7 +32,6 @@ function makeConfig(overrides: Partial<StoreConfig['retrieval']['graph']> = {}):
     catalog: { path: 'catalog/', section_max_bytes: 32768 },
     publish: { path: 'publish/' },
     skills: { vendored: [] },
-    disclosure: { internal_audiences: [], hard_walls: [], leak_markers: {} },
     ingest: { inbox_path: 'inbox/', tracking_params: [] },
     organize: { archive_destination: 'archive/', rollup_stale_days: 7 },
     harness: { skills_path: 'skills/', guidance_path: 'guidance/' },

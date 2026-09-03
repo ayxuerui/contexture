@@ -113,7 +113,7 @@ function placementLayerStep(config: StoreConfig): string[] {
     '## 1. Which layer?',
     '',
     'Read AGENTS.md\'s "Placing a new note" section — it lists this store\'s configured layers with their',
-    'descriptions and their visibility defaults. Choose by what the content fundamentally IS, not by surface',
+    'descriptions. Choose by what the content fundamentally IS, not by surface',
     'keywords; a label on a location says nothing about what is actually kept there.',
   ];
   const terminating = terminatingLayers(config);
@@ -141,7 +141,7 @@ function placementLayerStep(config: StoreConfig): string[] {
 const PLACEMENT: SkillSeed = {
   file: 'ctxr-placement',
   name: 'Placement',
-  description: 'Choose the right taxonomy layer, location, and visibility for a new or relocated note in this contexture store, with the reasoning.',
+  description: 'Choose the right taxonomy layer and location for a new or relocated note in this contexture store, with the reasoning.',
   body: (config) => skillTemplate('ctxr-placement').replace('__LAYER_STEP__', placementLayerStep(config).join('\n')).split('\n'),
 };
 
@@ -257,7 +257,7 @@ const ORGANIZE_AUDIT: SkillSeed = {
 const PUBLISH: SkillSeed = {
   file: 'ctxr-publish',
   name: 'Publish',
-  description: 'Turn store content into a shareable HTML page for a subtree, note, entity, or context, gating every source note through disclosure before any content is copied out.',
+  description: 'Turn store content into a shareable HTML page for a subtree, note, or entity, resolving its source notes before any content is copied out.',
   body: () => skillTemplate('ctxr-publish').split('\n'),
 };
 

@@ -8,7 +8,6 @@ export const requires: CommandRequires = { store: 'required' };
 
 export interface CatalogShowFlags {
   section: string;
-  as?: string;
 }
 
 export interface CatalogShowData {
@@ -17,7 +16,7 @@ export interface CatalogShowData {
 }
 
 export async function execute(store: Store, flags: CatalogShowFlags): Promise<CommandOutcome<CatalogShowData>> {
-  const content = await readCatalogSection(store, flags.section, flags.as);
+  const content = await readCatalogSection(store, flags.section);
   if (content === null) {
     throw new CatalogSectionNotFoundError(flags.section);
   }

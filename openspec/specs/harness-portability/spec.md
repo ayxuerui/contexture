@@ -101,12 +101,8 @@ The store SHALL provide a command that exercises core store operations — at mi
 - **WHEN** one of the exercised operations fails during the portability test
 - **THEN** the command exits non-zero and its output names which specific operation failed
 
-### Requirement: The shipped skills carry decision procedures
-contexture SHALL ship, as contexture-owned skills delivered by init and update, skills for: placement, ingest orchestration, connection finding, connection proposal, rollup, mission, session lifecycle, session capture, derived artifacts, organize audit, and publish. Each SHALL state its decision rules against the store's configured taxonomy, contexts, and relation vocabulary — never a shipped profile's layer names or any real context name — and SHALL name the command that verifies each step it asks for.
-
-#### Scenario: Placement teaches the visibility-collision test
-- **WHEN** a store is initialized
-- **THEN** its placement skill states that two locations whose configured visibility defaults differ must not be merged, and that visibility may override location for content bridging contexts
+### Requirement: The shipped skills carry decision procedures for the configured taxonomy
+contexture SHALL ship, as contexture-owned skills delivered by init and update, skills for: placement, ingest orchestration, connection finding, connection proposal, rollup, mission, session lifecycle, session capture, derived artifacts, organize audit, and publish. Each SHALL state its decision rules against the store's configured taxonomy and relation vocabulary — never a shipped profile's layer names — and SHALL name the command that verifies each step it asks for.
 
 #### Scenario: Placement's termination test follows the configured taxonomy
 - **WHEN** a store's configured taxonomy declares a layer whose description implies an end state
@@ -136,9 +132,9 @@ contexture SHALL ship, as contexture-owned skills delivered by init and update, 
 - **WHEN** an agent follows the derived-artifacts skill
 - **THEN** it runs the check form of a build before the build, sanity-checks the reported counts, and never edits inside a `contexture:` fenced region
 
-#### Scenario: Publish gates before it copies, and names the subject before scaffolding
+#### Scenario: Publish names the subject before scaffolding
 - **WHEN** an agent follows the publish skill to build a page for a subject
-- **THEN** it is instructed to run the disclosure gate over the subject's resolved note set before copying any content out, to treat an ASK verdict as a stop that names the note to the operator, and to fix the page's identity once via the naming command rather than hand-creating a folder
+- **THEN** it is instructed to resolve the subject's note set before copying any content out, and to fix the page's identity once via the naming command rather than hand-creating a folder
 
 #### Scenario: Update delivers the expanded skill set to an existing store
 - **WHEN** a store initialized before this change runs the update command

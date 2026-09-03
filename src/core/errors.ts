@@ -117,16 +117,6 @@ export class InvalidCaptureProposalError extends ContextureError {
   }
 }
 
-export class CheckAudienceRequiredError extends ContextureError {
-  constructor() {
-    super(ExitCode.Usage, {
-      code: 'check.audience_required',
-      severity: 'error',
-      message: '"ctxr check" requires --audience unless --scan is given.',
-    });
-  }
-}
-
 export class CatalogSectionNotFoundError extends ContextureError {
   constructor(sectionId: string) {
     super(ExitCode.Usage, {
@@ -341,17 +331,6 @@ export class PublishSelectorConflictError extends ContextureError {
       severity: 'error',
       message: `"ctxr publish gather" accepts exactly one subject selector; given: ${given.join(', ')}.`,
       details: { given },
-    });
-  }
-}
-
-/** publish spec: the disclosure gate requires knowing the requesting audience, same as `ctxr check`. */
-export class PublishAudienceRequiredError extends ContextureError {
-  constructor() {
-    super(ExitCode.Usage, {
-      code: 'publish.audience_required',
-      severity: 'error',
-      message: '"ctxr publish gather" requires --audience.',
     });
   }
 }

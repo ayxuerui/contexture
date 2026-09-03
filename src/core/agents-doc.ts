@@ -113,14 +113,7 @@ export function renderPlacementSection(config: StoreConfig): string[] {
   const { layers } = config.taxonomy;
   if (layers.length === 0) return agentsTemplate('placement-no-layers').split('\n');
 
-  const layerLines = layers.map((layer) => {
-    const directoryDefault = Object.entries(config.visibility.directory_defaults).find(
-      ([prefix]) => prefix === layer.path || prefix === `${layer.path}/`,
-    )?.[1];
-    return `- **${layer.name}** (\`${layer.path}/\`): ${layer.description}${
-      directoryDefault ? ` Notes here default to visibility "${directoryDefault}" unless given an explicit value.` : ''
-    }`;
-  });
+  const layerLines = layers.map((layer) => `- **${layer.name}** (\`${layer.path}/\`): ${layer.description}`);
   return substituteBlock(agentsTemplate('placement'), '__LAYER_LIST__', layerLines).split('\n');
 }
 
@@ -167,8 +160,6 @@ export function renderCanonicalSection(config: StoreConfig): string[] {
   return substituteBlock(
     agentsTemplate('canonical')
       .replaceAll('__CONFIG_FILE_NAME__', CONFIG_FILE_NAME)
-      .replaceAll('__VISIBILITY_FIELD__', config.fields.visibility)
-      .replaceAll('__DEFAULT_CONTEXT__', config.visibility.default_context)
       .replaceAll('__SKILLS_PATH__', config.harness.skills_path),
     '__MISSION_POINTER__',
     renderMissionPointer(config),

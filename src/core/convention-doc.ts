@@ -16,31 +16,6 @@ function conventionTemplate(name: string): string {
   return packagedTemplate('conventions', name);
 }
 
-function directoryDefaultsList(config: StoreConfig): string[] {
-  const entries = Object.entries(config.visibility.directory_defaults);
-  if (entries.length === 0) {
-    return ['- (none configured — every note without an explicit value resolves to the store default context)'];
-  }
-  return entries.map(([prefix, value]) => `- \`${prefix}\` → \`${value}\``);
-}
-
-function hardWallsList(config: StoreConfig): string[] {
-  const { hard_walls: hardWalls } = config.disclosure;
-  if (hardWalls.length === 0) return ['- (none configured)'];
-  return hardWalls.map((wall) => {
-    const scope = wall.note_path_prefix ? `under \`${wall.note_path_prefix}\`` : '(every path)';
-    const audience = wall.audience === '*' ? 'every audience' : `\`${wall.audience}\``;
-    const except = wall.except && wall.except.length > 0 ? `, except ${wall.except.map((a) => `\`${a}\``).join(', ')}` : '';
-    return `- ${audience} ${scope} → **${wall.verdict.toUpperCase()}**${except}`;
-  });
-}
-
-function internalAudiencesList(config: StoreConfig): string[] {
-  const { internal_audiences: internalAudiences } = config.disclosure;
-  if (internalAudiences.length === 0) return ['- (none configured — every audience is external)'];
-  return internalAudiences.map((name) => `- \`${name}\``);
-}
-
 function relationVocabularyLines(config: StoreConfig): string[] {
   const { relations } = config.retrieval;
   if (relations.length === 0) {
@@ -64,14 +39,9 @@ function relationVocabularyLines(config: StoreConfig): string[] {
  */
 export function renderBaselineConventions(config: StoreConfig): string {
   let text = conventionTemplate('baseline-conventions')
-    .replaceAll('__VISIBILITY_FIELD__', config.fields.visibility)
-    .replaceAll('__DEFAULT_CONTEXT__', config.visibility.default_context)
     .replaceAll('__ARCHIVE_DESTINATION__', config.organize.archive_destination)
     .replaceAll('__DEFAULT_BRANCH__', config.git.default_branch)
     .replaceAll('__WORKTREES_PATH__', config.session.worktrees_path);
-  text = substituteBlock(text, '__DIRECTORY_DEFAULTS_TABLE__', directoryDefaultsList(config));
-  text = substituteBlock(text, '__HARD_WALLS_LIST__', hardWallsList(config));
-  text = substituteBlock(text, '__INTERNAL_AUDIENCES_LIST__', internalAudiencesList(config));
   text = substituteBlock(text, '__RELATION_VOCABULARY__', relationVocabularyLines(config));
   return `${text}\n`;
 }

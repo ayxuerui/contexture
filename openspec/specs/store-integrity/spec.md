@@ -6,8 +6,8 @@ Provides a single machine-readable system-health check that fails on real invari
 
 ## Requirements
 
-### Requirement: `doctor` is machine-readable and fails on real invariants
-`contexture doctor --json` SHALL enumerate every check it performs with a pass, fail, or skip result for each, and SHALL exit non-zero if any check's result is fail. Checks SHALL include, at minimum: derived-artifact staleness, catalog coverage (per context-catalog), ambiguous link resolution and identity collisions (per context-retrieval), notes with no resolvable explicit or directory-derived visibility (per context-visibility), schema version currency (per store-lifecycle), adapter compatibility (per adapters), git/hook health (per write-lifecycle), and unrecognized top-level config keys. A link that resolves to no note at all (as opposed to resolving ambiguously, to more than one) is reported by lint (per context-organize), not doctor, per the "Doctor is distinct from lint" requirement below.
+### Requirement: `doctor` enumerates every check and fails on real invariants
+`contexture doctor --json` SHALL enumerate every check it performs with a pass, fail, or skip result for each, and SHALL exit non-zero if any check's result is fail. Checks SHALL include, at minimum: derived-artifact staleness, catalog coverage (per context-catalog), ambiguous link resolution and identity collisions (per context-retrieval), schema version currency (per store-lifecycle), adapter compatibility (per adapters), git/hook health (per write-lifecycle), and unrecognized top-level config keys. A link that resolves to no note at all (as opposed to resolving ambiguously, to more than one) is reported by lint (per context-organize), not doctor, per the "Doctor is distinct from lint" requirement below.
 
 #### Scenario: Every check reports a result
 - **WHEN** `contexture doctor --json` runs

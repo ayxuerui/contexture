@@ -3,9 +3,8 @@
  * (GitHub pull-request read/merge) was removed once its only consumers,
  * `ctxr session submit`/`land`, were replaced by the `ctxr-submit`/`ctxr-land`
  * skills driving `git`/`gh` directly (session-keeps-only-what-git-cannot-do).
- * A search kind is deferred to v2 alongside the visibility-field naming
- * decision — the registration mechanism stays kind-generic for that reason,
- * even with one kind currently registered.
+ * A search kind is deferred to v2 — the registration mechanism stays
+ * kind-generic for that reason, even with one kind currently registered.
  */
 export type AdapterKind = 'harness-generation';
 

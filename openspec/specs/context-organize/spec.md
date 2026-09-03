@@ -13,12 +13,12 @@ The store's placement skill SHALL determine a new note's layer and folder using 
 - **WHEN** a store's `contexture.yaml` declares a taxonomy other than the shipped default profile
 - **THEN** the placement skill's decision steps still resolve to a valid layer and folder within that configured taxonomy
 
-### Requirement: Archive is a single tracked rename
-Archiving a note SHALL relocate it via the single tracked rename defined in the context-store capability, SHALL preserve the note's resolved visibility unchanged, and SHALL report every other note in the store whose link would now point at the moved path.
+### Requirement: Archive is a single tracked rename that leaves the note untouched
+Archiving a note SHALL relocate it via the single tracked rename defined in the context-store capability, SHALL leave the note's frontmatter and body byte-identical, and SHALL report every other note in the store whose link would now point at the moved path.
 
-#### Scenario: Visibility is unchanged by archiving
-- **WHEN** a note with an explicit visibility field is archived
-- **THEN** the archived note's visibility field is unchanged
+#### Scenario: The note's bytes are unchanged by archiving
+- **WHEN** a note carrying frontmatter is archived
+- **THEN** the archived note's frontmatter and body are byte-identical to what they were before the move
 
 #### Scenario: Inbound links are reported, not silently broken
 - **WHEN** a note being archived has one or more other notes linking to it

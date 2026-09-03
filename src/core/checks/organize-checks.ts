@@ -90,8 +90,7 @@ export const uningestedInboxCheck = defineCheck({
  * context-catalog" — the same underlying condition as `catalogCoverageCheck`
  * (doctor, invariant), surfaced here too as its own observation-severity
  * check id so lint can report it without doctor's invariant double-counting
- * lint's finding or vice versa (same pattern as the fail-closed-visibility
- * pair in Phase 5). Only `missing` is in scope here — `dangling` catalog
+ * lint's finding or vice versa. Only `missing` is in scope here — `dangling` catalog
  * entries are a stricter integrity concern doctor alone owns.
  */
 export const catalogGapsLintCheck = defineCheck({

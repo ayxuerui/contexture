@@ -15,21 +15,18 @@ import {
 } from '../core/graph/query.js';
 import type { GraphBuildResult } from '../core/graph/model.js';
 import { readGraph } from '../core/graph/persist.js';
-import { filterGraphByAudience } from '../core/graph/visibility-filter.js';
 import type { Store } from '../core/store.js';
 
 export const requires: CommandRequires = { store: 'required' };
 
 /**
- * context-visibility spec: when `--as <context>` is given, the graph is
- * filtered to only nodes visible to that context BEFORE any traversal runs
- * — see filterGraphByAudience. Every subcommand below routes through this
- * one loader so none of them can accidentally query the unfiltered graph.
+ * Every subcommand below routes through this one loader, so a query can
+ * never read a graph the store has not built.
  */
-async function loadGraph(store: Store, as?: string): Promise<GraphBuildResult> {
+async function loadGraph(store: Store): Promise<GraphBuildResult> {
   const graph = await readGraph(store);
   if (!graph) throw new GraphNotBuiltError();
-  return as ? filterGraphByAudience(store, graph, as) : graph;
+  return graph;
 }
 
 function assertNode(graph: GraphBuildResult, nodeId: string): void {
@@ -52,14 +49,13 @@ export interface NeighborsFlags {
   depth?: number;
   direction?: Direction;
   type?: string;
-  as?: string;
 }
 
 export async function executeNeighbors(
   store: Store,
   flags: NeighborsFlags,
 ): Promise<CommandOutcome<{ neighbors: string[] }>> {
-  const graph = await loadGraph(store, flags.as);
+  const graph = await loadGraph(store);
   assertNode(graph, flags.node);
   const result = neighbors(graph, flags.node, { depth: flags.depth, direction: flags.direction, type: flags.type });
   return outcome(store, { neighbors: result }, `${result.length} neighbor(s) of "${flags.node}".`);
@@ -68,14 +64,13 @@ export async function executeNeighbors(
 export interface PathFlags {
   from: string;
   to: string;
-  as?: string;
 }
 
 export async function executePath(
   store: Store,
   flags: PathFlags,
 ): Promise<CommandOutcome<{ path: string[] | null }>> {
-  const graph = await loadGraph(store, flags.as);
+  const graph = await loadGraph(store);
   assertNode(graph, flags.from);
   assertNode(graph, flags.to);
   const result = shortestPath(graph, flags.from, flags.to);
@@ -88,11 +83,10 @@ export async function executePath(
 
 export interface SubgraphFlags {
   ids: string[];
-  as?: string;
 }
 
 export async function executeSubgraph(store: Store, flags: SubgraphFlags): Promise<CommandOutcome<GraphBuildResult>> {
-  const graph = await loadGraph(store, flags.as);
+  const graph = await loadGraph(store);
   for (const id of flags.ids) assertNode(graph, id);
   const result = subgraph(graph, flags.ids);
   return outcome(store, result, `Subgraph: ${result.nodes.length} node(s), ${result.edges.length} edge(s).`);
@@ -100,48 +94,42 @@ export async function executeSubgraph(store: Store, flags: SubgraphFlags): Promi
 
 export interface HubsFlags {
   top?: number;
-  as?: string;
 }
 
 export async function executeHubs(store: Store, flags: HubsFlags = {}): Promise<CommandOutcome<{ hubs: HubEntry[] }>> {
-  const graph = await loadGraph(store, flags.as);
+  const graph = await loadGraph(store);
   const result = hubs(graph, flags.top ?? 10);
   return outcome(store, { hubs: result }, `Top ${result.length} hub(s) by backlink count.`);
 }
 
-export interface OrphansFlags {
-  as?: string;
-}
+export type OrphansFlags = Record<string, never>;
 
 export async function executeOrphans(store: Store, flags: OrphansFlags = {}): Promise<CommandOutcome<{ orphans: string[] }>> {
-  const graph = await loadGraph(store, flags.as);
+  const graph = await loadGraph(store);
   const result = orphans(graph);
   return outcome(store, { orphans: result }, `${result.length} orphan node(s) (no links in or out).`);
 }
 
-export interface ClustersFlags {
-  as?: string;
-}
+export type ClustersFlags = Record<string, never>;
 
 export async function executeClusters(
   store: Store,
   flags: ClustersFlags = {},
 ): Promise<CommandOutcome<{ clusters: ClusterEntry[] }>> {
-  const graph = await loadGraph(store, flags.as);
+  const graph = await loadGraph(store);
   const result = clusters(graph);
   return outcome(store, { clusters: result }, `${result.length} cluster(s).`);
 }
 
 export interface BridgesFlags {
   top?: number;
-  as?: string;
 }
 
 export async function executeBridges(
   store: Store,
   flags: BridgesFlags = {},
 ): Promise<CommandOutcome<{ bridges: BridgeEntry[] }>> {
-  const graph = await loadGraph(store, flags.as);
+  const graph = await loadGraph(store);
   const result = bridges(graph, flags.top ?? store.config.retrieval.graph.bridge_top);
   return outcome(store, { bridges: result }, `Top ${result.length} bridge(s) by distinct clusters linked into.`);
 }

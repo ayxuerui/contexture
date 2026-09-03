@@ -142,7 +142,7 @@ describe('contexture graph (real CLI)', () => {
       expect(result.exitCode).toBe(0);
       const records = JSON.parse(result.stdout).data.records;
       expect(records).toEqual([
-        { id: 'projects/a.md', path: 'projects/a.md', visibility: 'shared', gloss: '', hash: expect.any(String) },
+        { id: 'projects/a.md', path: 'projects/a.md', gloss: '', hash: expect.any(String) },
       ]);
     } finally {
       await tmp.cleanup();

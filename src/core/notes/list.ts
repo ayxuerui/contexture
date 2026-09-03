@@ -4,19 +4,8 @@ import { configuredAdapters } from '../../adapters/registry.js';
 import type { StoreConfig } from '../../config/schema.js';
 import { parseNote } from './parse.js';
 
-/**
- * The note-enumeration seam every later retrieval leg builds on. `as` is
- * accepted (and, until Phase 5, ignored) from Phase 0 — a real finding:
- * openspec/config.yaml's own authoring rule says "sequence visibility
- * enforcement before retrieval — a pre-filter cannot be safely retrofitted
- * from a post-filter," but tasks.md's phase order puts retrieval (Phase 3/4)
- * before visibility enforcement (Phase 5). Accepting `as` here from the
- * start means Phase 5 wires a real filter into an already-filterable
- * signature, instead of auditing every earlier traversal for safety.
- */
+/** The note-enumeration seam every retrieval leg builds on. */
 export interface NoteQuery {
-  /** The requesting context, for visibility filtering. Wired in Phase 5. */
-  as?: string;
   underPrefix?: string;
 }
 

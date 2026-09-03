@@ -30,8 +30,8 @@ function toStoreRelativePath(env: RunEnv, store: Store, givenPath: string): stri
 /**
  * context-organize spec: archiving is a single tracked rename (via
  * core/git/repo.ts's movePath, the Phase 1.5 primitive) — never a
- * read+delete+rewrite — so the note's frontmatter (including its
- * visibility field) is untouched by construction, and `git log --follow`
+ * read+delete+rewrite — so the note's frontmatter is untouched by
+ * construction, and `git log --follow`
  * on the new path returns its full prior history. The destination lives
  * under `organize.archive_destination`, independent of taxonomy layer names,
  * so this works identically under any configured taxonomy (task 7.1). A
