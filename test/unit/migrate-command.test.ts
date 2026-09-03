@@ -3,6 +3,7 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { execute } from '../../src/commands/migrate.js';
 import { renderStoreConfig } from '../../src/config/render.js';
+import { SUPPORTED_SCHEMA_VERSION } from '../../src/config/schema.js';
 import type { StoreConfig } from '../../src/config/schema.js';
 import { ExitCode } from '../../src/core/exit-codes.js';
 import type { Store } from '../../src/core/store.js';
@@ -47,10 +48,15 @@ describe('migrate command', () => {
   it('reports no pending migrations for a store already at the current schema version', async () => {
     const tmp = await makeTmpDir();
     try {
-      const store: Store = { ...(await setUpV1Store(tmp.root)), config: { ...makeV1Config(), schema_version: 6, fields: { visibility: 'lens' } } };
+      const store: Store = { ...(await setUpV1Store(tmp.root)), config: { ...makeV1Config(), schema_version: SUPPORTED_SCHEMA_VERSION, fields: { visibility: 'lens' } } };
       const outcome = await execute(store, {});
       expect(outcome.exitCode).toBe(ExitCode.Ok);
-      expect(outcome.data).toEqual({ currentVersion: 6, targetVersion: 6, applied: false, migrations: [] });
+      expect(outcome.data).toEqual({
+        currentVersion: SUPPORTED_SCHEMA_VERSION,
+        targetVersion: SUPPORTED_SCHEMA_VERSION,
+        applied: false,
+        migrations: [],
+      });
     } finally {
       await tmp.cleanup();
     }
@@ -83,7 +89,7 @@ describe('migrate command', () => {
       const outcome = await execute(store, {});
       expect(outcome.exitCode).toBe(ExitCode.Ok);
       expect(outcome.data?.applied).toBe(true);
-      expect(outcome.schemaVersion).toBe(6);
+      expect(outcome.schemaVersion).toBe(SUPPORTED_SCHEMA_VERSION);
 
       const after = await readFile(path.join(tmp.root, 'projects/a.md'), 'utf8');
       expect(after).toContain('lens: shared');

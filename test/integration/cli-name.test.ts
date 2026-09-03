@@ -37,7 +37,11 @@ describe('cli-contract: shipped instructions name ctxr (real CLI)', () => {
       expect(surfaces.get('AGENTS.md')).toMatch(/`ctxr /);
       expect(surfaces.get('.githooks/pre-push')).toContain('ctxr-submit skill');
       expect(surfaces.get('.githooks/pre-commit')).toContain('re-run `ctxr init` or `ctxr doctor`');
-      const [skill] = [...surfaces.entries()].filter(([k]) => k.startsWith('skills/')).map(([, v]) => v);
+      // An OWNED skill, selected by name rather than by directory-read order:
+      // only owned skills carry the managed header this asserts, the shipped
+      // set now holds more than one vendored skill, and a directory read is not
+      // sorted — so picking the first entry was passing on odds, not on rule.
+      const [skill] = [...surfaces.entries()].filter(([k]) => k.startsWith('skills/ctxr-')).map(([, v]) => v);
       expect(skill).toContain('`ctxr update`');
     } finally {
       await tmp.cleanup();

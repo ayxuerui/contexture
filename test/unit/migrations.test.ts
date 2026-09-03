@@ -2,6 +2,7 @@ import { existsSync } from 'node:fs';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { addExplanationCraftSkillMigration } from '../../src/core/migrations/add-explanation-craft-skill.js';
 import { archiveDestinationFromTaxonomyMigration } from '../../src/core/migrations/archive-destination-from-taxonomy.js';
 import { dropForgeAndWorkspacesExternalMigration } from '../../src/core/migrations/drop-forge-and-workspaces-external.js';
 import { renameConventionsPathMigration } from '../../src/core/migrations/rename-conventions-path.js';
@@ -11,6 +12,7 @@ import { pendingMigrations } from '../../src/core/migrations/registry.js';
 import type { Store } from '../../src/core/store.js';
 import { readConfig } from '../../src/config/load.js';
 import { renderStoreConfig } from '../../src/config/render.js';
+import { SUPPORTED_SCHEMA_VERSION } from '../../src/config/schema.js';
 import type { StoreConfig } from '../../src/config/schema.js';
 import { makeTmpDir } from '../helpers/tmp-store.js';
 
@@ -148,13 +150,14 @@ async function writeNote(root: string, relPath: string, content: string): Promis
 }
 
 describe('pendingMigrations', () => {
-  it('includes all five migrations, in order, for a store at schema_version 1', () => {
+  it('includes all six migrations, in order, for a store at schema_version 1', () => {
     expect(pendingMigrations(1).map((m) => m.id)).toEqual([
       renameVisibilityFieldMigration.id,
       renameProceduresPathMigration.id,
       renameConventionsPathMigration.id,
       dropForgeAndWorkspacesExternalMigration.id,
       archiveDestinationFromTaxonomyMigration.id,
+      addExplanationCraftSkillMigration.id,
     ]);
   });
 
@@ -164,6 +167,7 @@ describe('pendingMigrations', () => {
       renameConventionsPathMigration.id,
       dropForgeAndWorkspacesExternalMigration.id,
       archiveDestinationFromTaxonomyMigration.id,
+      addExplanationCraftSkillMigration.id,
     ]);
   });
 
@@ -172,6 +176,7 @@ describe('pendingMigrations', () => {
       renameConventionsPathMigration.id,
       dropForgeAndWorkspacesExternalMigration.id,
       archiveDestinationFromTaxonomyMigration.id,
+      addExplanationCraftSkillMigration.id,
     ]);
   });
 
@@ -179,15 +184,23 @@ describe('pendingMigrations', () => {
     expect(pendingMigrations(4).map((m) => m.id)).toEqual([
       dropForgeAndWorkspacesExternalMigration.id,
       archiveDestinationFromTaxonomyMigration.id,
+      addExplanationCraftSkillMigration.id,
     ]);
   });
 
   it('includes only the archive-destination migration for a store at schema_version 5', () => {
-    expect(pendingMigrations(5).map((m) => m.id)).toEqual([archiveDestinationFromTaxonomyMigration.id]);
+    expect(pendingMigrations(5).map((m) => m.id)).toEqual([
+      archiveDestinationFromTaxonomyMigration.id,
+      addExplanationCraftSkillMigration.id,
+    ]);
+  });
+
+  it('includes only the explanation-craft-skill migration for a store at schema_version 6', () => {
+    expect(pendingMigrations(6).map((m) => m.id)).toEqual([addExplanationCraftSkillMigration.id]);
   });
 
   it('is empty for a store already at the current schema version', () => {
-    expect(pendingMigrations(6)).toEqual([]);
+    expect(pendingMigrations(SUPPORTED_SCHEMA_VERSION)).toEqual([]);
   });
 });
 
@@ -318,7 +331,7 @@ describe('renameProceduresPathMigration', () => {
     }
   });
 
-  it('a v1 store runs all five migrations, in order', async () => {
+  it('a v1 store runs all six migrations, in order', async () => {
     const tmp = await makeTmpDir();
     try {
       const store = await setUpV1Store(tmp.root);
@@ -329,7 +342,7 @@ describe('renameProceduresPathMigration', () => {
         workingStore = { root: tmp.root, config: await readConfig(tmp.root) };
       }
 
-      expect(workingStore.config.schema_version).toBe(6);
+      expect(workingStore.config.schema_version).toBe(SUPPORTED_SCHEMA_VERSION);
       expect(workingStore.config.fields.visibility).toBe('lens');
       expect(workingStore.config.harness.skills_path).toBe('procedures/');
       expect(workingStore.config.harness.guidance_path).toBe('conventions/');
