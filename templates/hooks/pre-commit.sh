@@ -1,18 +1,25 @@
 #!/bin/sh
 # Installed by `ctxr init` (write-lifecycle spec). Version-controlled —
 # do not edit by hand; re-run `ctxr init` or `ctxr doctor` to
-# regenerate. Runs `doctor --staged` against the exact contexture install
-# that wrote this hook, and refuses the commit if it finds a real problem.
+# regenerate. Runs `doctor --staged` with the ctxr this machine resolves at
+# run time, and refuses the commit if it finds a real problem — or if it
+# could not run that validation at all.
 set -eu
 
-CONTEXTURE_BIN="__CONTEXTURE_BIN__"
+# A commit this hook could not check is refused, not passed: the point of the
+# hook is that no unvalidated change is committed, and "ctxr is not installed
+# here" is not evidence that the staged diff is clean.
+ctxr_unavailable() {
+  echo "ctxr: commit refused — $1" >&2
+  echo "ctxr: this hook validates staged changes with 'ctxr doctor --staged', and will not pass a commit it could not check." >&2
+  echo "ctxr: install the CLI with 'npm install -g ctxr-cli', or set CONTEXTURE_BIN to its dist/bin.js." >&2
+  echo "ctxr: 'git commit --no-verify' bypasses this hook if you must commit before repairing the install." >&2
+  exit 1
+}
 
-if [ ! -f "$CONTEXTURE_BIN" ]; then
-  echo "ctxr: warning — could not find $CONTEXTURE_BIN; skipping pre-commit validation." >&2
-  exit 0
-fi
+__RESOLVE_CTXR__
 
-if ! output=$(node "$CONTEXTURE_BIN" doctor --staged --json 2>&1); then
+if ! output=$("$@" doctor --staged --json 2>&1); then
   echo "$output" >&2
   echo "ctxr: commit refused — staged changes failed 'doctor --staged'." >&2
   exit 1
