@@ -5,8 +5,7 @@ to synthesize an entity's current state from its sources, use `ctxr-rollup`.
    document it writes at `__GRAPH_DOCUMENT_PATH__` — hub notes by cluster, cross-cluster bridges,
    orphans — for the cluster context the point queries below do not summarize.
 2. To find what a note connects to or from, run `ctxr graph query neighbors <path>` (add `--depth` for
-   further hops, `--direction in|out|both`, `--type <relation>` to follow one configured relation,
-   `--as <context>` to see only what that context can see).
+   further hops, `--direction in|out|both`, `--type <relation>` to follow one configured relation).
 3. To find a path between two notes, run `ctxr graph query path <from> <to>`.
 4. To find the most-referenced notes, run `ctxr graph query hubs`; to find unlinked ones,
    `ctxr graph query orphans`; `ctxr graph query clusters` and `ctxr graph query bridges` show the

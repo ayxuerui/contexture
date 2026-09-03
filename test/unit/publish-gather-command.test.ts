@@ -45,6 +45,12 @@ describe('publish gather: selector validation', () => {
       const store: Store = { root: tmp.root, config: makeConfig() };
       const env = makeFakeEnv({ cwd: tmp.root });
       await expect(executeGather(env, store, {})).rejects.toBeInstanceOf(PublishSelectorRequiredError);
+      // The message names the selectors the command registers and no others:
+      // it offered `--as` until retire-the-access-axes removed that flag.
+      const error = new PublishSelectorRequiredError();
+      expect(error.exitCode).toBe(ExitCode.Usage);
+      expect(error.finding.message).toContain('--under, --note, or --entity');
+      expect(error.finding.message).not.toContain('--as');
     } finally {
       await tmp.cleanup();
     }

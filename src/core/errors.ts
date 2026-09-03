@@ -319,7 +319,7 @@ export class PublishSelectorRequiredError extends ContextureError {
     super(ExitCode.Usage, {
       code: 'publish.selector_required',
       severity: 'error',
-      message: '"ctxr publish gather" requires exactly one of --under, --note, --entity, or --as.',
+      message: '"ctxr publish gather" requires exactly one of --under, --note, or --entity.',
     });
   }
 }
