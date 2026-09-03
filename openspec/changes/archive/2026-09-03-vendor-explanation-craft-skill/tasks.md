@@ -57,5 +57,5 @@
 
 ## 8. After it lands
 
-- [ ] 8.1 `gh workflow run vendor-check.yml && gh run watch` — the dispatched run reports both entries current and files no issue. This is the durable proof that a license sourced from outside the vendored subtree does not manufacture weekly drift.
+- [x] 8.1 `gh workflow run vendor-check.yml && gh run watch` — the dispatched run reports both entries current and files no issue. This is the durable proof that a license sourced from outside the vendored subtree does not manufacture weekly drift.
 - [ ] 8.2 `gh api repos/ayxuerui/contexture/issues --jq '[.[] | select(.labels[].name == "vendored-skill-update")] | length'` prints `0` a week after landing.

@@ -48,7 +48,9 @@ export const MANIFEST = [
     // Recording that, rather than inferring the repository's owner (an owner is
     // not necessarily the holder), is the only honest summary for a legal
     // notice we publish; the file itself is redistributed verbatim beside the
-    // skill.
+    // skill. Asked upstream to fill the holder in:
+    // https://github.com/DreambigOu/ELI5/issues/1 — if they do, re-vendor and
+    // replace this line with the notice they land on.
     copyright: '2026 — upstream names no holder; see `templates/vendor/eli5/LICENSE.txt`',
   },
 ];
