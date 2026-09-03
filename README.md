@@ -14,7 +14,7 @@ A **store** is an ordinary git repository: markdown notes joined by `[[wikilinks
 npm install -g ctxr-cli
 ```
 
-Requires Node 20.11 or newer.
+Requires Node 22.13 or newer.
 
 The npm package is `ctxr-cli`, the executable it installs is `ctxr`, and the project is Contexture. Everything a store contains keeps the project name — `contexture.yaml`, the `.contexture/` home directory, `CONTEXTURE_*` environment variables — while `ctxr` is what you type. A `contexture` alias executable is also installed for compatibility; docs and generated files always say `ctxr`.
 
