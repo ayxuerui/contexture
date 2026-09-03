@@ -1,6 +1,10 @@
 # Contexture (`ctxr`)
 
-The structured context platform for the organization — a context store that ingests, organizes, and retrieves context for any AI agent harness (Claude Code, Codex, Cursor, Cline, Gemini CLI, a cron job, a human at a terminal).
+**Your second brain — built for agents to operate.**
+
+Contexture turns a git repository into a durable knowledge base, and ships the operating procedures an AI agent needs to work it: what to do with a new source, where a note belongs, when a synthesis has gone stale, how a change gets reviewed and landed. There is no editor and no GUI, because the thing reading it isn't a person browsing — it's Claude Code, Codex, Cursor, Cline, Gemini CLI, a cron job, or you at a terminal.
+
+The loop is the familiar one — **capture, organize, distill, express**, with retrieval underneath it. What's different is who runs it. You have a conversation; the agent files the source, places the note, links it into what's already there, re-synthesizes whatever went stale, and opens a pull request for the lot.
 
 A **store** is an ordinary git repository: markdown notes joined by `[[wikilinks]]`, with `contexture.yaml` as the single source of truth for how that particular store is shaped — its taxonomy, its paths, its relation vocabulary. `ctxr` is a mechanism-only CLI over it — it builds indexes, enforces invariants, and performs validated writes, but it makes no editorial decisions. The judgment lives in **skills**: portable markdown decision procedures that `ctxr init` installs into the store, which whatever agent you're talking to reads and follows. That split is the whole design, and it's what makes the same store operable from any harness.
 
@@ -138,7 +142,7 @@ on branch "session/20260903-060120-5ccbd6" (from master).
 
 With no remote configured it falls back honestly to the local branch tip rather than failing. `cd` there and open your agent. Never work in the canonical clone — `ctxr session list` shows what's active. (The default branch is whatever `git init` actually created, recorded once at init; nothing hardcodes `main`.)
 
-**2. Chat.** Your harness loads `AGENTS.md` — or `CLAUDE.md`, which imports it — at session start, and discovers the skills through the bridged directory. Describe what you want in plain language: *"read this article and file it"*, *"what do we know about Acme"*, *"roll up this entity"*, *"make me a page comparing these three"*. The agent picks the skill. There's nothing to memorize; the [mid-session loops](#mid-session-loops) below are what it runs on your behalf, documented for when you want to drive a step yourself.
+**2. Chat.** Your harness loads `AGENTS.md` — or `CLAUDE.md`, which imports it — at session start, and discovers the skills through the bridged directory. Describe what you want in plain language: *"read this article and file it"*, *"what do we know about Acme"*, *"roll up this entity"*, *"make me a page comparing these three"*. The agent picks the skill. There's nothing to memorize; the [knowledge loop](#the-knowledge-loop) below is what it runs on your behalf, documented for when you want to drive a step yourself.
 
 **3. Wrap.** On *your* closing signal — "done", "ship it", a sign-off; never the agent's own summary — `ctxr-session-capture` fires exactly once. It proposes, in a single message with IDs, what the session produced that is durable, split by kind: a **fact** about what happened becomes a store note, a **rule for future work** becomes a house convention. Nothing is written until you approve by ID. Approved notes go through:
 
@@ -159,7 +163,7 @@ notes:
 
 Each item is validated and applied independently, so one bad path refuses that item alone rather than the whole proposal. Approved *conventions* aren't notes — they're a direct edit to `house-conventions.md` followed by `ctxr update`, staged in the same commit. (A guidance edit without the matching `AGENTS.md` regeneration fails `doctor --staged`, and the pre-commit hook refuses it.)
 
-**4. Publish**, if the session earned a page. Run it before submit so the page rides the same pull request. See [Publish](#5-publish) below.
+**4. Publish**, if the session earned a page. Run it before submit so the page rides the same pull request. See [Express](#5-express--publish-a-page) below.
 
 **5. Submit.** `ctxr-submit`: re-scan git state (never replay a plan from an earlier snapshot), run the capture pass, stage surgically with `git add <paths>` — never `-A`, and derived cache paths never stage — then `ctxr doctor` over the whole store, not `--staged`: a session's job is to leave the *store* healthy, not merely to pass one commit's gate. Then commit, rename the generated branch to something meaningful before it reaches the forge, `git push -u origin <branch>`, and `gh pr create`. If `gh` has no reachable GitHub remote, the push still succeeds on its own and you get manual pull-request instructions instead of a retry loop.
 
@@ -173,11 +177,13 @@ They're ordinary `git` and `gh`. The CLI owns only what git cannot do — creati
 
 Three mechanical backstops hold the line underneath all of it: the **pre-commit** hook runs `doctor --staged`; the **pre-push** hook refuses a push to the default branch (`CONTEXTURE_ALLOW_DEFAULT_BRANCH_PUSH=1` is the emergency override, for emergencies); and for Claude Code the **write-gate** PreToolUse hook denies any edit under the store root made outside the active session worktree.
 
-## Mid-session loops
+## The knowledge loop
 
-What the agent does inside step 2 — and how to drive each step by hand.
+What the agent is doing inside step 2 — and how to drive any of it by hand.
 
-### 1. Capture → ingest
+Four of these are the second-brain moves: **capture** what arrives, **organize** it so it stays navigable, **distill** it into something that answers a question, **express** it for a reader who wasn't there. Retrieval isn't a stage — it's what makes the other four worth doing — but it sits second here because it's the one you reach for constantly.
+
+### 1. Capture — get material in without duplicating it
 
 Capture is just writing a markdown file into `inbox/`; no CLI wraps it. The file must carry none of `source_type`, `source_id`, `source_hash`, or `ingested` — contexture assigns those once, at ingest, and never before. Then:
 
@@ -192,7 +198,7 @@ ctxr ingest inbox/note.md --source-type article --source-id https://example.com/
 
 The commands are the easy part. `ctxr-ingest-orchestration` exists because ingest is **synthesis, not filing** — "create a new note" is one option among several, and the skill's decision table (new note / expand an existing one / merge two / restructure / add a section to a hub) is the actual work. `ctxr-placement` decides where the result lives, and says why.
 
-### 2. Retrieval — three legs, no ranker
+### 2. Retrieve — three legs, no ranker
 
 ```sh
 ctxr catalog show --section projects      # curated index, one section per layer
@@ -208,7 +214,7 @@ There is no `ctxr search`, and no semantic ranking. That's deliberate, not missi
 
 → `ctxr-connection-finding` (traverse what exists), `ctxr-connection-proposal` (discover what should).
 
-### 3. Organize and audit
+### 3. Organize — keep it navigable as it grows
 
 ```sh
 ctxr lint          # observations — orphans, broken links, uningested inbox material; always exits 0
@@ -221,7 +227,7 @@ The `lint` / `doctor` split is the point: lint reports what's *worth reviewing* 
 
 → `ctxr-organize-audit`, `ctxr-derived-artifacts`.
 
-### 4. Rollups and the mission document
+### 4. Distill — rollups and the mission document
 
 ```sh
 ctxr rollup stale                                   # entities whose backlinks moved since last synthesis
@@ -235,7 +241,7 @@ The store's own `.contexture/guidance/mission.md` uses the same write path, but 
 
 → `ctxr-rollup`, `ctxr-mission`.
 
-### 5. Publish
+### 5. Express — publish a page
 
 ```sh
 ctxr publish gather --under resources/    # or --note <path>, or --entity <name>
