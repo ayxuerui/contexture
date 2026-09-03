@@ -221,11 +221,26 @@ contexture SHALL ship, as contexture-owned skills delivered by init and update, 
 
 #### Scenario: Publish keeps the reader's level distinct from the disclosure audience
 - **WHEN** the publish skill instructs an agent to pitch a page's prose at a reader
-- **THEN** it states that the reader's level of existing knowledge is not the audience the disclosure gate evaluates, that a level of knowledge is never passed to the gate as an audience, and that pitching the prose more plainly never widens what the page may contain
+- **THEN** it states that how much a reader already knows is a question about register alone, that it is never a reason to put more on the page, and that writing an explanation more plainly never widens what the page may contain — naming no audience selector and no gate, the store having none to name
 
 #### Scenario: Update delivers the expanded skill set to an existing store
 - **WHEN** a store initialized before this change runs the update command
 - **THEN** every owned skill above is present at the configured skills path with the managed header, and a second update reports nothing changed
+
+### Requirement: An owned skill names only affordances the CLI provides
+Every contexture-owned skill SHALL instruct its steps using only commands and options the CLI registers. A long option named alongside a contexture command in a rendered owned skill SHALL resolve against the option table that command registers, and a skill naming an option no command accepts SHALL fail a check rather than ship. The enforcing mechanism is a test over the rendered skill set that resolves each such option against the CLI's own registration, so a skill cannot outlive the affordance it documents.
+
+#### Scenario: A skill naming a removed option fails the check
+- **WHEN** an owned skill instructs a step by naming a contexture command together with a long option that command does not register
+- **THEN** the check exits non-zero, naming the skill and the option
+
+#### Scenario: A skill naming only registered options passes
+- **WHEN** every long option an owned skill names alongside a contexture command is one that command registers
+- **THEN** the check passes, and an option named for a tool other than contexture is outside what the check resolves
+
+#### Scenario: The selector-required message offers only selectors the command accepts
+- **WHEN** `ctxr publish gather` is invoked with no subject selector
+- **THEN** it exits with the usage code and its message names exactly the selectors the command registers
 
 ### Requirement: Owned skills read the vocabulary and the graph document from configuration
 The connection-proposal skill SHALL group proposals by the relation vocabulary declared in configuration and fall back to a single group when it is empty; the connection-finding and ingest-orchestration skills SHALL direct the agent to the graph document at its configured path for cluster context; and the generated entry document's retrieval section SHALL name that path. No skill SHALL hardcode a relation name.
