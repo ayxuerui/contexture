@@ -1,10 +1,10 @@
 # Contexture (`ctxr`)
 
-**Your second brain — built for agents to operate.**
+**The knowledge base your agents write to — and you review before it lands.**
 
-Contexture turns a git repository into a durable knowledge base, and ships the operating procedures an AI agent needs to work it: what to do with a new source, where a note belongs, when a synthesis has gone stale, how a change gets reviewed and landed. There is no editor and no GUI, because the thing reading it isn't a person browsing — it's Claude Code, Codex, Cursor, Cline, Gemini CLI, a cron job, or you at a terminal.
+Contexture turns a git repository into shared, durable knowledge, and ships the operating procedures an AI agent needs to work it: what to do with a new source, where a note belongs, when a synthesis has gone stale, how a change gets reviewed and landed. Every write lands the way code does — in a branch, past a health check, through a pull request you approve.
 
-The loop is the familiar one — **capture, organize, distill, express**, with retrieval underneath it. What's different is who runs it. You have a conversation; the agent files the source, places the note, links it into what's already there, re-synthesizes whatever went stale, and opens a pull request for the lot.
+Not agent memory: your harness already owns persona and cross-session recall. This is the material your agents reason *over*, and it outlives any one of them. Claude Code, Codex, Cursor, Cline, Gemini CLI, a cron job, or you at a terminal all operate the same store through the same files.
 
 A **store** is an ordinary git repository: markdown notes joined by `[[wikilinks]]`, with `contexture.yaml` as the single source of truth for how that particular store is shaped — its taxonomy, its paths, its relation vocabulary. `ctxr` is a mechanism-only CLI over it — it builds indexes, enforces invariants, and performs validated writes, but it makes no editorial decisions. The judgment lives in **skills**: portable markdown decision procedures that `ctxr init` installs into the store, which whatever agent you're talking to reads and follows. That split is the whole design, and it's what makes the same store operable from any harness.
 
@@ -181,7 +181,7 @@ Three mechanical backstops hold the line underneath all of it: the **pre-commit*
 
 What the agent is doing inside step 2 — and how to drive any of it by hand.
 
-Four of these are the second-brain moves: **capture** what arrives, **organize** it so it stays navigable, **distill** it into something that answers a question, **express** it for a reader who wasn't there. Retrieval isn't a stage — it's what makes the other four worth doing — but it sits second here because it's the one you reach for constantly.
+Four of these are the moves knowledge work is made of: **capture** what arrives, **organize** it so it stays navigable, **distill** it into something that answers a question, **express** it for a reader who wasn't there. Retrieval isn't a stage — it's what makes the other four worth doing — but it sits second here because it's the one you reach for constantly.
 
 ### 1. Capture — get material in without duplicating it
 
