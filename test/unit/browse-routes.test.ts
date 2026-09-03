@@ -21,9 +21,9 @@ function makeConfig(overrides: Partial<StoreConfig> = {}): StoreConfig {
     catalog: { path: '.contexture/catalog/', section_max_bytes: 32768 },
     publish: { path: '.contexture/publish/' },
     skills: { vendored: [] },
-    ingest: { inbox_path: 'inbox/', tracking_params: [] },
+    ingest: { inbox_path: 'raw/inbox/', capture_root: 'raw/', tracking_params: [] },
     organize: { archive_destination: 'archive/', rollup_stale_days: 7 },
-    harness: { skills_path: '.agents/skills/', guidance_path: '.contexture/guidance/' },
+    harness: { skills_path: '.agents/skills/', guidance_path: '.contexture/guidance/', convention_max_bytes: 32768 },
     adapters: [],
     ...overrides,
   };

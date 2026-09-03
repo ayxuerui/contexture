@@ -2,6 +2,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { SUPPORTED_SCHEMA_VERSION } from '../../src/config/schema.js';
+import { dropAccessAxesMigration } from '../../src/core/migrations/drop-access-axes.js';
 import { hermeticGitEnv } from '../helpers/git-env.js';
 import { runCli } from '../helpers/run-cli.js';
 import { makeTmpDir } from '../helpers/tmp-store.js';
@@ -78,13 +79,15 @@ describe('migrate and doctor aggregation (real CLI)', () => {
       await writeNote(tmp.root, 'projects/a.md', '---\nlens: shared\ntitle: A\n---\nContent.\n');
       const before = await readFile(path.join(tmp.root, 'projects/a.md'), 'utf8');
 
-      // Pin one version behind — derived, not hardcoded, so a later schema bump
-      // can't quietly turn this into a no-op against an already-current store.
+      // Pin to the version the access-axis migration starts from — derived from
+      // that migration, not from SUPPORTED_SCHEMA_VERSION, so appending a later
+      // migration to the chain can't quietly stop this from exercising the one
+      // it names.
       const configPath = path.join(tmp.root, 'contexture.yaml');
       const pinned = (await readFile(configPath, 'utf8'))
         .replace(
           /^schema_version: \d+$/m,
-          `schema_version: ${SUPPORTED_SCHEMA_VERSION - 1}\nfields:\n  visibility: lens\nvisibility:\n  default_context: private\n  directory_defaults: {}\n  contexts: {}\ndisclosure:\n  internal_audiences: []\n  hard_walls: []\n  leak_markers: {}`,
+          `schema_version: ${dropAccessAxesMigration.fromVersion}\nfields:\n  visibility: lens\nvisibility:\n  default_context: private\n  directory_defaults: {}\n  contexts: {}\ndisclosure:\n  internal_audiences: []\n  hard_walls: []\n  leak_markers: {}`,
         );
       await writeFile(configPath, pinned);
 

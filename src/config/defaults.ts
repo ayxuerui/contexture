@@ -67,8 +67,16 @@ export const DEFAULT_MISSION_PATH = `${DEFAULT_GUIDANCE_PATH}${DEFAULT_MISSION_F
 /** store-integrity spec: AGENTS.md's inlined "Store conventions" section's size ceiling when `harness.convention_max_bytes` is unset. */
 export const DEFAULT_CONVENTION_MAX_BYTES = 32 * 1024;
 
-/** Paths excluded from every retrieval leg by default. */
-export const DEFAULT_EXCLUDE_PATHS = ['.contexture/'] as const;
+/**
+ * context-ingest spec: the capture tier's root. Everything beneath it is
+ * material that arrived rather than knowledge someone wrote, so it is
+ * excluded from retrieval and never becomes a note — but it IS tracked in
+ * git, because a retained capture is provenance, not regenerable output.
+ */
+export const DEFAULT_CAPTURE_ROOT = 'raw/';
+
+/** Paths excluded from every retrieval leg by default — contexture's own directory, and the capture tier. */
+export const DEFAULT_EXCLUDE_PATHS = ['.contexture/', DEFAULT_CAPTURE_ROOT] as const;
 
 /**
  * compose-the-retrieval-pass spec (D10/D11): path prefixes that stay fully
@@ -111,8 +119,13 @@ export const DEFAULT_CATALOG_SECTION_MAX_BYTES = 32 * 1024;
 /** publish spec: where published pages live — tracked, authored-but-tool-owned, excluded from retrieval like the catalog and skill pack. */
 export const DEFAULT_PUBLISH_PATH = '.contexture/publish/';
 
-/** context-ingest spec: capture's landing zone — a normal, retrievable directory, not an exclusion. */
-export const DEFAULT_INBOX_PATH = 'inbox/';
+/**
+ * context-ingest spec: capture's landing zone — the not-yet-ingested state
+ * inside the capture tier. Nesting it under the capture root is what lets a
+ * single prefix serve both the retrieval exclusion and the write-path gate;
+ * the schema enforces the nesting.
+ */
+export const DEFAULT_INBOX_PATH = 'raw/inbox/';
 
 /** store-primitives-from-migration-audit spec (D2): the shipped tracking-parameter list source check strips before comparing URL identities. */
 export const DEFAULT_TRACKING_PARAMS = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content', 'fbclid', 'gclid'];
@@ -137,3 +150,54 @@ export const DEFAULT_ROLLUP_STALE_DAYS = 7;
  */
 export const DEFAULT_ADAPTERS: readonly AdapterDeclaration[] = [{ id: 'claude-code', kind: 'harness-generation' }];
 
+/**
+ * Every configuration value contexture ships an opinion about, in one place,
+ * shaped like the config itself. `StoreConfigSchema` takes its `.default(...)`
+ * values from here and `renderStoreConfig` reads it to decide what a written
+ * config may omit — the two have to agree, and the only way to guarantee that
+ * is for them to read the same object.
+ *
+ * What is deliberately ABSENT from this object is as load-bearing as what is
+ * in it. A key appears here only when its correct value depends on nothing:
+ *
+ * - `schema_version`, `taxonomy` and `git.default_branch` are facts about the
+ *   individual store. `git.default_branch` records whatever branch `git init`
+ *   actually created and is never hardcoded (see `GitSchema`).
+ * - `organize.archive_destination` is derived: a shipped profile supplies it
+ *   from the taxonomy at init, so a constant here would give every PARA store
+ *   `archive/` while its own taxonomy declares `archives/` — the defect
+ *   `archive-destination-from-taxonomy` was written to fix.
+ * - `organize.mission_path` is an opt-in whose absence is meaningful: call
+ *   sites branch on the key's presence to decide whether the store has a
+ *   mission mechanism at all. `DEFAULT_MISSION_PATH` is what `init` seeds,
+ *   not what an omission resolves to.
+ * - `harness.procedures_path` and `harness.conventions_path` are pre-rename
+ *   spellings, read only as fallbacks by `HarnessSchema`'s transform.
+ */
+export const SHIPPED_DEFAULTS = {
+  derived: { paths: DEFAULT_DERIVED_PATHS },
+  retrieval: {
+    exclude_paths: DEFAULT_EXCLUDE_PATHS,
+    demote_paths: DEFAULT_DEMOTE_PATHS,
+    gather_max_notes: DEFAULT_GATHER_MAX_NOTES,
+    relations: DEFAULT_RELATIONS,
+    graph: DEFAULT_GRAPH_SETTINGS,
+  },
+  session: { branch_prefix: DEFAULT_SESSION_BRANCH_PREFIX, worktrees_path: DEFAULT_WORKTREES_PATH },
+  write_lifecycle: { diff_size_ceiling_lines: DEFAULT_DIFF_SIZE_CEILING_LINES, writable_paths: [] as string[] },
+  catalog: { path: DEFAULT_CATALOG_PATH, section_max_bytes: DEFAULT_CATALOG_SECTION_MAX_BYTES },
+  publish: { path: DEFAULT_PUBLISH_PATH },
+  skills: { vendored: DEFAULT_VENDORED_SKILLS },
+  ingest: {
+    inbox_path: DEFAULT_INBOX_PATH,
+    capture_root: DEFAULT_CAPTURE_ROOT,
+    tracking_params: DEFAULT_TRACKING_PARAMS,
+  },
+  organize: { rollup_stale_days: DEFAULT_ROLLUP_STALE_DAYS },
+  harness: {
+    skills_path: DEFAULT_SKILLS_PATH,
+    guidance_path: DEFAULT_GUIDANCE_PATH,
+    convention_max_bytes: DEFAULT_CONVENTION_MAX_BYTES,
+  },
+  adapters: DEFAULT_ADAPTERS,
+} as const;

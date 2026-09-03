@@ -1,4 +1,3 @@
-import { DEFAULT_CONVENTION_MAX_BYTES } from '../../config/defaults.js';
 import { AGENTS_MD_CONVENTIONS_FENCE, agentsMdPath } from '../agents-doc.js';
 import type { Finding } from '../envelope.js';
 import { readFencedRegionFromFile } from '../fs/fenced-region.js';
@@ -10,7 +9,7 @@ import { defineCheck } from './types.js';
  * (inline-conventions-and-mission) removed the natural size bound an index
  * provided — an unbounded custom part could make AGENTS.md unwieldy. A
  * configured ceiling (`harness.convention_max_bytes`, defaulting to
- * `DEFAULT_CONVENTION_MAX_BYTES`) fails doctor loud rather than silently
+ * the schema's shipped default) fails doctor loud rather than silently
  * truncating content the inlining exists to surface.
  */
 export const conventionsSectionSizeCheck = defineCheck({
@@ -25,7 +24,7 @@ export const conventionsSectionSizeCheck = defineCheck({
       return { status: 'skip', skipReason: 'AGENTS.md has not been generated yet — run `ctxr update`', findings: [] };
     }
     const size = Buffer.byteLength(region.join('\n'), 'utf8');
-    const budget = ctx.config.harness.convention_max_bytes ?? DEFAULT_CONVENTION_MAX_BYTES;
+    const budget = ctx.config.harness.convention_max_bytes;
     if (size <= budget) return { status: 'pass', findings: [] };
 
     const finding: Finding = {

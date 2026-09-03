@@ -68,6 +68,26 @@ describe('single-source-literals guard', () => {
     }
   });
 
+  /**
+   * config-defaults-as-the-convention (D1): the schema and `renderStoreConfig`
+   * both have to mean the same thing by "the shipped default". They can only
+   * be guaranteed to agree by reading the same object, so a `.default(...)`
+   * carrying its own literal is the drift this catches — the schema would
+   * resolve one value while the renderer omitted a key believing it was
+   * another.
+   */
+  it('every schema default is sourced from SHIPPED_DEFAULTS, never from its own literal', () => {
+    const schema = readFileSync(path.join(SRC_DIR, 'config/schema.ts'), 'utf8')
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/\/\/.*$/gm, '');
+    const defaults = [...schema.matchAll(/\.(?:default|prefault)\(([^()]*(?:\([^()]*\)[^()]*)*)\)/g)].map((m) => m[1]!.trim());
+    expect(defaults.length).toBeGreaterThan(0); // anti-vacuity: there is something to check
+    // `prefault({})` carries no value of its own — it re-runs the block's own
+    // per-key defaults, each of which this same check covers.
+    const unsourced = defaults.filter((argument) => argument !== '{}' && !argument.includes('SHIPPED_DEFAULTS'));
+    expect(unsourced, `schema default(s) not read from SHIPPED_DEFAULTS: ${unsourced.join(' | ')}`).toEqual([]);
+  });
+
   it('no file outside core/reporter.ts writes to process.stdout directly', () => {
     expect(filesContainingSubstring('process.stdout', ['core/reporter.ts', 'core/env.ts'])).toEqual([]);
   });

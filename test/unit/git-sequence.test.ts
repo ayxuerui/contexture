@@ -47,6 +47,7 @@ describe('init git call sequence', () => {
           'areas/.gitkeep',
           'resources/.gitkeep',
           'archives/.gitkeep',
+        'raw/inbox/.gitkeep',
           '.agents/skills/ctxr-ingest-orchestration/SKILL.md',
           '.agents/skills/ctxr-placement/SKILL.md',
           '.agents/skills/ctxr-connection-finding/SKILL.md',
