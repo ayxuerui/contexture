@@ -1,6 +1,6 @@
 # Contexture (`ctxr`)
 
-**Your agents' brain — knowledge they write, and you review before it lands.**
+**Your agents' long-term knowledge — they write it, you review it before it lands.**
 
 Contexture turns a git repository into shared, durable knowledge, and ships the operating procedures an AI agent needs to work it: what to do with a new source, where a note belongs, when a synthesis has gone stale, how a change gets reviewed and landed. Every write lands the way code does — in a branch, past a health check, through a pull request you approve.
 
