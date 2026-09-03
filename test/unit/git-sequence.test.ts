@@ -67,7 +67,6 @@ describe('init git call sequence', () => {
           '.agents/skills/eli5/SKILL.md',
           '.agents/skills/eli5/.ctxr-vendored.json',
           '.claude/skills',
-          '.contexture/guidance/baseline-conventions.md',
           '.contexture/guidance/house-conventions.md',
           '.contexture/guidance/mission.md',
           '.githooks/pre-commit',

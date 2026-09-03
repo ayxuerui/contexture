@@ -11,6 +11,12 @@ async function writeNote(root: string, relPath: string, content: string): Promis
   await writeFile(full, content);
 }
 
+const NAV_AREA_ORDER = ['Published pages', 'Notes', 'Catalog', 'Graph'];
+
+function navHeadings(html: string): string[] {
+  return [...html.matchAll(/<h2 class="ctxr-nav-heading"><a href="[^"]*">([^<]*)<\/a><\/h2>/g)].map((m) => m[1]!);
+}
+
 describe('ctxr serve (real CLI)', () => {
   it('serves notes, catalog, graph, and published pages over loopback only, refusing writes', async () => {
     const tmp = await makeTmpDir();
@@ -20,6 +26,8 @@ describe('ctxr serve (real CLI)', () => {
 
       await writeNote(tmp.root, 'projects/a.md', '# A\n\nSee [[b]] and [[nowhere]].\n');
       await writeNote(tmp.root, 'projects/b.md', '# B\n');
+      await writeNote(tmp.root, 'projects/deep/nested/c.md', '# C\n');
+      await writeNote(tmp.root, 'root-note.md', '# Root\n');
       expect((await runCli(['catalog', 'build'], { cwd: tmp.root, env })).exitCode).toBe(0);
       expect((await runCli(['graph', 'build'], { cwd: tmp.root, env })).exitCode).toBe(0);
 
@@ -27,6 +35,10 @@ describe('ctxr serve (real CLI)', () => {
       await mkdir(publishDir, { recursive: true });
       await writeFile(path.join(publishDir, 'index.html'), '<!doctype html><html><body>Hello, published.</body></html>');
       await writeFile(path.join(publishDir, 'README.md'), '# my-page\n');
+
+      const nestedPublishDir = path.join(tmp.root, '.contexture/publish/folder-a/nested-page');
+      await mkdir(nestedPublishDir, { recursive: true });
+      await writeFile(path.join(nestedPublishDir, 'index.html'), '<!doctype html><html><body>Nested.</body></html>');
 
       const { child, firstLine } = await runCliBackground(['serve', '--port', '0', '--json'], { cwd: tmp.root, env });
       try {
@@ -37,7 +49,23 @@ describe('ctxr serve (real CLI)', () => {
 
         const indexRes = await fetch(baseUrl);
         expect(indexRes.status).toBe(200);
-        expect(await indexRes.text()).toContain('projects/a.md');
+        const indexHtml = await indexRes.text();
+        expect(navHeadings(indexHtml)).toEqual(NAV_AREA_ORDER);
+        expect([...indexHtml.matchAll(/<h2 id="[^"]*">([^<]*)<\/h2>/g)].map((m) => m[1]!)).toEqual(NAV_AREA_ORDER);
+        // Notes are grouped by folder, not listed as whole paths.
+        expect(indexHtml).toContain('<summary>projects</summary>');
+        expect(indexHtml).toContain('<summary>nested</summary>');
+        expect(indexHtml).toContain('<a href="/notes/projects/deep/nested/c.md">c</a>');
+        expect(indexHtml).toContain('<a href="/notes/root-note.md">root-note</a>');
+        expect(indexHtml).not.toContain('>projects/a.md<');
+        // A nested published page is addressed at its full path.
+        expect(indexHtml).toContain('<a href="/publish/folder-a/nested-page/index.html">nested-page</a>');
+        expect(indexHtml).toContain('<a href="/publish/my-page/index.html">my-page</a>');
+        expect(indexHtml).not.toContain('<script');
+
+        const styleRes = await fetch(new URL('/assets/style.css', baseUrl));
+        expect(styleRes.status).toBe(200);
+        expect(styleRes.headers.get('content-type')).toContain('text/css');
 
         const noteRes = await fetch(new URL('/notes/projects/a.md', baseUrl));
         expect(noteRes.status).toBe(200);
@@ -45,6 +73,9 @@ describe('ctxr serve (real CLI)', () => {
         expect(noteHtml).toContain('<a href="/notes/projects/b.md">b</a>');
         expect(noteHtml).toContain('class="ctxr-broken-link"');
         expect(noteHtml).toContain('data-reason="not_found"');
+        // The navigation is a property of the shell, so a note page carries it too.
+        expect(navHeadings(noteHtml)).toEqual(NAV_AREA_ORDER);
+        expect(noteHtml).toContain('<a href="/notes/projects/deep/nested/c.md">c</a>');
 
         const missingNoteRes = await fetch(new URL('/notes/projects/does-not-exist.md', baseUrl));
         expect(missingNoteRes.status).toBe(404);
@@ -54,14 +85,21 @@ describe('ctxr serve (real CLI)', () => {
 
         const catalogRes = await fetch(new URL('/catalog/projects', baseUrl));
         expect(catalogRes.status).toBe(200);
-        expect(await catalogRes.text()).toContain('<a href="/notes/projects/a.md">');
+        const catalogHtml = await catalogRes.text();
+        expect(catalogHtml).toContain('<a href="/notes/projects/a.md">');
+        expect(navHeadings(catalogHtml)).toEqual(NAV_AREA_ORDER);
 
         const graphRes = await fetch(new URL('/graph', baseUrl));
         expect(graphRes.status).toBe(200);
+        expect(navHeadings(await graphRes.text())).toEqual(NAV_AREA_ORDER);
 
         const publishRes = await fetch(new URL('/publish/my-page/index.html', baseUrl));
         expect(publishRes.status).toBe(200);
         expect(await publishRes.text()).toBe('<!doctype html><html><body>Hello, published.</body></html>');
+
+        const nestedPublishRes = await fetch(new URL('/publish/folder-a/nested-page/index.html', baseUrl));
+        expect(nestedPublishRes.status).toBe(200);
+        expect(await nestedPublishRes.text()).toBe('<!doctype html><html><body>Nested.</body></html>');
 
         const postRes = await fetch(baseUrl, { method: 'POST' });
         expect(postRes.status).toBe(405);

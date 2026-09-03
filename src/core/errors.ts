@@ -356,13 +356,29 @@ export class PublishAudienceRequiredError extends ContextureError {
   }
 }
 
-/** publish spec: a living page's slug must not collide with the reserved dated-snapshot naming pattern. */
+/**
+ * publish spec: a living page's own name must not collide with the reserved
+ * dated-snapshot naming pattern. `pageName` is the slug's final segment —
+ * the page's own identity — which for a single-segment slug is the slug.
+ */
 export class PublishReservedSlugError extends ContextureError {
-  constructor(slug: string) {
+  constructor(slug: string, pageName: string = slug) {
     super(ExitCode.Usage, {
       code: 'publish.reserved_slug',
       severity: 'error',
-      message: `"${slug}" starts with a reserved date pattern (YYYY- or YYYY-MM-DD-) — that naming is reserved for frozen snapshots.`,
+      message: `"${pageName}" starts with a reserved date pattern (YYYY- or YYYY-MM-DD-) — that naming is reserved for frozen snapshots.`,
+      subject: slug,
+    });
+  }
+}
+
+/** publish spec: a slug names a page's path under the publish path, and can never resolve outside it. */
+export class PublishInvalidSlugError extends ContextureError {
+  constructor(slug: string) {
+    super(ExitCode.Usage, {
+      code: 'publish.invalid_slug',
+      severity: 'error',
+      message: `"${slug}" is not a valid page path — name a folder, or a path of folders, under the publish path, with no empty, "." or ".." segment and no leading "/".`,
       subject: slug,
     });
   }

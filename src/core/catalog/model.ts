@@ -59,7 +59,8 @@ export function parseCatalogGlosses(body: string): Map<string, CatalogGlossEntry
   return entries;
 }
 
-function titleFor(note: Note): string {
+/** The store's answer to "what is this note called": frontmatter `title`, else the filename stem. */
+export function titleFor(note: Note): string {
   const fmTitle = note.frontmatter?.title;
   if (typeof fmTitle === 'string' && fmTitle.length > 0) return fmTitle;
   return path.basename(note.path, '.md');
