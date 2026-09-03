@@ -5,6 +5,7 @@ import { GRAPH_DOCUMENT_RELATIVE_PATH } from './graph/persist.js';
 import { CONFIG_FILE_NAME } from './root.js';
 import { excludedPrefixesFor } from './notes/list.js';
 import { extractDocMetadata, inlineDocBody, scanConventions, type ScannedDoc } from './conventions.js';
+import { renderBaselineConventions } from './convention-doc.js';
 import { readFencedRegionFromFile, removeFencedRegionFromFile, upsertFencedRegionInFile } from './fs/fenced-region.js';
 import { htmlCommentFence } from './markers.js';
 import { packagedTemplate, substituteBlock } from './templates.js';
@@ -235,17 +236,32 @@ export function renderConventionBlock(doc: ScannedDoc): string[] {
   return [`### ${doc.title}`, '', ...inlineDocBody(doc, 2), '', `_Source: ${doc.path}_`];
 }
 
+/**
+ * What the baseline block names as its origin. It is not a path: the baseline
+ * is rendered from the shipped template and this store's configuration at
+ * generation time, and deliberately has no file in the guidance directory —
+ * its bytes live here and only here.
+ */
+export const BASELINE_SOURCE_LABEL = "contexture's shipped baseline, rendered from this store's configuration";
+
+/** The shipped baseline as an inlined block, synthesized rather than read off disk. */
+export function renderBaselineBlock(config: StoreConfig): string[] {
+  const doc = extractDocMetadata(renderBaselineConventions(config), BASELINE_SOURCE_LABEL);
+  return [`### ${doc.title}`, '', ...inlineDocBody(doc, 2), '', `_Source: ${BASELINE_SOURCE_LABEL}_`];
+}
+
 function conventionsBody(config: StoreConfig, conventions: readonly ScannedDoc[]): string[] {
-  if (conventions.length === 0) {
-    return [
-      'This store declares no convention documents yet. Operator-authored conventions (content style, field',
-      `semantics, house rules) belong as markdown files under \`${config.harness.guidance_path}\` — each is`,
-      'inlined here in full on regeneration.',
-    ];
-  }
-  const blocks = conventions.map(renderConventionBlock);
+  const intro =
+    conventions.length === 0
+      ? [
+          "contexture's shipped baseline, inlined in full. This store has added none of its own yet —",
+          'operator-authored conventions (content style, field semantics, house rules) belong as markdown',
+          `files under \`${config.harness.guidance_path}\`, each inlined here alongside the baseline.`,
+        ]
+      : ["contexture's shipped baseline and this store's own conventions, inlined in full:"];
+  const blocks = [renderBaselineBlock(config), ...conventions.map(renderConventionBlock)];
   const bodies = blocks.flatMap((block, i) => (i === blocks.length - 1 ? block : [...block, '']));
-  return ['Operator-authored conventions for this store, inlined in full:', '', ...bodies];
+  return [...intro, '', ...bodies];
 }
 
 export function renderConventionsSection(config: StoreConfig, conventions: readonly ScannedDoc[]): string[] {
@@ -297,8 +313,14 @@ export async function checkAgentsMdDrift(root: string, config: StoreConfig): Pro
   const freshConventionsSection = renderConventionsSection(config, conventions).join('\n');
   const driftedConventions: string[] = [];
   if (freshConventionsSection !== conventionsRegion) {
+    // The baseline is synthesized, not scanned, so it is checked on its own —
+    // otherwise a config change that only moves the baseline would be reported
+    // against the guidance directory, which may hold no files at all.
+    if (!conventionsRegion.includes(renderBaselineBlock(config).join('\n'))) {
+      driftedConventions.push(BASELINE_SOURCE_LABEL);
+    }
     if (conventions.length === 0) {
-      driftedConventions.push(config.harness.guidance_path);
+      if (driftedConventions.length === 0) driftedConventions.push(config.harness.guidance_path);
     } else {
       for (const doc of conventions) {
         if (!conventionsRegion.includes(renderConventionBlock(doc).join('\n'))) driftedConventions.push(doc.path);

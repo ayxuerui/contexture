@@ -30,12 +30,11 @@ function relationVocabularyLines(config: StoreConfig): string[] {
 /**
  * compose-store-guidance-documents: the shipped baseline conventions,
  * rendered from this store's own configuration — never a shipped profile's
- * or one deployment's names. This is what `syncBaselineConventions` writes;
+ * or one deployment's names. This is what `renderConventionsSection` inlines;
  * it is never composed with anything else. `AGENTS.md`'s "Store
- * conventions" section (inline-conventions-and-mission's
- * `scanConventions`/`renderConventionsSection`) inlines it as one of
- * however many convention files the guidance directory holds, exactly like
- * any operator-authored one.
+ * conventions" section renders this directly as its first block, ahead of
+ * however many operator-authored files the guidance directory holds — the
+ * baseline itself is not one of them and has no file there.
  */
 export function renderBaselineConventions(config: StoreConfig): string {
   let text = conventionTemplate('baseline-conventions')
@@ -47,50 +46,40 @@ export function renderBaselineConventions(config: StoreConfig): string {
 }
 
 /**
- * compose-store-guidance-documents: contexture-owned, the same way a
- * shipped skill copy is (`syncShippedSkills` in skills.ts) — written by
- * `ctxr init`, rewritten wholesale by `ctxr update` on drift, never
- * hand-edited. A single file, so this is simpler than the skills sync (no
- * directory scan, no orphan cleanup): read-compare-write, reporting whether
- * it changed.
+ * The baseline is rendered straight into AGENTS.md by `renderConventionsSection`
+ * and is no longer a file in the guidance directory. Its bytes were already
+ * committed inside AGENTS.md, so a second tracked copy three directories away
+ * bought nothing and cost a diff on every config change — and having one
+ * tool-owned file among the operator's own is what made "do not edit this one,
+ * edit that one" a footgun in the first place.
+ *
+ * This removes the copy previous versions wrote, under either of its names, so
+ * a store that upgrades does not end up inlining the baseline twice: the
+ * guidance directory is scanned wholesale.
  */
-export async function syncBaselineConventions(root: string, config: StoreConfig): Promise<{ changed: boolean }> {
+export async function removeManagedBaselineFile(root: string, config: StoreConfig): Promise<{ changed: boolean }> {
   const guidanceDir = path.join(root, config.harness.guidance_path);
-  const target = path.join(guidanceDir, DEFAULT_BASELINE_CONVENTIONS_FILE_NAME);
-  const content = renderBaselineConventions(config);
-  const removedLegacy = await removeLegacyBaselineFile(guidanceDir);
-  let existing: string | undefined;
-  try {
-    existing = await readFile(target, 'utf8');
-  } catch {
-    existing = undefined;
+  let changed = false;
+  for (const name of [DEFAULT_BASELINE_CONVENTIONS_FILE_NAME, LEGACY_BASELINE_CONVENTION_FILE_NAME]) {
+    if (await removeIfManaged(path.join(guidanceDir, name))) changed = true;
   }
-  if (existing === content) return { changed: removedLegacy };
-  await mkdir(path.dirname(target), { recursive: true });
-  await writeFileAtomic(target, content);
-  return { changed: true };
+  return { changed };
 }
 
 /**
- * The baseline file was `baseline-convention.md` before the rename to the
- * plural. Left in place it would not merely sit unused: `scanConventions`
- * reads the guidance directory wholesale, so the stale copy would be inlined
- * into AGENTS.md a second time alongside the current one.
- *
  * Guarded on the managed-owner header the same way `syncShippedSkills` guards
- * its own orphan cleanup — a file an operator happens to have written at that
- * name is never removed.
+ * its own orphan cleanup: a file an operator happens to have written at either
+ * name is never removed, and stays an ordinary convention document they own.
  */
-async function removeLegacyBaselineFile(guidanceDir: string): Promise<boolean> {
-  const legacy = path.join(guidanceDir, LEGACY_BASELINE_CONVENTION_FILE_NAME);
+async function removeIfManaged(target: string): Promise<boolean> {
   let existing: string;
   try {
-    existing = await readFile(legacy, 'utf8');
+    existing = await readFile(target, 'utf8');
   } catch {
     return false;
   }
   if (!existing.includes(MANAGED_OWNER_MARKER)) return false;
-  await rm(legacy);
+  await rm(target);
   return true;
 }
 

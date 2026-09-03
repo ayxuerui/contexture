@@ -4,7 +4,9 @@
 The store SHALL provide a command that exercises core store operations — at minimum, a retrieval query,
 a derived-artifact build, a disclosure-gate evaluation, following one skill by path at the configured
 skills path, and confirming that the external tooling the shipped write-path skills invoke is present —
-and SHALL exit non-zero naming the first failing operation if any operation fails.
+and SHALL exit non-zero naming the first failing operation if any operation fails. It SHALL also verify that every
+contexture-managed section of `AGENTS.md` is present and, when operator conventions or a mission
+document are configured, that their inlined content matches the source files on disk.
 
 The command SHALL offer an isolated mode. In that mode it SHALL create a disposable checkout of the
 store's recorded commit, SHALL run the exercised operations against that checkout in a separate process
@@ -25,6 +27,10 @@ configuration.
 #### Scenario: Portability test names the failure
 - **WHEN** one of the exercised operations fails during the portability test
 - **THEN** the command exits non-zero, its output names which specific operation failed, and no later operation is run
+
+#### Scenario: Portability test catches drifted inlined content
+- **WHEN** a convention file or the configured mission document has changed on disk since `AGENTS.md` was last regenerated
+- **THEN** the portability test exits non-zero naming the drifted source
 
 #### Scenario: The isolated run cannot see the operator's home directory
 - **WHEN** the portability test runs in isolated mode

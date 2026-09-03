@@ -7,7 +7,7 @@ Provides a single machine-readable system-health check that fails on real invari
 ## Requirements
 
 ### Requirement: `doctor` enumerates every check and fails on real invariants
-`contexture doctor --json` SHALL enumerate every check it performs with a pass, fail, or skip result for each, and SHALL exit non-zero if any check's result is fail. Checks SHALL include, at minimum: derived-artifact staleness, catalog coverage (per context-catalog), ambiguous link resolution and identity collisions (per context-retrieval), schema version currency (per store-lifecycle), adapter compatibility (per adapters), git/hook health (per write-lifecycle), and unrecognized top-level config keys. A link that resolves to no note at all (as opposed to resolving ambiguously, to more than one) is reported by lint (per context-organize), not doctor, per the "Doctor is distinct from lint" requirement below.
+`contexture doctor --json` SHALL enumerate every check it performs with a pass, fail, or skip result for each, and SHALL exit non-zero if any check's result is fail. Checks SHALL include, at minimum: derived-artifact staleness, catalog coverage (per context-catalog), ambiguous link resolution and identity collisions (per context-retrieval), schema version currency (per store-lifecycle), adapter compatibility (per adapters), git/hook health (per write-lifecycle), unrecognized top-level config keys, and the entry document's inlined conventions section staying within its configured size budget (per harness-portability). A link that resolves to no note at all (as opposed to resolving ambiguously, to more than one) is reported by lint (per context-organize), not doctor, per the "Doctor is distinct from lint" requirement below.
 
 #### Scenario: Every check reports a result
 - **WHEN** `contexture doctor --json` runs
@@ -24,6 +24,10 @@ Provides a single machine-readable system-health check that fails on real invari
 #### Scenario: An ambiguous link fails doctor
 - **WHEN** the store's graph has a link whose target matches two or more notes' basenames
 - **THEN** `doctor` fails, since resolution is broken and always mechanically fixable, unlike an unresolvable link
+
+#### Scenario: An oversized inlined conventions section fails its check
+- **WHEN** the generated entry document's inlined conventions section exceeds the configured size budget
+- **THEN** `doctor` fails the size check, naming the current size and the configured budget
 
 ### Requirement: Doctor is distinct from lint
 `doctor` SHALL fail (non-zero exit) when it detects a violated invariant; `lint` (per context-organize) SHALL always exit 0. No single check SHALL be duplicated as both a lint finding and a doctor failure for the same underlying condition — each condition SHALL be classified once as either a health observation (lint) or an invariant (doctor).
