@@ -1,10 +1,10 @@
 # Contexture (`ctxr`)
 
-**The knowledge base your agents write to — and you review before it lands.**
+**Your agents' brain — knowledge they write, and you review before it lands.**
 
 Contexture turns a git repository into shared, durable knowledge, and ships the operating procedures an AI agent needs to work it: what to do with a new source, where a note belongs, when a synthesis has gone stale, how a change gets reviewed and landed. Every write lands the way code does — in a branch, past a health check, through a pull request you approve.
 
-Not agent memory: your harness already owns persona and cross-session recall. This is the material your agents reason *over*, and it outlives any one of them. Claude Code, Codex, Cursor, Cline, Gemini CLI, a cron job, or you at a terminal all operate the same store through the same files.
+Not agent memory: your harness already owns persona and cross-session recall. This is the knowledge your agents reason *over*, and it outlives any one of them. Claude Code, Codex, Cursor, Cline, Gemini CLI, a cron job, or you at a terminal all operate the same store through the same files.
 
 A **store** is an ordinary git repository: markdown notes joined by `[[wikilinks]]`, with `contexture.yaml` as the single source of truth for how that particular store is shaped — its taxonomy, its paths, its relation vocabulary. `ctxr` is a mechanism-only CLI over it — it builds indexes, enforces invariants, and performs validated writes, but it makes no editorial decisions. The judgment lives in **skills**: portable markdown decision procedures that `ctxr init` installs into the store, which whatever agent you're talking to reads and follows. That split is the whole design, and it's what makes the same store operable from any harness.
 
