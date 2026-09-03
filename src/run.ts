@@ -9,6 +9,7 @@ import * as doctorCommand from './commands/doctor.js';
 import * as ingestCommand from './commands/ingest.js';
 import * as lintCommand from './commands/lint.js';
 import * as migrateCommand from './commands/migrate.js';
+import * as contextGatherCommand from './commands/context-gather.js';
 import * as graphBuildCommand from './commands/graph-build.js';
 import * as entryAppendCommand from './commands/entry-append.js';
 import * as graphQueryCommand from './commands/graph-query.js';
@@ -131,6 +132,11 @@ async function runCommand<TData>(
  * RunEnv, returns the exit code it would have produced — no process-global
  * mutation, no real subprocess required for a unit test.
  */
+/** Accumulates a repeatable option's values — commander keeps only the last without it. */
+function collect(value: string, previous: string[]): string[] {
+  return [...previous, value];
+}
+
 export async function run(argv: readonly string[], env: RunEnv): Promise<ExitCode> {
   const program = new Command();
   program
@@ -220,6 +226,36 @@ export async function run(argv: readonly string[], env: RunEnv): Promise<ExitCod
       result = await runCommand('catalog.show', runEnv, jsonMode, async () => {
         const store = await openStore(runEnv, { root });
         return catalogShowCommand.execute(store, { section: cmdOpts.section });
+      });
+    });
+
+  const contextCommand = program.command('context').description('the retrieval pass over the store');
+
+  contextCommand
+    .command('gather')
+    .description('expand entry selectors through the built graph into a gloss-annotated, ordered candidate set — no query, no ranking')
+    .option('--seed <path>', 'a note already in hand (repeatable)', collect, [] as string[])
+    .option('--section <id>', 'every note a catalog section lists (repeatable)', collect, [] as string[])
+    .option('--under <prefix>', 'every retrievable note under this path prefix (repeatable)', collect, [] as string[])
+    .option('--entity <name>', 'every note linking to this entity (same enumeration as rollup gather; repeatable)', collect, [] as string[])
+    .option('--hops <n>', 'how many graph hops to expand from the entry set', (v) => Number.parseInt(v, 10), 1)
+    .option('--direction <dir>', 'expand along in, out, or both edge directions', 'both')
+    .option('--type <name>', 'expand only along edges of one configured relation')
+    .option('--max-notes <n>', 'cap the returned set; truncation is reported, never silent', (v) => Number.parseInt(v, 10))
+    .action(async (cmdOpts: { seed: string[]; section: string[]; under: string[]; entity: string[]; hops: number; direction: string; type?: string; maxNotes?: number }, cmd: Command) => {
+      const { runEnv, jsonMode, root } = deriveRunEnv(env, cmd);
+      result = await runCommand('context.gather', runEnv, jsonMode, async () => {
+        const store = await openStore(runEnv, { root });
+        return contextGatherCommand.execute(store, {
+          seed: cmdOpts.seed,
+          section: cmdOpts.section,
+          under: cmdOpts.under,
+          entity: cmdOpts.entity,
+          hops: cmdOpts.hops,
+          direction: cmdOpts.direction as 'in' | 'out' | 'both',
+          type: cmdOpts.type,
+          maxNotes: cmdOpts.maxNotes,
+        });
       });
     });
 

@@ -1,5 +1,5 @@
 import type { CommandOutcome, CommandRequires } from '../core/command.js';
-import { GraphNodeNotFoundError, GraphNotBuiltError } from '../core/errors.js';
+import { GraphNodeNotFoundError } from '../core/errors.js';
 import { ExitCode } from '../core/exit-codes.js';
 import type { Direction, HubEntry } from '../core/graph/query.js';
 import {
@@ -14,19 +14,18 @@ import {
   type ClusterEntry,
 } from '../core/graph/query.js';
 import type { GraphBuildResult } from '../core/graph/model.js';
-import { readGraph } from '../core/graph/persist.js';
+import { readAdmittedGraph } from '../core/graph/persist.js';
 import type { Store } from '../core/store.js';
 
 export const requires: CommandRequires = { store: 'required' };
 
 /**
- * Every subcommand below routes through this one loader, so a query can
- * never read a graph the store has not built.
+ * Every subcommand below routes through this one loader, so a query can never
+ * read a graph the store has not built — nor one carrying a note the store no
+ * longer admits, which `readAdmittedGraph` refuses on behalf of every caller.
  */
 async function loadGraph(store: Store): Promise<GraphBuildResult> {
-  const graph = await readGraph(store);
-  if (!graph) throw new GraphNotBuiltError();
-  return graph;
+  return readAdmittedGraph(store);
 }
 
 function assertNode(graph: GraphBuildResult, nodeId: string): void {

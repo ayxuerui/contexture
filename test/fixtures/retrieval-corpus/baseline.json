@@ -1,0 +1,9 @@
+{
+  "glossCoverage": {
+    "bodyOnly": 2,
+    "gloss": 2,
+    "neither": 1,
+    "total": 5
+  },
+  "reachabilityMissRate": 0
+}

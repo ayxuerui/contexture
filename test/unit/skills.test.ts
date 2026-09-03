@@ -1,5 +1,7 @@
+import { readFileSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_VENDORED_SKILLS } from '../../src/config/defaults.js';
 import type { StoreConfig } from '../../src/config/schema.js';
@@ -34,7 +36,7 @@ function makeConfig(overrides: Partial<StoreConfig> = {}): StoreConfig {
       ],
     },
     derived: { paths: [] },
-    retrieval: { exclude_paths: ['skills/'], relations: [], graph: { cluster_depth: 2, hub_top: 8, bridge_top: 10, orphan_exempt_clusters: [] } },
+    retrieval: { exclude_paths: ['skills/'], demote_paths: [], gather_max_notes: 50, relations: [], graph: { cluster_depth: 2, hub_top: 8, bridge_top: 10, orphan_exempt_clusters: [] } },
     git: { default_branch: 'trunk' },
     session: { branch_prefix: 'session/', worktrees_path: '.worktrees/' },
     write_lifecycle: { diff_size_ceiling_lines: 2000, writable_paths: [] },
@@ -322,11 +324,12 @@ describe('owned-skills-expansion: each skill carries its load-bearing rule (task
     expect(s).toMatch(/`frontend-design` skill this store carries by\s+default/);
     expect(s).toContain('**The prose that explains the subject.**');
     expect(s).toMatch(/`eli5` skill this\s+store carries by default/);
-    // The two senses of "audience" stay apart: step 3's gate answers who may
-    // see it, step 5's reader answers how it must be told. Conflating them is
-    // how "write it plainer" gets heard as "disclose it wider".
-    expect(s).toMatch(/Both skills say "audience", and neither means step 3's/);
-    expect(s).toContain('never a value you pass to `--audience`');
+    // "Audience" has one sense left: how much the reader knows, which is a
+    // question about register. The store has no disclosure gate to confuse it
+    // with any more, but the hazard survived the gate -- "write it plainer"
+    // must still not be heard as "put more on the page".
+    expect(s).toMatch(/Both skills say "audience", and here it means one thing\s+only/);
+    expect(s).toContain('never a reason to put more on the page');
     expect(s).toContain('excluded from retrieval by default');
     expect(s).toContain('`ctxr publish check <path>`');
   });
@@ -535,5 +538,75 @@ describe('graph-context-document: skills read the vocabulary and the graph docum
         expect(content, `${file} hardcodes relation "${word}"`).not.toMatch(new RegExp(`\\b${word}\\b`, 'i'));
       }
     }
+  });
+});
+
+/**
+ * clear-access-axis-residue: a skill that names a flag the CLI does not accept
+ * is a shipped instruction that fails when followed. `ctxr-connection-finding`
+ * documented `--as <context>` for six weeks after retire-the-access-axes
+ * removed it, and `harness-portability` already required each owned skill to
+ * "name the command that verifies each step it asks for" — a claim nothing
+ * checked. This resolves it against the one file that registers every option.
+ *
+ * Attribution is by nearest preceding executable within a paragraph, because
+ * the owned skills legitimately name git and gh flags (`--force-with-lease`,
+ * `--ff-only`, `--squash`) that no ctxr command accepts and must not fail here.
+ */
+const SRC_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../src');
+const EXECUTABLES = ['ctxr', 'git', 'gh', 'npm', 'npx', 'node', 'rg', 'grep', 'jq', 'sed', 'awk'];
+const TOKEN = new RegExp(String.raw`\b(${EXECUTABLES.join('|')})\b|(--[a-z][a-z0-9-]*)`, 'g');
+
+/** Every long option `src/run.ts` registers — commander is wired in that one file and nowhere else. */
+function registeredOptions(): Set<string> {
+  const source = readFileSync(path.resolve(SRC_DIR, 'run.ts'), 'utf8');
+  const found = new Set<string>();
+  for (const m of source.matchAll(/\.(?:required)?[Oo]ption\('(--[a-z][a-z0-9-]*)/g)) found.add(m[1]!);
+  return found;
+}
+
+/** Long options a rendered skill attributes to `ctxr` rather than to another tool. */
+function ctxrFlagsIn(body: string): string[] {
+  const found: string[] = [];
+  for (const paragraph of body.split(/\n\s*\n/)) {
+    let executable: string | null = null;
+    for (const m of paragraph.matchAll(TOKEN)) {
+      if (m[1]) executable = m[1];
+      else if (m[2] && executable === 'ctxr') found.push(m[2]);
+    }
+  }
+  return found;
+}
+
+describe('clear-access-axis-residue: an owned skill names only affordances the CLI provides', () => {
+  it('run.ts registers a non-trivial option table, so the check cannot pass vacuously', () => {
+    const options = registeredOptions();
+    expect(options.size).toBeGreaterThan(20);
+    expect(options.has('--under')).toBe(true);
+    // The two flags this change exists to clear are registered by nothing.
+    expect(options.has('--as')).toBe(false);
+    expect(options.has('--audience')).toBe(false);
+  });
+
+  it('every ctxr flag an owned skill names is one the CLI registers', () => {
+    const options = registeredOptions();
+    const offenders: string[] = [];
+    for (const [file, content] of Object.entries(rendered())) {
+      for (const flag of ctxrFlagsIn(content)) {
+        if (!options.has(flag)) offenders.push(`${file}: ${flag}`);
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+
+  it('a flag named for another tool is outside what the check resolves', () => {
+    // Proof the attribution rule is doing work: these are real git and gh
+    // flags carried by the shipped skills, and none is a ctxr option.
+    const options = registeredOptions();
+    for (const foreign of ['--force-with-lease', '--ff-only', '--squash']) {
+      expect(options.has(foreign)).toBe(false);
+    }
+    expect(ctxrFlagsIn('Run `git push --force-with-lease` after `ctxr doctor`.')).toEqual([]);
+    expect(ctxrFlagsIn('Run `ctxr catalog check --stale`.')).toEqual(['--stale']);
   });
 });

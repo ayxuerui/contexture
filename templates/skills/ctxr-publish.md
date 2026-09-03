@@ -1,7 +1,6 @@
-Turn store content into a shareable HTML page for a subject — a store subtree, a single note, a
-concept whose sources aren't co-located, or everything a named context admits. The gate below is the
-one step no convention can enforce by itself; everything else here is a decision procedure, not a
-mechanism.
+Turn store content into a shareable HTML page for a subject — a store subtree, a single note, or a
+concept whose sources aren't co-located. Deciding what belongs on the page is the one step no
+convention can enforce for you; everything else here is a decision procedure, not a mechanism.
 
 ## 1. Does this earn a page over a note?
 
@@ -51,10 +50,10 @@ notes came from, so the notes' shorthand does not survive the copy out. Load the
 store carries by default (or whichever explanation-focused skill it's configured instead), settle who
 the reader is before writing, and pitch every definition, analogy, and level of detail at them.
 
-Both skills say "audience", and neither means step 3's. There, `--audience` names who the store is
-being asked to disclose to and the answer is a verdict; here it names how much a reader already knows
-and the answer is a register. A comprehension level is never a value you pass to `--audience`, and
-writing plainly never widens what the page may contain — the gate in step 3 already settled that.
+Both skills say "audience", and here it means one thing only: how much the reader already knows,
+which is a question about register. It is never a reason to put more on the page. Step 3 settled what
+the page may carry, and writing that content more plainly never widens it — an explanation pitched
+lower is the same material in shorter words.
 
 ## 6. Verify the output invariants
 

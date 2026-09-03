@@ -49,7 +49,8 @@ function harnessEntryFiles(config: StoreConfig): Set<string> {
   }
 }
 
-function isUnderAnyPrefix(relativePath: string, prefixes: readonly string[]): boolean {
+/** The one prefix rule every path-prefix declaration reads — exclusions, `--under`, and the pass's demotion tier. */
+export function isUnderAnyPrefix(relativePath: string, prefixes: readonly string[]): boolean {
   return prefixes.some((prefix) => {
     const trimmed = prefix.replace(/\/+$/, '');
     return relativePath === trimmed || relativePath.startsWith(`${trimmed}/`);

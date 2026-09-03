@@ -40,7 +40,8 @@
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run",
     "test:watch": "vitest",
-    "verify:phase0": "bash scripts/verify-phase0.sh"
+    "verify:phase0": "bash scripts/verify-phase0.sh",
+    "eval:retrieval": "npm run build --silent && node scripts/eval-retrieval.mjs"
   },
   "dependencies": {
     "@inquirer/prompts": "^8.7.0",
