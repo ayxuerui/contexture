@@ -2,27 +2,308 @@
 
 The structured context platform for the organization — a context store that ingests, organizes, and retrieves context for any AI agent harness (Claude Code, Codex, Cursor, Cline, Gemini CLI, a cron job, a human at a terminal).
 
+A **store** is an ordinary git repository (an Obsidian vault, if that's your mental model — but versioned, and with the conventions written down): markdown notes joined by `[[wikilinks]]`, with `contexture.yaml` as the single source of truth for how that particular store is shaped. `ctxr` is a mechanism-only CLI over it — it builds indexes, enforces invariants, and performs validated writes, but it makes no editorial decisions. The judgment lives in **skills**: portable markdown decision procedures that `ctxr init` installs into the store, which whatever agent you're talking to reads and follows. That split is the whole design, and it's what makes the same store operable from any harness.
+
 ## Install
 
 ```sh
 npm install -g ctxr-cli
 ```
 
+Requires Node 20.11 or newer.
+
 The npm package is `ctxr-cli`, the executable it installs is `ctxr`, and the project is Contexture. Everything a store contains keeps the project name — `contexture.yaml`, the `.contexture/` home directory, `CONTEXTURE_*` environment variables — while `ctxr` is what you type. A `contexture` alias executable is also installed for compatibility; docs and generated files always say `ctxr`.
 
-## Usage
+## Quickstart
 
 ```sh
-ctxr init                 # create a store (or reconcile an existing one)
-ctxr doctor               # check the store's invariants
-ctxr catalog show         # the curated index of retrievable notes
-ctxr graph build          # rebuild the wikilink graph
-ctxr graph query hubs     # ...and query it
-ctxr session start        # every write lands via a session worktree and a PR
-ctxr --help               # the full command list
+mkdir my-store && cd my-store
+ctxr init
+ctxr adapters generate   # writes the harness entry file (CLAUDE.md) and its permission config
 ```
 
-Every command accepts `--root <path>` (or `CONTEXTURE_ROOT`) and `--json`.
+`ctxr init` asks two questions, then creates the git repository (if there isn't one), scaffolds the store, and commits it:
+
+- **Which taxonomy profile?** `para` (Projects / Areas / Resources / Archives — the default), `zettelkasten` (no layers at all; structure emerges from links), or `diataxis` (Tutorials / How-to / Reference / Explanation). Or bring your own layer list with `--taxonomy <file.yaml>`.
+- **Which agent harnesses?** `claude-code` (default — its adapter generates `CLAUDE.md` plus a `.claude/settings.json` wiring up the write-gate hook) and/or `hermes-agent` (reads `AGENTS.md` directly, so it needs no entry file at all). `--harness none` opts out.
+
+Harness adapter output is the one part `init` doesn't write itself, which is why `ctxr adapters generate` is a separate line above; `ctxr update` regenerates it from then on.
+
+Non-interactively, pass them as flags — nothing ever blocks on a prompt:
+
+```sh
+ctxr init --profile para --harness claude-code
+```
+
+`init` is idempotent. Re-running it against an existing store reconciles it instead (the same code path as `ctxr update`) rather than overwriting anything.
+
+## What a store looks like on disk
+
+After `ctxr init --profile para`, plus `ctxr adapters generate`:
+
+```
+contexture.yaml               single source of truth: schema_version, taxonomy, every path below
+AGENTS.md                     generated entry document — six managed sections
+CLAUDE.md                     harness entry file; a one-line managed import of AGENTS.md
+.claude/
+  settings.json               PreToolUse hook wiring for the write gate
+  hooks/                      the write-gate shim
+  skills/ -> ../.agents/skills   a bridge, so Claude Code auto-discovers the canonical skills
+.agents/skills/               THE canonical skills location, read natively by most harnesses
+  ctxr-*/SKILL.md               13 contexture-owned skills (refreshed by `ctxr update`)
+  frontend-design/, eli5/       vendored third-party skills, with licenses and provenance
+.contexture/guidance/
+  house-conventions.md        your store's own rules — inlined into AGENTS.md verbatim
+  mission.md                  the standing "what's active right now" document
+.githooks/
+  pre-commit                  runs `doctor --staged`
+  pre-push                    refuses a push to the default branch
+projects/ areas/ resources/ archives/     the taxonomy's layers
+```
+
+These appear the first time they're needed rather than at init:
+
+```
+inbox/                        where captured material lands, before ingest
+.contexture/catalog/*.md      one section per layer, plus uncategorized — tracked in git
+.contexture/publish/          published pages
+.contexture/cache/            gitignored — graph.json and the human-readable graph.md
+.worktrees/                   gitignored — session worktrees
+```
+
+Two distinctions make the rest of this readable:
+
+**Derived vs. authored.** Never hand-edit inside a `contexture:<region>` fence — the next build overwrites it. Edits *outside* a fence survive every rebuild, and that's where they belong: the catalog generates each note's entry line but preserves the one-line gloss you write next to it, forever.
+
+**`.contexture/` is not content.** The store's own home directory, the skills directory, and the worktrees path are excluded from every retrieval leg by default (`retrieval.exclude_paths`), so the store's plumbing never shows up as an answer to a question about the store's subject matter.
+
+## How agents drive it
+
+`ctxr init` writes two things an agent reads, both generated from your store's own config — never from a hardcoded layout:
+
+**`AGENTS.md`**, with six managed sections: *Store fundamentals* (root resolution, the frontmatter schema, the write path), *Mission*, *Retrieval: which leg to use*, *Capturing and ingesting*, *Placing a new note* (rendered from your actual taxonomy layers), and *Store conventions*.
+
+**The skills**, installed as full copies at `.agents/skills/ctxr-<name>/SKILL.md`. That path is the cross-harness canonical location; a harness that reads its own branded directory instead gets that directory bridged to it (`.claude/skills/` is a symlink), so skill auto-discovery works with no wrapper and no second copy. A harness without auto-discovery reaches the same file by path from `AGENTS.md`. They're contexture-owned — refreshed by `ctxr update`, never hand-edited — and they're written against *your* store's configured taxonomy and relation vocabulary, so no shipped profile's layer names leak into them. Your own skills live alongside, untouched by sync.
+
+| Skill | What it decides |
+| --- | --- |
+| `ctxr-ingest-orchestration` | What the store should know after a source — not where to file it |
+| `ctxr-placement` | Which layer and location a note belongs in, and why |
+| `ctxr-connection-finding` | Traversing links that already exist |
+| `ctxr-connection-proposal` | Discovering links a note *should* have |
+| `ctxr-rollup` | Synthesizing an entity's current state from every note referencing it |
+| `ctxr-mission` | Keeping the store's priorities / back burner / debt document current |
+| `ctxr-organize-audit` | Placement review, retiring, classifying broken links |
+| `ctxr-derived-artifacts` | Rebuilding catalog, graph, and generated docs without clobbering them |
+| `ctxr-publish` | Whether a subject earns a page, and what may appear on it |
+| `ctxr-session-lifecycle` | Starting a session, re-scanning, conflicts, sequencing several PRs |
+| `ctxr-submit` | Everything up to and including opening the pull request |
+| `ctxr-land` | Merging after review, and reclaiming the worktree |
+| `ctxr-session-capture` | What a finished session produced that is worth keeping |
+
+Your house rules go in `.contexture/guidance/house-conventions.md`. It's inlined into `AGENTS.md`'s *Store conventions* section in full, so it loads for every harness at the start of every session — there's no separate file an agent has to remember to open.
+
+## A session, end to end
+
+This is the loop you actually live in: start a session, talk to the agent, publish, submit, land.
+
+```mermaid
+flowchart LR
+  S["1 · ctxr session start<br/><small>new worktree</small>"]
+  C["2 · chat with the agent<br/><small>AGENTS.md + skills</small>"]
+  K["3 · capture<br/><small>approve by ID</small>"]
+  P["4 · publish<br/><small>optional</small>"]
+  U["5 · submit<br/><small>doctor, commit, PR</small>"]
+  R(["review"])
+  L["6 · land<br/><small>merge, reclaim</small>"]
+
+  S --> C --> K --> P --> U --> R --> L
+
+  G1["write-gate hook"]
+  G2["pre-commit · pre-push"]
+  C -.- G1
+  U -.- G2
+
+  classDef gate fill:#fbfbfb,stroke:#bbb,stroke-dasharray:4 3,color:#666
+  class G1,G2 gate
+```
+
+
+**1. Start.** `ctxr session start` creates a git worktree on a generated `session/…` branch off a freshly fetched `origin/<default-branch>`, and prints its path:
+
+```
+Session worktree at "/path/to/my-store/.worktrees/session-20260903-060120-5ccbd6"
+on branch "session/20260903-060120-5ccbd6" (from master).
+```
+
+With no remote configured it falls back honestly to the local branch tip rather than failing. `cd` there and open your agent. Never work in the canonical clone — `ctxr session list` shows what's active. (The default branch is whatever `git init` actually created, recorded once at init; nothing hardcodes `main`.)
+
+**2. Chat.** Your harness loads `AGENTS.md` — or `CLAUDE.md`, which imports it — at session start, and discovers the skills through the bridged directory. Describe what you want in plain language: *"read this article and file it"*, *"what do we know about Acme"*, *"roll up this entity"*, *"make me a page comparing these three"*. The agent picks the skill. There's nothing to memorize; the [mid-session loops](#mid-session-loops) below are what it runs on your behalf, documented for when you want to drive a step yourself.
+
+**3. Wrap.** On *your* closing signal — "done", "ship it", a sign-off; never the agent's own summary — `ctxr-session-capture` fires exactly once. It proposes, in a single message with IDs, what the session produced that is durable, split by kind: a **fact** about what happened becomes a store note, a **rule for future work** becomes a house convention. Nothing is written until you approve by ID. Approved notes go through:
+
+```sh
+ctxr session capture --proposal approved.yaml
+```
+
+```yaml
+notes:
+  - id: A1
+    path: resources/Acme.md
+    mode: create          # or: append
+    frontmatter:
+      title: Acme
+    body: |
+      # Acme
+```
+
+Each item is validated and applied independently, so one bad path refuses that item alone rather than the whole proposal. Approved *conventions* aren't notes — they're a direct edit to `house-conventions.md` followed by `ctxr update`, staged in the same commit. (A guidance edit without the matching `AGENTS.md` regeneration fails `doctor --staged`, and the pre-commit hook refuses it.)
+
+**4. Publish**, if the session earned a page. Run it before submit so the page rides the same pull request. See [Publish](#5-publish) below.
+
+**5. Submit.** `ctxr-submit`: re-scan git state (never replay a plan from an earlier snapshot), run the capture pass, stage surgically with `git add <paths>` — never `-A`, and derived cache paths never stage — then `ctxr doctor` over the whole store, not `--staged`: a session's job is to leave the *store* healthy, not merely to pass one commit's gate. Then commit, rename the generated branch to something meaningful before it reaches the forge, `git push -u origin <branch>`, and `gh pr create`. If `gh` has no reachable GitHub remote, the push still succeeds on its own and you get manual pull-request instructions instead of a retry loop.
+
+**6. Land.** `ctxr-land`, after review: name the pull request explicitly rather than inferring it from whichever checkout you're standing in, read its state and mergeability with `gh pr view`, then wait for an explicit go — plan consent is not fire consent. `gh pr merge --squash`, then re-read state to confirm the forge reports `MERGED`; a transport error can arrive after a merge already succeeded, so the exit code alone is never enough. Finally fast-forward the canonical clone (`git fetch origin && git merge --ff-only`) and reclaim the worktree (`git worktree remove`, `git branch -d`) — nothing sweeps up afterward, so a worktree left here is left indefinitely.
+
+`ctxr-session-lifecycle` covers what surrounds both halves: when to re-scan, the conflict playbook, and sequencing several pull requests.
+
+### Why steps 5 and 6 aren't CLI commands
+
+They're ordinary `git` and `gh`. The CLI owns only what git cannot do — creating the worktree, applying validated note writes, running the health gates — and the sequencing, the confirmation gates, and the judgment live in the skills, where you can read and change them. That's why `ctxr session` has exactly three subcommands: `start`, `capture`, and `list`.
+
+Three mechanical backstops hold the line underneath all of it: the **pre-commit** hook runs `doctor --staged`; the **pre-push** hook refuses a push to the default branch (`CONTEXTURE_ALLOW_DEFAULT_BRANCH_PUSH=1` is the emergency override, for emergencies); and for Claude Code the **write-gate** PreToolUse hook denies any edit under the store root made outside the active session worktree.
+
+## Mid-session loops
+
+What the agent does inside step 2 — and how to drive each step by hand.
+
+### 1. Capture → ingest
+
+Capture is just writing a markdown file into `inbox/`; no CLI wraps it. The file must carry none of `source_type`, `source_id`, `source_hash`, or `ingested` — contexture assigns those once, at ingest, and never before. Then:
+
+```sh
+ctxr source check inbox/note.md --source-id https://example.com/a
+ctxr ingest inbox/note.md --source-type article --source-id https://example.com/a
+```
+
+`source check` returns one of five verdicts: `new`, `already_ingested`, `drift` (same source, its content moved — read what changed before deciding), `alternate_source_match` (this content is already here under a different identity), or `multiple_matches` — which exits non-zero and means *stop and resolve the ambiguity yourself*, never guess which existing note it is. URLs are canonicalized first, with tracking parameters stripped (`ingest.tracking_params`). `ctxr source stamp` backfills a legacy note; `ctxr source add-alt` records material re-published at a new URL, rather than ingesting it twice.
+
+`ctxr ingest` stamps the four identity fields in place and rebuilds the catalog, so the result already has an entry.
+
+The commands are the easy part. `ctxr-ingest-orchestration` exists because ingest is **synthesis, not filing** — "create a new note" is one option among several, and the skill's decision table (new note / expand an existing one / merge two / restructure / add a section to a hub) is the actual work. `ctxr-placement` decides where the result lives, and says why.
+
+### 2. Retrieval — three legs, no ranker
+
+```sh
+ctxr catalog show --section projects      # curated index, one section per layer
+ctxr graph build                          # then query it, or read .contexture/cache/graph.md
+ctxr graph query neighbors <path> --depth 2
+ctxr graph query hubs
+ctxr graph query orphans
+```
+
+The **catalog** is coverage-guaranteed: every retrievable note has exactly one section, so nothing is silently unindexed. Section ids are your layer paths plus `uncategorized` (or a single `notes` section under a zero-layer profile). The **graph** enumerates structure and ranks nothing — neighbors, shortest path, hubs, clusters, bridges, orphans; `--type <relation>` follows one configured relation. `graph build` also writes a human-readable `graph.md` summarizing hubs by cluster. The third leg is **your own grep**, for literal strings the first two can't answer, scoped to exclude `.contexture/`.
+
+There is no `ctxr search`, and no semantic ranking. That's deliberate, not missing.
+
+→ `ctxr-connection-finding` (traverse what exists), `ctxr-connection-proposal` (discover what should).
+
+### 3. Organize and audit
+
+```sh
+ctxr lint          # observations — orphans, broken links, uningested inbox material; always exits 0
+ctxr doctor        # invariants — exits non-zero, and gates every commit
+ctxr catalog check --stale
+ctxr archive <path>
+```
+
+The `lint` / `doctor` split is the point: lint reports what's *worth reviewing* and never blocks; doctor reports what's *broken* and does. `ctxr archive` retires a note as a single tracked rename into `organize.archive_destination`, leaving its frontmatter byte-identical and reporting every note that linked to it — move it, don't tag it, or the active layers stop meaning anything. (The note must be committed first; archive won't rename something git isn't tracking.)
+
+→ `ctxr-organize-audit`, `ctxr-derived-artifacts`.
+
+### 4. Rollups and the mission document
+
+```sh
+ctxr rollup stale                                   # entities whose backlinks moved since last synthesis
+ctxr rollup gather <entity>                         # enumerate the source notes
+ctxr rollup write <entity> --content-file draft.md  # idempotent fenced write
+```
+
+Gather and write are deterministic; the synthesis in between is the agent's, over *every* source rather than a sample. The write only ever touches the fenced region — hand-written content elsewhere in the note is never disturbed, and re-writing identical content reports `changed: false` and leaves the file byte-identical.
+
+The store's own `.contexture/guidance/mission.md` uses the same write path, but is reported stale on elapsed time (`organize.rollup_stale_days`) rather than on backlinks.
+
+→ `ctxr-rollup`, `ctxr-mission`.
+
+### 5. Publish
+
+```sh
+ctxr publish gather --under resources/    # or --note <path>, or --entity <name>
+ctxr publish new comparison               # scaffolds the page folder and its sibling README
+ctxr publish check .contexture/publish/comparison
+```
+
+`gather` resolves a subject to its note set — never a hand-picked list, which is how an unintended note slips onto a page unnoticed. `check` runs the structural gates: no external references, viewport meta, a print rule, provenance, the sibling README, script syntax. What a page may *contain*, given who will read it, is a judgment `ctxr-publish` walks you through and no check can make.
+
+→ `ctxr-publish`, plus the vendored `frontend-design` and `eli5` skills for the craft contexture supplies none of.
+
+## Reading a store in a browser
+
+```sh
+ctxr serve
+```
+
+Renders notes, catalog sections, the graph document, and published pages as cross-linked HTML. It binds loopback (`127.0.0.1`) by default. `--host` widens that, but note what it does not change: `serve` applies **no per-requester filtering at any bind address**. Widening it exposes the whole store to whatever can reach that address, so only do it behind a front end you've arranged yourself.
+
+## Keeping a store current
+
+```sh
+ctxr update            # refresh every contexture-owned file to the installed version
+ctxr migrate --dry-run # report what pending schema migrations would change
+ctxr migrate
+ctxr verify --portable # prove the store works from a harness with no harness-specific state
+```
+
+`ctxr update` re-renders the `AGENTS.md` sections, skill copies, hooks, and adapter outputs — run it after upgrading the CLI, and after editing your house conventions.
+
+`schema_version` in `contexture.yaml` versions *store state* — the config shape and frontmatter conventions — as a monotonic integer independent of the npm package version. A store recorded at a newer schema than your CLI supports is refused rather than half-read.
+
+## Command reference
+
+| Command | What it does |
+| --- | --- |
+| `init` | Create a store, or reconcile an existing one |
+| `doctor [--staged]` | Check real invariants; non-zero on any failure |
+| `lint` | Health observations; always exits 0 |
+| `catalog build \| check \| show` | Build, verify coverage, print a section |
+| `graph build` | Rebuild the wikilink graph and its document |
+| `graph query …` | `neighbors`, `path`, `subgraph`, `hubs`, `clusters`, `bridges`, `orphans` |
+| `ingest <path>` | Stamp source identity onto an inbox file |
+| `source hash \| check \| stamp \| add-alt` | Dedupe and source identity, ahead of ingest |
+| `archive <path>` | Retire a note via one tracked rename |
+| `entry append <path>` | Append a line into a `contexture:<region>` fenced region |
+| `rollup gather \| write \| stale` | Entity synthesis: enumerate, write, find what's out of date |
+| `publish gather \| new \| check` | Resolve a subject, scaffold a page, run the structural gates |
+| `session start \| capture \| list` | Session worktrees, and applying an approved capture proposal |
+| `adapters generate \| write-gate` | Regenerate harness outputs; the write-gate hook target |
+| `serve` | Read the store in a browser |
+| `update` | Bring contexture-owned files up to the installed version |
+| `migrate [--dry-run]` | Apply pending schema migrations |
+| `verify [--portable]` | Exercise core store operations end to end |
+
+Every command accepts `--root <path>`, `--json`, and `--no-input`. The store root resolves in exactly one order: `--root`, then `CONTEXTURE_ROOT`, then walking up from the current directory looking for `contexture.yaml`. Nothing else selects it.
+
+Exit codes are a fixed taxonomy, so scripts and hooks can rely on them: `0` success, `1` an internal error (a bug), `2` a usage error (bad arguments, no store root, not a git repository), `3` a check that ran correctly and found a real problem. Success never masks a finding — `doctor` and `catalog check` exit `3` on a violation, never `0`.
+
+## Development
+
+```sh
+npm run build
+npm test
+npm run typecheck
+```
+
+Behavior changes are specified before they're implemented: see `openspec/specs/` for the capability specs and `openspec/changes/` for in-flight proposals. Prose that ships into a store — skill bodies, `AGENTS.md` sections — is authored as markdown under `templates/`, never as string literals in TypeScript.
 
 ## Releasing
 
