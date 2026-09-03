@@ -1,6 +1,6 @@
 {
   "name": "ctxr-cli",
-  "version": "0.6.0",
+  "version": "0.8.0",
   "description": "A context store that ingests, organizes, and retrieves context for any AI agent",
   "type": "module",
   "license": "MIT",
@@ -13,7 +13,7 @@
     "url": "https://github.com/ayxuerui/contexture/issues"
   },
   "engines": {
-    "node": ">=20.11"
+    "node": ">=22.13"
   },
   "bin": {
     "ctxr": "./dist/bin.js",
