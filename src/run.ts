@@ -38,6 +38,7 @@ import { createReporter } from './core/reporter.js';
 import { openStore } from './core/store.js';
 import * as updateCommand from './commands/update.js';
 import * as verifyCommand from './commands/verify.js';
+import * as versionCommand from './commands/version.js';
 import { CLI_VERSION } from './version.js';
 
 /**
@@ -46,7 +47,7 @@ import { CLI_VERSION } from './version.js';
  * automatically gets json-envelope-conformance coverage the moment it's
  * added here.
  */
-export const COMMAND_NAMES = ['init', 'doctor'] as const;
+export const COMMAND_NAMES = ['init', 'doctor', 'version'] as const;
 
 interface GlobalOpts {
   root?: string;
@@ -95,6 +96,7 @@ async function runCommand<TData>(
       data: outcome.data,
       exitCode: outcome.exitCode,
     });
+    for (const notice of outcome.notices ?? []) reporter.warn(notice);
     reporter.emitResult(envelope, outcome.humanSummary);
     return outcome.exitCode;
   } catch (err) {
@@ -132,12 +134,37 @@ async function runCommand<TData>(
  * RunEnv, returns the exit code it would have produced — no process-global
  * mutation, no real subprocess required for a unit test.
  */
+/**
+ * commander's own `.version()` writes through configureOutput's writeOut, which
+ * this program routes to stderr so parser chatter can never contaminate --json
+ * stdout. That is the one place a version query must NOT go, so the flag is
+ * recognized ahead of parsing and dispatched to the same command path as the
+ * subcommand (design.md D8) — one envelope, on stdout, and the two cannot drift.
+ *
+ * Only a bare global query is intercepted: a version flag alongside anything
+ * other than the global output flags falls through to commander, which reports
+ * it as the usage error it is.
+ */
+const VERSION_FLAGS = new Set(['--version', '-V']);
+const GLOBAL_PASSTHROUGH_FLAGS = new Set(['--json', '--no-input']);
+
+function isGlobalVersionRequest(argv: readonly string[]): boolean {
+  if (!argv.some((arg) => VERSION_FLAGS.has(arg))) return false;
+  return argv.every((arg) => VERSION_FLAGS.has(arg) || GLOBAL_PASSTHROUGH_FLAGS.has(arg));
+}
+
 /** Accumulates a repeatable option's values — commander keeps only the last without it. */
 function collect(value: string, previous: string[]): string[] {
   return [...previous, value];
 }
 
 export async function run(argv: readonly string[], env: RunEnv): Promise<ExitCode> {
+  if (isGlobalVersionRequest(argv)) {
+    const jsonMode = argv.includes('--json');
+    const runEnv: RunEnv = { ...env, noInput: env.noInput || argv.includes('--no-input') || jsonMode };
+    return runCommand('version', runEnv, jsonMode, () => versionCommand.execute(runEnv));
+  }
+
   const program = new Command();
   program
     .name('ctxr')
@@ -573,6 +600,17 @@ export async function run(argv: readonly string[], env: RunEnv): Promise<ExitCod
         const store = await openStore(runEnv, { root });
         return serveCommand.execute(runEnv, store, { port: cmdOpts.port, host: cmdOpts.host });
       });
+    });
+
+  program
+    .command('version')
+    .description("report the installed ctxr version, where it is installed from, and (with --check) whether a newer release is published")
+    .option('--check', 'resolve the latest published release and compare it against the installed one')
+    .action(async (cmdOpts: { check?: boolean }, cmd: Command) => {
+      const { runEnv, jsonMode } = deriveRunEnv(env, cmd);
+      result = await runCommand('version', runEnv, jsonMode, () =>
+        versionCommand.execute(runEnv, { check: cmdOpts.check }),
+      );
     });
 
   program

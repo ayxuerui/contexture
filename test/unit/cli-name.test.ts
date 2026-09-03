@@ -4,6 +4,7 @@ import type { PassThrough } from 'node:stream';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { run } from '../../src/run.js';
+import { CLI_PACKAGE_NAME } from '../../src/version.js';
 import { makeFakeEnv, readAll } from '../helpers/fake-env.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -18,6 +19,13 @@ describe('cli-contract: the CLI is distributed and invoked as ctxr', () => {
     expect(pkg.name).toBe('ctxr-cli');
     expect(pkg.bin.ctxr).toBe('./dist/bin.js');
     expect(pkg.bin.contexture).toBe(pkg.bin.ctxr);
+  });
+
+  it('CLI_PACKAGE_NAME matches package.json "name"', async () => {
+    const pkg = JSON.parse(await readFile(path.resolve(HERE, '../../package.json'), 'utf8')) as {
+      name: string;
+    };
+    expect(CLI_PACKAGE_NAME).toBe(pkg.name);
   });
 
   it('usage output names the executable ctxr, never contexture', async () => {

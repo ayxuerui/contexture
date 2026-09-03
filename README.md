@@ -272,6 +272,8 @@ A published page's navigation label follows its own declared `<title>`, falling 
 ## Keeping a store current
 
 ```sh
+ctxr version           # the installed version, and where it is installed from
+ctxr version --check   # compare it against the latest published release
 ctxr update            # refresh every contexture-owned file to the installed version
 ctxr migrate --dry-run # report what pending schema migrations would change
 ctxr migrate
@@ -279,6 +281,14 @@ ctxr verify --portable # prove the store works from a harness with no harness-sp
 ```
 
 `ctxr update` re-renders the `AGENTS.md` sections, skill copies, hooks, and adapter outputs — run it after upgrading the CLI, and after editing your house conventions.
+
+### Upgrading the CLI
+
+`ctxr session start` and `ctxr update` check whether a newer release has been published and say so, once per session and once per update. The notice goes to stderr and appears as an `info` finding in `--json` output; it never changes either command's exit code, and a registry that is slow, unreachable, or behind a proxy simply produces no advice rather than a failure. `ctxr doctor` and `ctxr init` never make the request at all — a commit must not depend on the network, and `init` stays offline.
+
+The `ctxr-upgrade` skill performs the upgrade: it reads the live answer, refuses to instruct a global install when the executable it finds is a linked working copy, asks before changing anything, and re-renders the store *after* the package upgrade rather than before. By hand, that is `npm install -g ctxr-cli@latest` followed by `ctxr update`, in that order.
+
+To turn the check off, set `update_check.enabled` to `false` in `contexture.yaml`, or set `CONTEXTURE_UPDATE_CHECK=0` for a single invocation. `update_check.ttl_hours` sets how long a resolved answer is reused (a day by default); the cache lives in the store's gitignored `.contexture/cache/`.
 
 `schema_version` in `contexture.yaml` versions *store state* — the config shape and frontmatter conventions — as a monotonic integer independent of the npm package version. A store recorded at a newer schema than your CLI supports is refused rather than half-read.
 
@@ -314,6 +324,7 @@ To pin a value against a future default change, declare it. `ctxr migrate` remov
 | `adapters generate \| write-gate` | Regenerate harness outputs; the write-gate hook target |
 | `serve` | Read the store in a browser |
 | `update` | Bring contexture-owned files up to the installed version |
+| `version [--check]` | Report the installed version; `--check` compares it against the latest published release |
 | `migrate [--dry-run]` | Apply pending schema migrations |
 | `verify [--portable]` | Exercise core store operations end to end |
 

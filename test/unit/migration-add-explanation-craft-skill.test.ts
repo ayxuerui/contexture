@@ -10,6 +10,7 @@ import { SUPPORTED_SCHEMA_VERSION } from '../../src/config/schema.js';
 import type { Store } from '../../src/core/store.js';
 import { makeTmpDir } from '../helpers/tmp-store.js';
 
+import { SHIPPED_DEFAULTS } from '../../src/config/defaults.js';
 function makeV6Config(vendored: string[]): StoreConfig {
   return {
     schema_version: 6,
@@ -24,6 +25,7 @@ function makeV6Config(vendored: string[]): StoreConfig {
     catalog: { path: 'catalog/', section_max_bytes: 32768 },
     publish: { path: 'publish/' },
     skills: { vendored },
+    update_check: SHIPPED_DEFAULTS.update_check,
     disclosure: { internal_audiences: [], hard_walls: [], leak_markers: {} },
     ingest: { inbox_path: 'raw/inbox/', capture_root: 'raw/', tracking_params: [] },
     organize: { archive_destination: 'archive/', rollup_stale_days: 7 },

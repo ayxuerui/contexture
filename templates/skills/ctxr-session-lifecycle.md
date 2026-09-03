@@ -9,6 +9,13 @@ the two verbs at the seams; their steps are not repeated here.
 If you find yourself on the default branch or in the root checkout, stop — `ctxr session list` shows the
 active sessions to work in instead.
 
+If `ctxr session start` reports a `cli.update_available` finding, a newer `ctxr` than the one installed
+has been published. Name both versions to the operator and offer `ctxr-upgrade`; then continue the
+session either way. Do not upgrade unasked, and do not make continuing conditional on the answer —
+deferring is a normal answer, and the session is unaffected by it. A `cli.update_check_failed` finding
+means the check could not be completed; it says nothing about whether an upgrade is due, so proceed
+without mentioning it.
+
 ## Re-scan before any plan
 
 Re-scan whenever state may have moved under you — before presenting a plan, before running `ctxr-submit`,

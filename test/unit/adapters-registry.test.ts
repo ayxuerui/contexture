@@ -4,6 +4,7 @@ import type { Adapter } from '../../src/adapters/types.js';
 import type { AdapterDeclaration, StoreConfig } from '../../src/config/schema.js';
 import { AdapterNotFoundError, AdapterVersionMismatchError } from '../../src/core/errors.js';
 
+import { SHIPPED_DEFAULTS } from '../../src/config/defaults.js';
 function makeConfig(adapters: AdapterDeclaration[]): StoreConfig {
   return {
     schema_version: 1,
@@ -16,6 +17,7 @@ function makeConfig(adapters: AdapterDeclaration[]): StoreConfig {
     catalog: { path: 'catalog/', section_max_bytes: 32768 },
     publish: { path: 'publish/' },
     skills: { vendored: [] },
+    update_check: SHIPPED_DEFAULTS.update_check,
     ingest: { inbox_path: 'raw/inbox/', capture_root: 'raw/', tracking_params: [] },
     organize: { archive_destination: 'archive/', rollup_stale_days: 7 },
     harness: { skills_path: 'skills/', guidance_path: 'guidance/', convention_max_bytes: 32768 },

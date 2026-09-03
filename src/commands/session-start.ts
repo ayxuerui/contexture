@@ -4,6 +4,7 @@ import { ExitCode } from '../core/exit-codes.js';
 import { addWorktree, fetchOrigin, hasRemote } from '../core/git/worktree.js';
 import { generateSessionBranchName, worktreePathFor } from '../core/session.js';
 import type { Store } from '../core/store.js';
+import { updateAdvisory } from '../core/version-check.js';
 
 export const requires: CommandRequires = { store: 'required' };
 
@@ -40,10 +41,18 @@ export async function execute(env: RunEnv, store: Store): Promise<CommandOutcome
 
   await addWorktree(git, store.root, worktreeDir, branch, startPoint);
 
+  // cli-contract: the skill-path trigger for the release advisory — once per
+  // session, at the command the lifecycle skill names first, on a command that
+  // already reaches the network to fetch the default branch. Deliberately
+  // AFTER the worktree exists: the advisory cannot fail this command, so
+  // nothing it does may precede the work it is advising about.
+  const advisory = await updateAdvisory(env, store);
+
   return {
     exitCode: ExitCode.Ok,
     data: { worktree: worktreeDir, branch, startPoint, fetched },
-    findings: [],
+    findings: advisory.findings,
+    notices: advisory.notice ? [advisory.notice] : undefined,
     humanSummary: `Session worktree at "${worktreeDir}" on branch "${branch}" (from ${startPoint}).`,
     storeRoot: store.root,
     schemaVersion: store.config.schema_version,

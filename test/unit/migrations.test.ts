@@ -19,6 +19,7 @@ import type { StoreConfig } from '../../src/config/schema.js';
 import { CaptureRootUndeterminedError } from '../../src/core/errors.js';
 import { makeTmpDir } from '../helpers/tmp-store.js';
 
+import { SHIPPED_DEFAULTS } from '../../src/config/defaults.js';
 function makeV1Config(): StoreConfig {
   return {
     schema_version: 1,
@@ -31,6 +32,7 @@ function makeV1Config(): StoreConfig {
     catalog: { path: 'catalog/', section_max_bytes: 32768 },
     publish: { path: 'publish/' },
     skills: { vendored: [] },
+    update_check: SHIPPED_DEFAULTS.update_check,
     ingest: { inbox_path: 'raw/inbox/', capture_root: 'raw/', tracking_params: [] },
     organize: { archive_destination: 'archive/', rollup_stale_days: 7 },
     harness: { skills_path: 'procedures/', guidance_path: 'conventions/', convention_max_bytes: 32768 },

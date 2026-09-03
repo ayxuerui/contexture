@@ -1,6 +1,7 @@
 import { PassThrough } from 'node:stream';
 import type { GitResult, GitRunner } from '../../src/core/git/exec.js';
 import type { Io, RunEnv } from '../../src/core/env.js';
+import type { RegistryClient, RegistryLookup } from '../../src/core/registry.js';
 import type { HarnessChoice, ProfileChoice, Prompter } from '../../src/prompt/prompter.js';
 
 export function collectingStream(isTTY = false): PassThrough & { isTTY?: boolean } {
@@ -84,6 +85,40 @@ export function fakeGitRunner(
   };
 }
 
+/**
+ * The release-registry fake. Default is "undetermined" rather than a version:
+ * a test that does not care about the release check should never accidentally
+ * assert against a made-up published version, and undetermined is the answer
+ * that changes no behavior.
+ *
+ * `calls` records every lookup so a test can assert a command made NO request
+ * at all — which is how the offline guarantee for doctor/init is enforced.
+ */
+export function fakeRegistry(lookup: RegistryLookup = { kind: 'undetermined', reason: 'no fake answer configured' }): {
+  registry: RegistryClient;
+  calls: string[];
+} {
+  const calls: string[] = [];
+  return {
+    calls,
+    registry: {
+      async latestVersion(packageName) {
+        calls.push(packageName);
+        return lookup;
+      },
+    },
+  };
+}
+
+/** A registry that fails the test if anything asks it a question. */
+export function forbiddenRegistry(): RegistryClient {
+  return {
+    async latestVersion() {
+      throw new Error('the registry must not be consulted by this command');
+    },
+  };
+}
+
 export function makeFakeEnv(overrides: Partial<RunEnv> = {}): RunEnv {
   const io: Io = {
     stdin: Object.assign(new PassThrough(), { isTTY: false }),
@@ -92,11 +127,13 @@ export function makeFakeEnv(overrides: Partial<RunEnv> = {}): RunEnv {
   };
   return {
     cwd: '/tmp/fake-cwd',
+    execPath: '/usr/local/bin/node',
     env: {},
     io,
     noInput: false,
     prompter: fakePrompter('para').prompter,
     git: fakeGitRunner().git,
+    registry: fakeRegistry().registry,
     now: () => new Date('2026-01-01T00:00:00Z'),
     ...overrides,
   };
