@@ -50,16 +50,11 @@ export const SUPPORTED_ADAPTER_INTERFACE_VERSION: Record<AdapterKind, number> = 
  * itself is invoked by (a hook command): `root` is deleted the moment the
  * session worktree that generated it lands, so a path anchored there goes
  * stale as soon as that happens.
- *
- * `binPath` is this installation's own resolved CLI entrypoint, for a
- * harness whose config needs to shell out back to `ctxr` (a generated hook
- * script). See claude-code.ts's permissionConfig for the concrete case.
  */
 export interface PermissionConfigInput {
   root: string;
   mainRoot: string;
   worktreesPath: string;
-  binPath: string;
 }
 
 export interface HarnessGenerationAdapter extends Adapter<'harness-generation'> {

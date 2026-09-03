@@ -1,10 +1,6 @@
 import { execFile, spawn, type ChildProcess } from 'node:child_process';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { DIST_BIN as BIN_PATH } from './dist-bin.js';
 import { hermeticGitEnv } from './git-env.js';
-
-const HERE = path.dirname(fileURLToPath(import.meta.url));
-const BIN_PATH = path.resolve(HERE, '../../dist/bin.js');
 
 export interface RunCliResult {
   stdout: string;

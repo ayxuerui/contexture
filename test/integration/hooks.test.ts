@@ -1,32 +1,29 @@
 import { execFile } from 'node:child_process';
-import { access, mkdir, readFile, stat, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
-import { constants as fsConstants } from 'node:fs';
 import { describe, expect, it } from 'vitest';
+import { DIST_BIN } from '../helpers/dist-bin.js';
 import { hermeticGitEnv } from '../helpers/git-env.js';
 import { runCli } from '../helpers/run-cli.js';
 import { makeTmpDir } from '../helpers/tmp-store.js';
 
 const execFileAsync = promisify(execFile);
-const HERE = path.dirname(fileURLToPath(import.meta.url));
-const DIST_BIN = path.resolve(HERE, '../../dist/bin.js');
 
 async function gitCommit(cwd: string, env: Record<string, string | undefined>, message: string) {
   return execFileAsync('git', ['commit', '-m', message], { cwd, env }).catch((err) => err);
 }
 
 describe('installed hooks (real dist/bin.js, real git)', () => {
-  it('init installs hooks that reference the real, executable dist/bin.js', async () => {
+  it('init installs hooks that name no path from the generating machine', async () => {
     const tmp = await makeTmpDir();
     try {
       const env = hermeticGitEnv();
       await runCli(['init'], { cwd: tmp.root, env });
 
       const preCommit = await readFile(path.join(tmp.root, '.githooks', 'pre-commit'), 'utf8');
-      expect(preCommit).toContain(DIST_BIN);
-      await expect(access(DIST_BIN, fsConstants.F_OK)).resolves.toBeUndefined();
+      expect(preCommit).not.toContain(DIST_BIN);
+      expect(preCommit).toContain('command -v ctxr');
 
       const mode = (await stat(path.join(tmp.root, '.githooks', 'pre-commit'))).mode;
       expect(mode & 0o111).not.toBe(0);
