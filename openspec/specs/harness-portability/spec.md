@@ -215,6 +215,14 @@ contexture SHALL ship, as contexture-owned skills delivered by init and update, 
 - **WHEN** an agent follows the publish skill to build a page for a subject
 - **THEN** it is instructed to resolve the subject's note set before copying any content out, and to fix the page's identity once via the naming command rather than hand-creating a folder
 
+#### Scenario: Publish delegates both halves of the craft rather than inventing either
+- **WHEN** an agent follows the publish skill past the point where the page's form is chosen
+- **THEN** it is instructed to take the page's visual language from the design-focused craft skill the store carries and its explanatory prose from the reader-calibration craft skill the store carries, rather than inventing either
+
+#### Scenario: Publish keeps the reader's level distinct from the disclosure audience
+- **WHEN** the publish skill instructs an agent to pitch a page's prose at a reader
+- **THEN** it states that the reader's level of existing knowledge is not the audience the disclosure gate evaluates, that a level of knowledge is never passed to the gate as an audience, and that pitching the prose more plainly never widens what the page may contain
+
 #### Scenario: Update delivers the expanded skill set to an existing store
 - **WHEN** a store initialized before this change runs the update command
 - **THEN** every owned skill above is present at the configured skills path with the managed header, and a second update reports nothing changed
@@ -268,9 +276,9 @@ The owned session-capture skill SHALL instruct the agent to write the approved i
 - **THEN** it names no identity file or path — the skill's contract covers store notes only, and identity is no longer a concept the skill or the command it invokes knows about
 
 ### Requirement: Vendored third-party skills are delivered and refreshed like owned ones
-contexture SHALL ship a set of third-party skills inside its published package and, at `ctxr init` and `ctxr update`, SHALL write each one a store declares into the store's skills directories. A vendored skill's own files SHALL be written byte-identical to the packaged copy — contexture SHALL NOT insert its managed-owner header, or any other contexture-authored content, into a file it did not author. Each vendored skill SHALL be accompanied by its upstream license file. This requirement is the only place the shipped vendored set is enumerated; no other requirement may name a vendored skill.
+contexture SHALL ship a set of third-party skills inside its published package and, at `ctxr init` and `ctxr update`, SHALL write each one a store declares into the store's skills directories. A vendored skill's own files SHALL be written byte-identical to the packaged copy — contexture SHALL NOT insert its managed-owner header, or any other contexture-authored content, into a file it did not author. Each vendored skill SHALL be accompanied by its upstream license file: the one published beside the skill where upstream publishes one there, and otherwise the upstream repository's own license file, taken at the same revision as the skill. This requirement is the only place the shipped vendored set is enumerated; no other requirement may name a vendored skill.
 
-The shipped set SHALL be, at minimum, one skill covering visual design direction for generated interfaces: `frontend-design`, redistributed from its upstream under Apache-2.0.
+The shipped set SHALL cover, at minimum, the two craft axes a published page needs and contexture supplies neither of: visual design direction for generated interfaces — `frontend-design`, redistributed from its upstream under Apache-2.0 — and calibrating an explanation to a stated reader — `eli5`, redistributed from its upstream under MIT. No vendored skill SHALL be required for any command to run.
 
 #### Scenario: Init delivers the vendored set
 - **WHEN** `ctxr init` completes on a store whose configuration lists a vendored skill
@@ -280,12 +288,24 @@ The shipped set SHALL be, at minimum, one skill covering visual design direction
 - **WHEN** a vendored skill is written into a store
 - **THEN** its `SKILL.md` contains no contexture-authored header and its first line is the start of the file's own frontmatter block
 
+#### Scenario: A license kept outside the skill's own directory still travels with it
+- **WHEN** the shipped set includes a skill whose upstream publishes no license file inside the skill's own directory
+- **THEN** the packaged and delivered skill directory still carries that upstream's license file verbatim, taken at the same revision as the skill itself
+
+#### Scenario: Every craft axis the publish skill delegates has a skill behind it
+- **WHEN** a store is initialized on the default configuration
+- **THEN** it carries one vendored skill for the visual form of a published page and one for calibrating that page's prose to a reader, and removing either from the store's declared list removes only that directory and changes no command's behavior
+
 ### Requirement: A vendored skill carries a provenance record that identifies it
-Each vendored skill directory SHALL contain a machine-readable provenance record written by contexture, recording at minimum the upstream source, the pinned upstream revision, the license identifier, and a content hash of the delivered skill file. Contexture SHALL treat a skill directory as vendored — and therefore as one it manages — if and only if that record is present, so that a directory without one is operator-authored and never touched.
+Each vendored skill directory SHALL contain a machine-readable provenance record written by contexture, recording at minimum the upstream source, the pinned upstream revision, the license identifier, and a content hash of the delivered skill file. Where the license was taken from outside the vendored subtree, the record SHALL also name the upstream path it came from, so the record accounts for every file delivered beside the skill. Contexture SHALL treat a skill directory as vendored — and therefore as one it manages — if and only if that record is present, so that a directory without one is operator-authored and never touched.
 
 #### Scenario: The provenance record accompanies the skill
 - **WHEN** a vendored skill is written into a store
 - **THEN** its directory contains a provenance record naming the upstream source, the pinned revision, the license, and a content hash
+
+#### Scenario: A separately sourced license is recorded as such
+- **WHEN** a vendored skill's license was taken from outside the subtree its provenance record names as the source
+- **THEN** that record also names the upstream path the license file was taken from
 
 #### Scenario: A directory with no provenance record is left alone
 - **WHEN** `ctxr update` runs against a store containing an operator-authored skill directory that carries neither the managed-owner header nor a provenance record
