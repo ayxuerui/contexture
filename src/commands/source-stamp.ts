@@ -1,6 +1,6 @@
 import path from 'node:path';
 import type { CommandOutcome, CommandRequires } from '../core/command.js';
-import { contentHashOfBody } from '../core/content/canonicalize.js';
+import { hashOfCapture } from '../core/ingest/capture-hash.js';
 import type { RunEnv } from '../core/env.js';
 import { NoteNotFoundError } from '../core/errors.js';
 import { ExitCode } from '../core/exit-codes.js';
@@ -31,11 +31,12 @@ function toStoreRelativePath(env: RunEnv, store: Store, givenPath: string): stri
 
 /**
  * context-ingest spec (store-primitives-from-migration-audit D2): records
- * source identity on a note directly — the opportunistic-backfill path for
- * a legacy note that predates identity fields, or any note an operator
- * wants dedupe to recognize without re-running full ingest. `--hash`
- * defaults to the note's CURRENT content hash, matching what `ingest`
- * itself computes.
+ * source identity on a record directly — the opportunistic-backfill path for
+ * a legacy note that predates identity fields, a capture an operator filed by
+ * hand, or anything else dedupe should recognize without re-running full
+ * ingest. `--hash` defaults to the record's CURRENT content hash, computed by
+ * the same sidecar-aware primitive `ingest` uses, so stamping a sidecar
+ * records its subject's bytes rather than its own prose.
  */
 export async function execute(env: RunEnv, store: Store, flags: SourceStampFlags): Promise<CommandOutcome<SourceStampData>> {
   const relativePath = toStoreRelativePath(env, store, flags.path);
@@ -49,7 +50,7 @@ export async function execute(env: RunEnv, store: Store, flags: SourceStampFlags
     throw err;
   }
 
-  const sourceHash = flags.hash ?? contentHashOfBody(note.body);
+  const sourceHash = flags.hash ?? (await hashOfCapture(store.root, relativePath)).hash;
   const frontmatter = { ...note.frontmatter, [SOURCE_ID_FIELD]: flags.id, [SOURCE_HASH_FIELD]: sourceHash };
   await writeFileAtomic(absolutePath, renderNoteText(frontmatter, note.body));
 

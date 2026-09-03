@@ -370,15 +370,17 @@ export async function run(argv: readonly string[], env: RunEnv): Promise<ExitCod
 
   program
     .command('ingest <path>')
-    .description('stamp source-identity fields onto an inbox file, turning it into a note')
+    .description('retain a capture with its source identity, and cite it from the note it informed')
+    .requiredOption('--into <note>', 'the note this material informed — new or existing; ingest never creates it')
     .requiredOption('--source-type <type>', 'the kind of source this material came from')
     .requiredOption('--source-id <id>', 'a stable identifier for this specific source')
-    .action(async (notePath: string, cmdOpts: { sourceType: string; sourceId: string }, cmd: Command) => {
+    .action(async (capturePath: string, cmdOpts: { into: string; sourceType: string; sourceId: string }, cmd: Command) => {
       const { runEnv, jsonMode, root } = deriveRunEnv(env, cmd);
       result = await runCommand('ingest', runEnv, jsonMode, async () => {
         const store = await openStore(runEnv, { root });
         return ingestCommand.execute(runEnv, store, {
-          path: notePath,
+          path: capturePath,
+          into: cmdOpts.into,
           sourceType: cmdOpts.sourceType,
           sourceId: cmdOpts.sourceId,
         });

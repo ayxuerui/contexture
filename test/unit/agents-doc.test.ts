@@ -33,9 +33,9 @@ function makeConfig(overrides: Partial<StoreConfig> = {}): StoreConfig {
     catalog: { path: 'catalog/', section_max_bytes: 32768 },
     publish: { path: 'publish/' },
     skills: { vendored: [] },
-    ingest: { inbox_path: 'inbox/', tracking_params: [] },
+    ingest: { inbox_path: 'raw/inbox/', capture_root: 'raw/', tracking_params: [] },
     organize: { archive_destination: 'archive/', rollup_stale_days: 7 },
-    harness: { skills_path: 'skills/', guidance_path: 'guidance/' },
+    harness: { skills_path: 'skills/', guidance_path: 'guidance/', convention_max_bytes: 32768 },
     adapters: [],
     ...overrides,
   };
@@ -144,17 +144,21 @@ describe('buildAgentsLegRoutingSection', () => {
 });
 
 describe('renderCaptureSection', () => {
-  it('names the configured inbox path and the four source-identity fields', () => {
+  it('names the configured paths and the four source-identity fields', () => {
     const lines = renderCaptureSection(makeConfig()).join('\n');
-    expect(lines).toContain('`inbox/`');
+    expect(lines).toContain('`raw/inbox/`');
+    expect(lines).toContain('`raw/`');
     expect(lines).toContain('`source_type`');
     expect(lines).toContain('`source_id`');
     expect(lines).toContain('`source_hash`');
     expect(lines).toContain('`ingested`');
   });
 
-  it('reflects a non-default inbox path', () => {
-    const lines = renderCaptureSection(makeConfig({ ingest: { inbox_path: 'incoming/', tracking_params: [] } })).join('\n');
+  it('reflects a non-default capture tier', () => {
+    const lines = renderCaptureSection(
+      makeConfig({ ingest: { inbox_path: 'incoming/new/', capture_root: 'incoming/', tracking_params: [] } }),
+    ).join('\n');
+    expect(lines).toContain('`incoming/new/`');
     expect(lines).toContain('`incoming/`');
   });
 });
@@ -198,7 +202,7 @@ describe('renderCanonicalSection', () => {
     for (const config of [
       makeConfig(),
       makeConfig({ fields: { visibility: 'lens' } }),
-      makeConfig({ ingest: { inbox_path: 'incoming/', tracking_params: [] } }),
+      makeConfig({ ingest: { inbox_path: 'incoming/', capture_root: 'incoming/', tracking_params: [] } }),
     ]) {
       const lines = renderCanonicalSection(config).join('\n');
       expect(lines).toMatch(/identity.*persona.*(durable )?cross-session memory/is);
@@ -522,21 +526,40 @@ describe('exact rendered output', () => {
     expect(renderCaptureSection(makeConfig())).toEqual([
       "## Capturing and ingesting new material",
       "",
-      "To capture something new, write a plain markdown file directly into `inbox/` —",
-      "no CLI command wraps this. That file MUST NOT contain any of these frontmatter fields; contexture assigns",
-      "them once, at ingest, and never before:",
+      "Captures live under `raw/`, which is excluded from retrieval: nothing in it is a note, and",
+      "nothing in it is returned by a search, listed in the catalog, or drawn in the graph. It is tracked in git",
+      "all the same \u2014 a capture is the provenance behind a note, not scratch space.",
+      "",
+      "To capture something new, write the material into `raw/inbox/` \u2014 no CLI command wraps this. It may",
+      "already carry these two fields, since whatever fetched it usually knows them:",
       "",
       "- `source_type`",
       "- `source_id`",
+      "",
+      "It MUST NOT carry either of these; contexture assigns them once, at ingest, and never before:",
+      "",
       "- `source_hash`",
       "- `ingested`",
       "",
-      "Before ingesting, run `ctxr source check <path> --source-id <id>` to get one of four verdicts:",
-      "`new`, `already_ingested`, `alternate_source_match`, or `multiple_matches` — the last one means stop and",
-      "resolve the ambiguity yourself rather than guessing which existing note it is.",
+      "Before ingesting, run `ctxr source check <path> --source-id <id>` to get one of five verdicts: `new`,",
+      "`already_ingested`, `drift` (same identity, the source's content moved), `alternate_source_match`, or",
+      "`multiple_matches` \u2014 the last one means stop and resolve the ambiguity yourself rather than guessing which",
+      "existing record it is.",
       "",
-      "To ingest, run `ctxr ingest <path> --source-type <type> --source-id <id>`. It stamps the four fields",
-      "above onto the file in place and rebuilds the catalog, so the result already has a catalog entry.",
+      "Then write, or extend, the note this material informed. Ingest does not create it: deciding what the store",
+      "should know is the work, and \"a new note\" is only one of the answers.",
+      "",
+      "```",
+      "ctxr ingest <path> --into <note> --source-type <type> --source-id <id>",
+      "```",
+      "",
+      "That stamps the four fields onto the capture, moves it out of the inbox into `raw/` under the",
+      "month it was ingested, and records its path in the note's `sources` list. The note itself carries no source",
+      "identity \u2014 it is free to be rewritten, merged, or restructured without ever invalidating the frozen hash.",
+      "A note may cite as many captures as it was built from.",
+      "",
+      "Material that is not markdown cannot carry frontmatter, so it travels with a markdown sidecar beside it",
+      "naming the file in `capture_file`. The hash is taken over that file's bytes, and the two move together.",
     ]);
   });
 

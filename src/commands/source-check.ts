@@ -1,13 +1,12 @@
-import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import type { CommandOutcome, CommandRequires } from '../core/command.js';
-import { contentHash } from '../core/content/canonicalize.js';
+import { hashOfCapture } from '../core/ingest/capture-hash.js';
 import type { RunEnv } from '../core/env.js';
 import { NoteNotFoundError } from '../core/errors.js';
 import type { Finding } from '../core/envelope.js';
 import { ExitCode } from '../core/exit-codes.js';
-import { evaluateSourceCheck, type SourceCheckResult } from '../core/ingest/model.js';
-import { listNotes } from '../core/notes/list.js';
+import { evaluateSourceCheck, type IdentityRecord, type SourceCheckResult } from '../core/ingest/model.js';
+import { listCaptures, listNotes } from '../core/notes/list.js';
 import type { Store } from '../core/store.js';
 
 export const requires: CommandRequires = { store: 'required' };
@@ -25,6 +24,27 @@ function toStoreRelativePath(env: RunEnv, store: Store, givenPath: string): stri
 }
 
 /**
+ * retain-captures-as-provenance: the index is the union of the capture tier
+ * and the notes still carrying identity from before it existed. `listNotes`
+ * alone would return nothing at all, since the capture root is a declared
+ * retrieval exclusion — the candidate itself is read straight off disk, so
+ * only the comparison set is affected.
+ */
+async function identityRecords(store: Store): Promise<IdentityRecord[]> {
+  const [captures, notes] = await Promise.all([
+    listCaptures(store.root, store.config),
+    listNotes(store.root, store.config),
+  ]);
+  // One file is one record. A store that has not (yet) excluded its capture
+  // root would otherwise have every capture enumerated twice, and two records
+  // sharing a source-id is exactly the `multiple_matches` refusal — a config
+  // gap must not read as an ambiguity in the material.
+  const byPath = new Map<string, IdentityRecord>();
+  for (const record of [...captures, ...notes]) byPath.set(record.path, record);
+  return [...byPath.values()];
+}
+
+/**
  * context-ingest spec: evaluate, in order, source-id match then content-
  * hash match, never proceeding past a stage with more than one match. Only
  * `multiple_matches` is a failure (CheckFailed) — `already_ingested`,
@@ -37,19 +57,17 @@ export async function execute(
   flags: SourceCheckFlags,
 ): Promise<CommandOutcome<SourceCheckData>> {
   const relativePath = toStoreRelativePath(env, store, flags.path);
-  const absolutePath = path.join(store.root, relativePath);
 
-  let raw: string;
+  let hash: string;
   try {
-    raw = await readFile(absolutePath, 'utf8');
+    ({ hash } = await hashOfCapture(store.root, relativePath));
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === 'ENOENT') throw new NoteNotFoundError(relativePath);
     throw err;
   }
 
-  const hash = contentHash(raw, relativePath);
-  const notes = await listNotes(store.root, store.config);
-  const result = evaluateSourceCheck(notes, hash, flags.sourceId, store.config.ingest.tracking_params);
+  const records = await identityRecords(store);
+  const result = evaluateSourceCheck(records, hash, flags.sourceId, store.config.ingest.tracking_params);
 
   const findings: Finding[] =
     result.verdict === 'multiple_matches'

@@ -1,6 +1,7 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { SHIPPED_DEFAULTS } from '../../src/config/defaults.js';
 import { hermeticGitEnv } from '../helpers/git-env.js';
 import { runCli } from '../helpers/run-cli.js';
 import { makeTmpDir } from '../helpers/tmp-store.js';
@@ -130,9 +131,19 @@ describe('contexture graph (real CLI)', () => {
 
       // Declare the exclusion AFTER the build: the persisted graph is now
       // over-inclusive, and answering from it would surface excluded material.
+      //
+      // The key has to be written out in full, not patched into an existing
+      // line: a generated config omits `exclude_paths` while it matches the
+      // shipped default (config-defaults-as-the-convention), and a declared
+      // list replaces that default rather than extending it.
       const configPath = path.join(tmp.root, 'contexture.yaml');
       const config = await readFile(configPath, 'utf8');
-      await writeFile(configPath, config.replace('exclude_paths:', 'exclude_paths:\n    - projects/secret.md'));
+      const excluded = [...SHIPPED_DEFAULTS.retrieval.exclude_paths, 'projects/secret.md'];
+      const block = `  exclude_paths:\n${excluded.map((p) => `    - ${p}`).join('\n')}\n`;
+      // Insert into the retrieval block init already wrote rather than adding a
+      // second one, which would be a duplicate mapping key.
+      expect(config).toContain('\nretrieval:\n');
+      await writeFile(configPath, config.replace('\nretrieval:\n', `\nretrieval:\n${block}`));
 
       const refused = await runCli(['graph', 'query', 'hubs', '--json'], { cwd: tmp.root, env });
       expect(refused.exitCode).not.toBe(0);

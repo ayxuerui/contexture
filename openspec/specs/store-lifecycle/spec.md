@@ -72,3 +72,33 @@ When `contexture init` runs interactively (a terminal capable of prompting) with
 #### Scenario: Non-interactive init never blocks waiting for input
 - **WHEN** `contexture init` runs with no terminal available to prompt (for example, in a script or CI job) and no profile or custom taxonomy specified
 - **THEN** it writes the PARA default immediately, without prompting or blocking
+
+### Requirement: `init` creates the capture tier and excludes it from retrieval
+`ctxr init` SHALL create the configured inbox directory and SHALL seed the configured capture root into the store's retrieval exclusions, so a freshly initialized store has somewhere to capture into and captures are not retrievable from the first commit. Both values SHALL be read from configuration; no component may hardcode either directory name. An existing store SHALL reach the same state through a named migration rather than through operator action, and that migration SHALL adopt the shipped inbox default only where the store's value still sat at the previous shipped default, preserving an operator-chosen value verbatim.
+
+#### Scenario: A fresh store can be captured into
+- **WHEN** `ctxr init` completes in an empty directory
+- **THEN** the configured inbox directory exists, and the configured capture root is present in the store's retrieval exclusions
+
+#### Scenario: Re-running init changes nothing
+- **WHEN** `ctxr init` is run again against a store whose inbox directory already exists and whose exclusions already name the capture root
+- **THEN** it reports the store already initialized and writes no duplicate exclusion entry
+
+#### Scenario: An operator-chosen inbox survives migration
+- **WHEN** a store whose inbox path was set to something other than the previous shipped default is migrated
+- **THEN** its inbox path is left exactly as the operator set it, and only the capture root and the retrieval exclusion are added
+
+### Requirement: A change to a shipped default reaches a store that never overrode it
+Where a store's configuration omits a key because it accepted the shipped default, a later release that changes that default SHALL take effect for the store on upgrade, without a migration. A migration SHALL be required only to move a value the store itself recorded. Existing stores SHALL be brought to this shape by a named migration that removes keys whose value already equals the shipped default, changing what no key resolves to.
+
+#### Scenario: An accepted default follows the release
+- **WHEN** a store's configuration omits a key and a later release changes that key's shipped default
+- **THEN** the store resolves the new value on upgrade, with no migration run and no edit to its configuration file
+
+#### Scenario: A recorded choice is never moved silently
+- **WHEN** a store's configuration declares a value that a later release's shipped default no longer matches
+- **THEN** the store keeps its declared value, and only a migration that names the change may alter it
+
+#### Scenario: Pruning changes no resolved value
+- **WHEN** the migration removes a key whose value equalled the shipped default
+- **THEN** every command resolves that key to the same value it resolved to before the migration ran

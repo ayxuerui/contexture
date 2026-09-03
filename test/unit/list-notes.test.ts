@@ -2,7 +2,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import type { StoreConfig } from '../../src/config/schema.js';
-import { listNotes } from '../../src/core/notes/list.js';
+import { listCaptures, listNotes } from '../../src/core/notes/list.js';
 import { makeTmpDir } from '../helpers/tmp-store.js';
 
 function makeConfig(overrides: Partial<StoreConfig> = {}): StoreConfig {
@@ -17,9 +17,9 @@ function makeConfig(overrides: Partial<StoreConfig> = {}): StoreConfig {
     catalog: { path: 'catalog/', section_max_bytes: 32768 },
     publish: { path: 'publish/' },
     skills: { vendored: [] },
-    ingest: { inbox_path: 'inbox/', tracking_params: [] },
+    ingest: { inbox_path: 'raw/inbox/', capture_root: 'raw/', tracking_params: [] },
     organize: { archive_destination: 'archive/', rollup_stale_days: 7 },
-    harness: { skills_path: 'skills/', guidance_path: 'guidance/' },
+    harness: { skills_path: 'skills/', guidance_path: 'guidance/', convention_max_bytes: 32768 },
     adapters: [],
     ...overrides,
   };
@@ -186,6 +186,70 @@ describe('listNotes and harness entry files (entry-doc-generation D4)', () => {
       await writeNote(tmp.root, 'areas/Team/AGENTS.md', '# Team conventions\n');
       const notes = await listNotes(tmp.root, makeConfig());
       expect(notes.map((n) => n.path)).toEqual(['areas/Team/AGENTS.md']);
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+});
+
+describe('listCaptures', () => {
+  const withCaptureTierExcluded = () =>
+    makeConfig({
+      retrieval: {
+        exclude_paths: ['raw/'],
+        demote_paths: [],
+        gather_max_notes: 50,
+        relations: [],
+        graph: { cluster_depth: 2, hub_top: 8, bridge_top: 10, orphan_exempt_clusters: [] },
+      },
+    });
+
+  it('returns exactly what listNotes refuses to return', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      await writeNote(tmp.root, 'projects/a.md');
+      await writeNote(tmp.root, 'raw/inbox/arrived.md');
+      await writeNote(tmp.root, 'raw/202609/retained.md');
+      const config = withCaptureTierExcluded();
+
+      expect((await listNotes(tmp.root, config)).map((n) => n.path)).toEqual(['projects/a.md']);
+      expect((await listCaptures(tmp.root, config)).map((n) => n.path)).toEqual([
+        'raw/202609/retained.md',
+        'raw/inbox/arrived.md',
+      ]);
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('parses a capture\'s frontmatter, so its identity is readable', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      await writeNote(tmp.root, 'raw/202609/retained.md', '---\nsource_id: url/https://example.com/a\n---\nBody.\n');
+      const captures = await listCaptures(tmp.root, withCaptureTierExcluded());
+      expect(captures[0]?.frontmatter?.source_id).toBe('url/https://example.com/a');
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('returns nothing when the capture tier does not exist yet', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      await writeNote(tmp.root, 'projects/a.md');
+      expect(await listCaptures(tmp.root, withCaptureTierExcluded())).toEqual([]);
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('skips a non-markdown capture, which cannot carry frontmatter', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      await writeNote(tmp.root, 'raw/202609/deck.pdf', '%PDF-1.7\n');
+      await writeNote(tmp.root, 'raw/202609/deck.pdf.md', '---\nsource_id: file/deck\n---\nSidecar.\n');
+      const captures = await listCaptures(tmp.root, withCaptureTierExcluded());
+      expect(captures.map((c) => c.path)).toEqual(['raw/202609/deck.pdf.md']);
     } finally {
       await tmp.cleanup();
     }

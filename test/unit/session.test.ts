@@ -20,9 +20,9 @@ function makeConfig(overrides: Partial<StoreConfig['session']> = {}): StoreConfi
     catalog: { path: 'catalog/', section_max_bytes: 32768 },
     publish: { path: 'publish/' },
     skills: { vendored: [] },
-    ingest: { inbox_path: 'inbox/', tracking_params: [] },
+    ingest: { inbox_path: 'raw/inbox/', capture_root: 'raw/', tracking_params: [] },
     organize: { archive_destination: 'archive/', rollup_stale_days: 7 },
-    harness: { skills_path: 'skills/', guidance_path: 'guidance/' },
+    harness: { skills_path: 'skills/', guidance_path: 'guidance/', convention_max_bytes: 32768 },
     adapters: [],
   };
 }
