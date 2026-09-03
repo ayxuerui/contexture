@@ -28,8 +28,12 @@ context: |
 
   Retrieval v1 has three legs and NO ranker: a curated catalog (derived structure +
   authored glosses), a deterministic wikilink graph (enumerates structure, ranks
-  nothing), and ripgrep content matching. A documented adapter seam allows a
-  ranked/semantic engine later; v1 ships none.
+  nothing), and ripgrep content matching. There is NO search-adapter seam —
+  bootstrap-contexture-core D5 declined to design one ahead of a concrete
+  adapter, and the adapters spec puts the ranked/semantic kind out of scope.
+  What carries forward instead is the stable per-note retrieval record
+  (identity, path, gloss, content hash), so adopting a ranker later does not
+  require re-deciding note identity.
 
   Code/judgment seam: agents read (grep, cluster reading, synthesis, placement,
   ingest orchestration are skill markdown, never CLI); the CLI computes

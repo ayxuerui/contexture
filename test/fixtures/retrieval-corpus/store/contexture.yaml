@@ -1,0 +1,37 @@
+# retrieval-quality fixture corpus: a self-contained store the evaluation
+# reads directly, never via a subprocess. Spans two taxonomy sections, more
+# than one link distance, and one note under an excluded path (the anti-
+# vacuity condition the retrieval-quality spec requires).
+schema_version: 8
+taxonomy:
+  profile: custom
+  layers:
+    - { name: Projects, path: projects, description: "Active work." }
+    - { name: Areas, path: areas, description: "Ongoing responsibilities." }
+derived:
+  paths: [.contexture/]
+retrieval:
+  exclude_paths: [secret/]
+  demote_paths: [archives/]
+git:
+  default_branch: main
+session:
+  branch_prefix: session/
+  worktrees_path: .worktrees/
+write_lifecycle:
+  diff_size_ceiling_lines: 2000
+catalog:
+  path: catalog/
+  section_max_bytes: 32768
+publish:
+  path: publish/
+skills:
+  vendored: []
+ingest:
+  inbox_path: inbox/
+organize:
+  archive_destination: archives/
+harness:
+  skills_path: skills/
+  guidance_path: guidance/
+adapters: []

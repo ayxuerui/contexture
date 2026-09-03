@@ -1,0 +1,2 @@
+- [[Kickoff]] (`projects/kickoff.md`) — Kickoff notes for the Acme engagement.
+- [[Unrelated]] (`projects/unrelated.md`) — A project with nothing to do with pricing.

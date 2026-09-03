@@ -50,6 +50,14 @@ function harnessEntryFiles(config: StoreConfig): Set<string> {
   }
 }
 
+/**
+ * The one prefix rule every path-prefix declaration reads — exclusions,
+ * `--under`, the pass's demotion tier, and the write-path gate. Re-exported
+ * rather than defined here: it now lives in `core/fs/prefix.ts` so the gate
+ * can read the same implementation without importing note enumeration.
+ */
+export { isUnderAnyPrefix } from '../fs/prefix.js';
+
 export function excludedPrefixesFor(config: StoreConfig): string[] {
   return [
     ...config.retrieval.exclude_paths,

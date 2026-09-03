@@ -18,7 +18,7 @@ function makeConfig(overrides: Partial<StoreConfig['disclosure']> = {}): StoreCo
     schema_version: 1,
     taxonomy: { profile: 'para', layers: [{ name: 'Projects', path: 'projects', description: '' }] },
     derived: { paths: [] },
-    retrieval: { exclude_paths: [], relations: [], graph: { cluster_depth: 2, hub_top: 8, bridge_top: 10, orphan_exempt_clusters: [] } },
+    retrieval: { exclude_paths: [], demote_paths: [], gather_max_notes: 50, relations: [], graph: { cluster_depth: 2, hub_top: 8, bridge_top: 10, orphan_exempt_clusters: [] } },
     git: { default_branch: 'main' },
     session: { branch_prefix: 'session/', worktrees_path: '.worktrees/' },
     write_lifecycle: { diff_size_ceiling_lines: 2000, writable_paths: [] },
@@ -45,6 +45,12 @@ describe('publish gather: selector validation', () => {
       const store: Store = { root: tmp.root, config: makeConfig() };
       const env = makeFakeEnv({ cwd: tmp.root });
       await expect(executeGather(env, store, {})).rejects.toBeInstanceOf(PublishSelectorRequiredError);
+      // The message names the selectors the command registers and no others:
+      // it offered `--as` until retire-the-access-axes removed that flag.
+      const error = new PublishSelectorRequiredError();
+      expect(error.exitCode).toBe(ExitCode.Usage);
+      expect(error.finding.message).toContain('--under, --note, or --entity');
+      expect(error.finding.message).not.toContain('--as');
     } finally {
       await tmp.cleanup();
     }

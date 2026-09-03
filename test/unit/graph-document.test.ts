@@ -23,6 +23,8 @@ function makeConfig(overrides: Partial<StoreConfig['retrieval']['graph']> = {}):
     derived: { paths: [] },
     retrieval: {
       exclude_paths: ['.contexture/'], // as every real store: the cache the build writes into must not be re-read as notes
+      demote_paths: [],
+      gather_max_notes: 50,
       relations: ['supports'],
       graph: { cluster_depth: 2, hub_top: 8, bridge_top: 10, orphan_exempt_clusters: [], ...overrides },
     },

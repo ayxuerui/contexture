@@ -1,6 +1,8 @@
 import { mkdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
+import { GraphCarriesExcludedNoteError, GraphNotBuiltError } from '../errors.js';
 import { writeFileAtomic } from '../fs/atomic.js';
+import { listNotes } from '../notes/list.js';
 import type { Store } from '../store.js';
 import type { GraphBuildResult } from './model.js';
 
@@ -35,4 +37,25 @@ export async function readGraph(store: Store): Promise<GraphBuildResult | null> 
     if ((err as NodeJS.ErrnoException).code === 'ENOENT') return null;
     throw err;
   }
+}
+
+/**
+ * compose-the-retrieval-pass spec: the one seam through which every graph
+ * query and the retrieval pass read the persisted graph, so the exclusion
+ * guarantee is enforced in a single place rather than per caller.
+ *
+ * Refuses an OVER-inclusive graph — one carrying a note the store's own
+ * enumeration no longer admits — because answering from it would surface
+ * excluded material. Tolerates an UNDER-inclusive one (a note added since the
+ * last build): it withholds nothing, and failing there would make every query
+ * brittle for a condition with no withholding consequence. `doctor`'s
+ * staleness check is what reports that case.
+ */
+export async function readAdmittedGraph(store: Store): Promise<GraphBuildResult> {
+  const graph = await readGraph(store);
+  if (!graph) throw new GraphNotBuiltError();
+  const admitted = new Set((await listNotes(store.root, store.config)).map((note) => note.path));
+  const excluded = graph.nodes.filter((node) => !admitted.has(node.id)).map((node) => node.id);
+  if (excluded.length > 0) throw new GraphCarriesExcludedNoteError(excluded);
+  return graph;
 }

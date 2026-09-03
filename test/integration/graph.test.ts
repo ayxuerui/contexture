@@ -1,6 +1,7 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { SHIPPED_DEFAULTS } from '../../src/config/defaults.js';
 import { hermeticGitEnv } from '../helpers/git-env.js';
 import { runCli } from '../helpers/run-cli.js';
 import { makeTmpDir } from '../helpers/tmp-store.js';
@@ -114,6 +115,63 @@ describe('contexture graph (real CLI)', () => {
       });
       expect(subgraphResult.exitCode).toBe(0);
       expect(JSON.parse(subgraphResult.stdout).data.nodes).toEqual([{ id: 'projects/a.md', path: 'projects/a.md', cluster: 'projects' }]);
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('a graph carrying a note the store no longer admits is refused, and a rebuild restores the query', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const env = hermeticGitEnv();
+      await runCli(['init'], { cwd: tmp.root, env });
+      await writeNote(tmp.root, 'projects/kept.md', '# Kept\n\n[[secret]]\n');
+      await writeNote(tmp.root, 'projects/secret.md', '# Secret\n');
+      expect((await runCli(['graph', 'build'], { cwd: tmp.root, env })).exitCode).toBe(0);
+
+      // Declare the exclusion AFTER the build: the persisted graph is now
+      // over-inclusive, and answering from it would surface excluded material.
+      //
+      // The key has to be written out in full, not patched into an existing
+      // line: a generated config omits `exclude_paths` while it matches the
+      // shipped default (config-defaults-as-the-convention), and a declared
+      // list replaces that default rather than extending it.
+      const configPath = path.join(tmp.root, 'contexture.yaml');
+      const config = await readFile(configPath, 'utf8');
+      const excluded = [...SHIPPED_DEFAULTS.retrieval.exclude_paths, 'projects/secret.md'];
+      const block = `  exclude_paths:\n${excluded.map((p) => `    - ${p}`).join('\n')}\n`;
+      // Insert into the retrieval block init already wrote rather than adding a
+      // second one, which would be a duplicate mapping key.
+      expect(config).toContain('\nretrieval:\n');
+      await writeFile(configPath, config.replace('\nretrieval:\n', `\nretrieval:\n${block}`));
+
+      const refused = await runCli(['graph', 'query', 'hubs', '--json'], { cwd: tmp.root, env });
+      expect(refused.exitCode).not.toBe(0);
+      const finding = JSON.parse(refused.stdout).findings[0];
+      expect(finding.code).toBe('graph.carries_excluded_note');
+      expect(finding.message).toContain('projects/secret.md');
+      expect(finding.message).toContain('ctxr graph build');
+
+      expect((await runCli(['graph', 'build'], { cwd: tmp.root, env })).exitCode).toBe(0);
+      const after = await runCli(['graph', 'query', 'hubs', '--json'], { cwd: tmp.root, env });
+      expect(after.exitCode).toBe(0);
+      expect(after.stdout).not.toContain('projects/secret.md');
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('a graph merely missing a newly added note still answers, since it withholds nothing', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const env = hermeticGitEnv();
+      await runCli(['init'], { cwd: tmp.root, env });
+      await writeNote(tmp.root, 'projects/one.md');
+      expect((await runCli(['graph', 'build'], { cwd: tmp.root, env })).exitCode).toBe(0);
+      await writeNote(tmp.root, 'projects/two.md');
+
+      const result = await runCli(['graph', 'query', 'hubs', '--json'], { cwd: tmp.root, env });
+      expect(result.exitCode).toBe(0);
     } finally {
       await tmp.cleanup();
     }

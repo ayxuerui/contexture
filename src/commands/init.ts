@@ -7,6 +7,7 @@ import type { CommandOutcome, CommandRequires } from '../core/command.js';
 import {
   DEFAULT_ADAPTERS,
   DEFAULT_ARCHIVE_DESTINATION,
+  DEFAULT_GATHER_MAX_NOTES,
   DEFAULT_ROLLUP_STALE_DAYS,
   DEFAULT_CATALOG_PATH,
   DEFAULT_CATALOG_SECTION_MAX_BYTES,
@@ -294,11 +295,21 @@ async function runInitCore(env: RunEnv, flags: InitFlags): Promise<RunInitResult
     ...harnessIds.map((id): AdapterDeclaration => ({ id, kind: 'harness-generation' })),
   ];
 
+  const archiveDestination = taxonomy.archiveDestination ?? DEFAULT_ARCHIVE_DESTINATION;
+
   const config: StoreConfig = {
     schema_version: SUPPORTED_SCHEMA_VERSION,
     taxonomy: { profile: taxonomy.profileId, layers: taxonomy.layers },
     derived: { paths: [...DEFAULT_DERIVED_PATHS] },
-    retrieval: { exclude_paths: [...DEFAULT_EXCLUDE_PATHS], relations: [...DEFAULT_RELATIONS], graph: { ...DEFAULT_GRAPH_SETTINGS, orphan_exempt_clusters: [] } },
+    retrieval: {
+      exclude_paths: [...DEFAULT_EXCLUDE_PATHS],
+      // Seeded from the taxonomy's own archive destination, never a literal:
+      // archived material stays retrievable and sorts last (D11).
+      demote_paths: [archiveDestination],
+      gather_max_notes: DEFAULT_GATHER_MAX_NOTES,
+      relations: [...DEFAULT_RELATIONS],
+      graph: { ...DEFAULT_GRAPH_SETTINGS, orphan_exempt_clusters: [] },
+    },
     git: { default_branch: defaultBranch },
     session: { branch_prefix: DEFAULT_SESSION_BRANCH_PREFIX, worktrees_path: DEFAULT_WORKTREES_PATH },
     write_lifecycle: { diff_size_ceiling_lines: DEFAULT_DIFF_SIZE_CEILING_LINES, writable_paths: [] },
@@ -306,7 +317,7 @@ async function runInitCore(env: RunEnv, flags: InitFlags): Promise<RunInitResult
     publish: { path: DEFAULT_PUBLISH_PATH },
     skills: { vendored: [...DEFAULT_VENDORED_SKILLS] },
     ingest: { inbox_path: DEFAULT_INBOX_PATH, capture_root: DEFAULT_CAPTURE_ROOT, tracking_params: [...DEFAULT_TRACKING_PARAMS] },
-    organize: { archive_destination: taxonomy.archiveDestination ?? DEFAULT_ARCHIVE_DESTINATION, rollup_stale_days: DEFAULT_ROLLUP_STALE_DAYS, mission_path: DEFAULT_MISSION_PATH },
+    organize: { archive_destination: archiveDestination, rollup_stale_days: DEFAULT_ROLLUP_STALE_DAYS, mission_path: DEFAULT_MISSION_PATH },
     harness: { skills_path: DEFAULT_SKILLS_PATH, guidance_path: DEFAULT_GUIDANCE_PATH, convention_max_bytes: DEFAULT_CONVENTION_MAX_BYTES },
     adapters: resolvedAdapters,
   };

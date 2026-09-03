@@ -1,0 +1,8 @@
+{
+  "id": "section-covers-its-notes",
+  "description": "A catalog section entry seeds every note it lists, with no graph expansion.",
+  "selector": { "sections": ["projects"] },
+  "hops": 0,
+  "expected": ["projects/kickoff.md", "projects/unrelated.md"],
+  "vocabulary": ["pricing"]
+}

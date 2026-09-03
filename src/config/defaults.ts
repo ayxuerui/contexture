@@ -78,6 +78,17 @@ export const DEFAULT_CAPTURE_ROOT = 'raw/';
 /** Paths excluded from every retrieval leg by default — contexture's own directory, and the capture tier. */
 export const DEFAULT_EXCLUDE_PATHS = ['.contexture/', DEFAULT_CAPTURE_ROOT] as const;
 
+/**
+ * compose-the-retrieval-pass spec (D10/D11): path prefixes that stay fully
+ * retrievable but sort after everything else. Empty here because the shipped
+ * value is not a literal — `init` seeds it from the taxonomy's own resolved
+ * archive destination, so a custom taxonomy demotes its archive, not PARA's.
+ */
+export const DEFAULT_DEMOTE_PATHS: readonly string[] = [];
+
+/** compose-the-retrieval-pass spec: how many notes `ctxr context gather` returns before it reports truncation. */
+export const DEFAULT_GATHER_MAX_NOTES = 50;
+
 /** graph-context-document spec: no relation vocabulary by default — no typed edges until a store declares names. */
 export const DEFAULT_RELATIONS: readonly string[] = [];
 
@@ -167,6 +178,8 @@ export const SHIPPED_DEFAULTS = {
   derived: { paths: DEFAULT_DERIVED_PATHS },
   retrieval: {
     exclude_paths: DEFAULT_EXCLUDE_PATHS,
+    demote_paths: DEFAULT_DEMOTE_PATHS,
+    gather_max_notes: DEFAULT_GATHER_MAX_NOTES,
     relations: DEFAULT_RELATIONS,
     graph: DEFAULT_GRAPH_SETTINGS,
   },

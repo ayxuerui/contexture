@@ -27,8 +27,13 @@ async function readIfExists(filePath: string): Promise<string> {
   }
 }
 
-export async function buildPerNoteRecords(store: Store): Promise<PerNoteRecord[]> {
-  const notes = await listNotes(store.root, store.config);
+/**
+ * Every authored gloss in the catalog, keyed by note path. Split out so a
+ * caller that already holds the note list — the retrieval pass — can join
+ * against it without enumerating the store a second time, which would risk
+ * the two enumerations disagreeing.
+ */
+export async function readCatalogGlosses(store: Store): Promise<Map<string, string>> {
   const sections = catalogSectionsFor(store.config);
   const catalogDir = path.join(store.root, store.config.catalog.path);
 
@@ -39,6 +44,12 @@ export async function buildPerNoteRecords(store: Store): Promise<PerNoteRecord[]
       glosses.set(notePath, entry.gloss);
     }
   }
+  return glosses;
+}
+
+export async function buildPerNoteRecords(store: Store): Promise<PerNoteRecord[]> {
+  const notes = await listNotes(store.root, store.config);
+  const glosses = await readCatalogGlosses(store);
 
   return notes.map((note) => ({
     id: note.path,

@@ -26,7 +26,7 @@ function makeConfig(overrides: Partial<StoreConfig> = {}): StoreConfig {
     schema_version: 1,
     taxonomy: { profile: 'para', layers: [] },
     derived: { paths: ['.contexture/'] },
-    retrieval: { exclude_paths: ['identity/'], relations: [], graph: { cluster_depth: 2, hub_top: 8, bridge_top: 10, orphan_exempt_clusters: [] } },
+    retrieval: { exclude_paths: ['identity/'], demote_paths: [], gather_max_notes: 50, relations: [], graph: { cluster_depth: 2, hub_top: 8, bridge_top: 10, orphan_exempt_clusters: [] } },
     git: { default_branch: 'main' },
     session: { branch_prefix: 'session/', worktrees_path: '.worktrees/' },
     write_lifecycle: { diff_size_ceiling_lines: 2000, writable_paths: [] },
@@ -75,7 +75,7 @@ describe('renderLegRoutingSection', () => {
 
   it('preserves a bare file exclusion (no trailing slash) alongside directory prefixes', () => {
     const lines = renderLegRoutingSection(
-      makeConfig({ retrieval: { exclude_paths: ['AGENTS.md', 'log.md'], relations: [], graph: { cluster_depth: 2, hub_top: 8, bridge_top: 10, orphan_exempt_clusters: [] } } }),
+      makeConfig({ retrieval: { exclude_paths: ['AGENTS.md', 'log.md'], demote_paths: [], gather_max_notes: 50, relations: [], graph: { cluster_depth: 2, hub_top: 8, bridge_top: 10, orphan_exempt_clusters: [] } } }),
     ).join('\n');
     expect(lines).toContain('`AGENTS.md`');
     expect(lines).toContain('`log.md`');
@@ -118,7 +118,7 @@ describe('buildAgentsLegRoutingSection', () => {
     const tmp = await makeTmpDir();
     try {
       await buildAgentsLegRoutingSection(tmp.root, makeConfig());
-      await buildAgentsLegRoutingSection(tmp.root, makeConfig({ retrieval: { exclude_paths: ['secrets/'], relations: [], graph: { cluster_depth: 2, hub_top: 8, bridge_top: 10, orphan_exempt_clusters: [] } } }));
+      await buildAgentsLegRoutingSection(tmp.root, makeConfig({ retrieval: { exclude_paths: ['secrets/'], demote_paths: [], gather_max_notes: 50, relations: [], graph: { cluster_depth: 2, hub_top: 8, bridge_top: 10, orphan_exempt_clusters: [] } } }));
       const content = await readFile(agentsMdPath(tmp.root), 'utf8');
       expect(content).toContain('`secrets/`');
       expect(content).not.toContain('`identity/`');
@@ -479,20 +479,46 @@ describe('reorderFencedRegionsInFile (via reconcileStore section order)', () => 
 describe('exact rendered output', () => {
   it('renders the leg-routing section', () => {
     expect(renderLegRoutingSection(makeConfig())).toEqual([
-      "## Retrieval: which leg to use",
+      "## Retrieval: one pass, three steps",
       "",
-      "contexture builds and maintains two retrieval tools ahead of time — consult them first:",
+      "Retrieval is a single pass — **enter**, **expand**, **widen** — not three tools to choose between.",
+      "contexture builds and maintains the first two ahead of time; the third is yours.",
       "",
-      "- **Catalog** (`ctxr catalog show --section <id>`): a curated, coverage-guaranteed index of every retrievable note, one section per taxonomy layer.",
-      "- **Graph** (`ctxr graph query ...`): the wikilink graph between notes — neighbors, shortest path, hubs, orphans, clusters, bridges; `--type <relation>` follows one configured relation.",
-      "- **Graph document** (`.contexture/cache/graph.md`, rebuilt by `ctxr graph build`): hub notes by cluster, cross-cluster bridges, and orphans — read it for cluster context before writing.",
+      "**1. Enter.** Name where to start, positionally or relationally:",
       "",
-      "For a literal or entity question the catalog and graph do not answer (a specific string, an exact identifier, a phrase),",
-      "use your own direct content-matching tool (e.g. grep/ripgrep) against the store, scoped to exclude:",
+      "- `--section <id>` — every note a catalog section lists (`ctxr catalog show --section <id>` reads one directly)",
+      "- `--under <prefix>` — every retrievable note under a path prefix",
+      "- `--seed <path>` — a note you already hold, including one your own search just found",
+      "- `--entity <name>` — every note linking to a concept",
+      "",
+      "**2. Expand.** `ctxr context gather` takes those selectors and walks the wikilink graph out from them,",
+      "returning each reachable note with its catalog gloss, its hop distance, and labels saying why it is",
+      "there — so you can triage the set without opening a single file, then read only what the glosses",
+      "justify:",
+      "",
+      "```",
+      "ctxr context gather --section <id> --hops 1",
+      "ctxr context gather --seed <path> --hops 2 --type <relation>",
+      "```",
+      "",
+      "Results are ordered: live material before demoted (archived) material, nearer hops before farther,",
+      "then by how the note was reached, then by path. `no_gloss` on a result means the catalog has no",
+      "description for that note yet — the pass found it structurally, not by what it says.",
+      "",
+      "For structure on its own — shortest path, hubs, orphans, clusters, bridges — query the graph directly",
+      "with `ctxr graph query ...`, and read the graph document at `.contexture/cache/graph.md` (rebuilt by",
+      "`ctxr graph build`) for cluster context before writing.",
+      "",
+      "**3. Widen.** For a literal or entity question the first two steps do not answer — a specific string,",
+      "an exact identifier, a phrase — use your own content-matching tool (e.g. grep/ripgrep) against the",
+      "store, scoped to exclude:",
       "",
       "`.contexture/`, `.worktrees/`, `catalog/`, `guidance/`, `identity/`, `publish/`, `skills/`",
       "",
-      "There is no `ctxr search` command. Ranked or semantic search is deferred to a future version — do not look for one.",
+      "Feed anything it finds back in as `--seed` to pick the pass up again from there.",
+      "",
+      "There is no `ctxr search` command. Nothing here takes a free-text query, and no result carries a",
+      "relevance score. Ranked or semantic search is deferred to a future version — do not look for one.",
     ]);
   });
 

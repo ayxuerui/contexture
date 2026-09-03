@@ -91,6 +91,20 @@ const GraphSettingsSchema = z.object({
 
 const RetrievalSchema = z.object({
   exclude_paths: z.array(z.string()).default([...SHIPPED_DEFAULTS.retrieval.exclude_paths]),
+  /**
+   * compose-the-retrieval-pass spec: prefixes that remain fully retrievable —
+   * present in the catalog, present in the graph, returned by every leg — but
+   * ordered after everything else. Distinct from `exclude_paths`, which removes
+   * a path from retrieval entirely; declaring one path both ways fails doctor
+   * rather than being resolved by precedence.
+   *
+   * The shipped default demotes nothing. `init` seeds it from the resolved
+   * taxonomy's archive destination instead, which is why that seeded value is
+   * written out rather than omitted (config-defaults-as-the-convention D2).
+   */
+  demote_paths: z.array(z.string()).default([...SHIPPED_DEFAULTS.retrieval.demote_paths]),
+  /** compose-the-retrieval-pass spec: the pass's note cap; truncation is reported, never silent. */
+  gather_max_notes: z.number().int().positive().default(SHIPPED_DEFAULTS.retrieval.gather_max_notes),
   /** graph-context-document spec: relation names whose section headings type the wikilinks under them; empty = no typed edges. */
   relations: z.array(z.string().min(1)).default([...SHIPPED_DEFAULTS.retrieval.relations]),
   graph: GraphSettingsSchema.default({ ...SHIPPED_DEFAULTS.retrieval.graph, orphan_exempt_clusters: [] }),
