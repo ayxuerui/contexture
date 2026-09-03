@@ -41,3 +41,23 @@ jobs:
 
       - name: Test
         run: npm test
+
+  # One stable gate for branch protection to require, so the rule never names a
+  # Node version. Adding or dropping a matrix leg changes nothing here; without
+  # this, raising the floor silently orphans the required context and blocks
+  # every pull request until someone edits repository settings by hand.
+  ci-ok:
+    name: ci-ok
+    runs-on: ubuntu-latest
+    needs: verify
+    # Must run even when a leg fails or is cancelled — a skipped job never
+    # reports, which is the exact failure mode this job exists to prevent.
+    if: always()
+    steps:
+      - name: Require every verify leg to have succeeded
+        run: |
+          result='${{ needs.verify.result }}'
+          if [ "$result" != 'success' ]; then
+            echo "verify matrix concluded '$result', not 'success'." >&2
+            exit 1
+          fi
