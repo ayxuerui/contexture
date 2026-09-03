@@ -24,7 +24,11 @@ import { DEFAULT_ARCHIVE_DESTINATION, DEFAULT_PUBLISH_PATH, DEFAULT_VENDORED_SKI
  * transform accepts the old key through this version too, the same way.
  */
 /**
- * Bumped to 7 by the access-axis removal (retire-the-access-axes,
+ * Bumped to 7 on main by the explanation-craft-skill migration
+ * (vendor-explanation-craft-skill, 0007-add-explanation-craft-skill), which
+ * pins its own local SCHEMA_VERSION and is unaffected by later bumps here.
+ *
+ * Bumped to 8 by the access-axis removal (retire-the-access-axes,
  * drop-access-axes): the `visibility:` and `disclosure:` blocks and the
  * `fields:` block that named the visibility frontmatter key are all gone.
  * Unlike the rename migrations above, nothing here is accepted loosely for
@@ -33,7 +37,7 @@ import { DEFAULT_ARCHIVE_DESTINATION, DEFAULT_PUBLISH_PATH, DEFAULT_VENDORED_SKI
  * keys until `ctxr migrate` drops them, exactly as `identity` did when
  * remove-agent-identity retired it.
  */
-export const SUPPORTED_SCHEMA_VERSION = 7;
+export const SUPPORTED_SCHEMA_VERSION = 8;
 
 export const TaxonomyLayerSchema = z.object({
   name: z.string().min(1),

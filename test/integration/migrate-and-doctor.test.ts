@@ -1,6 +1,7 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { SUPPORTED_SCHEMA_VERSION } from '../../src/config/schema.js';
 import { hermeticGitEnv } from '../helpers/git-env.js';
 import { runCli } from '../helpers/run-cli.js';
 import { makeTmpDir } from '../helpers/tmp-store.js';
@@ -77,10 +78,14 @@ describe('migrate and doctor aggregation (real CLI)', () => {
       await writeNote(tmp.root, 'projects/a.md', '---\nlens: shared\ntitle: A\n---\nContent.\n');
       const before = await readFile(path.join(tmp.root, 'projects/a.md'), 'utf8');
 
-      // Pin one version behind so drop-access-axes is genuinely pending.
+      // Pin one version behind — derived, not hardcoded, so a later schema bump
+      // can't quietly turn this into a no-op against an already-current store.
       const configPath = path.join(tmp.root, 'contexture.yaml');
       const pinned = (await readFile(configPath, 'utf8'))
-        .replace(/^schema_version: \d+$/m, 'schema_version: 6\nfields:\n  visibility: lens\nvisibility:\n  default_context: private\n  directory_defaults: {}\n  contexts: {}\ndisclosure:\n  internal_audiences: []\n  hard_walls: []\n  leak_markers: {}');
+        .replace(
+          /^schema_version: \d+$/m,
+          `schema_version: ${SUPPORTED_SCHEMA_VERSION - 1}\nfields:\n  visibility: lens\nvisibility:\n  default_context: private\n  directory_defaults: {}\n  contexts: {}\ndisclosure:\n  internal_audiences: []\n  hard_walls: []\n  leak_markers: {}`,
+        );
       await writeFile(configPath, pinned);
 
       const migrate = await runCli(['migrate', '--json'], { cwd: tmp.root, env });
@@ -91,7 +96,7 @@ describe('migrate and doctor aggregation (real CLI)', () => {
 
       // The config lost exactly the three retired blocks.
       const after = await readFile(configPath, 'utf8');
-      expect(after).toContain('schema_version: 7');
+      expect(after).toContain(`schema_version: ${SUPPORTED_SCHEMA_VERSION}`);
       expect(after).not.toMatch(/^fields:/m);
       expect(after).not.toMatch(/^visibility:/m);
       expect(after).not.toMatch(/^disclosure:/m);

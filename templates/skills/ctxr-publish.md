@@ -38,10 +38,23 @@ handed out.
 
 Pick the shape the content actually needs — a status board, a timeline, a side-by-side comparison, an
 explainer with a live demo — not a rendering of the source notes in reading order. Contexture ships no
-renderer of its own: for visual direction, load the `frontend-design` skill this store carries by
-default (or whichever design-focused skill it's configured or installed instead), and follow it for the
-actual HTML, CSS, and visual language. If a sibling page already exists, read its stylesheet and
-inherit its palette and type scale before inventing a new one.
+renderer of its own and no house voice: both halves of the craft are delegated to a skill.
+
+**The form and its visual language.** Load the `frontend-design` skill this store carries by default
+(or whichever design-focused skill it's configured or installed instead) and follow it for the HTML,
+CSS, type, and palette — and for the interface's own words: labels, buttons, empty and error states.
+If a sibling page already exists, read its stylesheet and inherit its palette and type scale before
+inventing a new one.
+
+**The prose that explains the subject.** A page is read by someone who wasn't in the sessions the
+notes came from, so the notes' shorthand does not survive the copy out. Load the `eli5` skill this
+store carries by default (or whichever explanation-focused skill it's configured instead), settle who
+the reader is before writing, and pitch every definition, analogy, and level of detail at them.
+
+Both skills say "audience", and neither means step 3's. There, `--audience` names who the store is
+being asked to disclose to and the answer is a verdict; here it names how much a reader already knows
+and the answer is a register. A comprehension level is never a value you pass to `--audience`, and
+writing plainly never widens what the page may contain — the gate in step 3 already settled that.
 
 ## 6. Verify the output invariants
 
@@ -49,7 +62,7 @@ inherit its palette and type scale before inventing a new one.
 a viewport meta tag, at least one print rule, a provenance line, a sibling README, balanced tags, and
 valid syntax in every embedded script. It exits non-zero naming every failing check; fix all of them
 before reporting the page as ready. It answers only what's derivable from the file itself — the DO-test
-in step 1, the form choice in step 5, and factual accuracy stay judgment calls, not checker output.
+in step 1, the form and reader choices in step 5, and factual accuracy stay judgment calls, not checker output.
 
 ## 7. It's a page, not a note
 

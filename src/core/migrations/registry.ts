@@ -1,3 +1,4 @@
+import { addExplanationCraftSkillMigration } from './add-explanation-craft-skill.js';
 import { archiveDestinationFromTaxonomyMigration } from './archive-destination-from-taxonomy.js';
 import { dropAccessAxesMigration } from './drop-access-axes.js';
 import { dropForgeAndWorkspacesExternalMigration } from './drop-forge-and-workspaces-external.js';
@@ -21,6 +22,7 @@ export const MIGRATIONS: readonly Migration[] = [
   renameConventionsPathMigration,
   dropForgeAndWorkspacesExternalMigration,
   archiveDestinationFromTaxonomyMigration,
+  addExplanationCraftSkillMigration,
   dropAccessAxesMigration,
 ];
 

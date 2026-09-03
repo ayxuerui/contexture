@@ -2,6 +2,7 @@ import { existsSync } from 'node:fs';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { addExplanationCraftSkillMigration } from '../../src/core/migrations/add-explanation-craft-skill.js';
 import { dropAccessAxesMigration } from '../../src/core/migrations/drop-access-axes.js';
 import { archiveDestinationFromTaxonomyMigration } from '../../src/core/migrations/archive-destination-from-taxonomy.js';
 import { dropForgeAndWorkspacesExternalMigration } from '../../src/core/migrations/drop-forge-and-workspaces-external.js';
@@ -11,6 +12,7 @@ import { pendingMigrations } from '../../src/core/migrations/registry.js';
 import type { Store } from '../../src/core/store.js';
 import { readConfig } from '../../src/config/load.js';
 import { renderStoreConfig } from '../../src/config/render.js';
+import { SUPPORTED_SCHEMA_VERSION } from '../../src/config/schema.js';
 import type { StoreConfig } from '../../src/config/schema.js';
 import { makeTmpDir } from '../helpers/tmp-store.js';
 
@@ -145,58 +147,55 @@ async function writeNote(root: string, relPath: string, content: string): Promis
 }
 
 describe('pendingMigrations', () => {
-  // The 1 -> 2 migration was retired with the visibility field it renamed
-  // (retire-the-access-axes D7), so the chain starts at 2 -> 3 for a v1 store.
-  it('includes all five migrations, in order, for a store at schema_version 1', () => {
-    expect(pendingMigrations(1).map((m) => m.id)).toEqual([
-      renameProceduresPathMigration.id,
-      renameConventionsPathMigration.id,
-      dropForgeAndWorkspacesExternalMigration.id,
-      archiveDestinationFromTaxonomyMigration.id,
-      dropAccessAxesMigration.id,
-    ]);
+  // The 1 -> 2 visibility-field rename was retired with the field it renamed
+  // (retire-the-access-axes D7), so a v1 and a v2 store now have the same
+  // pending set: the chain starts at 2 -> 3 for both.
+  const ALL = [
+    renameProceduresPathMigration.id,
+    renameConventionsPathMigration.id,
+    dropForgeAndWorkspacesExternalMigration.id,
+    archiveDestinationFromTaxonomyMigration.id,
+    addExplanationCraftSkillMigration.id,
+    dropAccessAxesMigration.id,
+  ];
+
+  it('includes every migration, in order, for a store at schema_version 1', () => {
+    expect(pendingMigrations(1).map((m) => m.id)).toEqual(ALL);
   });
 
-  it('includes the procedures-path, conventions-path, and forge/workspaces_external migrations for a store at schema_version 2', () => {
-    expect(pendingMigrations(2).map((m) => m.id)).toEqual([
-      renameProceduresPathMigration.id,
-      renameConventionsPathMigration.id,
-      dropForgeAndWorkspacesExternalMigration.id,
-      archiveDestinationFromTaxonomyMigration.id,
-      dropAccessAxesMigration.id,
-    ]);
+  it('includes the same set for a store at schema_version 2, the retired step having no successor', () => {
+    expect(pendingMigrations(2).map((m) => m.id)).toEqual(ALL);
   });
 
-  it('includes the conventions-path, forge/workspaces_external, and archive-destination migrations for a store at schema_version 3', () => {
-    expect(pendingMigrations(3).map((m) => m.id)).toEqual([
-      renameConventionsPathMigration.id,
-      dropForgeAndWorkspacesExternalMigration.id,
-      archiveDestinationFromTaxonomyMigration.id,
-      dropAccessAxesMigration.id,
-    ]);
+  it('drops the procedures-path migration for a store at schema_version 3', () => {
+    expect(pendingMigrations(3).map((m) => m.id)).toEqual(ALL.slice(1));
   });
 
-  it('includes the forge/workspaces_external and archive-destination migrations for a store at schema_version 4', () => {
-    expect(pendingMigrations(4).map((m) => m.id)).toEqual([
-      dropForgeAndWorkspacesExternalMigration.id,
-      archiveDestinationFromTaxonomyMigration.id,
-      dropAccessAxesMigration.id,
-    ]);
+  it('drops the conventions-path migration for a store at schema_version 4', () => {
+    expect(pendingMigrations(4).map((m) => m.id)).toEqual(ALL.slice(2));
   });
 
-  it('includes the archive-destination and access-axis migrations for a store at schema_version 5', () => {
+  it('includes the archive-destination, craft-skill, and access-axis migrations at schema_version 5', () => {
     expect(pendingMigrations(5).map((m) => m.id)).toEqual([
       archiveDestinationFromTaxonomyMigration.id,
+      addExplanationCraftSkillMigration.id,
       dropAccessAxesMigration.id,
     ]);
   });
 
-  it('includes only the access-axis migration for a store at schema_version 6', () => {
-    expect(pendingMigrations(6).map((m) => m.id)).toEqual([dropAccessAxesMigration.id]);
+  it('includes the craft-skill and access-axis migrations at schema_version 6', () => {
+    expect(pendingMigrations(6).map((m) => m.id)).toEqual([
+      addExplanationCraftSkillMigration.id,
+      dropAccessAxesMigration.id,
+    ]);
+  });
+
+  it('includes only the access-axis migration at schema_version 7', () => {
+    expect(pendingMigrations(7).map((m) => m.id)).toEqual([dropAccessAxesMigration.id]);
   });
 
   it('is empty for a store already at the current schema version', () => {
-    expect(pendingMigrations(7)).toEqual([]);
+    expect(pendingMigrations(SUPPORTED_SCHEMA_VERSION)).toEqual([]);
   });
 });
 
@@ -257,7 +256,7 @@ describe('renameProceduresPathMigration', () => {
     }
   });
 
-  it('a v1 store runs all five migrations, in order', async () => {
+  it('a v1 store runs all six migrations, in order', async () => {
     const tmp = await makeTmpDir();
     try {
       const store = await setUpV1Store(tmp.root);
@@ -272,8 +271,8 @@ describe('renameProceduresPathMigration', () => {
         workingStore = { root: tmp.root, config: await readConfig(tmp.root) };
       }
 
-      expect(workingStore.config.schema_version).toBe(7);
-      // drop-access-axes removes the fields:/visibility:/disclosure: blocks at 6 -> 7.
+      expect(workingStore.config.schema_version).toBe(SUPPORTED_SCHEMA_VERSION);
+      // drop-access-axes removes the fields:/visibility:/disclosure: blocks at 7 -> 8.
       expect((workingStore.config as { fields?: unknown }).fields).toBeUndefined();
       expect((workingStore.config as { visibility?: unknown }).visibility).toBeUndefined();
       expect((workingStore.config as { disclosure?: unknown }).disclosure).toBeUndefined();
