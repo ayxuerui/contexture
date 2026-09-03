@@ -36,7 +36,7 @@ function makeConfig(overrides: Partial<StoreConfig> = {}): StoreConfig {
       ],
     },
     derived: { paths: [] },
-    retrieval: { exclude_paths: ['skills/'], relations: [], graph: { cluster_depth: 2, hub_top: 8, bridge_top: 10, orphan_exempt_clusters: [] } },
+    retrieval: { exclude_paths: ['skills/'], demote_paths: [], gather_max_notes: 50, relations: [], graph: { cluster_depth: 2, hub_top: 8, bridge_top: 10, orphan_exempt_clusters: [] } },
     git: { default_branch: 'trunk' },
     session: { branch_prefix: 'session/', worktrees_path: '.worktrees/' },
     write_lifecycle: { diff_size_ceiling_lines: 2000, writable_paths: [] },

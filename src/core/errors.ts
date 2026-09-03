@@ -239,6 +239,25 @@ export class GraphNodeNotFoundError extends ContextureError {
   }
 }
 
+/**
+ * compose-the-retrieval-pass spec: a persisted graph that carries a note the
+ * store no longer admits would serve excluded material to every graph query,
+ * so the loader refuses it rather than filtering after the fact — a pre-filter
+ * cannot be safely retrofitted from a post-filter. A graph merely MISSING a
+ * newly added note is under-inclusive, withholds nothing, and still answers.
+ */
+export class GraphCarriesExcludedNoteError extends ContextureError {
+  constructor(nodeIds: readonly string[]) {
+    const named = [...nodeIds].sort();
+    super(ExitCode.Usage, {
+      code: 'graph.carries_excluded_note',
+      severity: 'error',
+      message: `The built graph carries ${named.length} note(s) the store no longer admits: ${named.join(', ')}. Run "ctxr graph build" to rebuild it.`,
+      details: { nodes: named },
+    });
+  }
+}
+
 export class MarkerMismatchError extends ContextureError {
   constructor(filePath: string, detail: string) {
     super(ExitCode.Usage, {

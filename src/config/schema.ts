@@ -71,6 +71,16 @@ const GraphSettingsSchema = z.object({
 
 const RetrievalSchema = z.object({
   exclude_paths: z.array(z.string()),
+  /**
+   * compose-the-retrieval-pass spec: prefixes that remain fully retrievable —
+   * present in the catalog, present in the graph, returned by every leg — but
+   * ordered after everything else. Distinct from `exclude_paths`, which removes
+   * a path from retrieval entirely; declaring one path both ways fails doctor
+   * rather than being resolved by precedence.
+   */
+  demote_paths: z.array(z.string()).default([]),
+  /** compose-the-retrieval-pass spec: the pass's note cap; truncation is reported, never silent. */
+  gather_max_notes: z.number().int().positive().default(50),
   /** graph-context-document spec: relation names whose section headings type the wikilinks under them; empty = no typed edges. */
   relations: z.array(z.string().min(1)).default([]),
   graph: GraphSettingsSchema.default({ cluster_depth: 2, hub_top: 8, bridge_top: 10, orphan_exempt_clusters: [] }),
