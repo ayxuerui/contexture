@@ -1,6 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { DEFAULT_VENDORED_SKILLS } from '../../src/config/defaults.js';
 import type { StoreConfig } from '../../src/config/schema.js';
 import {
   MANAGED_SKILL_HEADER,
@@ -99,9 +100,11 @@ describe('SKILLS', () => {
    * guard by widening it to also scan `templates/vendor/**`.
    */
   it('vendored skills are never part of SKILLS or renderSkills output — the guards below cannot see them', () => {
-    expect(SKILLS.some((s) => s.file === 'frontend-design')).toBe(false);
+    expect(DEFAULT_VENDORED_SKILLS.length).toBeGreaterThan(0); // anti-vacuity
+    const vendored = [...DEFAULT_VENDORED_SKILLS] as string[];
+    for (const name of vendored) expect(SKILLS.some((s) => s.file === name)).toBe(false);
     for (const p of renderSkills(makeConfig())) {
-      expect(p.file).not.toBe('frontend-design');
+      expect(vendored).not.toContain(p.file);
       expect(p.content).not.toContain('templates/vendor');
     }
   });
@@ -309,7 +312,7 @@ describe('owned-skills-expansion: each skill carries its load-bearing rule (task
     expect(s).toContain('Thesis-change rule');
   });
 
-  it('publish: gate before copy, ASK stops and names the note, identity fixed once, excluded from retrieval, craft delegated not invented', () => {
+  it('publish: gate before copy, ASK stops and names the note, identity fixed once, excluded from retrieval, both craft axes delegated not invented', () => {
     const s = skills['ctxr-publish'];
     expect(s).toContain('Gate before copying anything out');
     expect(s).toContain('`ctxr publish gather --audience <audience>`');
@@ -317,8 +320,19 @@ describe('owned-skills-expansion: each skill carries its load-bearing rule (task
     expect(s).toContain('ASK** stops the build; name the note to the operator and wait');
     expect(s).toContain('`ctxr publish new <slug>`');
     expect(s).toContain('refuses to overwrite an existing folder');
-    expect(s).toContain('Contexture ships no\nrenderer of its own');
-    expect(s).toContain('`frontend-design` skill this store carries by');
+    // Wrap-tolerant on purpose: these pin the rule, not the column the template
+    // happens to wrap at. Re-flowing a paragraph is not a behavior change and
+    // must not fail here, which the previous newline-spanning literals did.
+    expect(s).toMatch(/Contexture ships no\s+renderer of its own and no house voice/);
+    expect(s).toContain('**The form and its visual language.**');
+    expect(s).toMatch(/`frontend-design` skill this store carries by\s+default/);
+    expect(s).toContain('**The prose that explains the subject.**');
+    expect(s).toMatch(/`eli5` skill this\s+store carries by default/);
+    // The two senses of "audience" stay apart: step 3's gate answers who may
+    // see it, step 5's reader answers how it must be told. Conflating them is
+    // how "write it plainer" gets heard as "disclose it wider".
+    expect(s).toMatch(/Both skills say "audience", and neither means step 3's/);
+    expect(s).toContain('never a value you pass to `--audience`');
     expect(s).toContain('excluded from retrieval by default');
     expect(s).toContain('`ctxr publish check <path>`');
   });

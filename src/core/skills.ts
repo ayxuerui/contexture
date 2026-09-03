@@ -370,6 +370,12 @@ export interface VendoredProvenance {
   subpath: string;
   ref: string;
   license: string;
+  /**
+   * Repository-relative path the license was taken from, present only when
+   * upstream keeps no license file inside `subpath` — so a record naming only
+   * that subpath still accounts for every file delivered beside the skill.
+   */
+  licensePath?: string;
   /** sha256 of SKILL.md's content — the delivered file whose drift identifies an operator edit. */
   sha256: string;
   ctxrVersion?: string;
@@ -392,7 +398,12 @@ async function readVendoredPayload(name: string): Promise<{ files: Map<string, s
   const files = new Map<string, string>();
 
   async function walk(sub: string): Promise<void> {
-    const entries = await readdir(path.join(dir, sub), { withFileTypes: true });
+    // Sorted, not raw directory order: init stages exactly the paths this
+    // yields and a test pins that argument vector, so leaving it unsorted makes
+    // a staged-file ordering depend on the machine that ran init.
+    const entries = (await readdir(path.join(dir, sub), { withFileTypes: true })).sort((a, b) =>
+      a.name.localeCompare(b.name),
+    );
     for (const entry of entries) {
       const rel = sub ? `${sub}/${entry.name}` : entry.name;
       if (entry.name === 'provenance.json' && sub === '') continue;

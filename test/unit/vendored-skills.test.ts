@@ -144,3 +144,58 @@ describe('syncVendoredSkills', () => {
     }
   });
 });
+
+/**
+ * vendor-explanation-craft-skill: the shipped set became plural. Every test
+ * above drives a single declared entry, so the loop that walks the set — and
+ * the opt-out that removes only what was dropped — is otherwise never
+ * exercised with more than one thing in it.
+ */
+describe('syncVendoredSkills with more than one declared skill', () => {
+  it('writes each declared skill its own files and its own provenance sidecar', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const result = await syncVendoredSkills(tmp.root, makeConfig(['frontend-design', 'eli5']), CTXR_VERSION);
+      expect(result.findings).toEqual([]);
+      expect(result.changed.sort()).toEqual(
+        [
+          '.agents/skills/frontend-design/SKILL.md',
+          '.agents/skills/frontend-design/LICENSE.txt',
+          `.agents/skills/frontend-design/${VENDORED_PROVENANCE_FILE_NAME}`,
+          '.agents/skills/eli5/SKILL.md',
+          '.agents/skills/eli5/LICENSE.txt',
+          `.agents/skills/eli5/${VENDORED_PROVENANCE_FILE_NAME}`,
+        ].sort(),
+      );
+
+      const dir = path.join(tmp.root, '.agents/skills/eli5');
+      await expect(readFile(path.join(dir, 'SKILL.md'), 'utf8')).resolves.toContain('name: eli5');
+      await expect(readFile(path.join(dir, 'LICENSE.txt'), 'utf8')).resolves.toContain('MIT License');
+
+      const provenance = JSON.parse(await readFile(path.join(dir, VENDORED_PROVENANCE_FILE_NAME), 'utf8')) as VendoredProvenance;
+      expect(provenance.source).toBe('DreambigOu/ELI5');
+      expect(provenance.license).toBe('MIT');
+      // The record accounts for the file that came from outside `subpath`.
+      expect(provenance.licensePath).toBe('LICENSE');
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('dropping one from the declared list removes only that one', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      await syncVendoredSkills(tmp.root, makeConfig(['frontend-design', 'eli5']), CTXR_VERSION);
+      const result = await syncVendoredSkills(tmp.root, makeConfig(['frontend-design']), CTXR_VERSION);
+
+      expect(result.changed).toEqual(['.agents/skills/eli5']);
+      expect(result.findings).toEqual([]);
+      await expect(readFile(path.join(tmp.root, '.agents/skills/eli5/SKILL.md'), 'utf8')).rejects.toThrow();
+      await expect(
+        readFile(path.join(tmp.root, '.agents/skills/frontend-design/SKILL.md'), 'utf8'),
+      ).resolves.toContain('name: frontend-design');
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+});

@@ -1,3 +1,4 @@
+import { addExplanationCraftSkillMigration } from './add-explanation-craft-skill.js';
 import { archiveDestinationFromTaxonomyMigration } from './archive-destination-from-taxonomy.js';
 import { dropForgeAndWorkspacesExternalMigration } from './drop-forge-and-workspaces-external.js';
 import { renameConventionsPathMigration } from './rename-conventions-path.js';
@@ -12,6 +13,7 @@ export const MIGRATIONS: readonly Migration[] = [
   renameConventionsPathMigration,
   dropForgeAndWorkspacesExternalMigration,
   archiveDestinationFromTaxonomyMigration,
+  addExplanationCraftSkillMigration,
 ];
 
 /** Every migration a store currently at `fromVersion` still needs to reach the CLI's supported version, in order. */

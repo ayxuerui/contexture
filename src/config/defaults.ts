@@ -45,8 +45,17 @@ export const DEFAULT_DERIVED_PATHS = ['.contexture/cache/'] as const;
  */
 export const DEFAULT_SKILLS_PATH = '.agents/skills/';
 
-/** harness-portability spec (vendored-craft-skills): the shipped vendored skill set, installed by default and refreshed by update. */
-export const DEFAULT_VENDORED_SKILLS = ['frontend-design'] as const;
+/**
+ * harness-portability spec (vendored-craft-skills): the shipped vendored skill
+ * set, installed by default and refreshed by update — one skill per craft axis
+ * a published page needs and contexture supplies none of (its visual form; the
+ * prose that explains its subject to a reader).
+ *
+ * Appended, never sorted in: the notices order, the paths init stages, and a
+ * store's rendered configuration all follow this order, so growing the set is
+ * a pure insertion rather than a reshuffle.
+ */
+export const DEFAULT_VENDORED_SKILLS = ['frontend-design', 'eli5'] as const;
 
 /**
  * harness-portability spec: the guidance directory holding contexture's

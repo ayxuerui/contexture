@@ -24,7 +24,7 @@ import { DEFAULT_ARCHIVE_DESTINATION, DEFAULT_PUBLISH_PATH, DEFAULT_VENDORED_SKI
  * `harness.conventions_path` -> `harness.guidance_path`. HarnessSchema's
  * transform accepts the old key through this version too, the same way.
  */
-export const SUPPORTED_SCHEMA_VERSION = 6;
+export const SUPPORTED_SCHEMA_VERSION = 7;
 
 export const TaxonomyLayerSchema = z.object({
   name: z.string().min(1),
