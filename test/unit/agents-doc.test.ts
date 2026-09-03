@@ -25,8 +25,6 @@ function makeConfig(overrides: Partial<StoreConfig> = {}): StoreConfig {
   return {
     schema_version: 1,
     taxonomy: { profile: 'para', layers: [] },
-    fields: { visibility: 'scope' },
-    visibility: { default_context: 'private', directory_defaults: {}, contexts: {} },
     derived: { paths: ['.contexture/'] },
     retrieval: { exclude_paths: ['identity/'], relations: [], graph: { cluster_depth: 2, hub_top: 8, bridge_top: 10, orphan_exempt_clusters: [] } },
     git: { default_branch: 'main' },
@@ -35,7 +33,6 @@ function makeConfig(overrides: Partial<StoreConfig> = {}): StoreConfig {
     catalog: { path: 'catalog/', section_max_bytes: 32768 },
     publish: { path: 'publish/' },
     skills: { vendored: [] },
-    disclosure: { internal_audiences: [], hard_walls: [], leak_markers: {} },
     ingest: { inbox_path: 'inbox/', tracking_params: [] },
     organize: { archive_destination: 'archive/', rollup_stale_days: 7 },
     harness: { skills_path: 'skills/', guidance_path: 'guidance/' },
@@ -183,11 +180,6 @@ describe('renderCanonicalSection', () => {
     expect(lines).toContain('--root');
     expect(lines).toContain('CONTEXTURE_ROOT');
     expect(lines).toContain('contexture.yaml');
-  });
-
-  it('points at the configured visibility field key, not a hardcoded one', () => {
-    const lines = renderCanonicalSection(makeConfig({ fields: { visibility: 'lens' } })).join('\n');
-    expect(lines).toContain('`lens:`');
   });
 
   it('states the write-path rule naming session start and the ctxr-submit skill', () => {
@@ -532,7 +524,7 @@ describe('exact rendered output', () => {
     ]);
   });
 
-  it('renders the placement section for layers with and without a directory default', () => {
+  it('renders the placement section from the configured layers', () => {
     const config = makeConfig({
       taxonomy: {
         profile: 'para',
@@ -541,14 +533,13 @@ describe('exact rendered output', () => {
           { name: 'Areas', path: 'areas', description: 'Ongoing responsibilities.' },
         ],
       },
-      visibility: { default_context: 'private', directory_defaults: { projects: 'work' }, contexts: {} },
     });
     expect(renderPlacementSection(config)).toEqual([
       "## Placing a new note",
       "",
       "This store's taxonomy declares these layers — choose the one whose description best matches the note:",
       "",
-      "- **Projects** (`projects/`): Active efforts with an end state. Notes here default to visibility \"work\" unless given an explicit value.",
+      "- **Projects** (`projects/`): Active efforts with an end state.",
       "- **Areas** (`areas/`): Ongoing responsibilities.",
       "",
       "If no layer fits, use the store's uncategorized/catch-all location and revisit placement later.",
@@ -565,9 +556,7 @@ describe('exact rendered output', () => {
       "",
       "### Frontmatter schema",
       "",
-      "- Visibility field: `scope:` — resolves explicit value, then directory default, then the configured fail-closed default (`private`). See `ctxr note resolve <path>`.",
       "- Source-identity fields (assigned only by `ctxr ingest`, never hand-written): `source_type`, `source_id`, `source_hash`, `ingested`.",
-      "- Disclosure audience tags (optional, hand-written): `audience: [<name>, ...]`.",
       "",
       "### Write path",
       "",

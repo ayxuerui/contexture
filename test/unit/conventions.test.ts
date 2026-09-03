@@ -16,8 +16,6 @@ function makeConfig(): StoreConfig {
   return {
     schema_version: 2,
     taxonomy: { profile: 'para', layers: [] },
-    fields: { visibility: 'lens' },
-    visibility: { default_context: 'private', directory_defaults: {}, contexts: {} },
     derived: { paths: [] },
     retrieval: { exclude_paths: [], relations: [], graph: { cluster_depth: 2, hub_top: 8, bridge_top: 10, orphan_exempt_clusters: [] } },
     git: { default_branch: 'main' },
@@ -26,7 +24,6 @@ function makeConfig(): StoreConfig {
     catalog: { path: 'catalog/', section_max_bytes: 32768 },
     publish: { path: 'publish/' },
     skills: { vendored: [] },
-    disclosure: { internal_audiences: [], hard_walls: [], leak_markers: {} },
     ingest: { inbox_path: 'inbox/', tracking_params: [] },
     organize: { archive_destination: 'archive/', rollup_stale_days: 7 },
     harness: { skills_path: 'skills/', guidance_path: 'guidance/' },
@@ -245,8 +242,10 @@ describe('the baseline renders into AGENTS.md instead of a file', () => {
     expect(section).toContain(`_Source: ${BASELINE_SOURCE_LABEL}_`);
     // Never a path — there is no file to point at.
     expect(section).not.toContain('guidance/baseline-conventions.md');
-    // Rendered from THIS store's config, not a shipped constant.
-    expect(section).toContain('The visibility field is `lens:`');
+    // Rendered from THIS store's config, not a shipped constant. Asserted
+    // against a NON-default value, so a hardcoded template would fail here.
+    const custom = { ...makeConfig(), organize: { ...makeConfig().organize, archive_destination: 'retired/' } };
+    expect(renderConventionsSection(custom, []).join('\n')).toContain('`retired/`');
   });
 
   it('puts the baseline ahead of the operator files, and keeps them all', () => {

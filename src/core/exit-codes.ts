@@ -7,9 +7,11 @@
  * else. That keeps `1` from ever being confused with "the command ran
  * correctly and found a real problem" — which is `CheckFailed`, not `Internal`.
  *
- * `4` and `5` are reserved now, unused until Phase 5's disclosure-policy
- * tri-state (ALLOW/DENY/ASK) needs codes distinct from `CheckFailed` — ALLOW
- * must be `Ok` (0), so DENY/ASK can't reuse `CheckFailed` (3).
+ * `4` and `5` were allocated for the disclosure-policy tri-state
+ * (ALLOW/DENY/ASK) and are unused since that capability was retired
+ * (retire-the-access-axes, design.md D4). They stay allocated rather than
+ * reclaimed: a future disclosure mechanism should find them waiting, not
+ * find them reassigned to something unrelated.
  *
  * This table is allocated once, here, and is never extended by guessing a
  * number under pressure in a later phase.
@@ -23,9 +25,9 @@ export const ExitCode = {
   Usage: 2,
   /** The command ran correctly and determined a real problem exists. */
   CheckFailed: 3,
-  /** Reserved for Phase 5's disclosure-policy tri-state: DENY. */
+  /** Reserved for a future disclosure tri-state: DENY. Currently unused. */
   DisclosureDeny: 4,
-  /** Reserved for Phase 5's disclosure-policy tri-state: ASK. */
+  /** Reserved for a future disclosure tri-state: ASK. Currently unused. */
   DisclosureAsk: 5,
 } as const;
 

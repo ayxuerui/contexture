@@ -12,26 +12,19 @@ different font. If a note would do the job, the note is the deliverable.
 
 ## 2. Name the subject, let the selector produce the set
 
-`ctxr publish gather` resolves a subject to its source notes — never a hand-picked list, which is how a
-walled note slips in unnoticed:
+`ctxr publish gather` resolves a subject to its source notes — never a hand-picked list, which is how
+an unintended note slips in unnoticed:
 
 - `--under <prefix>` — a store subtree
 - `--note <path>` — a single note
 - `--entity <name>` — every note linking to a concept, the same enumeration `ctxr rollup gather` uses
-- `--as <context>` — everything a named context can see
 
-## 3. Gate before copying anything out
+## 3. Decide what belongs on the page
 
-`ctxr publish gather --audience <audience>` evaluates every resolved note through the same tri-state
-disclosure verdict `ctxr check` uses, and reports the worst verdict in the set. Run it FIRST, before
-reading a single note for content:
-
-- **DENY** notes contribute nothing — not a title, not a count, not a paraphrase.
-- **ASK** stops the build; name the note to the operator and wait.
-- Only **ALLOW** content may be quoted or summarized into the page.
-
-Never infer a verdict from a note's resolved visibility on your own — an external audience's verdict
-requires an explicit tag or a human answer, not an inference from how widely a note is already visible.
+The store does not decide this for you. Read the resolved set and judge, note by note, whether its
+content belongs in front of this page's intended readers — a page written for an outside party must
+not carry material written about that party, or about anyone else who did not expect to be quoted.
+When you are unsure about a note, leave it out and name it to the operator rather than guessing.
 
 ## 4. Fix the identity once
 
@@ -74,8 +67,7 @@ in step 1, the form and reader choices in step 5, and factual accuracy stay judg
 ## 7. It's a page, not a note
 
 The published-pages location is excluded from retrieval by default — a page never becomes a source for
-anything else the store retrieves, and it never carries the visibility field (that would falsely signal
-it's indexed). Confirm with `ctxr lint` after landing.
+anything else the store retrieves. Confirm with `ctxr lint` after landing.
 
 ## 8. Provenance and drift
 

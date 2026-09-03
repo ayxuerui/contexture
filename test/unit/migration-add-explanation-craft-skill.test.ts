@@ -6,6 +6,7 @@ import { renderStoreConfig } from '../../src/config/render.js';
 import type { StoreConfig } from '../../src/config/schema.js';
 import { addExplanationCraftSkillMigration } from '../../src/core/migrations/add-explanation-craft-skill.js';
 import { pendingMigrations } from '../../src/core/migrations/registry.js';
+import { SUPPORTED_SCHEMA_VERSION } from '../../src/config/schema.js';
 import type { Store } from '../../src/core/store.js';
 import { makeTmpDir } from '../helpers/tmp-store.js';
 
@@ -142,6 +143,8 @@ describe('0007-add-explanation-craft-skill', () => {
   it('is reachable from the registry for a store at the previous version', () => {
     const pending = pendingMigrations(6).map((m) => m.id);
     expect(pending).toContain('0007-add-explanation-craft-skill');
-    expect(pendingMigrations(7)).toEqual([]);
+    // Version-agnostic: this migration is done once a store is past its own
+    // toVersion, whatever the current supported version happens to be.
+    expect(pendingMigrations(SUPPORTED_SCHEMA_VERSION).map((m) => m.id)).not.toContain('0007-add-explanation-craft-skill');
   });
 });

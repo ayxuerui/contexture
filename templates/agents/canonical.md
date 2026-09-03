@@ -6,9 +6,7 @@ Every contexture command resolves the store root in this order: an explicit `--r
 
 ### Frontmatter schema
 
-- Visibility field: `__VISIBILITY_FIELD__:` — resolves explicit value, then directory default, then the configured fail-closed default (`__DEFAULT_CONTEXT__`). See `ctxr note resolve <path>`.
 - Source-identity fields (assigned only by `ctxr ingest`, never hand-written): `source_type`, `source_id`, `source_hash`, `ingested`.
-- Disclosure audience tags (optional, hand-written): `audience: [<name>, ...]`.
 
 ### Write path
 

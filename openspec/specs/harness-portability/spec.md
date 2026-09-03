@@ -22,14 +22,14 @@ A store MAY carry operator-authored convention documents as markdown files at a 
 - **THEN** the conventions section is byte-identical and regeneration reports no change
 
 ### Requirement: A shipped baseline convention is delivered into the guidance directory and refreshed by update
-A store SHALL carry a contexture-owned baseline convention file at a fixed filename under the configured guidance directory, rendered from the store's own configuration (the visibility field and its resolution order, configured directory defaults, the disclosure ladder, the configured relation vocabulary, archiving, git and session rules, directory-scoped convention discovery) — never a shipped profile's or one deployment's names. `init` SHALL write it; the update command SHALL rewrite it to match a fresh render whenever the template or the store's configuration changed, and SHALL leave every other file in the guidance directory (including the operator's own) untouched. Both SHALL be byte-stable when nothing has changed. The file SHALL be discoverable by the same mechanism that scans and inlines every other convention document into the generated entry document, requiring no composition step of its own.
+A store SHALL carry a contexture-owned baseline convention file at a fixed filename under the configured guidance directory, rendered from the store's own configuration (the configured relation vocabulary, archiving, git and session rules, directory-scoped convention discovery) — never a shipped profile's or one deployment's names. `init` SHALL write it; the update command SHALL rewrite it to match a fresh render whenever the template or the store's configuration changed, and SHALL leave every other file in the guidance directory (including the operator's own) untouched. Both SHALL be byte-stable when nothing has changed. The file SHALL be discoverable by the same mechanism that scans and inlines every other convention document into the generated entry document, requiring no composition step of its own.
 
 #### Scenario: A fresh init delivers the baseline convention
 - **WHEN** `contexture init` runs
 - **THEN** the configured guidance path contains the baseline convention file, and it is inlined into the generated entry document's conventions section alongside any other file present
 
 #### Scenario: A configuration change refreshes the baseline convention on update
-- **WHEN** a store's configuration changes in a way that affects the baseline convention's rendered content (for example, a new hard wall) and the update command runs
+- **WHEN** a store's configuration changes in a way that affects the baseline convention's rendered content (for example, a new relation name) and the update command runs
 - **THEN** the baseline convention file is rewritten to reflect the change, and the entry document's conventions section reflects it after regeneration
 
 #### Scenario: A second update with nothing changed is a no-op
@@ -180,12 +180,8 @@ The store SHALL provide a command that exercises core store operations — at mi
 - **WHEN** a convention file or the configured mission document has changed on disk since `AGENTS.md` was last regenerated
 - **THEN** the portability test exits non-zero naming the drifted source
 
-### Requirement: The shipped skills carry decision procedures
-contexture SHALL ship, as contexture-owned skills delivered by init and update, skills for: placement, ingest orchestration, connection finding, connection proposal, rollup, mission, session lifecycle, session capture, derived artifacts, organize audit, and publish. Each SHALL state its decision rules against the store's configured taxonomy, contexts, and relation vocabulary — never a shipped profile's layer names or any real context name — and SHALL name the command that verifies each step it asks for.
-
-#### Scenario: Placement teaches the visibility-collision test
-- **WHEN** a store is initialized
-- **THEN** its placement skill states that two locations whose configured visibility defaults differ must not be merged, and that visibility may override location for content bridging contexts
+### Requirement: The shipped skills carry decision procedures for the configured taxonomy
+contexture SHALL ship, as contexture-owned skills delivered by init and update, skills for: placement, ingest orchestration, connection finding, connection proposal, rollup, mission, session lifecycle, session capture, derived artifacts, organize audit, and publish. Each SHALL state its decision rules against the store's configured taxonomy and relation vocabulary — never a shipped profile's layer names — and SHALL name the command that verifies each step it asks for.
 
 #### Scenario: Placement's termination test follows the configured taxonomy
 - **WHEN** a store's configured taxonomy declares a layer whose description implies an end state
@@ -215,9 +211,9 @@ contexture SHALL ship, as contexture-owned skills delivered by init and update, 
 - **WHEN** an agent follows the derived-artifacts skill
 - **THEN** it runs the check form of a build before the build, sanity-checks the reported counts, and never edits inside a `contexture:` fenced region
 
-#### Scenario: Publish gates before it copies, and names the subject before scaffolding
+#### Scenario: Publish names the subject before scaffolding
 - **WHEN** an agent follows the publish skill to build a page for a subject
-- **THEN** it is instructed to run the disclosure gate over the subject's resolved note set before copying any content out, to treat an ASK verdict as a stop that names the note to the operator, and to fix the page's identity once via the naming command rather than hand-creating a folder
+- **THEN** it is instructed to resolve the subject's note set before copying any content out, and to fix the page's identity once via the naming command rather than hand-creating a folder
 
 #### Scenario: Publish delegates both halves of the craft rather than inventing either
 - **WHEN** an agent follows the publish skill past the point where the page's form is chosen

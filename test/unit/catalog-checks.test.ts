@@ -13,8 +13,6 @@ function makeConfig(overrides: Partial<StoreConfig> = {}): StoreConfig {
   return {
     schema_version: 1,
     taxonomy: { profile: 'para', layers: [{ name: 'Projects', path: 'projects', description: '' }] },
-    fields: { visibility: 'scope' },
-    visibility: { default_context: 'private', directory_defaults: {}, contexts: {} },
     derived: { paths: [] },
     retrieval: { exclude_paths: [], relations: [], graph: { cluster_depth: 2, hub_top: 8, bridge_top: 10, orphan_exempt_clusters: [] } },
     git: { default_branch: 'main' },
@@ -23,7 +21,6 @@ function makeConfig(overrides: Partial<StoreConfig> = {}): StoreConfig {
     catalog: { path: 'catalog/', section_max_bytes: 32768 },
     publish: { path: 'publish/' },
     skills: { vendored: [] },
-    disclosure: { internal_audiences: [], hard_walls: [], leak_markers: {} },
     ingest: { inbox_path: 'inbox/', tracking_params: [] },
     organize: { archive_destination: 'archive/', rollup_stale_days: 7 },
     harness: { skills_path: 'skills/', guidance_path: 'guidance/' },

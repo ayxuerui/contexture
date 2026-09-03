@@ -138,11 +138,10 @@ export async function checkCatalogStale(store: Store): Promise<CatalogStaleEntry
  * real section that simply hasn't been built yet (or has no notes) returns
  * an empty string, which is a valid, uninteresting result, not an error.
  */
-export async function readCatalogSection(store: Store, sectionId: string, asContext?: string): Promise<string | null> {
+export async function readCatalogSection(store: Store, sectionId: string): Promise<string | null> {
   const sections = catalogSectionsFor(store.config);
   const section = sections.find((s) => s.id === sectionId);
   if (!section) return null;
-  void asContext; // visibility filtering wired in Phase 5
   return readIfExists(path.join(store.root, store.config.catalog.path, sectionFileName(section)));
 }
 

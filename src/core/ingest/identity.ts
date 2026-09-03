@@ -2,10 +2,10 @@ import type { Note } from '../notes/list.js';
 
 /**
  * context-ingest spec: "source type, source id, source hash, ingested
- * date" — assigned once, at ingest, never before. Like disclosure's
- * `audience` field, nothing asks these keys to be configurable, so they
- * live here as the one set of literals every ingest-related module reads
- * from, rather than each spelling out its own string.
+ * date" — assigned once, at ingest, never before. Nothing asks these keys
+ * to be configurable, so they live here as the one set of literals every
+ * ingest-related module reads from, rather than each spelling out its own
+ * string.
  */
 export const SOURCE_TYPE_FIELD = 'source_type';
 export const SOURCE_ID_FIELD = 'source_id';

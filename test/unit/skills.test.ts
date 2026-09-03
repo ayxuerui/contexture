@@ -33,8 +33,6 @@ function makeConfig(overrides: Partial<StoreConfig> = {}): StoreConfig {
         { name: 'Gamma', path: 'gamma', description: 'Completed, abandoned, or inactive items.' },
       ],
     },
-    fields: { visibility: 'scope' },
-    visibility: { default_context: 'ctx-default', directory_defaults: {}, contexts: {} },
     derived: { paths: [] },
     retrieval: { exclude_paths: ['skills/'], relations: [], graph: { cluster_depth: 2, hub_top: 8, bridge_top: 10, orphan_exempt_clusters: [] } },
     git: { default_branch: 'trunk' },
@@ -43,7 +41,6 @@ function makeConfig(overrides: Partial<StoreConfig> = {}): StoreConfig {
     catalog: { path: 'catalog/', section_max_bytes: 32768 },
     publish: { path: 'publish/' },
     skills: { vendored: [] },
-    disclosure: { internal_audiences: [], hard_walls: [], leak_markers: {} },
     ingest: { inbox_path: 'inbox/', tracking_params: [] },
     organize: { archive_destination: 'archive/', rollup_stale_days: 7 },
     harness: { skills_path: 'skills/', guidance_path: 'guidance/' },
@@ -113,15 +110,12 @@ describe('SKILLS', () => {
 describe('owned-skills-expansion: each skill carries its load-bearing rule (task 2.1)', () => {
   const skills = rendered();
 
-  it('placement: the visibility-collision merge test, visibility as an input, sub-item promotion, perishable routing, sibling style', () => {
+  it('placement: secrets never enter the store, sub-item promotion, perishable routing, sibling style', () => {
     const s = skills['ctxr-placement'];
-    expect(s).toMatch(/If\s+they differ, do NOT merge/);
-    expect(s).toContain('no safe default');
-    expect(s).toContain('Visibility can override location');
+    expect(s).toContain('Credentials, full account numbers, and secrets never enter the store');
     expect(s).toContain('Promote to its own top-level location');
     expect(s).toContain('fenced `contexture:<region>` block you OVERWRITE');
     expect(s).toContain('Read one or two sibling notes');
-    expect(s).toContain('`ctxr note resolve <path>`');
   });
 
   it('session capture: separates a rule from a fact, defaults to no, proposes removals, and never routes a convention through the notes command', () => {
@@ -293,10 +287,10 @@ describe('owned-skills-expansion: each skill carries its load-bearing rule (task
     expect(s).toContain('`git show origin/trunk:<path> | grep -c <marker>`');
   });
 
-  it('organize audit: move-don\'t-tag, visibility unchanged on retirement, tracked renames, broken-link classes, no stub notes', () => {
+  it('organize audit: move-don\'t-tag, frontmatter unchanged on retirement, tracked renames, broken-link classes, no stub notes', () => {
     const s = skills['ctxr-organize-audit'];
     expect(s).toContain("## Retiring: move, don't tag");
-    expect(s).toContain('visibility field travels unchanged');
+    expect(s).toContain("note's frontmatter travels unchanged");
     expect(s).toContain('`git status --short` showing `R`');
     expect(s).toContain('## Broken links have classes');
     expect(s).toContain('Never fabricate stub notes');
@@ -312,12 +306,12 @@ describe('owned-skills-expansion: each skill carries its load-bearing rule (task
     expect(s).toContain('Thesis-change rule');
   });
 
-  it('publish: gate before copy, ASK stops and names the note, identity fixed once, excluded from retrieval, both craft axes delegated not invented', () => {
+  it('publish: judge what belongs on the page, identity fixed once, excluded from retrieval, both craft axes delegated not invented', () => {
     const s = skills['ctxr-publish'];
-    expect(s).toContain('Gate before copying anything out');
-    expect(s).toContain('`ctxr publish gather --audience <audience>`');
-    expect(s).toContain('DENY** notes contribute nothing');
-    expect(s).toContain('ASK** stops the build; name the note to the operator and wait');
+    expect(s).toContain('Decide what belongs on the page');
+    expect(s).toContain('The store does not decide this for you');
+    expect(s).toContain('must\nnot carry material written about that party');
+    expect(s).toContain('leave it out and name it to the operator');
     expect(s).toContain('`ctxr publish new <slug>`');
     expect(s).toContain('refuses to overwrite an existing folder');
     // Wrap-tolerant on purpose: these pin the rule, not the column the template
@@ -344,8 +338,6 @@ describe('owned-skills-expansion: each skill carries its load-bearing rule (task
     expect(s['ctxr-ingest-orchestration']).toContain('`ctxr source add-alt <path> --id <new-id>`');
     expect(s['ctxr-rollup']).toContain('`ctxr rollup stale`');
     expect(s['ctxr-organize-audit']).toContain('`ctxr rollup stale`');
-    expect(s['ctxr-organize-audit']).toContain('`ctxr check <path> --scan`');
-    expect(s['ctxr-organize-audit']).toContain('disclosure.leak_markers');
     expect(s['ctxr-derived-artifacts']).toContain('`ctxr entry append <note> --region <name>`');
   });
 

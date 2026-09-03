@@ -17,9 +17,14 @@ context: |
   Every shipped or generated instruction to run a command names `ctxr`, never
   `contexture`.
 
-  Tenancy: single-owner context store, org-ready access model — visibility values
-  are user-defined named contexts, never hardcoded tiers (no "team-a/personal"
-  style enums in a requirement).
+  Tenancy: single-owner context store. There is no access-control axis —
+  retire-the-access-axes removed the visibility and disclosure fields and
+  declined to add scope, on the reasoning recorded in that change's design.md.
+  Narrowing is positional (`--under`, taxonomy layers, retrieval.exclude_paths),
+  relational (wikilinks and the graph), or content-based (ripgrep). A future
+  access model is expected to be owner/editor/viewer roles plus a pattern scan
+  on a built page; do not reintroduce a per-note classification label without
+  re-arguing that change's D1.
 
   Retrieval v1 has three legs and NO ranker: a curated catalog (derived structure +
   authored glosses), a deterministic wikilink graph (enumerates structure, ranks
@@ -42,10 +47,7 @@ context: |
   Never write a requirement of the form "the agent shall not edit files directly" —
   it is unenforceable.
 
-  Naming is deliberately postponed: the visibility field key (scope: vs lens:) and
-  the store's root noun are not yet chosen. See the spec-authoring rules below —
-  they exist specifically so this rename later is a config change plus a
-  migration, not a spec rewrite.
+  Naming is deliberately postponed: the store's root noun is not yet chosen.
 
   If this context and a spec disagree, this context wins and the disagreement is a
   bug — report it.
@@ -53,19 +55,15 @@ context: |
 rules:
   specs:
     - "Name capabilities and spec directories for the CONCEPT, never for a field
-       name or a delivery vehicle (e.g. `context-visibility`, never
-       `scope-visibility` or `cli-visibility`). A spec directory name is the most
+       name or a delivery vehicle (e.g. `context-catalog`, never
+       `gloss-catalog` or `cli-catalog`). A spec directory name is the most
        expensive thing to rename later."
-    - "Bind the provisional field name exactly once, in the spec's Purpose/Why
-       section: state that the frontmatter key is `scope:` (provisional).
-       Every requirement and scenario after that must say 'the visibility field',
-       never the literal key — so a rename touches one line, not the whole spec."
-    - "The visibility field's key name is asserted as a requirement in exactly one
-       place: context-store reads it from contexture.yaml (fields.visibility) with
-       a shipped default. No other spec may hardcode the key name."
-    - "Scenarios use placeholder context names (ctx-a, ctx-b, work, personal-demo),
-       never a real person's or organization's taxonomy — this is an OSS spec for
-       an unknown audience, not a record of any one deployment."
+    - "A frontmatter key a specification depends on is named in exactly one
+       place, and read from contexture.yaml with a shipped default everywhere
+       else. No second spec may hardcode the key name."
+    - "Scenarios use placeholder names (ctx-a, ctx-b, work, personal-demo), never
+       a real person's or organization's taxonomy — this is an OSS spec for an
+       unknown audience, not a record of any one deployment."
     - "Shipped taxonomy profiles (PARA, Zettelkasten, Diátaxis, and any others
        added later) are asserted as a requirement in exactly one place:
        store-lifecycle's shipped-taxonomy-profiles requirement. No other
@@ -79,8 +77,8 @@ rules:
        is 'the agent is told to', it is a skill-markdown convention, not a
        requirement."
     - "Fail-closed language must name what it fails closed TO, sourced from
-       config, not a hardcoded literal (e.g. 'the configured default visibility
-       context', not 'personal')."
+       config, not a hardcoded literal (e.g. 'the configured archive
+       destination', not 'archive/')."
     - "A capability that has two requirements with contradictory defaults (e.g.
        one fails closed silently, another fails open pending human review) is two
        capabilities, not one — split it."
@@ -92,8 +90,9 @@ rules:
     - "Every phase must end in a runnable command with an observable exit
        code or output — never a task whose done-condition is a prose assertion."
     - "Sequence the write-lifecycle capability before the first phase that writes
-       anything, and sequence visibility enforcement before retrieval — a
-       pre-filter cannot be safely retrofitted from a post-filter."
+       anything. If a filter over retrieval is ever reintroduced, sequence it
+       before the legs it filters — a pre-filter cannot be safely retrofitted
+       from a post-filter."
 
 operations:
   apply:
@@ -102,5 +101,6 @@ operations:
          its real output — never assert a check passed without having run it."
   archive:
     guidance:
-      - "Confirm no requirement anywhere in the archived specs names the
-         visibility field's literal key outside context-store, before archiving."
+      - "Confirm no requirement anywhere in the archived specs hardcodes a
+         frontmatter key name that contexture.yaml is meant to own, before
+         archiving."

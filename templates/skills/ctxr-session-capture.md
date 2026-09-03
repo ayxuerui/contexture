@@ -58,7 +58,6 @@ calcified, so it never gets retired.
 ```
 ### Store notes
 - A1  path: <layer>/<location>/<Title>.md
-      visibility: <value> — <one-line rationale; `ctxr note resolve` on a sibling shows the default>
       sketch: bullets
 
 ### House conventions
@@ -84,7 +83,6 @@ notes:
   - id: A1
     path: <layer>/<location>/<Title>.md
     mode: create            # or: append
-    visibility: <value>     # optional; omit to take the location default
     body: |
       matching the frontmatter and style of the sibling notes (`ctxr-placement` decides the location)
 ```
@@ -94,8 +92,7 @@ one bad path never blocks the rest. These note commits ride the session pull req
 (`ctxr-session-lifecycle`).
 
 Approved conventions are a direct edit to `__HOUSE_CONVENTIONS_PATH__`, never the YAML above: `ctxr
-session capture` writes NOTES — it takes a path, a visibility, and a body, and stamps the visibility
-field — and a guidance file is not a note and carries no visibility. Edit it under the matching
+session capture` writes NOTES — it takes a path and a body — and a guidance file is not a note. Edit it under the matching
 section, then run `ctxr update` so AGENTS.md re-inlines it, and stage BOTH in the same commit: a staged
 guidance change without a matching staged AGENTS.md regeneration fails `doctor --staged` and the
 pre-commit hook refuses it. If the file does not exist yet (a store migrated in from before it was

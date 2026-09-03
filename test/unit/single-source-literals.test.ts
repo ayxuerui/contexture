@@ -2,17 +2,14 @@ import { readFileSync, readdirSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_VISIBILITY_FIELD_KEY } from '../../src/config/defaults.js';
-import { renderStoreConfig } from '../../src/config/render.js';
-import { SUPPORTED_SCHEMA_VERSION } from '../../src/config/schema.js';
 import { SHIPPED_PROFILES } from '../../src/taxonomy/profiles.js';
 
 /**
  * Turns the spec's "exactly one place" and "exactly one primitive"
  * requirements into failing checks instead of a convention someone has to
- * remember: context-store's visibility-field-key requirement,
- * store-lifecycle's shipped-taxonomy-profiles requirement, Reporter's sole
- * ownership of stdout, and GitRunner's sole ownership of spawning git.
+ * remember: store-lifecycle's shipped-taxonomy-profiles requirement,
+ * Reporter's sole ownership of stdout, and GitRunner's sole ownership of
+ * spawning git.
  */
 const SRC_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../src');
 
@@ -58,33 +55,6 @@ function filesContainingSubstring(substring: string, allow: readonly string[]): 
 }
 
 describe('single-source-literals guard', () => {
-  it('the visibility field key default literal appears only in config/defaults.ts', () => {
-    expect(filesContainingQuotedLiteral(DEFAULT_VISIBILITY_FIELD_KEY, ['config/defaults.ts'])).toEqual([]);
-  });
-
-  it('anti-vacuity: a freshly rendered config actually uses the constant (not merely unused)', () => {
-    const rendered = renderStoreConfig({
-      schema_version: SUPPORTED_SCHEMA_VERSION,
-      taxonomy: { profile: 'para', layers: [] },
-      fields: { visibility: DEFAULT_VISIBILITY_FIELD_KEY },
-      visibility: { default_context: 'private', directory_defaults: {}, contexts: {} },
-      derived: { paths: [] },
-      retrieval: { exclude_paths: [], relations: [], graph: { cluster_depth: 2, hub_top: 8, bridge_top: 10, orphan_exempt_clusters: [] } },
-      git: { default_branch: 'main' },
-      session: { branch_prefix: 'session/', worktrees_path: '.worktrees/' },
-      write_lifecycle: { diff_size_ceiling_lines: 2000, writable_paths: [] },
-    catalog: { path: 'catalog/', section_max_bytes: 32768 },
-    publish: { path: 'publish/' },
-    skills: { vendored: [] },
-    disclosure: { internal_audiences: [], hard_walls: [], leak_markers: {} },
-    ingest: { inbox_path: 'inbox/', tracking_params: [] },
-    organize: { archive_destination: 'archive/', rollup_stale_days: 7 },
-    harness: { skills_path: 'skills/', guidance_path: 'guidance/' },
-    adapters: [],
-    });
-    expect(rendered).toContain(`visibility: ${DEFAULT_VISIBILITY_FIELD_KEY}`);
-  });
-
   it('every shipped profile/layer name appears only in taxonomy/profiles.ts', () => {
     const names = new Set<string>();
     for (const profile of SHIPPED_PROFILES) {
