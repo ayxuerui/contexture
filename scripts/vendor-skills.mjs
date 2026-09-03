@@ -19,7 +19,7 @@ import { createHash } from 'node:crypto';
 import { mkdirSync, readFileSync, readdirSync, writeFileSync, existsSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { MANIFEST, renderNotices } from './vendored-manifest.mjs';
+import { MANIFEST, renderNotices, assemblePayload, differingPaths, LICENSE_FILE_NAME } from './vendored-manifest.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const VENDOR_DIR = path.join(ROOT, 'templates', 'vendor');
@@ -54,20 +54,40 @@ function fetchTree(repo, subpath, ref, prefix = '') {
   return files;
 }
 
+/** One repository-relative file at `ref` — how a license kept outside the vendored subpath is read. */
+function fetchFile(repo, filePath, ref) {
+  const blob = ghApi(`repos/${repo}/contents/${filePath}?ref=${ref}`);
+  if (Array.isArray(blob) || blob.type !== 'file') {
+    throw new Error(`${repo}/${filePath}@${ref} is not a file`);
+  }
+  return Buffer.from(blob.content, 'base64').toString('utf8');
+}
+
+/**
+ * The payload an entry should have at `ref`, however upstream chose to lay out
+ * its license. Both fetchOne and outdatedOne go through here — see
+ * `assemblePayload` for why they must not each have their own idea of it.
+ */
+function fetchPayload(entry, ref) {
+  const subpathFiles = fetchTree(entry.repo, entry.subpath, ref);
+  const externalLicense = entry.licensePath ? fetchFile(entry.repo, entry.licensePath, ref) : undefined;
+  return assemblePayload(entry, subpathFiles, externalLicense);
+}
+
 function fetchOne(entry) {
   const dir = path.join(VENDOR_DIR, entry.name);
   mkdirSync(dir, { recursive: true });
 
-  const files = fetchTree(entry.repo, entry.subpath, entry.ref);
-  const skillFile = files.find((f) => f.relativePath === 'SKILL.md');
-  if (!skillFile) {
+  const files = fetchPayload(entry, entry.ref);
+  const skill = files.get('SKILL.md');
+  if (skill === undefined) {
     throw new Error(`${entry.repo}/${entry.subpath}@${entry.ref} has no SKILL.md at its root`);
   }
 
-  for (const file of files) {
-    const target = path.join(dir, file.relativePath);
+  for (const [relativePath, content] of files) {
+    const target = path.join(dir, relativePath);
     mkdirSync(path.dirname(target), { recursive: true });
-    writeFileSync(target, file.content, 'utf8');
+    writeFileSync(target, content, 'utf8');
   }
 
   const provenance = {
@@ -75,11 +95,15 @@ function fetchOne(entry) {
     subpath: entry.subpath,
     ref: entry.ref,
     license: entry.license,
-    sha256: sha256(skillFile.content),
+    // Omitted entirely — not set to undefined — for an entry whose license sits
+    // inside its subpath, so an existing provenance.json round-trips
+    // byte-identical through a re-vendor.
+    ...(entry.licensePath ? { licensePath: entry.licensePath } : {}),
+    sha256: sha256(skill),
   };
   writeFileSync(path.join(dir, PROVENANCE_FILE_NAME), `${JSON.stringify(provenance, null, 2)}\n`, 'utf8');
 
-  console.log(`vendored ${entry.name} <- ${entry.repo}/${entry.subpath}@${entry.ref.slice(0, 12)} (${files.length} file(s))`);
+  console.log(`vendored ${entry.name} <- ${entry.repo}/${entry.subpath}@${entry.ref.slice(0, 12)} (${files.size} file(s))`);
 }
 
 function checkOne(entry) {
@@ -136,13 +160,14 @@ function outdatedOne(entry) {
   }
 
   const head = ghApi(`repos/${entry.repo}/commits/${entry.track}`).sha;
-  const upstream = new Map(fetchTree(entry.repo, entry.subpath, head).map((f) => [f.relativePath, f.content]));
+  // Through the same assembly the fetch path uses: a license taken from outside
+  // the subpath is fetched at this same HEAD and compared like any other file,
+  // so it is neither permanently "differing" (a weekly false alarm) nor exempt
+  // from comparison (which would silence the one change that is a
+  // redistribution decision rather than a routine refresh).
+  const upstream = fetchPayload(entry, head);
   const committed = readCommittedPayload(entry.name);
-
-  const differing = [];
-  for (const rel of new Set([...upstream.keys(), ...committed.keys()])) {
-    if (upstream.get(rel) !== committed.get(rel)) differing.push(rel);
-  }
+  const differing = differingPaths(upstream, committed);
 
   if (differing.length === 0) {
     console.log(`CURRENT: ${entry.name} matches ${entry.repo}/${entry.subpath}@${entry.track}`);
@@ -153,8 +178,8 @@ function outdatedOne(entry) {
   console.log(`OUTDATED: ${entry.name}`);
   console.log(`  pinned:   ${entry.ref}`);
   console.log(`  upstream: ${head} (${entry.track})`);
-  console.log(`  differing files: ${differing.sort().join(', ')}`);
-  if (differing.includes('LICENSE.txt')) {
+  console.log(`  differing files: ${differing.join(', ')}`);
+  if (differing.includes(LICENSE_FILE_NAME)) {
     console.log('  LICENSE CHANGED — this is a redistribution decision, not a routine refresh');
   }
   if (lastCommit) {

@@ -25,6 +25,12 @@ describe('vendored skills and the harness bridge (real CLI)', () => {
       for (const harnessDir of ['.claude/skills', '.hermes/skills']) {
         const throughBridge = await readFile(path.join(tmp.root, harnessDir, 'frontend-design/SKILL.md'), 'utf8');
         expect(throughBridge).toContain('name: frontend-design');
+
+        // The set is plural: a bridge that only resolves the first entry is a
+        // bridge that half works, and reading one skill through it would not
+        // catch that.
+        const secondAxis = await readFile(path.join(tmp.root, harnessDir, 'eli5/SKILL.md'), 'utf8');
+        expect(secondAxis).toContain('name: eli5');
         const owned = await readFile(path.join(tmp.root, harnessDir, 'ctxr-publish/SKILL.md'), 'utf8');
         expect(owned).toContain('name: ctxr-publish');
       }

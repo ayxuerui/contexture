@@ -33,7 +33,7 @@ export interface CheckResult {
 /**
  * Memoized accessors shared across every check in one run. Reserved with
  * this shape from Phase 0 so that by Phase 9 — when catalog coverage,
- * dangling-link, identity-collision, fail-closed-visibility, and gloss-rot
+ * dangling-link, identity-collision, and gloss-rot
  * checks all need the full note set — adding memoization doesn't mean
  * changing `run()`'s signature across six phases of accumulated checks.
  */

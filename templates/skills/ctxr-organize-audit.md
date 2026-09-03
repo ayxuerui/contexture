@@ -1,7 +1,6 @@
 1. Run `ctxr lint` for the full health report — orphan notes, broken links, uningested inbox material,
    catalog gaps. It always exits 0; its findings are observations for judgment, never a block.
-2. Run `ctxr doctor` for the invariants that DO block: catalog coverage, fail-closed visibility, hook
-   health, and more. Address doctor's failures before `ctxr-submit`; it runs the same checks.
+2. Run `ctxr doctor` for the invariants that DO block: catalog coverage, hook health, and more. Address doctor's failures before `ctxr-submit`; it runs the same checks.
 
 ## Placement review
 
@@ -15,7 +14,7 @@ organized by actionability. Single-note calls go through `ctxr-placement`.
 
 A status tag left in place defeats the layer — the active layers must show only active work.
 `ctxr archive <path>` moves the note into the configured archive location as a tracked rename; the
-visibility field travels unchanged (never rewrite it on the move). Retiring is reversible cold storage,
+note's frontmatter travels unchanged (never rewrite it on the move). Retiring is reversible cold storage,
 not deletion. Verify with `git status --short` showing `R` (a rename, history preserved), not a delete
 plus an add, then `ctxr catalog check`.
 
@@ -24,13 +23,6 @@ plus an add, then `ctxr catalog check`.
 `ctxr lint`'s rollup-stale finding (and `ctxr rollup stale` directly) names entity notes whose backlinks
 have moved since their last synthesis, or which have never been rolled up — hand each one to
 `ctxr-rollup` rather than re-synthesizing ad hoc.
-
-## Leak scan
-
-When a store declares context markers (`disclosure.leak_markers`), `ctxr lint` also flags content
-belonging to one context found inside a note that context cannot see; `ctxr check <path> --scan` runs
-the same scan on one note without needing an `--audience`. A finding names the marker context and the
-matched text — read it, then move or redact the content; the scan never auto-fixes.
 
 ## Broken links have classes — classify before fixing
 

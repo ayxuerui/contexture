@@ -28,23 +28,12 @@ The store SHALL carry exactly one configuration file, `contexture.yaml`, at its 
 - **WHEN** `contexture.yaml` lists a path prefix under retrieval exclusions
 - **THEN** every retrieval leg (catalog, graph, content matching) treats notes under that prefix as non-retrievable, and no component maintains a second, independent exclusion list
 
-### Requirement: The visibility field's frontmatter key is configurable with a shipped default
-The store's visibility field key (the frontmatter key that names which context may see a note) SHALL be read from `contexture.yaml` (`fields.visibility`), with a shipped default value. No specification other than this one SHALL assert the literal key name; all other requirements SHALL refer to "the visibility field."
-
-#### Scenario: Default key in a freshly initialized store
-- **WHEN** `contexture init` runs with no `fields.visibility` override
-- **THEN** the generated `contexture.yaml` records the shipped default key, and `contexture note resolve` reads that key from notes
-
-#### Scenario: Renaming the visibility field key
-- **WHEN** an operator changes `fields.visibility` in `contexture.yaml` and runs the corresponding migration
-- **THEN** every note's frontmatter is rewritten to the new key and every command continues to resolve visibility correctly, with no other configuration or code change required
-
 ### Requirement: Note frontmatter schema
-A note SHALL be a markdown file whose optional YAML frontmatter may declare, among configured fields: a title, a creation date, and the visibility field. A note with no frontmatter SHALL be treated as valid content; contexture SHALL NOT add frontmatter to an existing note without an explicit request to do so.
+A note SHALL be a markdown file whose optional YAML frontmatter may declare, among configured fields: a title and a creation date. A note with no frontmatter SHALL be treated as valid content; contexture SHALL NOT add frontmatter to an existing note without an explicit request to do so.
 
 #### Scenario: Note with no frontmatter is valid
 - **WHEN** `contexture lint` scans a note that has no YAML frontmatter block at all
-- **THEN** the note is not reported as malformed; it is reported only under the visibility-fail-closed check defined in the context-visibility capability
+- **THEN** the note is not reported as malformed
 
 #### Scenario: Frontmatter is not silently added
 - **WHEN** a contexture write operation (e.g. `rollup write`, `archive`) modifies a note that has no frontmatter

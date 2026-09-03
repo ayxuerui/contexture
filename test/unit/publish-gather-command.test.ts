@@ -6,7 +6,6 @@ import type { StoreConfig } from '../../src/config/schema.js';
 import { ExitCode } from '../../src/core/exit-codes.js';
 import {
   NoteNotFoundError,
-  PublishAudienceRequiredError,
   PublishSelectorConflictError,
   PublishSelectorRequiredError,
 } from '../../src/core/errors.js';
@@ -18,8 +17,6 @@ function makeConfig(overrides: Partial<StoreConfig['disclosure']> = {}): StoreCo
   return {
     schema_version: 1,
     taxonomy: { profile: 'para', layers: [{ name: 'Projects', path: 'projects', description: '' }] },
-    fields: { visibility: 'scope' },
-    visibility: { default_context: 'private', directory_defaults: {}, contexts: {} },
     derived: { paths: [] },
     retrieval: { exclude_paths: [], relations: [], graph: { cluster_depth: 2, hub_top: 8, bridge_top: 10, orphan_exempt_clusters: [] } },
     git: { default_branch: 'main' },
@@ -28,7 +25,6 @@ function makeConfig(overrides: Partial<StoreConfig['disclosure']> = {}): StoreCo
     catalog: { path: 'catalog/', section_max_bytes: 32768 },
     publish: { path: 'publish/' },
     skills: { vendored: [] },
-    disclosure: { internal_audiences: [], hard_walls: [], leak_markers: {}, ...overrides },
     ingest: { inbox_path: 'inbox/', tracking_params: [] },
     organize: { archive_destination: 'archive/', rollup_stale_days: 7 },
     harness: { skills_path: 'skills/', guidance_path: 'guidance/' },
@@ -48,7 +44,7 @@ describe('publish gather: selector validation', () => {
     try {
       const store: Store = { root: tmp.root, config: makeConfig() };
       const env = makeFakeEnv({ cwd: tmp.root });
-      await expect(executeGather(env, store, { audience: 'external' })).rejects.toBeInstanceOf(PublishSelectorRequiredError);
+      await expect(executeGather(env, store, {})).rejects.toBeInstanceOf(PublishSelectorRequiredError);
     } finally {
       await tmp.cleanup();
     }
@@ -60,69 +56,8 @@ describe('publish gather: selector validation', () => {
       const store: Store = { root: tmp.root, config: makeConfig() };
       const env = makeFakeEnv({ cwd: tmp.root });
       await expect(
-        executeGather(env, store, { under: 'projects', note: 'projects/a.md', audience: 'external' }),
+        executeGather(env, store, { under: 'projects', note: 'projects/a.md' }),
       ).rejects.toBeInstanceOf(PublishSelectorConflictError);
-    } finally {
-      await tmp.cleanup();
-    }
-  });
-
-  it('throws PublishAudienceRequiredError when --audience is missing', async () => {
-    const tmp = await makeTmpDir();
-    try {
-      const store: Store = { root: tmp.root, config: makeConfig() };
-      const env = makeFakeEnv({ cwd: tmp.root });
-      await expect(executeGather(env, store, { under: 'projects' })).rejects.toBeInstanceOf(PublishAudienceRequiredError);
-    } finally {
-      await tmp.cleanup();
-    }
-  });
-});
-
-describe('publish gather: --under resolves a subtree', () => {
-  it('resolves every note under the prefix, evaluates each, and exits ALLOW when all allow', async () => {
-    const tmp = await makeTmpDir();
-    try {
-      const store: Store = {
-        root: tmp.root,
-        config: makeConfig({ hard_walls: [{ audience: '*', verdict: 'allow' }] }),
-      };
-      await writeNote(tmp.root, 'projects/a.md', '# A\n');
-      await writeNote(tmp.root, 'projects/b.md', '# B\n');
-      await writeNote(tmp.root, 'areas/c.md', '# C (not under prefix)\n');
-      const env = makeFakeEnv({ cwd: tmp.root });
-
-      const outcome = await executeGather(env, store, { under: 'projects', audience: 'external' });
-      expect(outcome.exitCode).toBe(ExitCode.Ok);
-      expect(outcome.data?.count).toBe(2);
-      expect(outcome.data?.notes.map((n) => n.path).sort()).toEqual(['projects/a.md', 'projects/b.md']);
-      expect(outcome.data?.verdict).toBe('allow');
-    } finally {
-      await tmp.cleanup();
-    }
-  });
-
-  it('a single DENY-walled note dominates the exit code, not the majority-ALLOW notes', async () => {
-    const tmp = await makeTmpDir();
-    try {
-      const store: Store = {
-        root: tmp.root,
-        config: makeConfig({
-          hard_walls: [
-            { audience: '*', note_path_prefix: 'projects/secret/', verdict: 'deny' },
-            { audience: '*', verdict: 'allow' },
-          ],
-        }),
-      };
-      await writeNote(tmp.root, 'projects/a.md', '# A\n');
-      await writeNote(tmp.root, 'projects/secret/c.md', '# C secret\n');
-      const env = makeFakeEnv({ cwd: tmp.root });
-
-      const outcome = await executeGather(env, store, { under: 'projects', audience: 'external' });
-      expect(outcome.exitCode).toBe(ExitCode.DisclosureDeny);
-      expect(outcome.data?.verdict).toBe('deny');
-      const secret = outcome.data?.notes.find((n) => n.path === 'projects/secret/c.md');
-      expect(secret?.verdict).toBe('deny');
     } finally {
       await tmp.cleanup();
     }
@@ -134,7 +69,7 @@ describe('publish gather: --under resolves a subtree', () => {
       const store: Store = { root: tmp.root, config: makeConfig() };
       const env = makeFakeEnv({ cwd: tmp.root });
 
-      const outcome = await executeGather(env, store, { under: 'nowhere', audience: 'external' });
+      const outcome = await executeGather(env, store, { under: 'nowhere' });
       expect(outcome.exitCode).toBe(ExitCode.Ok);
       expect(outcome.data?.count).toBe(0);
       expect(outcome.data?.notes).toEqual([]);
@@ -152,7 +87,7 @@ describe('publish gather: --note resolves exactly one note', () => {
       await writeNote(tmp.root, 'projects/a.md', '# A\n');
       const env = makeFakeEnv({ cwd: tmp.root });
 
-      const outcome = await executeGather(env, store, { note: 'projects/a.md', audience: 'external' });
+      const outcome = await executeGather(env, store, { note: 'projects/a.md' });
       expect(outcome.data?.count).toBe(1);
       expect(outcome.data?.notes[0]?.path).toBe('projects/a.md');
     } finally {
@@ -165,7 +100,7 @@ describe('publish gather: --note resolves exactly one note', () => {
     try {
       const store: Store = { root: tmp.root, config: makeConfig() };
       const env = makeFakeEnv({ cwd: tmp.root });
-      await expect(executeGather(env, store, { note: 'projects/nope.md', audience: 'external' })).rejects.toBeInstanceOf(
+      await expect(executeGather(env, store, { note: 'projects/nope.md' })).rejects.toBeInstanceOf(
         NoteNotFoundError,
       );
     } finally {
@@ -184,7 +119,7 @@ describe('publish gather: --entity resolves the same backlinks as rollup gather'
       await writeNote(tmp.root, 'projects/b.md', 'No link here.\n');
       const env = makeFakeEnv({ cwd: tmp.root });
 
-      const outcome = await executeGather(env, store, { entity: 'projects/topic.md', audience: 'external' });
+      const outcome = await executeGather(env, store, { entity: 'projects/topic.md' });
       expect(outcome.data?.notes.map((n) => n.path)).toEqual(['projects/a.md']);
     } finally {
       await tmp.cleanup();
@@ -192,24 +127,3 @@ describe('publish gather: --entity resolves the same backlinks as rollup gather'
   });
 });
 
-describe('publish gather: --as resolves everything a named context can see', () => {
-  it('resolves notes whose resolved visibility the context admits', async () => {
-    const tmp = await makeTmpDir();
-    try {
-      const store: Store = {
-        root: tmp.root,
-        config: makeConfig(),
-      };
-      store.config.visibility.contexts = { 'ctx-a': ['ctx-a', 'ctx-shared'] };
-      await writeNote(tmp.root, 'projects/a.md', '---\nscope: ctx-a\n---\n# A\n');
-      await writeNote(tmp.root, 'projects/b.md', '---\nscope: ctx-shared\n---\n# B\n');
-      await writeNote(tmp.root, 'projects/c.md', '---\nscope: ctx-other\n---\n# C\n');
-      const env = makeFakeEnv({ cwd: tmp.root });
-
-      const outcome = await executeGather(env, store, { as: 'ctx-a', audience: 'external' });
-      expect(outcome.data?.notes.map((n) => n.path).sort()).toEqual(['projects/a.md', 'projects/b.md']);
-    } finally {
-      await tmp.cleanup();
-    }
-  });
-});

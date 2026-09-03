@@ -29,11 +29,15 @@ export interface SessionCaptureFlags {
   proposal: string;
 }
 
+/**
+ * The proposal is plain parsed YAML, so a key absent here is ignored rather
+ * than refused — which is exactly what retire-the-access-axes specifies for a
+ * proposal still carrying the retired `visibility:` key.
+ */
 interface NoteItem {
   id?: string;
   path: string;
   mode: 'create' | 'append';
-  visibility?: string;
   frontmatter?: Record<string, unknown>;
   body: string;
 }
@@ -81,7 +85,6 @@ async function applyNote(store: Store, id: string, item: NoteItem): Promise<Capt
   if (item.mode === 'create') {
     if (exists) return { id, path: item.path, outcome: 'refused', reason: 'already exists; use mode: append' };
     const frontmatter: Record<string, unknown> = { ...item.frontmatter };
-    if (item.visibility !== undefined) frontmatter[store.config.fields.visibility] = item.visibility;
     await mkdir(path.dirname(absolutePath), { recursive: true });
     await writeFileAtomic(absolutePath, renderNote(frontmatter, item.body));
     return { id, path: item.path, outcome: 'wrote' };

@@ -8,10 +8,9 @@ import { DEFAULT_ARCHIVE_DESTINATION, DEFAULT_PUBLISH_PATH, DEFAULT_VENDORED_SKI
  */
 /**
  * Bumped to 2 by the visibility-field key rename migration (store-lifecycle
- * spec task 9.2) — proof that renaming DEFAULT_VISIBILITY_FIELD_KEY really
- * is "a config-default change plus a migration, never a spec or code
- * rewrite" (design.md D7): every consumer already reads
- * config.fields.visibility, never a literal key, so nothing else changed.
+ * spec task 9.2). Both that field and the config key naming it were removed
+ * at schema 7 (see below); the migration survives only to keep the 1 -> 2
+ * step in the chain intact.
  *
  * Bumped to 3 by the procedures-to-skills key rename migration
  * (rename-procedures-to-skills, 0003-rename-procedures-path-to-skills):
@@ -24,7 +23,21 @@ import { DEFAULT_ARCHIVE_DESTINATION, DEFAULT_PUBLISH_PATH, DEFAULT_VENDORED_SKI
  * `harness.conventions_path` -> `harness.guidance_path`. HarnessSchema's
  * transform accepts the old key through this version too, the same way.
  */
-export const SUPPORTED_SCHEMA_VERSION = 6;
+/**
+ * Bumped to 7 on main by the explanation-craft-skill migration
+ * (vendor-explanation-craft-skill, 0007-add-explanation-craft-skill), which
+ * pins its own local SCHEMA_VERSION and is unaffected by later bumps here.
+ *
+ * Bumped to 8 by the access-axis removal (retire-the-access-axes,
+ * drop-access-axes): the `visibility:` and `disclosure:` blocks and the
+ * `fields:` block that named the visibility frontmatter key are all gone.
+ * Unlike the rename migrations above, nothing here is accepted loosely for
+ * an older store — `noUnrecognizedConfigKeysCheck` derives from this
+ * schema's shape, so an unmigrated store fails `doctor` on the three stale
+ * keys until `ctxr migrate` drops them, exactly as `identity` did when
+ * remove-agent-identity retired it.
+ */
+export const SUPPORTED_SCHEMA_VERSION = 8;
 
 export const TaxonomyLayerSchema = z.object({
   name: z.string().min(1),
@@ -36,31 +49,6 @@ const TaxonomySchema = z.object({
   /** A shipped profile id, or "custom" when a custom taxonomy definition was supplied. */
   profile: z.string().min(1),
   layers: z.array(TaxonomyLayerSchema),
-});
-
-/**
- * Loose (passthrough), not strict: a later phase adding its own field key
- * (e.g. audience tagging) must not force every existing store through a
- * migration just to keep loading. schema_version bumps only on a genuinely
- * incompatible change, never on an additive one.
- */
-const FieldsSchema = z
-  .object({
-    visibility: z.string().min(1),
-  })
-  .passthrough();
-
-const VisibilitySchema = z.object({
-  default_context: z.string().min(1),
-  directory_defaults: z.record(z.string(), z.string()).default({}),
-  /**
-   * context-visibility spec (visibility-contexts-and-wall-verdicts): which
-   * visibility VALUES each named context can see. A context with no entry
-   * sees exactly its own value (identity default) — so an unconfigured
-   * store behaves byte-identically to the equality matching this replaced,
-   * and an unknown context fails closed to that same identity match.
-   */
-  contexts: z.record(z.string(), z.array(z.string())).default({}),
 });
 
 const DerivedSchema = z.object({
@@ -133,29 +121,6 @@ const PublishSchema = z.object({
  */
 const SkillsSchema = z.object({
   vendored: z.array(z.string()).default([...DEFAULT_VENDORED_SKILLS]),
-});
-
-/**
- * disclosure-policy spec: "v1 keeps the disclosure ladder's shape with a
- * flat, user-defined value list" (design.md) — no registry syntax, just a
- * flat set of audience names the operator considers internal, and a flat
- * list of hard-wall rules evaluated before any tag or visibility rung.
- */
-const HardWallSchema = z.object({
-  /** A named audience, or "*" to match every audience. */
-  audience: z.string().min(1),
-  /** Omitted means the wall applies to every note. */
-  note_path_prefix: z.string().min(1).optional(),
-  /** Audiences this wall does NOT apply to — evaluation falls through to later rungs for them. */
-  except: z.array(z.string()).optional(),
-  verdict: z.enum(['allow', 'deny', 'ask']),
-});
-
-/** store-primitives-from-migration-audit spec (D3): a context's marker patterns for the leak scan; empty (the default) makes the scan a no-op. */
-const DisclosureSchema = z.object({
-  internal_audiences: z.array(z.string()),
-  hard_walls: z.array(HardWallSchema),
-  leak_markers: z.record(z.string(), z.array(z.string())).default({}),
 });
 
 /** context-ingest spec: where capture lands raw material before ingest stamps identity onto it. */
@@ -307,8 +272,6 @@ export const StoreConfigSchema = z
   .object({
     schema_version: z.number().int().positive(),
     taxonomy: TaxonomySchema,
-    fields: FieldsSchema,
-    visibility: VisibilitySchema,
     derived: DerivedSchema,
     retrieval: RetrievalSchema,
     git: GitSchema,
@@ -317,7 +280,6 @@ export const StoreConfigSchema = z
     catalog: CatalogSchema,
     publish: PublishSchema.default({ path: DEFAULT_PUBLISH_PATH }),
     skills: SkillsSchema.default({ vendored: [...DEFAULT_VENDORED_SKILLS] }),
-    disclosure: DisclosureSchema,
     ingest: IngestSchema,
     organize: OrganizeSchema,
     harness: HarnessSchema,
@@ -328,5 +290,4 @@ export const StoreConfigSchema = z
 export type StoreConfig = z.infer<typeof StoreConfigSchema>;
 export type TaxonomyLayerConfig = z.infer<typeof TaxonomyLayerSchema>;
 export type GraphSettingsConfig = z.infer<typeof GraphSettingsSchema>;
-export type HardWallConfig = z.infer<typeof HardWallSchema>;
 export type AdapterDeclaration = z.infer<typeof AdapterDeclarationSchema>;
