@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { resolveOwnBinPath } from './hooks.js';
+import { fileURLToPath } from 'node:url';
 
 /**
  * How this executable got onto the path — a FACT the CLI computes, so the
@@ -55,7 +55,23 @@ export interface InstallLocation {
   kind: InstallKind;
 }
 
+/**
+ * The entrypoint of the process running right now.
+ *
+ * Deliberately NOT the thing resolve-hook-cli-at-runtime removed. That change
+ * deleted a baked path from *generated hook scripts*, which are written to disk
+ * and committed — so a path resolved when the file was generated is wrong on
+ * every other machine that later checks the store out. This resolves at the
+ * moment it is asked, is never written anywhere, and describes only the
+ * process asking. Reintroducing a persisted path here would be the antipattern;
+ * reporting the live one is what lets the upgrade skill tell whether
+ * `npm install -g` would affect the executable actually in use.
+ */
+function runningEntrypoint(): string {
+  return fileURLToPath(new URL('../bin.js', import.meta.url));
+}
+
 export function resolveInstallLocation(execPath: string): InstallLocation {
-  const binPath = resolveOwnBinPath();
+  const binPath = runningEntrypoint();
   return { path: binPath, kind: classifyInstallPath(binPath, execPath) };
 }
