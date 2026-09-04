@@ -153,6 +153,18 @@ const PublishSchema = z.object({
  * `contexture.yaml` predating this key still parses. An empty list opts
  * out entirely — same schema-optional-with-default shape as `publish`.
  */
+/**
+ * cli-contract (keep-the-installed-cli-current): whether session start and
+ * update consult the release registry, and how long a resolved answer is
+ * reused. Schema-optional with defaults, like `publish` and `skills` — a
+ * `contexture.yaml` predating this key parses unchanged, which is why this
+ * block needs no schema_version bump and no migration.
+ */
+const UpdateCheckSchema = z.object({
+  enabled: z.boolean().default(SHIPPED_DEFAULTS.update_check.enabled),
+  ttl_hours: z.number().positive().default(SHIPPED_DEFAULTS.update_check.ttl_hours),
+});
+
 const SkillsSchema = z.object({
   vendored: z.array(z.string()).default([...SHIPPED_DEFAULTS.skills.vendored]),
 });
@@ -352,6 +364,7 @@ export const StoreConfigSchema = z
     catalog: CatalogSchema.prefault({}),
     publish: PublishSchema.prefault({}),
     skills: SkillsSchema.prefault({}),
+    update_check: UpdateCheckSchema.prefault({}),
     ingest: IngestSchema.prefault({}),
     organize: OrganizeSchema,
     harness: HarnessSchema.prefault({}),

@@ -229,6 +229,14 @@ function houseConventionsPath(config: StoreConfig): string {
     .join('/');
 }
 
+const UPGRADE: SkillSeed = {
+  file: 'ctxr-upgrade',
+  name: 'Upgrade',
+  description:
+    'Upgrade the installed ctxr to the latest published release and re-render this store with it — reading the live version check, refusing a non-global install, gating on the operator, and ordering the package upgrade before the store update.',
+  body: () => skillTemplate('ctxr-upgrade').split('\n'),
+};
+
 const SESSION_CAPTURE: SkillSeed = {
   file: 'ctxr-session-capture',
   name: 'Session capture',
@@ -269,6 +277,7 @@ export const SKILLS: readonly SkillSeed[] = [
   ROLLUP,
   MISSION,
   SESSION_LIFECYCLE,
+  UPGRADE,
   SUBMIT,
   LAND,
   SESSION_CAPTURE,

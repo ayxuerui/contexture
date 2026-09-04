@@ -19,6 +19,12 @@ export interface CommandOutcome<TData> {
   findings: Finding[];
   /** One-line human-readable summary, used when --json is not passed. */
   humanSummary: string;
+  /**
+   * Diagnostic lines for stderr, emitted through Reporter alongside the result
+   * in BOTH modes — this is how a command says something to a human without
+   * touching stdout, which --json reserves for exactly one JSON value.
+   */
+  notices?: string[];
   storeRoot: string | null;
   schemaVersion: number | null;
 }

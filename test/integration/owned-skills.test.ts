@@ -28,6 +28,8 @@ const SKILLS_ADDED_BY_THIS_RELEASE = [
   'ctxr-land',
   // publish-artifact-skill:
   'ctxr-publish',
+  // keep-the-installed-cli-current:
+  'ctxr-upgrade',
 ];
 
 /**
@@ -38,12 +40,12 @@ const SKILLS_ADDED_BY_THIS_RELEASE = [
  * `ctxr update`, and the next update is a no-op.
  */
 describe('owned skills: delivered by init, expanded by update', () => {
-  it('init writes all thirteen owned skills with the managed header', async () => {
+  it('init writes all fourteen owned skills with the managed header', async () => {
     const tmp = await makeTmpDir();
     try {
       const env = makeFakeEnv({ cwd: tmp.root, env: GIT_IDENTITY });
       await init(env, { root: tmp.root, profile: 'para' });
-      expect(SKILLS).toHaveLength(13);
+      expect(SKILLS).toHaveLength(14);
       for (const p of SKILLS) {
         const file = path.join(tmp.root, '.agents/skills', p.file, 'SKILL.md');
         expect(existsSync(file), p.file).toBe(true);

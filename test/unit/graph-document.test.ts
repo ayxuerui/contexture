@@ -10,6 +10,7 @@ import type { Note } from '../../src/core/notes/list.js';
 import type { Store } from '../../src/core/store.js';
 import { makeTmpDir } from '../helpers/tmp-store.js';
 
+import { SHIPPED_DEFAULTS } from '../../src/config/defaults.js';
 function note(p: string, body: string): Note {
   return { path: p, frontmatter: undefined, body };
 }
@@ -34,6 +35,7 @@ function makeConfig(overrides: Partial<StoreConfig['retrieval']['graph']> = {}):
     catalog: { path: 'catalog/', section_max_bytes: 32768 },
     publish: { path: 'publish/' },
     skills: { vendored: [] },
+    update_check: SHIPPED_DEFAULTS.update_check,
     ingest: { inbox_path: 'raw/inbox/', capture_root: 'raw/', tracking_params: [] },
     organize: { archive_destination: 'archive/', rollup_stale_days: 7 },
     harness: { skills_path: 'skills/', guidance_path: 'guidance/', convention_max_bytes: 32768 },
