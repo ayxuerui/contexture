@@ -5,6 +5,7 @@ import type { RunEnv } from '../core/env.js';
 import { NoteNotFoundError } from '../core/errors.js';
 import type { Finding } from '../core/envelope.js';
 import { ExitCode } from '../core/exit-codes.js';
+import { hasAssignedIdentity } from '../core/ingest/identity.js';
 import { evaluateSourceCheck, type IdentityRecord, type SourceCheckResult } from '../core/ingest/model.js';
 import { listCaptures, listNotes } from '../core/notes/list.js';
 import type { Store } from '../core/store.js';
@@ -27,8 +28,9 @@ function toStoreRelativePath(env: RunEnv, store: Store, givenPath: string): stri
  * retain-captures-as-provenance: the index is the union of the capture tier
  * and the notes still carrying identity from before it existed. `listNotes`
  * alone would return nothing at all, since the capture root is a declared
- * retrieval exclusion — the candidate itself is read straight off disk, so
- * only the comparison set is affected.
+ * retrieval exclusion. This includes the candidate itself — see
+ * `excludeUnassignedCandidate`, applied by the caller, for whether and when
+ * that self-record is removed before evaluation.
  */
 async function identityRecords(store: Store): Promise<IdentityRecord[]> {
   const [captures, notes] = await Promise.all([
@@ -42,6 +44,30 @@ async function identityRecords(store: Store): Promise<IdentityRecord[]> {
   const byPath = new Map<string, IdentityRecord>();
   for (const record of [...captures, ...notes]) byPath.set(record.path, record);
   return [...byPath.values()];
+}
+
+/**
+ * exclude-candidate-from-source-check: the candidate is always present in
+ * `identityRecords()`'s result (it is itself a capture or a note), so
+ * without this it is always a candidate for matching itself. Whether that
+ * self-match is a bug depends on whether the candidate has been assigned
+ * identity by ingest (`source_hash` or `ingested` present):
+ *
+ * - Not assigned: a capture pipeline is permitted to pre-know its own
+ *   `source_type`/`source_id` at capture time, before it has ever been
+ *   ingested. Matching it against itself would report `already_ingested`
+ *   for material that has never been ingested — the candidate is excluded.
+ * - Already assigned: the candidate genuinely has been ingested (or
+ *   stamped). Re-checking it against its own identity is a legitimate
+ *   question — "has this been ingested?" — and the honest answer is yes,
+ *   naming itself. It stays in the comparison set.
+ */
+function excludeUnassignedCandidate(records: readonly IdentityRecord[], candidatePath: string): IdentityRecord[] {
+  const candidate = records.find((record) => record.path === candidatePath);
+  if (candidate && !hasAssignedIdentity(candidate)) {
+    return records.filter((record) => record.path !== candidatePath);
+  }
+  return [...records];
 }
 
 /**
@@ -66,7 +92,7 @@ export async function execute(
     throw err;
   }
 
-  const records = await identityRecords(store);
+  const records = excludeUnassignedCandidate(await identityRecords(store), relativePath);
   const result = evaluateSourceCheck(records, hash, flags.sourceId, store.config.ingest.tracking_params);
 
   const findings: Finding[] =
