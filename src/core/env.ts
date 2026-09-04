@@ -1,6 +1,8 @@
 import type { Prompter } from '../prompt/prompter.js';
 import type { GitRunner } from './git/exec.js';
 import { createExecFileGitRunner } from './git/exec.js';
+import type { RegistryClient } from './registry.js';
+import { createFetchRegistryClient } from './registry.js';
 import { createInquirerPrompter } from '../prompt/inquirer-prompter.js';
 
 /**
@@ -18,12 +20,16 @@ export interface Io {
 
 export interface RunEnv {
   cwd: string;
+  /** The running Node binary, used to tell a global install from a working copy. */
+  execPath: string;
   env: Readonly<Record<string, string | undefined>>;
   io: Io;
   /** Set by program.ts before a command runs: the --no-input flag, or implied by --json. */
   noInput: boolean;
   prompter: Prompter;
   git: GitRunner;
+  /** The release registry. The only network-capable port; see core/registry.ts. */
+  registry: RegistryClient;
   now(): Date;
 }
 
@@ -41,11 +47,13 @@ export function isInteractive(env: RunEnv): boolean {
 export function realEnv(): RunEnv {
   return {
     cwd: process.cwd(),
+    execPath: process.execPath,
     env: process.env,
     io: { stdin: process.stdin, stdout: process.stdout, stderr: process.stderr },
     noInput: false,
     prompter: createInquirerPrompter(),
     git: createExecFileGitRunner(),
+    registry: createFetchRegistryClient(),
     now: () => new Date(),
   };
 }

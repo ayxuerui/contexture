@@ -174,6 +174,15 @@ export const DEFAULT_ADAPTERS: readonly AdapterDeclaration[] = [{ id: 'claude-co
  * - `harness.procedures_path` and `harness.conventions_path` are pre-rename
  *   spellings, read only as fallbacks by `HarnessSchema`'s transform.
  */
+/**
+ * cli-contract (keep-the-installed-cli-current): the release advisory is on by
+ * default — an operator who never learns a newer release exists is exactly the
+ * problem it solves — and off with one key. The interval is a day because the
+ * thing being watched is a hand-cut release, not a stream of commits.
+ */
+export const DEFAULT_UPDATE_CHECK_ENABLED = true;
+export const DEFAULT_UPDATE_CHECK_TTL_HOURS = 24;
+
 export const SHIPPED_DEFAULTS = {
   derived: { paths: DEFAULT_DERIVED_PATHS },
   retrieval: {
@@ -200,4 +209,5 @@ export const SHIPPED_DEFAULTS = {
     convention_max_bytes: DEFAULT_CONVENTION_MAX_BYTES,
   },
   adapters: DEFAULT_ADAPTERS,
+  update_check: { enabled: DEFAULT_UPDATE_CHECK_ENABLED, ttl_hours: DEFAULT_UPDATE_CHECK_TTL_HOURS },
 } as const;

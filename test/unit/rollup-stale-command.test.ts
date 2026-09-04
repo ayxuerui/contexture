@@ -13,6 +13,7 @@ import { createExecFileGitRunner } from '../../src/core/git/exec.js';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 
+import { SHIPPED_DEFAULTS } from '../../src/config/defaults.js';
 const execFileAsync = promisify(execFile);
 
 function makeConfig(rollupStaleDays = 0, missionPath?: string): StoreConfig {
@@ -27,6 +28,7 @@ function makeConfig(rollupStaleDays = 0, missionPath?: string): StoreConfig {
     catalog: { path: 'catalog/', section_max_bytes: 32768 },
     publish: { path: 'publish/' },
     skills: { vendored: [] },
+    update_check: SHIPPED_DEFAULTS.update_check,
     ingest: { inbox_path: 'raw/inbox/', capture_root: 'raw/', tracking_params: [] },
     organize: { archive_destination: 'archive/', rollup_stale_days: rollupStaleDays, mission_path: missionPath },
     harness: { skills_path: 'skills/', guidance_path: 'guidance/', convention_max_bytes: 32768 },

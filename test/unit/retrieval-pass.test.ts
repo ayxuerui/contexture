@@ -8,6 +8,7 @@ import { gather, ENTRY_REASONS } from '../../src/core/retrieval/pass.js';
 import type { Store } from '../../src/core/store.js';
 import { makeTmpDir } from '../helpers/tmp-store.js';
 
+import { SHIPPED_DEFAULTS } from '../../src/config/defaults.js';
 function makeConfig(overrides: Partial<StoreConfig['retrieval']> = {}): StoreConfig {
   return {
     schema_version: 1,
@@ -26,6 +27,7 @@ function makeConfig(overrides: Partial<StoreConfig['retrieval']> = {}): StoreCon
     catalog: { path: 'catalog/', section_max_bytes: 32768 },
     publish: { path: 'publish/' },
     skills: { vendored: [] },
+    update_check: SHIPPED_DEFAULTS.update_check,
     ingest: { inbox_path: 'inbox/', tracking_params: [] },
     organize: { archive_destination: 'zeta/', rollup_stale_days: 30, mission_path: 'guidance/mission.md' },
     harness: { skills_path: 'skills/', guidance_path: 'guidance/' },

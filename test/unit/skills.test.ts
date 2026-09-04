@@ -3,7 +3,7 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_VENDORED_SKILLS } from '../../src/config/defaults.js';
+import { DEFAULT_VENDORED_SKILLS, SHIPPED_DEFAULTS } from '../../src/config/defaults.js';
 import type { StoreConfig } from '../../src/config/schema.js';
 import {
   MANAGED_SKILL_HEADER,
@@ -43,6 +43,7 @@ function makeConfig(overrides: Partial<StoreConfig> = {}): StoreConfig {
     catalog: { path: 'catalog/', section_max_bytes: 32768 },
     publish: { path: 'publish/' },
     skills: { vendored: [] },
+    update_check: SHIPPED_DEFAULTS.update_check,
     ingest: { inbox_path: 'raw/inbox/', capture_root: 'raw/', tracking_params: [] },
     organize: { archive_destination: 'archive/', rollup_stale_days: 7 },
     harness: { skills_path: 'skills/', guidance_path: 'guidance/', convention_max_bytes: 32768 },
@@ -61,7 +62,7 @@ const SHIPPED_NAMES = [...new Set(SHIPPED_PROFILES.flatMap((p) => [p.name, ...p.
 const TIER_WORDS = ['personal', 'private', 'public', 'shared', 'internal', 'team', 'confidential'];
 
 describe('SKILLS', () => {
-  it('names the thirteen owned skills, in index order', () => {
+  it('names the fourteen owned skills, in index order', () => {
     expect(SKILLS.map((p) => p.file)).toEqual([
       'ctxr-ingest-orchestration',
       'ctxr-placement',
@@ -70,6 +71,7 @@ describe('SKILLS', () => {
       'ctxr-rollup',
       'ctxr-mission',
       'ctxr-session-lifecycle',
+      'ctxr-upgrade',
       'ctxr-submit',
       'ctxr-land',
       'ctxr-session-capture',
@@ -422,7 +424,7 @@ describe('syncShippedSkills', () => {
     try {
       const written = await syncShippedSkills(tmp.root, makeConfig());
       expect(written.sort()).toEqual(skillPaths(makeConfig()).sort());
-      expect(written).toHaveLength(13);
+      expect(written).toHaveLength(14);
       const placement = await readFile(path.join(tmp.root, 'skills/ctxr-placement/SKILL.md'), 'utf8');
       expect(placement).toContain('name: ctxr-placement');
       expect(placement).toContain('description:');

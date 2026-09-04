@@ -9,6 +9,7 @@ import type { Store } from '../../src/core/store.js';
 import { fakeGitRunner, makeFakeEnv } from '../helpers/fake-env.js';
 import { makeTmpDir } from '../helpers/tmp-store.js';
 
+import { SHIPPED_DEFAULTS } from '../../src/config/defaults.js';
 /** `git worktree list --porcelain` output naming a single main worktree at `mainRoot`. */
 function soleWorktree(mainRoot: string): string {
   return `worktree ${mainRoot}\nHEAD 0000000000000000000000000000000000000000\nbranch refs/heads/main\n`;
@@ -26,6 +27,7 @@ function makeConfig(adapters: AdapterDeclaration[]): StoreConfig {
     catalog: { path: 'catalog/', section_max_bytes: 32768 },
     publish: { path: 'publish/' },
     skills: { vendored: [] },
+    update_check: SHIPPED_DEFAULTS.update_check,
     ingest: { inbox_path: 'raw/inbox/', capture_root: 'raw/', tracking_params: [] },
     organize: { archive_destination: 'archive/', rollup_stale_days: 7 },
     harness: { skills_path: 'skills/', guidance_path: 'guidance/', convention_max_bytes: 32768 },

@@ -9,6 +9,26 @@ the two verbs at the seams; their steps are not repeated here.
 If you find yourself on the default branch or in the root checkout, stop — `ctxr session list` shows the
 active sessions to work in instead.
 
+Before starting, bring the store's canonical clone up to date — the repository's main worktree, not
+whichever checkout you are standing in. From the canonical clone: `git fetch origin`, then
+`git merge --ff-only origin/__DEFAULT_BRANCH__`. If it is on another branch, carries uncommitted
+changes, or the fast-forward fails because it has diverged from origin, report exactly that and start
+the session anyway — never check it out, reset it, stash, or force the merge to make it comply. The
+session's base is unaffected either way, because `ctxr session start` branches from the
+`origin/__DEFAULT_BRANCH__` it fetches itself. What a stale clone costs is the context you read out of
+it: notes, catalog sections, the graph document, and AGENTS.md would all be the versions it last had.
+
+`ctxr session start` names the start point it used. If it reports that it did not fetch, there was no
+remote branch to fetch from and it branched from the local default branch instead — say so plainly,
+because the session is then based on whatever that clone last had rather than on origin.
+
+If `ctxr session start` reports a `cli.update_available` finding, a newer `ctxr` than the one installed
+has been published. Name both versions to the operator and offer `ctxr-upgrade`; then continue the
+session either way. Do not upgrade unasked, and do not make continuing conditional on the answer —
+deferring is a normal answer, and the session is unaffected by it. A `cli.update_check_failed` finding
+means the check could not be completed; it says nothing about whether an upgrade is due, so proceed
+without mentioning it.
+
 ## Re-scan before any plan
 
 Re-scan whenever state may have moved under you — before presenting a plan, before running `ctxr-submit`,

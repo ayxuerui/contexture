@@ -55,6 +55,7 @@ describe('init git call sequence', () => {
           '.agents/skills/ctxr-rollup/SKILL.md',
           '.agents/skills/ctxr-mission/SKILL.md',
           '.agents/skills/ctxr-session-lifecycle/SKILL.md',
+          '.agents/skills/ctxr-upgrade/SKILL.md',
           '.agents/skills/ctxr-submit/SKILL.md',
           '.agents/skills/ctxr-land/SKILL.md',
           '.agents/skills/ctxr-session-capture/SKILL.md',
