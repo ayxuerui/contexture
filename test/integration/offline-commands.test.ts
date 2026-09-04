@@ -15,6 +15,20 @@ import { makeTmpDir } from '../helpers/tmp-store.js';
 const SRC_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../src');
 const NEWER = '99.0.0';
 
+/**
+ * `init` fails loud with the usage code when it can find no committer identity
+ * (init.ts's hasGitIdentity), so a RunEnv driving it needs one. Spelled out
+ * rather than spread from process.env: inheriting the runner's environment
+ * would also inherit CONTEXTURE_UPDATE_CHECK, and a developer who has it set
+ * would silently turn these tests vacuous.
+ */
+const GIT_IDENTITY = {
+  GIT_AUTHOR_NAME: 'Test',
+  GIT_AUTHOR_EMAIL: 'test@example.com',
+  GIT_COMMITTER_NAME: 'Test',
+  GIT_COMMITTER_EMAIL: 'test@example.com',
+};
+
 /** A RunEnv wired to a real store on disk, with the registry still injected. */
 function envForStore(root: string, overrides: Partial<Parameters<typeof makeFakeEnv>[0]> = {}) {
   return makeFakeEnv({ cwd: root, git: createExecFileGitRunner(), ...overrides });
@@ -56,7 +70,7 @@ describe('cli-contract: commands that must stay offline', () => {
   it('init succeeds with no network and reports no release finding', async () => {
     const tmp = await makeTmpDir('contexture-offline-init-');
     try {
-      const env = envForStore(tmp.root, { registry: forbiddenRegistry() });
+      const env = envForStore(tmp.root, { registry: forbiddenRegistry(), env: GIT_IDENTITY });
       const code = await run(['init', '--json'], env);
       expect(code).toBe(ExitCode.Ok);
       const envelope = JSON.parse(readAll(env.io.stdout as unknown as PassThrough)) as {
