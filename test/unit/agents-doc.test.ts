@@ -181,10 +181,10 @@ describe('buildAgentsCaptureSection', () => {
 });
 
 describe('renderCanonicalSection', () => {
-  it('states the root-resolution rule naming --root and CONTEXTURE_ROOT', () => {
+  it('states the root-resolution rule naming --root and CONTEXTURE_STORE_ROOT', () => {
     const lines = renderCanonicalSection(makeConfig()).join('\n');
     expect(lines).toContain('--root');
-    expect(lines).toContain('CONTEXTURE_ROOT');
+    expect(lines).toContain('CONTEXTURE_STORE_ROOT');
     expect(lines).toContain('contexture.yaml');
   });
 
@@ -603,7 +603,7 @@ describe('exact rendered output', () => {
       "",
       "### Root resolution",
       "",
-      "Every contexture command resolves the store root in this order: an explicit `--root <path>` flag; the `CONTEXTURE_ROOT` environment variable; walking up from the current directory looking for `contexture.yaml`. No other flag or environment variable selects the root.",
+      "Every contexture command resolves the store root in this order: an explicit `--root <path>` flag; the `CONTEXTURE_STORE_ROOT` environment variable; walking up from the current directory looking for `contexture.yaml`. No other flag or environment variable selects the root.",
       "",
       "### Frontmatter schema",
       "",

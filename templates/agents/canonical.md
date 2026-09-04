@@ -2,7 +2,7 @@
 
 ### Root resolution
 
-Every contexture command resolves the store root in this order: an explicit `--root <path>` flag; the `CONTEXTURE_ROOT` environment variable; walking up from the current directory looking for `__CONFIG_FILE_NAME__`. No other flag or environment variable selects the root.
+Every contexture command resolves the store root in this order: an explicit `--root <path>` flag; the `CONTEXTURE_STORE_ROOT` environment variable; walking up from the current directory looking for `__CONFIG_FILE_NAME__`. No other flag or environment variable selects the root.
 
 ### Frontmatter schema
 

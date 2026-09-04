@@ -58,7 +58,7 @@ describe('extractDocMetadata', () => {
 
 describe('inlineDocBody', () => {
   it('drops a leading H1 that duplicates the title, and demotes remaining headings', () => {
-    const doc = extractDocMetadata('# Vault conventions\n\n## Folder Structure\n\nSome text.\n\n### Sub point\n', 'conventions/vault.md');
+    const doc = extractDocMetadata('# Store conventions\n\n## Folder Structure\n\nSome text.\n\n### Sub point\n', 'conventions/store.md');
     expect(inlineDocBody(doc, 2)).toEqual(['#### Folder Structure', '', 'Some text.', '', '##### Sub point']);
   });
 

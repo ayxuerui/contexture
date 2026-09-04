@@ -20,8 +20,8 @@ TMP_ROOT="$(mktemp -d)"
 trap 'rm -rf "$TMP_ROOT"' EXIT
 export GIT_AUTHOR_NAME="verify-phase0" GIT_AUTHOR_EMAIL="verify-phase0@example.com"
 export GIT_COMMITTER_NAME="verify-phase0" GIT_COMMITTER_EMAIL="verify-phase0@example.com"
-CONTEXTURE_ROOT="$TMP_ROOT" node dist/bin.js init </dev/null
-CONTEXTURE_ROOT="$TMP_ROOT" node dist/bin.js doctor
+CONTEXTURE_STORE_ROOT="$TMP_ROOT" node dist/bin.js init </dev/null
+CONTEXTURE_STORE_ROOT="$TMP_ROOT" node dist/bin.js doctor
 echo "OK: contexture.yaml declares:"
 grep -A1 "profile:" "$TMP_ROOT/contexture.yaml" || true
 
