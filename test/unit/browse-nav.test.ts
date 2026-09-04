@@ -13,6 +13,7 @@ function makeTable(overrides: Partial<RouteTable> = {}): RouteTable {
     catalog: new Map(),
     graphDocumentPath: '/nowhere/graph.md',
     publishFiles: new Map(),
+    publishTitles: new Map(),
     ...overrides,
   };
 }
@@ -87,6 +88,23 @@ describe('renderNav', () => {
     const html = renderNav(withPublishFiles('folder-a/README.md', 'folder-a/real-page/index.html'));
     expect(html).toContain('<a href="/publish/folder-a/real-page/index.html">real-page</a>');
     expect(html).not.toContain('>folder-a</a>');
+  });
+
+  it('labels a published page by its declared title when it has one', () => {
+    const table = makeTable({
+      publishFiles: new Map([
+        ['folder-a/real-page/index.html', { urlPath: 'folder-a/real-page/index.html', absolutePath: '/abs/folder-a/real-page/index.html' }],
+      ]),
+      publishTitles: new Map([['folder-a/real-page', 'A Declared Page Name']]),
+    });
+    const html = renderNav(table);
+    expect(html).toContain('<a href="/publish/folder-a/real-page/index.html">A Declared Page Name</a>');
+    expect(html).not.toContain('>real-page<');
+  });
+
+  it('falls back to the directory segment when a published page declares no title', () => {
+    const html = renderNav(withPublishFiles('folder-a/real-page/index.html'));
+    expect(html).toContain('<a href="/publish/folder-a/real-page/index.html">real-page</a>');
   });
 
   it('links catalog sections without grouping them', () => {

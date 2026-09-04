@@ -73,7 +73,9 @@ function renderAreaContent(table: RouteTable, area: AreaId): string {
       const pages = publishPages(table);
       const tree = buildPathTree(
         pages,
-        (page) => lastSegment(page),
+        // serve-page-names-theme-and-nav-toggle D1: a page's declared name, falling back to its
+        // directory segment — the same "one answer to what this is called" principle D6 gives notes.
+        (page) => table.publishTitles.get(page) ?? lastSegment(page),
         (page) => `/publish/${encodeURI(page)}/${PUBLISH_INDEX_FILE}`,
       );
       return renderTree(tree, 0);

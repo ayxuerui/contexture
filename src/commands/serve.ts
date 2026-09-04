@@ -3,6 +3,8 @@ import { createServer, type IncomingMessage, type ServerResponse } from 'node:ht
 import path from 'node:path';
 import { buildLinkResolver } from '../core/browse/link-resolver.js';
 import { renderIndexBody, renderNav } from '../core/browse/nav.js';
+import { resolveNavState, resolveTheme } from '../core/browse/preferences.js';
+import { titleFor } from '../core/catalog/model.js';
 import { escapeHtml, renderNoteBody } from '../core/browse/render.js';
 import { buildRouteTable } from '../core/browse/routes.js';
 import { readStylesheet, renderShell } from '../core/browse/templates.js';
@@ -64,10 +66,30 @@ function buildHint(command: string): string {
   return `<div class="ctxr-build-hint">Not built yet. Run <code>${escapeHtml(command)}</code> and reload.</div>`;
 }
 
-function send(res: ServerResponse, method: string, status: number, contentType: string, body: string | Buffer): void {
+function send(
+  res: ServerResponse,
+  method: string,
+  status: number,
+  contentType: string,
+  body: string | Buffer,
+  extraHeaders?: Readonly<Record<string, string | string[]>>,
+): void {
   const buffer = Buffer.isBuffer(body) ? body : Buffer.from(body, 'utf8');
-  res.writeHead(status, { 'Content-Type': contentType, 'Content-Length': buffer.length });
+  res.writeHead(status, { 'Content-Type': contentType, 'Content-Length': buffer.length, ...extraHeaders });
   res.end(method === 'HEAD' ? undefined : buffer);
+}
+
+/**
+ * design.md D7 (serve-page-names-theme-and-nav-toggle): every shell-rendered response is
+ * per-requester-preference, so an intermediary must not cache one response and serve it to a
+ * requester with a different cookie; `Set-Cookie` is present only on the response that just
+ * persisted a choice a query parameter made.
+ */
+function shellHeaders(setCookies: readonly (string | undefined)[]): Record<string, string | string[]> {
+  const headers: Record<string, string | string[]> = { Vary: 'Cookie', 'Cache-Control': 'no-store' };
+  const cookies = setCookies.filter((cookie): cookie is string => cookie !== undefined);
+  if (cookies.length > 0) headers['Set-Cookie'] = cookies;
+  return headers;
 }
 
 /** Reads a derived document, rendering `hint` instead of 404ing when it hasn't been built yet. */
@@ -82,7 +104,8 @@ async function readDerivedDocument(absolutePath: string): Promise<{ text: string
 
 async function handleRequest(store: Store, stderr: NodeJS.WritableStream, req: IncomingMessage, res: ServerResponse): Promise<void> {
   const method = req.method ?? 'GET';
-  const pathname = decodeURIComponent(new URL(req.url ?? '/', 'http://localhost').pathname);
+  const url = new URL(req.url ?? '/', 'http://localhost');
+  const pathname = decodeURIComponent(url.pathname);
   stderr.write(`${method} ${pathname}\n`);
 
   if (method !== 'GET' && method !== 'HEAD') {
@@ -90,23 +113,29 @@ async function handleRequest(store: Store, stderr: NodeJS.WritableStream, req: I
     return;
   }
 
+  // Ahead of buildRouteTable(): the stylesheet costs no store read at all, let alone a full one.
+  if (pathname === '/assets/style.css') {
+    send(res, method, 200, 'text/css; charset=utf-8', await readStylesheet());
+    return;
+  }
+
+  const { theme, setCookie: themeSetCookie } = resolveTheme(req.headers.cookie, url.searchParams);
+  const { navState, setCookie: navSetCookie } = resolveNavState(req.headers.cookie, url.searchParams);
+  const headers = shellHeaders([themeSetCookie, navSetCookie]);
+  const shellState = { theme, navState };
+
   const table = await buildRouteTable(store);
   const resolveLink = buildLinkResolver([...table.notes.values()]);
 
   if (pathname === '/') {
-    send(res, method, 200, 'text/html; charset=utf-8', await renderShell('contexture', renderIndexBody(table), renderNav(table)));
-    return;
-  }
-
-  if (pathname === '/assets/style.css') {
-    send(res, method, 200, 'text/css; charset=utf-8', await readStylesheet());
+    send(res, method, 200, 'text/html; charset=utf-8', await renderShell('contexture', renderIndexBody(table), renderNav(table), shellState), headers);
     return;
   }
 
   if (pathname === '/graph') {
     const doc = await readDerivedDocument(table.graphDocumentPath);
     const body = 'hint' in doc ? buildHint('ctxr graph build') : renderNoteBody(doc.text, resolveLink);
-    send(res, method, 200, 'text/html; charset=utf-8', await renderShell('graph', body, renderNav(table)));
+    send(res, method, 200, 'text/html; charset=utf-8', await renderShell('graph', body, renderNav(table), shellState), headers);
     return;
   }
 
@@ -116,7 +145,8 @@ async function handleRequest(store: Store, stderr: NodeJS.WritableStream, req: I
       send(res, method, 404, 'text/plain; charset=utf-8', 'not found\n');
       return;
     }
-    send(res, method, 200, 'text/html; charset=utf-8', await renderShell(note.path, renderNoteBody(note.body, resolveLink), renderNav(table)));
+    const noteTitle = `${titleFor(note)} — ${note.path}`;
+    send(res, method, 200, 'text/html; charset=utf-8', await renderShell(noteTitle, renderNoteBody(note.body, resolveLink), renderNav(table), shellState), headers);
     return;
   }
 
@@ -129,7 +159,7 @@ async function handleRequest(store: Store, stderr: NodeJS.WritableStream, req: I
     }
     const doc = await readDerivedDocument(section.absolutePath);
     const body = 'hint' in doc ? buildHint('ctxr catalog build') : renderNoteBody(doc.text, resolveLink);
-    send(res, method, 200, 'text/html; charset=utf-8', await renderShell(sectionId, body, renderNav(table)));
+    send(res, method, 200, 'text/html; charset=utf-8', await renderShell(sectionId, body, renderNav(table), shellState), headers);
     return;
   }
 
