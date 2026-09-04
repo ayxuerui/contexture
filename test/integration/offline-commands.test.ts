@@ -70,7 +70,15 @@ describe('cli-contract: commands that must stay offline', () => {
   it('init succeeds with no network and reports no release finding', async () => {
     const tmp = await makeTmpDir('contexture-offline-init-');
     try {
-      const env = envForStore(tmp.root, { registry: forbiddenRegistry(), env: GIT_IDENTITY });
+      // Deliberately NOT envForStore's real createExecFileGitRunner(): that
+      // spawns actual git, which reads the REAL process environment for
+      // commit identity — createExecFileGitRunner forwards no env of its
+      // own, so a RunEnv.env override never reaches it. hasGitIdentity
+      // short-circuits true on GIT_IDENTITY below without ever calling git,
+      // so the default fake runner (same one git-sequence.test.ts and
+      // owned-skills.test.ts drive a full init through) is sufficient here —
+      // this test's only job is proving init makes no registry call.
+      const env = makeFakeEnv({ cwd: tmp.root, registry: forbiddenRegistry(), env: GIT_IDENTITY });
       const code = await run(['init', '--json'], env);
       // Parse before asserting the code: a bare "expected 1 to be 0" says
       // nothing, and the envelope carries the message that explains it.
