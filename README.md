@@ -1,5 +1,7 @@
 # Contexture (`ctxr`)
 
+[![npm](https://img.shields.io/npm/v/ctxr-cli)](https://www.npmjs.com/package/ctxr-cli) [![CI](https://github.com/ayxuerui/contexture/actions/workflows/ci.yml/badge.svg)](https://github.com/ayxuerui/contexture/actions/workflows/ci.yml) [![license](https://img.shields.io/npm/l/ctxr-cli)](LICENSE)
+
 **Your agents' long-term knowledge — they write it, you review it before it lands.**
 
 Contexture turns a git repository into shared, durable knowledge, and ships the operating procedures an AI agent needs to work it: what to do with a new source, where a note belongs, when a synthesis has gone stale, how a change gets reviewed and landed. Every write lands the way code does — in a branch, past a health check, through a pull request you approve.
@@ -16,7 +18,7 @@ npm install -g ctxr-cli
 
 Requires Node 22.13 or newer.
 
-The npm package is `ctxr-cli`, the executable it installs is `ctxr`, and the project is Contexture. Everything a store contains keeps the project name — `contexture.yaml`, the `.contexture/` home directory, `CONTEXTURE_*` environment variables — while `ctxr` is what you type. A `contexture` alias executable is also installed for compatibility; docs and generated files always say `ctxr`.
+The package is `ctxr-cli`, the command it installs is `ctxr`, and the project is Contexture — which is why a store’s own files keep the full name (`contexture.yaml`, `.contexture/`, `CONTEXTURE_*`). A `contexture` alias executable is installed too; docs and generated files always say `ctxr`.
 
 ## Quickstart
 
@@ -319,30 +321,6 @@ Every command accepts `--root <path>`, `--json`, and `--no-input`. The store roo
 
 Exit codes are a fixed taxonomy, so scripts and hooks can rely on them: `0` success, `1` an internal error (a bug), `2` a usage error (bad arguments, no store root, not a git repository), `3` a check that ran correctly and found a real problem. Success never masks a finding — `doctor` and `catalog check` exit `3` on a violation, never `0`.
 
-## Development
+## Contributing
 
-```sh
-npm run build
-npm test
-npm run typecheck
-```
-
-Behavior changes are specified before they're implemented: see `openspec/specs/` for the capability specs and `openspec/changes/` for in-flight proposals. Prose that ships into a store — skill bodies, `AGENTS.md` sections — is authored as markdown under `templates/`, never as string literals in TypeScript.
-
-## Releasing
-
-Publishing to npm is automated: merging to `main` publishes whenever `package.json`'s version isn't
-already on the registry, via [`.github/workflows/release.yml`](.github/workflows/release.yml).
-Ordinary merges are a no-op — only a version bump triggers a publish.
-
-To cut a release:
-
-```sh
-git checkout -b chore/release-X.Y.Z
-npm version X.Y.Z --no-git-tag-version   # bumps package.json and package-lock.json together
-# hand-edit src/version.ts's CLI_VERSION to match X.Y.Z
-```
-
-Open a PR and merge it. The workflow then builds, tests, publishes to npm (via trusted publishing —
-no stored token), tags the commit `vX.Y.Z`, and creates a GitHub Release. `test/unit/version-sync.test.ts`
-guards against `CLI_VERSION` drifting from `package.json`'s version on every PR.
+Build, test, the spec-first workflow, and the release process are in [CONTRIBUTING.md](CONTRIBUTING.md). Contexture is MIT licensed — see [LICENSE](LICENSE).

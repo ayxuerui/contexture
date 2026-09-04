@@ -4,19 +4,32 @@ import { fileURLToPath } from 'node:url';
 import { writeFileAtomic } from './fs/atomic.js';
 import type { GitRunner } from './git/exec.js';
 
-/**
- * Absolute path to THIS installation's built CLI entrypoint, baked into the
- * generated hooks so they invoke the exact contexture that installed them —
- * sidestepping the global/local/npx distribution question entirely. If this
- * install is later replaced, `doctor`'s self-heal (below) regenerates the
- * hook with the new path.
- */
-export function resolveOwnBinPath(): string {
-  return fileURLToPath(new URL('../bin.js', import.meta.url));
-}
-
 function templatesDir(): string {
   return fileURLToPath(new URL('../../templates/hooks', import.meta.url));
+}
+
+const RESOLVE_PARTIAL_FILE = '_resolve-ctxr.sh';
+const RESOLVE_TOKEN = '__RESOLVE_CTXR__';
+
+/**
+ * One render path for every shipped hook script. Splices in the shared
+ * ctxr-resolution partial first — the resolution ladder is a security
+ * decision that must be identical in every hook, so it is authored once
+ * (templates/hooks/_resolve-ctxr.sh) and inlined here, never copied into
+ * each template — then applies the caller's own literal substitutions. The
+ * partial's own trailing newline is dropped so the token's line ending is
+ * the only one in the rendered file.
+ */
+async function renderTemplate(
+  templateFileName: string,
+  substitutions: Readonly<Record<string, string>> = {},
+): Promise<string> {
+  let text = await readFile(path.join(templatesDir(), templateFileName), 'utf8');
+  if (text.includes(RESOLVE_TOKEN)) {
+    const partial = await readFile(path.join(templatesDir(), RESOLVE_PARTIAL_FILE), 'utf8');
+    text = text.replaceAll(RESOLVE_TOKEN, partial.replace(/\n$/, ''));
+  }
+  return Object.entries(substitutions).reduce((acc, [k, v]) => acc.replaceAll(k, v), text);
 }
 
 const HOOKS_DIR_NAME = '.githooks';
@@ -32,10 +45,7 @@ const HOOK_SPECS: readonly HookSpec[] = [
 ];
 
 async function renderHook(spec: HookSpec, defaultBranch: string): Promise<string> {
-  const templateText = await readFile(path.join(templatesDir(), spec.templateFileName), 'utf8');
-  return templateText
-    .replaceAll('__CONTEXTURE_BIN__', resolveOwnBinPath())
-    .replaceAll('__DEFAULT_BRANCH__', defaultBranch);
+  return renderTemplate(spec.templateFileName, { __DEFAULT_BRANCH__: defaultBranch });
 }
 
 /**
@@ -89,18 +99,15 @@ export async function installHooks(root: string, defaultBranch: string): Promise
 /**
  * A harness adapter's own generated hook script (e.g. Claude Code's
  * PreToolUse write-gate) — same idempotent render+chmod discipline as git
- * hooks, without assuming git-hook-specific substitutions or the
- * `.githooks` directory. `substitutions` are applied as literal
- * find-and-replace, the same convention `renderHook` uses.
+ * hooks, without assuming the `.githooks` directory. Shares `renderTemplate`
+ * with `renderHook`, so it gets the same `__RESOLVE_CTXR__` inlining.
  */
 export async function installTemplatedHookScript(
   root: string,
   relativeTargetPath: string,
   templateFileName: string,
-  substitutions: Readonly<Record<string, string>>,
 ): Promise<{ changed: boolean }> {
-  const templateText = await readFile(path.join(templatesDir(), templateFileName), 'utf8');
-  const rendered = Object.entries(substitutions).reduce((text, [k, v]) => text.replaceAll(k, v), templateText);
+  const rendered = await renderTemplate(templateFileName);
   const targetPath = path.join(root, relativeTargetPath);
   const changed = await writeRenderedScript(targetPath, rendered);
   return { changed };
