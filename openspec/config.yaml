@@ -51,7 +51,14 @@ context: |
   Never write a requirement of the form "the agent shall not edit files directly" —
   it is unenforceable.
 
-  Naming is deliberately postponed: the store's root noun is not yet chosen.
+  The store's root noun is settled as `store`, spelled per register: `CONTEXTURE_STORE_ROOT`
+  in the environment (the one namespace contexture does not own, so it must identify its
+  owner); bare `store_root` / `storeRoot` in `contexture.yaml`, code, and any future flag or
+  key (read inside a context contexture already supplies, where the prefix repeats what
+  is already established — matching the existing bare `ingest.capture_root`). "Knowledge
+  store" is available as the product noun in prose (the README, the pitch, what an agent
+  says about what it is doing); that register is editorial and does not feed back into
+  either identifier form.
 
   If this context and a spec disagree, this context wins and the disagreement is a
   bug — report it.

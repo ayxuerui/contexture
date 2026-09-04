@@ -25,9 +25,28 @@ export class NoStoreRootError extends ContextureError {
       code: 'root.not_found',
       severity: 'error',
       message:
-        'No store root found: checked --root, CONTEXTURE_ROOT, and walking up ' +
+        'No store root found: checked --root, CONTEXTURE_STORE_ROOT, and walking up ' +
         `from "${checked.cwd}" looking for contexture.yaml.`,
       details: { checkedFlag: checked.flag, checkedEnv: checked.env, cwd: checked.cwd },
+    });
+  }
+}
+
+/**
+ * rename-store-root-env-var D2: CONTEXTURE_ROOT is superseded by
+ * CONTEXTURE_STORE_ROOT and is never resolved as a root — only refused, so
+ * an environment migrated in part (the CLI renamed, some other reader of the
+ * old name not yet updated) fails loudly instead of silently walking up and
+ * resolving a different store.
+ */
+export class SupersededStoreRootEnvVarError extends ContextureError {
+  constructor() {
+    super(ExitCode.Usage, {
+      code: 'root.superseded_env_var',
+      severity: 'error',
+      message:
+        'CONTEXTURE_ROOT is set, but this release no longer recognizes it — rename it to ' +
+        'CONTEXTURE_STORE_ROOT.',
     });
   }
 }

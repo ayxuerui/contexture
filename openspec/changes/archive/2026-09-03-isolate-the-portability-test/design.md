@@ -53,7 +53,7 @@ The child is launched as `process.execPath` + `process.argv[1]` — never a `PAT
 This matters precisely because the environment is scrubbed: a `PATH`-resolved `ctxr` under a modified
 environment could be a *different* installation than the one under test, and the test would silently
 verify the wrong binary. That failure mode is exactly the one the downstream script hit twice (its lint
-check "would have silently tested the WRONG vault while still reporting PASS").
+check "would have silently tested the WRONG store while still reporting PASS").
 
 Child invocation: `verify --json --root <worktree>`, with `HOME` and `USERPROFILE` pointed at a fresh
 empty temp directory, `CONTEXTURE_ROOT` and `XDG_*` deleted, and `GIT_CONFIG_GLOBAL=/dev/null`. `PATH`

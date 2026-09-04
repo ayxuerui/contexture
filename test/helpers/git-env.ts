@@ -22,6 +22,10 @@ export function hermeticGitEnv(overrides: Record<string, string | undefined> = {
     GIT_AUTHOR_EMAIL: 'test@example.com',
     GIT_COMMITTER_NAME: 'Test',
     GIT_COMMITTER_EMAIL: 'test@example.com',
+    CONTEXTURE_STORE_ROOT: undefined,
+    // Superseded name (rename-store-root-env-var): also scrubbed, so a
+    // developer's still-exported old-name variable cannot leak into a test
+    // run and make an otherwise-clean environment refuse.
     CONTEXTURE_ROOT: undefined,
     CONTEXTURE_BIN: DIST_BIN,
     ...overrides,

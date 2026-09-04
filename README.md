@@ -317,7 +317,7 @@ To pin a value against a future default change, declare it. `ctxr migrate` remov
 | `migrate [--dry-run]` | Apply pending schema migrations |
 | `verify [--portable]` | Exercise core store operations end to end |
 
-Every command accepts `--root <path>`, `--json`, and `--no-input`. The store root resolves in exactly one order: `--root`, then `CONTEXTURE_ROOT`, then walking up from the current directory looking for `contexture.yaml`. Nothing else selects it.
+Every command accepts `--root <path>`, `--json`, and `--no-input`. The store root resolves in exactly one order: `--root`, then `CONTEXTURE_STORE_ROOT`, then walking up from the current directory looking for `contexture.yaml`. Nothing else selects it.
 
 Exit codes are a fixed taxonomy, so scripts and hooks can rely on them: `0` success, `1` an internal error (a bug), `2` a usage error (bad arguments, no store root, not a git repository), `3` a check that ran correctly and found a real problem. Success never masks a finding — `doctor` and `catalog check` exit `3` on a violation, never `0`.
 

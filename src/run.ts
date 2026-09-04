@@ -146,7 +146,7 @@ export async function run(argv: readonly string[], env: RunEnv): Promise<ExitCod
       writeOut: (str: string) => env.io.stderr.write(str),
       writeErr: (str: string) => env.io.stderr.write(str),
     })
-    .option('--root <path>', 'store root (overrides CONTEXTURE_ROOT)')
+    .option('--root <path>', 'store root (overrides CONTEXTURE_STORE_ROOT)')
     .option('--json', 'emit machine-readable output')
     .option('--no-input', 'never prompt; fail loud instead of blocking');
 

@@ -34,11 +34,13 @@ export interface IsolatedVerifyResult {
  * pure function of its inputs and the source-level guard that no module
  * outside `core/env.ts` reads process state keeps holding.
  *
- * `HOME` and `USERPROFILE` point at an empty directory, `CONTEXTURE_ROOT` and
- * every `XDG_*` key are removed, and git is cut off from a global config.
- * `PATH` is deliberately preserved: the prerequisites step resolves a tool on
- * it, so `PATH` is the subject of that step rather than something the run
- * isolates from.
+ * `HOME` and `USERPROFILE` point at an empty directory, `CONTEXTURE_STORE_ROOT`
+ * (and the superseded `CONTEXTURE_ROOT` — rename-store-root-env-var: a leaked
+ * one would make the child refuse via SupersededStoreRootEnvVarError instead
+ * of being properly isolated) and every `XDG_*` key are removed, and git is
+ * cut off from a global config. `PATH` is deliberately preserved: the
+ * prerequisites step resolves a tool on it, so `PATH` is the subject of that
+ * step rather than something the run isolates from.
  */
 export function scrubbedChildEnv(
   env: Readonly<Record<string, string | undefined>>,
@@ -47,7 +49,7 @@ export function scrubbedChildEnv(
   const child: Record<string, string> = {};
   for (const [key, value] of Object.entries(env)) {
     if (value === undefined) continue;
-    if (key === 'CONTEXTURE_ROOT' || key.startsWith('XDG_')) continue;
+    if (key === 'CONTEXTURE_STORE_ROOT' || key === 'CONTEXTURE_ROOT' || key.startsWith('XDG_')) continue;
     child[key] = value;
   }
   child.HOME = homeDir;

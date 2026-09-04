@@ -16,6 +16,11 @@ describe('scrubbedChildEnv', () => {
   });
 
   it('removes the store-root variable, so the child cannot be pointed back at the live store', () => {
+    const env = scrubbedChildEnv({ CONTEXTURE_STORE_ROOT: '/home/operator/store' }, HOME_DIR);
+    expect('CONTEXTURE_STORE_ROOT' in env).toBe(false);
+  });
+
+  it('removes a leaked superseded store-root variable too, so it cannot make the child refuse instead of isolating', () => {
     const env = scrubbedChildEnv({ CONTEXTURE_ROOT: '/home/operator/store' }, HOME_DIR);
     expect('CONTEXTURE_ROOT' in env).toBe(false);
   });
@@ -48,8 +53,8 @@ describe('scrubbedChildEnv', () => {
   });
 
   it('does not mutate the environment it was given', () => {
-    const original = { HOME: '/home/operator', CONTEXTURE_ROOT: '/store' };
+    const original = { HOME: '/home/operator', CONTEXTURE_STORE_ROOT: '/store' };
     scrubbedChildEnv(original, HOME_DIR);
-    expect(original).toEqual({ HOME: '/home/operator', CONTEXTURE_ROOT: '/store' });
+    expect(original).toEqual({ HOME: '/home/operator', CONTEXTURE_STORE_ROOT: '/store' });
   });
 });
