@@ -33,7 +33,10 @@ describe('ctxr serve (real CLI)', () => {
 
       const publishDir = path.join(tmp.root, '.contexture/publish/my-page');
       await mkdir(publishDir, { recursive: true });
-      await writeFile(path.join(publishDir, 'index.html'), '<!doctype html><html><body>Hello, published.</body></html>');
+      await writeFile(
+        path.join(publishDir, 'index.html'),
+        '<!doctype html><html><head><title>My Declared Page</title></head><body>Hello, published.</body></html>',
+      );
       await writeFile(path.join(publishDir, 'README.md'), '# my-page\n');
 
       const nestedPublishDir = path.join(tmp.root, '.contexture/publish/folder-a/nested-page');
@@ -60,7 +63,9 @@ describe('ctxr serve (real CLI)', () => {
         expect(indexHtml).not.toContain('>projects/a.md<');
         // A nested published page is addressed at its full path.
         expect(indexHtml).toContain('<a href="/publish/folder-a/nested-page/index.html">nested-page</a>');
-        expect(indexHtml).toContain('<a href="/publish/my-page/index.html">my-page</a>');
+        // A page's nav label follows its own declared <title>, not its directory segment.
+        expect(indexHtml).toContain('<a href="/publish/my-page/index.html">My Declared Page</a>');
+        expect(indexHtml).not.toContain('>my-page<');
         expect(indexHtml).not.toContain('<script');
 
         const styleRes = await fetch(new URL('/assets/style.css', baseUrl));
@@ -95,7 +100,9 @@ describe('ctxr serve (real CLI)', () => {
 
         const publishRes = await fetch(new URL('/publish/my-page/index.html', baseUrl));
         expect(publishRes.status).toBe(200);
-        expect(await publishRes.text()).toBe('<!doctype html><html><body>Hello, published.</body></html>');
+        expect(await publishRes.text()).toBe(
+          '<!doctype html><html><head><title>My Declared Page</title></head><body>Hello, published.</body></html>',
+        );
 
         const nestedPublishRes = await fetch(new URL('/publish/folder-a/nested-page/index.html', baseUrl));
         expect(nestedPublishRes.status).toBe(200);
@@ -127,6 +134,98 @@ describe('ctxr serve (real CLI)', () => {
         // 0.0.0.0 accepts connections on every interface, loopback included.
         const res = await fetch(`http://127.0.0.1:${envelope.data.port}/`);
         expect(res.status).toBe(200);
+      } finally {
+        await stopCliBackground(child);
+      }
+    } finally {
+      await tmp.cleanup();
+    }
+  }, 20_000);
+
+  it('resolves and persists the display theme without any route of its own', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const env = hermeticGitEnv();
+      expect((await runCli(['init'], { cwd: tmp.root, env })).exitCode).toBe(0);
+
+      const publishDir = path.join(tmp.root, '.contexture/publish/my-page');
+      await mkdir(publishDir, { recursive: true });
+      await writeFile(path.join(publishDir, 'index.html'), '<!doctype html><html><body>Hello.</body></html>');
+
+      const { child, firstLine } = await runCliBackground(['serve', '--port', '0', '--json'], { cwd: tmp.root, env });
+      try {
+        const envelope = JSON.parse(firstLine) as { data: { url: string } };
+        const baseUrl = envelope.data.url;
+
+        // No cookie, no query parameter: follows the system.
+        const defaultRes = await fetch(baseUrl);
+        expect(await defaultRes.text()).toContain('data-ctxr-theme="system"');
+
+        // A query parameter sets the cookie and takes effect on the same response.
+        const chooseRes = await fetch(new URL('/?ctxr-theme=dark', baseUrl));
+        expect(chooseRes.status).toBe(200);
+        const setCookie = chooseRes.headers.get('set-cookie') ?? '';
+        expect(setCookie).toContain('ctxr_theme=dark');
+        expect(setCookie).toContain('SameSite=Lax');
+        expect(setCookie).toContain('HttpOnly');
+        expect(chooseRes.headers.get('vary')).toContain('Cookie');
+        expect(chooseRes.headers.get('cache-control')).toContain('no-store');
+        expect(await chooseRes.text()).toContain('data-ctxr-theme="dark"');
+
+        // The cookie alone, with no query parameter, persists the choice on the next page.
+        const persistedRes = await fetch(new URL('/graph', baseUrl), { headers: { cookie: 'ctxr_theme=dark' } });
+        expect(await persistedRes.text()).toContain('data-ctxr-theme="dark"');
+
+        // An unrecognized cookie value falls back to following the system, not to an error.
+        const bogusRes = await fetch(baseUrl, { headers: { cookie: 'ctxr_theme=bogus' } });
+        expect(bogusRes.status).toBe(200);
+        expect(await bogusRes.text()).toContain('data-ctxr-theme="system"');
+
+        // HEAD still persists the choice, and still sends no body.
+        const headRes = await fetch(new URL('/?ctxr-theme=light', baseUrl), { method: 'HEAD' });
+        expect(headRes.status).toBe(200);
+        expect(headRes.headers.get('set-cookie') ?? '').toContain('ctxr_theme=light');
+        expect(await headRes.text()).toBe('');
+
+        // A published page is served byte-verbatim: no cookie, no theme attribute, no navigation.
+        const publishRes = await fetch(new URL('/publish/my-page/index.html?ctxr-theme=dark', baseUrl));
+        expect(publishRes.status).toBe(200);
+        expect(publishRes.headers.get('set-cookie')).toBeNull();
+        expect(await publishRes.text()).toBe('<!doctype html><html><body>Hello.</body></html>');
+      } finally {
+        await stopCliBackground(child);
+      }
+    } finally {
+      await tmp.cleanup();
+    }
+  }, 20_000);
+
+  it('shows and hides the navigation without client-side script', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const env = hermeticGitEnv();
+      expect((await runCli(['init'], { cwd: tmp.root, env })).exitCode).toBe(0);
+
+      const { child, firstLine } = await runCliBackground(['serve', '--port', '0', '--json'], { cwd: tmp.root, env });
+      try {
+        const envelope = JSON.parse(firstLine) as { data: { url: string } };
+        const baseUrl = envelope.data.url;
+
+        const defaultRes = await fetch(baseUrl);
+        const defaultHtml = await defaultRes.text();
+        expect(defaultHtml).toContain('data-ctxr-nav="shown"');
+        expect(defaultHtml).not.toContain('<script');
+
+        const collapseRes = await fetch(new URL('/?ctxr-nav=collapsed', baseUrl));
+        expect(collapseRes.headers.get('set-cookie') ?? '').toContain('ctxr_nav=collapsed');
+        expect(await collapseRes.text()).toContain('data-ctxr-nav="collapsed"');
+
+        // The collapsed choice persists across navigation via the cookie, with no query parameter.
+        const persistedRes = await fetch(new URL('/graph', baseUrl), { headers: { cookie: 'ctxr_nav=collapsed' } });
+        expect(await persistedRes.text()).toContain('data-ctxr-nav="collapsed"');
+
+        const showRes = await fetch(new URL('/?ctxr-nav=shown', baseUrl), { headers: { cookie: 'ctxr_nav=collapsed' } });
+        expect(await showRes.text()).toContain('data-ctxr-nav="shown"');
       } finally {
         await stopCliBackground(child);
       }

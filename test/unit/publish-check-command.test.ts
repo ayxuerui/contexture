@@ -29,7 +29,7 @@ function makeConfig(): StoreConfig {
 
 const GOOD_HTML = [
   '<!doctype html>',
-  '<html><head><meta name="viewport" content="width=device-width"><style>@media print{.x{display:none}}</style></head>',
+  '<html><head><title>Good Page</title><meta name="viewport" content="width=device-width"><style>@media print{.x{display:none}}</style></head>',
   '<body><p><span>2026-09-01</span> <a href="./README.md">spec</a></p></body></html>',
   '',
 ].join('\n');
@@ -135,7 +135,7 @@ describe('publish check', () => {
     const tmp = await makeTmpDir();
     try {
       const store: Store = { root: tmp.root, config: makeConfig() };
-      const html = '<!doctype html><html><body>no viewport, no print rule, no provenance</body></html>';
+      const html = '<!doctype html><html><body>no viewport, no print rule, no provenance, no title</body></html>';
       const htmlPath = await writePage(tmp.root, 'many-failures', html, null);
 
       const outcome = await executeCheck(store, { path: htmlPath });
@@ -144,6 +144,37 @@ describe('publish check', () => {
       expect(checks).toContain('print-rule');
       expect(checks).toContain('provenance-line');
       expect(checks).toContain('sibling-readme');
+      expect(checks).toContain('title');
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('fails and names the check for a page with no title', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const store: Store = { root: tmp.root, config: makeConfig() };
+      const html = GOOD_HTML.replace('<title>Good Page</title>', '');
+      const htmlPath = await writePage(tmp.root, 'no-title', html);
+
+      const outcome = await executeCheck(store, { path: htmlPath });
+      expect(outcome.exitCode).toBe(ExitCode.CheckFailed);
+      expect(outcome.data?.failures.map((f) => f.check)).toContain('title');
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('fails and names the check for a page with an empty title', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const store: Store = { root: tmp.root, config: makeConfig() };
+      const html = GOOD_HTML.replace('<title>Good Page</title>', '<title>   </title>');
+      const htmlPath = await writePage(tmp.root, 'empty-title', html);
+
+      const outcome = await executeCheck(store, { path: htmlPath });
+      expect(outcome.exitCode).toBe(ExitCode.CheckFailed);
+      expect(outcome.data?.failures.map((f) => f.check)).toContain('title');
     } finally {
       await tmp.cleanup();
     }

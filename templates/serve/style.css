@@ -1,5 +1,12 @@
+/*
+ * serve-page-names-theme-and-nav-toggle design.md D8: the light palette
+ * lives on :root as the shared baseline. "light" mode needs nothing more
+ * than to pin color-scheme; "dark" overrides every custom property at
+ * higher specificity (html[data-ctxr-theme=...] beats a bare :root
+ * regardless of source order); "system" keeps the light baseline unless the
+ * dark media query — scoped to system alone, never left unscoped — applies.
+ */
 :root {
-  color-scheme: light dark;
   --ctxr-fg: #1a1a1a;
   --ctxr-bg: #ffffff;
   --ctxr-muted: #6b6b6b;
@@ -8,8 +15,26 @@
   --ctxr-broken: #b3261e;
 }
 
+html[data-ctxr-theme="light"] {
+  color-scheme: light;
+}
+
+html[data-ctxr-theme="system"] {
+  color-scheme: light dark;
+}
+
+html[data-ctxr-theme="dark"] {
+  color-scheme: dark;
+  --ctxr-fg: #e8e8e8;
+  --ctxr-bg: #121212;
+  --ctxr-muted: #9b9b9b;
+  --ctxr-border: #3a3a3a;
+  --ctxr-code-bg: #1e1e1e;
+  --ctxr-broken: #ff8a80;
+}
+
 @media (prefers-color-scheme: dark) {
-  :root {
+  html[data-ctxr-theme="system"] {
     --ctxr-fg: #e8e8e8;
     --ctxr-bg: #121212;
     --ctxr-muted: #9b9b9b;
@@ -28,6 +53,10 @@ body {
 }
 
 .ctxr-shell-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
   padding: 0.75rem 1.5rem;
   border-bottom: 1px solid var(--ctxr-border);
 }
@@ -35,7 +64,94 @@ body {
 .ctxr-shell-header a {
   color: inherit;
   text-decoration: none;
+}
+
+.ctxr-shell-header-start,
+.ctxr-shell-header-end {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.ctxr-shell-title {
   font-weight: 600;
+}
+
+.ctxr-theme-switcher {
+  display: flex;
+  gap: 0.75rem;
+  font-size: 0.85rem;
+}
+
+.ctxr-theme-switcher a {
+  color: var(--ctxr-muted);
+}
+
+.ctxr-theme-switcher a:hover,
+.ctxr-theme-switcher a:focus-visible {
+  color: var(--ctxr-fg);
+}
+
+/*
+ * serve-page-names-theme-and-nav-toggle design.md D12: hidden off-screen
+ * rather than with display:none or visibility:hidden, either of which would
+ * drop the checkbox from the tab order and make the navigation unreachable
+ * by keyboard. Reused for the accessible-name text spans inside the two nav
+ * controls below, which need the identical off-screen treatment.
+ */
+.ctxr-visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* design.md D12: the checkbox is the first element in <body>, so this general-sibling selector can reach the visible label on :checked. */
+#ctxr-nav-toggle:focus-visible ~ header .ctxr-nav-toggle-label {
+  outline: 2px solid currentColor;
+  outline-offset: 2px;
+}
+
+.ctxr-nav-toggle-label,
+.ctxr-nav-collapse-link {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  min-width: 2.75rem;
+  min-height: 2.75rem;
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+  cursor: pointer;
+  color: var(--ctxr-muted);
+}
+
+.ctxr-nav-toggle-label:hover,
+.ctxr-nav-collapse-link:hover,
+.ctxr-nav-toggle-label:focus-visible,
+.ctxr-nav-collapse-link:focus-visible {
+  color: var(--ctxr-fg);
+}
+
+/*
+ * design.md D9: shown by default at a wide viewport, since a collapsed
+ * sidebar there must persist across navigation via the ctxr_nav cookie, not
+ * reset every page load the way the narrow-viewport checkbox does.
+ */
+.ctxr-nav-collapse-link {
+  display: inline-flex;
+}
+
+/* design.md D9/D10: gated to a viewport wide enough to show the navigation alongside the content, so it can never contradict the narrow-viewport checkbox below. */
+@media (min-width: 52.0625rem) {
+  html[data-ctxr-nav="collapsed"] .ctxr-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  html[data-ctxr-nav="collapsed"] .ctxr-nav {
+    display: none;
+  }
 }
 
 .ctxr-layout {
@@ -54,7 +170,12 @@ body {
   font-size: 0.9rem;
 }
 
-/* Stack the navigation above the content once two columns stop fitting. */
+/*
+ * Stack the navigation above the content once two columns stop fitting, and
+ * hide it by default (design.md D9: a narrow viewport starts with the
+ * navigation hidden, revealed only by the checkbox below — the desktop
+ * ctxr_nav cookie above this breakpoint plays no part here).
+ */
 @media (max-width: 52rem) {
   .ctxr-layout {
     grid-template-columns: minmax(0, 1fr);
@@ -65,6 +186,27 @@ body {
     max-height: none;
     border-right: none;
     border-bottom: 1px solid var(--ctxr-border);
+    display: none;
+  }
+
+  #ctxr-nav-toggle:checked ~ .ctxr-layout .ctxr-nav {
+    display: block;
+  }
+
+  .ctxr-nav-toggle-label {
+    display: inline-flex;
+  }
+
+  .ctxr-nav-collapse-link {
+    display: none;
+  }
+}
+
+@media print {
+  .ctxr-nav,
+  .ctxr-nav-toggle-label,
+  .ctxr-nav-collapse-link {
+    display: none;
   }
 }
 

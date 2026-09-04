@@ -120,7 +120,7 @@ describe('adapters generate command', () => {
     }
   });
 
-  it('installs the write-gate hook script, executable, with the bin path substituted', async () => {
+  it('installs the write-gate hook script, executable, resolving ctxr at run time with no baked-in path', async () => {
     const tmp = await makeTmpDir();
     try {
       const store: Store = { root: tmp.root, config: makeConfig([{ id: 'claude-code', kind: 'harness-generation' }]) };
@@ -128,6 +128,9 @@ describe('adapters generate command', () => {
       const scriptPath = path.join(tmp.root, '.claude/hooks/claude-code-write-gate.sh');
       const script = await readFile(scriptPath, 'utf8');
       expect(script).not.toContain('__CONTEXTURE_BIN__');
+      expect(script).not.toContain('__RESOLVE_CTXR__');
+      expect(script).not.toContain(tmp.root);
+      expect(script).toContain('command -v ctxr');
       expect(script).toContain('adapters write-gate');
       const { stat } = await import('node:fs/promises');
       const mode = (await stat(scriptPath)).mode;

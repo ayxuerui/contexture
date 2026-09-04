@@ -267,6 +267,8 @@ ctxr serve
 
 Renders notes, catalog sections, the graph document, and published pages as cross-linked HTML. It binds loopback (`127.0.0.1`) by default. `--host` widens that, but note what it does not change: `serve` applies **no per-requester filtering at any bind address**. Widening it exposes the whole store to whatever can reach that address, so only do it behind a front end you've arranged yourself.
 
+A published page's navigation label follows its own declared `<title>`, falling back to its folder name when it declares none. The header's light/dark/system links choose a display theme, and the ☰ control shows and hides the navigation — both persist across pages via cookies, and neither requires client-side script. A published page itself is still served byte-verbatim, so neither the theme nor the navigation reaches into it; `ctxr publish new`'s scaffold instead follows the viewer's own system preference on its own.
+
 ## Keeping a store current
 
 ```sh

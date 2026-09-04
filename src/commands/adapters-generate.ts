@@ -7,7 +7,7 @@ import { ExitCode } from '../core/exit-codes.js';
 import { upsertFencedRegionInFile } from '../core/fs/fenced-region.js';
 import type { GitRunner } from '../core/git/exec.js';
 import { mainWorktreePath } from '../core/git/worktree.js';
-import { installTemplatedHookScript, resolveOwnBinPath } from '../core/hooks.js';
+import { installTemplatedHookScript } from '../core/hooks.js';
 import { mergeJsonArrayLists, type MergePatch, type RemovePatch } from '../core/json-config-merge.js';
 import { harnessEntryFence } from '../core/markers.js';
 import type { Store } from '../core/store.js';
@@ -54,7 +54,6 @@ export async function generateAdapterOutputs(git: GitRunner, store: Store): Prom
         root: store.root,
         mainRoot,
         worktreesPath: store.config.session.worktrees_path,
-        binPath: resolveOwnBinPath(),
       };
       let permChanged = false;
 
@@ -63,7 +62,6 @@ export async function generateAdapterOutputs(git: GitRunner, store: Store): Prom
           store.root,
           adapter.permissionConfig.hookFile.targetPath,
           adapter.permissionConfig.hookFile.templateFileName,
-          { __CONTEXTURE_BIN__: input.binPath },
         );
         permChanged = permChanged || hookScriptChanged;
       }

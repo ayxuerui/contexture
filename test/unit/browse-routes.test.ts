@@ -169,3 +169,121 @@ describe('publishPages', () => {
     }
   });
 });
+
+
+describe('buildRouteTable publishTitles', () => {
+  it('reads a published page\'s declared <title>', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const store: Store = { root: tmp.root, config: makeConfig() };
+      await write(tmp.root, '.contexture/publish/my-page/index.html', '<html><head><title>My Declared Page</title></head></html>');
+      const table = await buildRouteTable(store);
+      expect(table.publishTitles.get('my-page')).toBe('My Declared Page');
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('falls back to no entry when the page declares no <title>', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const store: Store = { root: tmp.root, config: makeConfig() };
+      await write(tmp.root, '.contexture/publish/my-page/index.html', '<html><head></head></html>');
+      const table = await buildRouteTable(store);
+      expect(table.publishTitles.has('my-page')).toBe(false);
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('falls back to no entry when the <title> is empty', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const store: Store = { root: tmp.root, config: makeConfig() };
+      await write(tmp.root, '.contexture/publish/my-page/index.html', '<html><head><title>   </title></head></html>');
+      const table = await buildRouteTable(store);
+      expect(table.publishTitles.has('my-page')).toBe(false);
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('decodes HTML entities in a declared title', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const store: Store = { root: tmp.root, config: makeConfig() };
+      await write(tmp.root, '.contexture/publish/my-page/index.html', '<html><head><title>A &amp; B &lt;also&gt; &#39;quoted&#39;</title></head></html>');
+      const table = await buildRouteTable(store);
+      expect(table.publishTitles.get('my-page')).toBe("A & B <also> 'quoted'");
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('collapses internal whitespace in a multi-line title', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const store: Store = { root: tmp.root, config: makeConfig() };
+      await write(tmp.root, '.contexture/publish/my-page/index.html', '<html><head><title>\n  Line One\n  Line Two \n</title></head></html>');
+      const table = await buildRouteTable(store);
+      expect(table.publishTitles.get('my-page')).toBe('Line One Line Two');
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('matches a <title> tag carrying attributes, case-insensitively', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const store: Store = { root: tmp.root, config: makeConfig() };
+      await write(tmp.root, '.contexture/publish/my-page/index.html', '<html><head><TITLE class="x">Shouty Title</TITLE></head></html>');
+      const table = await buildRouteTable(store);
+      expect(table.publishTitles.get('my-page')).toBe('Shouty Title');
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('falls back to no entry when the title is truncated by the read bound', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const store: Store = { root: tmp.root, config: makeConfig() };
+      const padding = 'x'.repeat(5000);
+      await write(tmp.root, '.contexture/publish/my-page/index.html', `<html><head><!--${padding}--><title>Never Reached</title></head></html>`);
+      const table = await buildRouteTable(store);
+      expect(table.publishTitles.has('my-page')).toBe(false);
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('caps an over-long title', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const store: Store = { root: tmp.root, config: makeConfig() };
+      const longTitle = 'y'.repeat(200);
+      await write(tmp.root, '.contexture/publish/my-page/index.html', `<html><head><title>${longTitle}</title></head></html>`);
+      const table = await buildRouteTable(store);
+      expect(table.publishTitles.get('my-page')?.length).toBe(120);
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('handles a multibyte character sitting at the read boundary without throwing', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const store: Store = { root: tmp.root, config: makeConfig() };
+      // Pad the file past the 4096-byte read bound with multibyte filler, so the boundary
+      // itself is likely to split a multibyte sequence, then close the title after it.
+      const padding = '\u00e9\u00e8\u00ea'.repeat(2000);
+      await write(tmp.root, '.contexture/publish/my-page/index.html', `<html><head><title>${padding}</title></head></html>`);
+      const table = await buildRouteTable(store);
+      // No assertion on the exact value — only that reading it does not throw and produces a string.
+      const title = table.publishTitles.get('my-page');
+      expect(title === undefined || typeof title === 'string').toBe(true);
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+});

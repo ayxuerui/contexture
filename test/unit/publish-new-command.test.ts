@@ -40,6 +40,10 @@ describe('publish new', () => {
       expect(html).toContain('<meta name="viewport"');
       expect(html).toContain('@media print');
       expect(html).toContain('href="./README.md"');
+      // serve-page-names-theme-and-nav-toggle: a page can't receive the server's theme choice
+      // (it's served byte-verbatim), so the scaffold follows the viewer's own system preference.
+      expect(html).toContain('color-scheme: light dark');
+      expect(html).toContain('@media (prefers-color-scheme: dark)');
 
       const readme = await readFile(path.join(tmp.root, 'publish/some-slug/README.md'), 'utf8');
       expect(readme).toContain('## Intent');

@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-ctxr-theme="{{THEME}}" data-ctxr-nav="{{NAV_STATE}}">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -7,7 +7,21 @@
 <link rel="stylesheet" href="/assets/style.css">
 </head>
 <body>
-<header class="ctxr-shell-header"><a href="/">contexture</a></header>
+<input type="checkbox" id="ctxr-nav-toggle" class="ctxr-visually-hidden">
+<header class="ctxr-shell-header">
+<div class="ctxr-shell-header-start">
+<label for="ctxr-nav-toggle" class="ctxr-nav-toggle-label"><span aria-hidden="true">☰</span><span class="ctxr-visually-hidden">Navigation</span></label>
+<a href="/" class="ctxr-shell-title">contexture</a>
+</div>
+<div class="ctxr-shell-header-end">
+<a class="ctxr-nav-collapse-link" href="{{NAV_TOGGLE_HREF}}"><span aria-hidden="true">☰</span><span class="ctxr-visually-hidden">{{NAV_TOGGLE_LABEL}}</span></a>
+<nav class="ctxr-theme-switcher" aria-label="Display theme">
+<a href="?ctxr-theme=light">Light</a>
+<a href="?ctxr-theme=dark">Dark</a>
+<a href="?ctxr-theme=system">System</a>
+</nav>
+</div>
+</header>
 <div class="ctxr-layout">
 {{NAV}}
 <main>

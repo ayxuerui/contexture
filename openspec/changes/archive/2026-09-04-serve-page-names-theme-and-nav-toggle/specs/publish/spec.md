@@ -1,40 +1,4 @@
-# publish Specification
-
-## Purpose
-
-Governs turning store content into a shareable page for a subject — a store subtree, a single note, a
-or a concept: how its source notes are named and resolved, and the mechanical checks a finished page
-must pass —
-independent of what the page looks like or how it is built, which stay outside this capability.
-
-## Requirements
-
-### Requirement: A publish subject resolves to a note set from a subtree, a note, or an entity
-`ctxr publish gather` SHALL accept exactly one subject selector and resolve it to a set of source
-notes: a store subtree (a path prefix, every retrievable note under it), a single note, or an entity
-(the notes linking to it, the same enumeration `ctxr rollup gather` uses). It SHALL report the
-resolved set together with its count, and SHALL exit with the success code on a successful
-resolution, gating nothing.
-
-#### Scenario: A subtree selector resolves every note under a prefix
-- **WHEN** `ctxr publish gather --under <prefix>` runs
-- **THEN** the resolved set is every retrievable note whose path is at or under `<prefix>`
-
-#### Scenario: A note selector resolves to exactly one note
-- **WHEN** `ctxr publish gather --note <path>` runs
-- **THEN** the resolved set contains exactly that note
-
-#### Scenario: An entity selector resolves to its backlinks
-- **WHEN** `ctxr publish gather --entity <name>` runs
-- **THEN** the resolved set is every note whose body links to `<name>`, identical to what `ctxr rollup gather <name>` would enumerate
-
-#### Scenario: A successful enumeration exits zero
-- **WHEN** `ctxr publish gather --under <prefix> --json` runs against a store containing notes under `<prefix>`
-- **THEN** the command exits with the success code and the JSON output lists every note in the resolved set with no per-note verdict
-
-#### Scenario: An empty resolved set is reported as empty
-- **WHEN** a subject selector resolves to zero notes
-- **THEN** the command exits with the success code and reports a resolved-note count of zero
+## MODIFIED Requirements
 
 ### Requirement: A living page's identity is validated and never silently overwritten
 `ctxr publish new <slug>` SHALL accept a `<slug>` naming either a single folder or a multi-segment path
