@@ -1,5 +1,21 @@
 import { describe, expect, it } from 'vitest';
-import { addWorktree, fetchOrigin, hasRemote, mainWorktreePath, parseWorktreeList } from '../../src/core/git/worktree.js';
+import { existsSync } from 'node:fs';
+import { readFile, writeFile } from 'node:fs/promises';
+import path from 'node:path';
+import { createExecFileGitRunner } from '../../src/core/git/exec.js';
+import {
+  addDetachedWorktree,
+  addWorktree,
+  fetchOrigin,
+  hasRemote,
+  listWorktrees,
+  mainWorktreePath,
+  parseWorktreeList,
+  pruneWorktrees,
+  removeWorktree,
+  resolveHead,
+} from '../../src/core/git/worktree.js';
+import { makeTmpDir } from '../helpers/tmp-store.js';
 import { fakeGitRunner } from '../helpers/fake-env.js';
 
 describe('hasRemote', () => {
@@ -101,5 +117,80 @@ describe('mainWorktreePath', () => {
   it('falls back to the passed cwd when there are no linked worktrees', async () => {
     const { git } = fakeGitRunner(new Map([['worktree list --porcelain', { exitCode: 0, stdout: '', stderr: '' }]]));
     expect(await mainWorktreePath(git, '/repo')).toBe('/repo');
+  });
+});
+
+/**
+ * isolate-the-portability-test (task 1.4): these three are what the isolated
+ * run stands on, so they are exercised against a real repository rather than
+ * an argv-shape fake — the property under test is what git actually does with
+ * a detached checkout, not the flags we pass it.
+ */
+describe('detached worktree helpers, against a real repository', () => {
+  async function makeRepo() {
+    const tmp = await makeTmpDir();
+    const git = createExecFileGitRunner();
+    await git.run(['init'], { cwd: tmp.root });
+    await git.run(['config', 'user.email', 'test@example.com'], { cwd: tmp.root });
+    await git.run(['config', 'user.name', 'Test'], { cwd: tmp.root });
+    return { tmp, git };
+  }
+
+  async function commitFile(git: ReturnType<typeof createExecFileGitRunner>, root: string, name: string, body: string) {
+    await writeFile(path.join(root, name), body);
+    await git.run(['add', name], { cwd: root });
+    await git.run(['commit', '-m', `add ${name}`], { cwd: root });
+    return (await resolveHead(git, root))!;
+  }
+
+  it('resolveHead returns null on an unborn HEAD, and the sha once there is a commit', async () => {
+    const { tmp, git } = await makeRepo();
+    try {
+      expect(await resolveHead(git, tmp.root)).toBeNull();
+      const sha = await commitFile(git, tmp.root, 'a.md', '# A\n');
+      expect(sha).toMatch(/^[0-9a-f]{40}$/);
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('addDetachedWorktree checks out the named commit, with no branch attached', async () => {
+    const { tmp, git } = await makeRepo();
+    try {
+      const first = await commitFile(git, tmp.root, 'a.md', 'first\n');
+      await commitFile(git, tmp.root, 'a.md', 'second\n');
+
+      const checkout = path.join(tmp.root, 'disposable');
+      await addDetachedWorktree(git, tmp.root, checkout, first);
+
+      // The content is the OLD commit's, not the working tree's — the property D2 rests on.
+      expect(await readFile(path.join(checkout, 'a.md'), 'utf8')).toBe('first\n');
+      const listed = (await listWorktrees(git, tmp.root)).find((w) => w.path === checkout);
+      expect(listed?.head).toBe(first);
+      expect(listed?.branch).toBeNull();
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('removeWorktree reclaims the checkout, leaving the repository with only its main worktree', async () => {
+    const { tmp, git } = await makeRepo();
+    try {
+      const sha = await commitFile(git, tmp.root, 'a.md', '# A\n');
+      const checkout = path.join(tmp.root, 'disposable');
+      await addDetachedWorktree(git, tmp.root, checkout, sha);
+      expect(await listWorktrees(git, tmp.root)).toHaveLength(2);
+
+      // Dirty it first: a verify run writes derived artifacts into the checkout,
+      // so removal has to succeed against a modified tree.
+      await writeFile(path.join(checkout, 'a.md'), 'modified\n');
+      await removeWorktree(git, tmp.root, checkout);
+      await pruneWorktrees(git, tmp.root);
+
+      expect(await listWorktrees(git, tmp.root)).toHaveLength(1);
+      expect(existsSync(checkout)).toBe(false);
+    } finally {
+      await tmp.cleanup();
+    }
   });
 });

@@ -33,7 +33,7 @@ has already run, leaving a pushed branch and no pull request.
   worktree, in a child process whose environment has the harness home and store-root variables
   removed, and reports which commit it verified. Bare `ctxr verify` keeps today's in-process
   working-tree semantics.
-- `verify` gains two operations: a disclosure-gate evaluation (the gate is a core store operation and
+- `verify` gains two operations: a write-path gate evaluation (the gate is a core store operation and
   nothing in the portability test exercised it), and a check that the write path's required external
   tooling is present.
 - The "Executable portability test" requirement stops asserting the no-harness-state property and names
@@ -46,7 +46,7 @@ has already run, leaving a pushed branch and no pull request.
 ### Modified Capabilities
 
 - `harness-portability`: the portability test's isolation becomes a named mechanism rather than an
-  asserted property; its exercised-operation minimum grows by the disclosure gate and the write path's
+  asserted property; its exercised-operation minimum grows by the write-path gate and the write path's
   tooling prerequisites; its skill-following clause stops referencing the removed index.
 
 ## Impact

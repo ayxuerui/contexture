@@ -19,10 +19,23 @@ import { buildGraphFromNotes, graphBuildOptions } from '../core/graph/model.js';
 import { writeGraph } from '../core/graph/persist.js';
 import type { Fence } from '../core/markers.js';
 import { listNotes } from '../core/notes/list.js';
+import { resolveOnPath } from '../core/environment/probe.js';
 import { scanSkills } from '../core/skills.js';
+import { sanctionedPath } from '../core/write-lifecycle/path-gate.js';
+import type { RunEnv } from '../core/env.js';
+import { NoCommitToVerifyError } from '../core/errors.js';
+import { runIsolatedVerify } from '../core/harness/isolated-run.js';
+import { resolveHead } from '../core/git/worktree.js';
 import type { Store } from '../core/store.js';
 
 export const requires: CommandRequires = { store: 'required' };
+
+/**
+ * The tool `templates/skills/ctxr-submit.md` and `ctxr-land.md` drive. Hardcoded
+ * on purpose: accepting a tool name from configuration would let a store point
+ * the check at something it knows is present (D4).
+ */
+const WRITE_PATH_TOOL = 'gh';
 
 export interface VerifyFlags {
   portable?: boolean;
@@ -30,12 +43,20 @@ export interface VerifyFlags {
 
 export interface VerifyStepResult {
   operation: string;
-  status: 'pass' | 'fail';
+  /**
+   * isolate-the-portability-test: `skip` is reported when an operation has
+   * nothing to exercise in this store — a conditional artifact that is not
+   * configured. Only `fail` decides the exit code, so a skipped step is
+   * visible in the envelope without ever changing the verdict.
+   */
+  status: 'pass' | 'fail' | 'skip';
   detail?: string;
 }
 
 export interface VerifyData {
   steps: VerifyStepResult[];
+  /** Present only in portable mode: the commit the disposable checkout was made from. */
+  commit?: string;
 }
 
 /** Every section that renders unconditionally — Mission is checked separately since it's optional. */
@@ -61,7 +82,8 @@ const ALWAYS_PRESENT_SECTIONS: readonly { label: string; fence: Fence }[] = [
  * drift `ctxr doctor` checks — see `integrity-checks.ts`), and that a skill
  * is reachable by path at the configured skills path.
  */
-export async function execute(store: Store, _flags: VerifyFlags = {}): Promise<CommandOutcome<VerifyData>> {
+export async function execute(env: RunEnv, store: Store, flags: VerifyFlags = {}): Promise<CommandOutcome<VerifyData>> {
+  if (flags.portable) return executePortable(env, store);
   const steps: VerifyStepResult[] = [];
 
   // 1. A retrieval query — reading a catalog section works even before any
@@ -154,10 +176,41 @@ export async function execute(store: Store, _flags: VerifyFlags = {}): Promise<C
     });
   }
 
+  // 7. The write-path gate — the store's surviving refusal mechanism. Every
+  // other operation here is a happy path; this one asks whether the gate still
+  // says no. The path escapes the store, which `sanctionedPath` refuses
+  // unconditionally: its sanctioned-location rule is inert until
+  // `write_lifecycle.writable_paths` is declared, so a step built on that half
+  // would pass vacuously on a default store (D3).
+  const gated = await sanctionedPath(store.config, store.root, path.join('..', 'outside.md'));
+  if (gated.ok || gated.reason === undefined) {
+    steps.push({
+      operation: 'write-path gate refuses an escaping path',
+      status: 'fail',
+      detail: 'the gate produced no refusal for a path resolving outside the store',
+    });
+    return finish(store, steps);
+  }
+  steps.push({ operation: 'write-path gate refuses an escaping path', status: 'pass' });
+
+  // 8. The external tooling the shipped write-path skills invoke. Presence
+  // only — nothing is executed, and no tool name comes from configuration.
+  const resolved = await resolveOnPath(WRITE_PATH_TOOL, env.env);
+  if (resolved === null) {
+    steps.push({
+      operation: `write-path prerequisite "${WRITE_PATH_TOOL}" on PATH`,
+      status: 'fail',
+      detail: `"${WRITE_PATH_TOOL}" is not on PATH; the shipped submit and land skills invoke it.`,
+    });
+    return finish(store, steps);
+  }
+  steps.push({ operation: `write-path prerequisite "${WRITE_PATH_TOOL}" on PATH`, status: 'pass' });
+
   return finish(store, steps);
 }
 
-function finish(store: Store, steps: VerifyStepResult[]): CommandOutcome<VerifyData> {
+function finish(store: Store, steps: VerifyStepResult[], commit?: string): CommandOutcome<VerifyData> {
+  // Only `fail` is failing — a skipped operation never changes the exit code.
   const failed = steps.find((s) => s.status === 'fail');
   const findings: Finding[] = failed
     ? [
@@ -170,14 +223,54 @@ function finish(store: Store, steps: VerifyStepResult[]): CommandOutcome<VerifyD
       ]
     : [];
 
+  // D2: a portable pass is a statement about the recorded commit, never about
+  // the working tree, so the summary always names which commit it was.
+  const at = commit === undefined ? '' : ` at commit ${commit.slice(0, 12)}`;
+  const mode = commit === undefined ? 'verify' : 'verify --portable';
   return {
     exitCode: failed ? ExitCode.CheckFailed : ExitCode.Ok,
-    data: { steps },
+    data: commit === undefined ? { steps } : { steps, commit },
     findings,
     humanSummary: failed
-      ? `verify --portable failed at: ${failed.operation}`
-      : `verify --portable: all ${steps.length} operation(s) succeeded.`,
+      ? `${mode} failed${at} at: ${failed.operation}`
+      : `${mode}${at}: all ${steps.length} operation(s) succeeded.`,
     storeRoot: store.root,
     schemaVersion: store.config.schema_version,
   };
+}
+
+/**
+ * D1/D2: verifies the store's RECORDED COMMIT in a disposable checkout, in a
+ * child process with no harness state reachable. The refusal below is a value
+ * check on `resolveHead` rather than a caught git error, and it runs before
+ * anything is created — an unborn HEAD leaves no checkout behind.
+ */
+async function executePortable(env: RunEnv, store: Store): Promise<CommandOutcome<VerifyData>> {
+  const commit = await resolveHead(env.git, store.root);
+  if (commit === null) throw new NoCommitToVerifyError();
+
+  const isolated = await runIsolatedVerify(env.git, store.root, env.env, commit);
+  const steps: VerifyStepResult[] = isolated.steps.map((step) => ({
+    operation: step.operation,
+    status: step.status === 'fail' ? 'fail' : step.status === 'skip' ? 'skip' : 'pass',
+    ...(step.detail === undefined ? {} : { detail: step.detail }),
+  }));
+  // The requirement's "no harness state" clause, enforced: if the child wrote
+  // into the scrubbed home, the run was not isolated from what it claimed.
+  if (!isolated.homeWasEmpty) {
+    steps.push({
+      operation: 'isolated run leaves no harness state',
+      status: 'fail',
+      detail: 'the child wrote into the scrubbed home directory, so the run was not isolated from harness state',
+    });
+    return finish(store, steps, isolated.commit);
+  }
+  if (steps.length === 0) {
+    steps.push({
+      operation: 'isolated run',
+      status: 'fail',
+      detail: `the isolated child produced no verifiable output (exit ${isolated.exitCode})`,
+    });
+  }
+  return finish(store, steps, isolated.commit);
 }

@@ -80,11 +80,21 @@ and the live store is untouched. Bare `verify` keeps writing to its declared der
 
 ### D3. Two new operations, and one deliberately not ported
 
-**Added — disclosure gate.** `evaluateDisclosure` is pure, so the step calls it against the first note
-with a synthetic audience and asserts a verdict and a named rung come back. Any of ALLOW / DENY / ASK
-is a pass: the operation under test is "the ladder ran", not "the answer was yes". In-process this is a
-returned value, so none of the exit-code juggling a shell version needs (0, 4 and 5 all meaning
-success) appears. `skip` when the store has no notes.
+**Added — write-path gate.** The step calls `sanctionedPath` with a path that resolves outside the
+store and asserts a refusal carrying a reason. The operation under test is "the gate ran and produced a
+verdict", not "the answer was yes" — in-process that is a returned value, so none of the exit-code
+juggling a shell version needs appears.
+
+The rule exercised is deliberately the symlink-escape one, which `sanctionedPath` enforces
+unconditionally. Its sibling, the sanctioned-location rule, engages only once
+`write_lifecycle.writable_paths` is declared, so a step built on that half would pass vacuously on a
+default store — present in the output, proving nothing. There is no `skip` case: the gate reads config
+and a path, and needs no notes.
+
+This replaces the disclosure-gate step this design originally specified. `evaluateDisclosure` was
+deleted with the access axes (`retire-the-access-axes`), and the write-path gate is the refusal
+mechanism that survived it. Without some gate in the set, every exercised operation is a happy path and
+nothing in the portability test confirms the store still refuses what it should.
 
 **Added — write-path prerequisites.** Resolve `gh` on `PATH` via `fs.access(X_OK)`. Contexture ships
 `ctxr-submit` and `ctxr-land` as owned skills that drive `gh pr create` / `gh pr merge`; on a machine

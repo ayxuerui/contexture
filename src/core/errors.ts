@@ -232,6 +232,17 @@ export class CaptureDestinationExistsError extends ContextureError {
   }
 }
 
+export class NoCommitToVerifyError extends ContextureError {
+  constructor() {
+    super(ExitCode.Usage, {
+      code: 'verify.no_commit',
+      severity: 'error',
+      message:
+        'There is no commit to verify: `verify --portable` checks out the store\'s recorded commit, and this repository has none yet. Commit the store, then re-run.',
+    });
+  }
+}
+
 export class AdapterNotFoundError extends ContextureError {
   constructor(kind: string, id: string) {
     super(ExitCode.Usage, {
