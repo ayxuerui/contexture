@@ -72,10 +72,16 @@ describe('cli-contract: commands that must stay offline', () => {
     try {
       const env = envForStore(tmp.root, { registry: forbiddenRegistry(), env: GIT_IDENTITY });
       const code = await run(['init', '--json'], env);
-      expect(code).toBe(ExitCode.Ok);
-      const envelope = JSON.parse(readAll(env.io.stdout as unknown as PassThrough)) as {
-        findings: { code: string }[];
+      // Parse before asserting the code: a bare "expected 1 to be 0" says
+      // nothing, and the envelope carries the message that explains it.
+      const stdout = readAll(env.io.stdout as unknown as PassThrough);
+      const stderr = readAll(env.io.stderr as unknown as PassThrough);
+      const envelope = JSON.parse(stdout || '{"findings":[]}') as {
+        findings: { code: string; message?: string }[];
       };
+      expect(code, `init exited ${code}: ${JSON.stringify(envelope.findings)} stderr=${stderr}`).toBe(
+        ExitCode.Ok,
+      );
       expect(envelope.findings.map((f) => f.code)).not.toContain('cli.update_check_failed');
       expect(envelope.findings.map((f) => f.code)).not.toContain('cli.update_available');
     } finally {
