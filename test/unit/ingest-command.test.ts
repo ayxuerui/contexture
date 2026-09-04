@@ -289,4 +289,51 @@ describe('source check command (via the CLI command layer)', () => {
       await tmp.cleanup();
     }
   });
+
+  /**
+   * exclude-candidate-from-source-check: a capture pipeline is permitted to
+   * pre-assign source_type/source_id at capture time ("A capture MAY arrive
+   * already carrying its source type and source id"). Without this
+   * exclusion, that pre-assigned id makes the capture match itself before
+   * it has ever been through `ctxr ingest`.
+   */
+  it('does not match a not-yet-ingested capture against itself', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const store: Store = { root: tmp.root, config: makeConfig() };
+      await writeNote(
+        tmp.root,
+        'raw/inbox/a.md',
+        '---\nsource_type: url\nsource_id: src-1\n---\n# Fresh\n\nContent.\n',
+      );
+      const env = makeFakeEnv({ cwd: tmp.root });
+      const outcome = await executeSourceCheck(env, store, { path: 'raw/inbox/a.md', sourceId: 'src-1' });
+      expect(outcome.data?.verdict).toBe('new');
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('excluding a not-yet-ingested candidate from its own match does not hide a real prior record', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const store: Store = { root: tmp.root, config: makeConfig() };
+      await writeNote(
+        tmp.root,
+        'projects/prior.md',
+        '---\nsource_id: src-1\nsource_hash: abc\n---\n# Prior\n',
+      );
+      await writeNote(
+        tmp.root,
+        'raw/inbox/a.md',
+        '---\nsource_type: url\nsource_id: src-1\n---\n# Fresh\n\nContent.\n',
+      );
+      const env = makeFakeEnv({ cwd: tmp.root });
+      const outcome = await executeSourceCheck(env, store, { path: 'raw/inbox/a.md', sourceId: 'src-1' });
+      expect(outcome.data?.verdict).toBe('drift');
+      expect(outcome.data?.matches).toEqual(['projects/prior.md']);
+    } finally {
+      await tmp.cleanup();
+    }
+  });
 });
