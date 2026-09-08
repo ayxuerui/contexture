@@ -14,7 +14,7 @@ The store's placement skill SHALL determine a new note's layer and folder using 
 - **THEN** the placement skill's decision steps still resolve to a valid layer and folder within that configured taxonomy
 
 ### Requirement: Archive is a single tracked rename that leaves the note untouched
-Archiving a note SHALL relocate it via the single tracked rename defined in the context-store capability, SHALL leave the note's frontmatter and body byte-identical, and SHALL report every other note in the store whose link would now point at the moved path.
+Archiving a note SHALL relocate it via the single tracked rename defined in the context-store capability, SHALL leave the note's frontmatter and body byte-identical, and SHALL report every other note in the store whose link would now point at the moved path. The destination SHALL be read from `organize.archive_destination`, a single configured path, and the archive operation SHALL NOT inspect the store's taxonomy to determine it.
 
 #### Scenario: The note's bytes are unchanged by archiving
 - **WHEN** a note carrying frontmatter is archived
@@ -23,6 +23,10 @@ Archiving a note SHALL relocate it via the single tracked rename defined in the 
 #### Scenario: Inbound links are reported, not silently broken
 - **WHEN** a note being archived has one or more other notes linking to it
 - **THEN** `contexture archive` lists each linking note in its output, so the operator can update them if needed
+
+#### Scenario: The destination is taxonomy-independent
+- **WHEN** a store declares a taxonomy with no retirement layer of any kind
+- **THEN** archiving still succeeds, relocating the note to `organize.archive_destination`
 
 ### Requirement: Lint reports; it never fails a build
 `contexture lint` SHALL report findings (orphaned notes, notes with no catalog entry as covered by context-catalog, broken links, material still sitting in the inbox) and SHALL always exit 0 when it completes its scan successfully, regardless of how many findings it reports. It SHALL NOT be used as a gate that blocks a commit or a session submission. A "broken link" finding SHALL cover a link that resolves to no note at all; a link that resolves ambiguously, to more than one note, is doctor's (per store-integrity), not lint's. The inbox finding SHALL be determined by a file's location under the configured inbox path, not by which frontmatter fields it carries, since a capture is not a note and is not enumerable as one.

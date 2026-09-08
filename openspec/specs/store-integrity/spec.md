@@ -41,7 +41,7 @@ Provides a single machine-readable system-health check that fails on real invari
 - **THEN** it does not also appear in lint's report, since a genuine invariant lives in exactly one of the two commands
 
 ### Requirement: A config key `StoreConfigSchema` doesn't recognize fails doctor by name
-Because the store config schema is loose (`.passthrough()`, so a later package version's additive field never forces every existing store through a migration), a key the schema doesn't declare would otherwise pass config loading silently. `doctor` SHALL fail this gap closed: it SHALL compare the loaded config's top-level keys against the schema's declared shape and fail, naming every key that isn't declared — whether from a schema version this old, a typo, or a capability retired in a later release.
+Because the store config schema is loose (`.passthrough()`, so a later package version's additive field never fails an existing store's configuration load), a key the schema doesn't declare would otherwise pass config loading silently. `doctor` SHALL fail this gap closed: it SHALL compare the loaded config's top-level keys against the schema's declared shape and fail, naming every key that isn't declared — whether from a schema version this old, a typo, or a capability retired in a later release.
 
 #### Scenario: A retired capability's config key survives an upgrade
 - **WHEN** `contexture.yaml` still declares a top-level key from a capability a later contexture version removed (for example, `identity`, retired when identity/memory moved to the harness)

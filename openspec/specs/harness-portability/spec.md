@@ -141,22 +141,36 @@ The canonical section SHALL state, on every store regardless of configuration, t
 - **THEN** the boundary statement's text is unchanged and regeneration reports no change
 
 ### Requirement: Root resolution precedence
-Any contexture command SHALL resolve the store root in this order: an explicit `--root` argument; the `CONTEXTURE_ROOT` environment variable; walking up from the current working directory looking for `contexture.yaml`. If none resolves, the command SHALL exit non-zero naming that no store root was found, and SHALL NOT guess a fallback location.
+Any contexture command SHALL resolve the store root in this order: an explicit `--root` argument; the `CONTEXTURE_STORE_ROOT` environment variable; walking up from the current working directory looking for `contexture.yaml`. If none resolves, the command SHALL exit non-zero naming that no store root was found, and SHALL NOT guess a fallback location.
 
 #### Scenario: Explicit argument overrides an inherited environment variable
-- **WHEN** a command is invoked with `--root /path/a` while `CONTEXTURE_ROOT=/path/b` is set in the environment
+- **WHEN** a command is invoked with `--root /path/a` while `CONTEXTURE_STORE_ROOT=/path/b` is set in the environment
 - **THEN** the command operates against `/path/a`
 
 #### Scenario: No root resolves
-- **WHEN** a command is invoked with no `--root`, no `CONTEXTURE_ROOT`, and no `contexture.yaml` found by walking up from the current directory
+- **WHEN** a command is invoked with no `--root`, no `CONTEXTURE_STORE_ROOT`, and no `contexture.yaml` found by walking up from the current directory
 - **THEN** the command exits non-zero with a message naming that no store root was found, and performs no store operation
 
 ### Requirement: Exactly one root environment variable and one root flag
 The store root SHALL be addressable by exactly one environment variable and one command-line flag. No alias environment variable or flag name SHALL be introduced for the same purpose.
 
+A superseded root variable name SHALL NOT resolve a root under any circumstances. When a superseded name is set and the current one is not, the command SHALL exit non-zero naming both names, enforced by a check in root resolution that precedes every store operation — so that an environment migrated only in part fails visibly rather than resolving a different store by walking up from the current directory.
+
 #### Scenario: No alias is recognized
-- **WHEN** an operator sets an environment variable other than the one documented root variable, intending it to select the store root
+- **WHEN** an operator sets an environment variable that is neither the documented root variable nor a superseded root variable name, intending it to select the store root
 - **THEN** contexture does not recognize it and falls through to the next resolution step
+
+#### Scenario: A superseded variable name is refused rather than ignored
+- **WHEN** a command is invoked with no `--root`, with `CONTEXTURE_ROOT` set in the environment, and with `CONTEXTURE_STORE_ROOT` unset
+- **THEN** the command exits non-zero with a message naming both the superseded and the current variable, performs no store operation, and does not fall through to walking up from the current directory
+
+#### Scenario: The current variable wins when both are set
+- **WHEN** a command is invoked with no `--root` while both `CONTEXTURE_ROOT` and `CONTEXTURE_STORE_ROOT` are set to different paths
+- **THEN** the command operates against the path named by `CONTEXTURE_STORE_ROOT` and does not refuse
+
+#### Scenario: An explicit argument beats a superseded variable
+- **WHEN** a command is invoked with `--root /path/a` while `CONTEXTURE_ROOT=/path/b` is set and `CONTEXTURE_STORE_ROOT` is unset
+- **THEN** the command operates against `/path/a` and does not refuse, since no environment variable was consulted to resolve the root
 
 ### Requirement: Skills are portable markdown reached by path
 Reusable store skills SHALL be markdown files reachable by a documented path from `AGENTS.md`, readable and followable by any agent capable of reading files, independent of any harness's auto-discovery mechanism.
@@ -480,3 +494,20 @@ The rendered session-lifecycle skill's start step SHALL, when the session-start 
 #### Scenario: A failed check is not raised as a problem
 - **WHEN** the start command reports that the release check could not be completed
 - **THEN** the start step continues the session without offering an upgrade and without reporting a store problem
+
+### Requirement: A skills path sitting on a harness's own branded directory is reported
+When the store's configured skills path is identical to a declared harness-generation adapter's own declared skills directory, `ctxr lint` SHALL report it, naming that harness and the cross-harness canonical skills location. No bridge is created for a harness whose directory already equals the configured path, so a harness the store has not declared finds no skills at a branded path — a state the broken-bridge check cannot express, because it skips on exactly that equality.
+
+This SHALL be an observation and SHALL NOT fail a run: a store that configures a branded skills path remains valid, keeps that path, and is never relocated. Where the store itself overrides a declared harness's skills directory to equal the configured skills path, nothing SHALL be reported — the store has chosen to have no bridge for that harness, which is a supported configuration rather than drift.
+
+#### Scenario: A branded canonical path is reported
+- **WHEN** a store's configured skills path is identical to the skills directory a declared harness's adapter declares for itself
+- **THEN** `ctxr lint` reports it, naming that harness and the cross-harness canonical location, and `ctxr doctor` still passes
+
+#### Scenario: The cross-harness canonical path is not reported
+- **WHEN** a store's configured skills path is the cross-harness canonical skills location and a declared harness reads its own branded directory
+- **THEN** nothing is reported, and that harness's directory is bridged to the configured path as usual
+
+#### Scenario: A store-declared override is not reported
+- **WHEN** a store overrides a declared harness's skills directory so that it equals the store's configured skills path
+- **THEN** nothing is reported, because the store declared that this harness needs no bridge
