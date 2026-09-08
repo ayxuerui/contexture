@@ -126,17 +126,17 @@ A key whose absence is itself meaningful — where not declaring it means the st
 - **WHEN** a store's configuration declares no path for an opt-in mechanism
 - **THEN** that mechanism stays off, and no shipped constant is substituted to switch it on
 
-### Requirement: A written configuration records decisions, not resolved values
-When contexture writes `contexture.yaml` — at init, and on every migration write-back — it SHALL omit any key whose value equals that key's shipped default, and SHALL write every key whose value differs or that carries no default. A reader SHALL therefore be able to take the file's contents as the set of choices the store has made.
+### Requirement: A written configuration records only the store's own decisions
+When contexture writes `contexture.yaml` it SHALL omit any key whose value equals that key's shipped default, and SHALL write every key whose value differs or that carries no default. A reader SHALL therefore be able to take the file's contents as the set of choices the store has made. `ctxr init`, against a directory that does not yet hold a configuration, is the only writer: no other command rewrites the file, so a store's declared values cannot drift between releases.
 
 #### Scenario: A generated config omits what it agrees with
 - **WHEN** `ctxr init` completes with every convention accepted
 - **THEN** the written `contexture.yaml` names the store's taxonomy, its default branch and its other required facts, and does not restate a single value equal to a shipped default
 
-#### Scenario: A migration's write-back does not re-materialize defaults
-- **WHEN** any migration rewrites `contexture.yaml`
-- **THEN** the rewritten file still omits every value equal to a shipped default, so the omission survives future migrations rather than being undone by the next one
-
 #### Scenario: A deviation stays visible
-- **WHEN** a store configures a value that differs from the shipped default and a later write-back occurs
+- **WHEN** a store configures a value that differs from the shipped default
 - **THEN** that key is written out, unchanged, because it is a decision rather than an echo
+
+#### Scenario: Reconciling an existing store writes no configuration
+- **WHEN** a command that brings a store's generated files up to date runs against an already-initialized store
+- **THEN** `contexture.yaml` is not written, and every key the store declared resolves to exactly what it resolved to before

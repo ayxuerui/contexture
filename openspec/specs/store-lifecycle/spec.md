@@ -14,32 +14,25 @@ Running `contexture init` against a directory that is already an initialized sto
 - **THEN** no existing file is modified, and the command exits 0
 
 ### Requirement: Schema version is recorded and gated
-`init` SHALL write a schema version into `contexture.yaml`. Every subsequent command SHALL read this version before operating, and SHALL refuse to operate — exiting non-zero and naming the version mismatch — if the store's recorded schema version is newer than the version the running contexture release supports.
+`init` SHALL write a schema version into `contexture.yaml`. Every subsequent command SHALL read this version before operating, and SHALL refuse to operate — exiting non-zero and naming both the store's recorded version and the version the running release supports — whenever the two differ, in either direction. A store recorded at a newer version is refused because the running release cannot know its shape; a store recorded at an older version is refused because the running release no longer reads that shape and offers nothing that would bring it forward.
 
 #### Scenario: A newer store schema is refused by an older CLI
 - **WHEN** a contexture CLI is run against a store whose recorded schema version is newer than the CLI's supported version
 - **THEN** the CLI exits non-zero, naming both versions, and performs no store operation
 
+#### Scenario: An older store schema is refused by a newer CLI
+- **WHEN** a contexture CLI is run against a store whose recorded schema version is older than the CLI's supported version
+- **THEN** the CLI exits non-zero at configuration load, naming both versions, and performs no store operation — rather than loading the configuration onto superseded key spellings or reporting a shape-validation error against keys the release no longer declares
+
 #### Scenario: A store with no recorded schema version is treated as unmigratable
 - **WHEN** a command encounters a `contexture.yaml` with no schema version field at all
-- **THEN** the command exits non-zero, reporting that the store predates the schema-version requirement and must be migrated with an explicit tool
-
-### Requirement: Migrations are named, dry-runnable, and resumable
-A change to the store's schema that existing stores must adopt SHALL ship as a named migration. `contexture migrate --dry-run` SHALL report the exact changes a migration would make without applying them. A migration that is interrupted partway SHALL be resumable without requiring a full restart or leaving the store in an inconsistent, undocumented intermediate state.
-
-#### Scenario: Dry run reports exact deltas
-- **WHEN** `contexture migrate --dry-run` is run against a store pinned at a schema version older than the CLI's current version
-- **THEN** the output enumerates the specific changes (files touched, fields renamed or added) the migration would make, with no changes actually applied
-
-#### Scenario: An interrupted migration can be resumed
-- **WHEN** a migration is interrupted after partially completing
-- **THEN** re-running `contexture migrate` on the same store continues from where it left off rather than failing or redoing already-applied changes
+- **THEN** the command exits non-zero, reporting that the store predates the schema-version requirement and is not supported by this release
 
 ### Requirement: No component hardcodes a taxonomy or field name
-No contexture command or library function SHALL contain a hardcoded taxonomy layer name or frontmatter field name; every such name SHALL be read from `contexture.yaml` at runtime, so that a taxonomy or field-name change is a configuration and migration matter, never a code change.
+No contexture command or library function SHALL contain a hardcoded taxonomy layer name or frontmatter field name; every such name SHALL be read from `contexture.yaml` at runtime, so that a taxonomy or field-name change is a configuration matter, never a code change.
 
 #### Scenario: A renamed taxonomy layer requires no code change
-- **WHEN** an operator renames a taxonomy layer in `contexture.yaml` and runs the corresponding migration
+- **WHEN** an operator renames a taxonomy layer in `contexture.yaml`
 - **THEN** every command that references that layer continues to function correctly using the new name, with no contexture code modified
 
 ### Requirement: contexture ships multiple named taxonomy profiles, with PARA as the default
@@ -73,8 +66,19 @@ When `contexture init` runs interactively (a terminal capable of prompting) with
 - **WHEN** `contexture init` runs with no terminal available to prompt (for example, in a script or CI job) and no profile or custom taxonomy specified
 - **THEN** it writes the PARA default immediately, without prompting or blocking
 
-### Requirement: `init` creates the capture tier and excludes it from retrieval
-`ctxr init` SHALL create the configured inbox directory and SHALL seed the configured capture root into the store's retrieval exclusions, so a freshly initialized store has somewhere to capture into and captures are not retrievable from the first commit. Both values SHALL be read from configuration; no component may hardcode either directory name. An existing store SHALL reach the same state through a named migration rather than through operator action, and that migration SHALL adopt the shipped inbox default only where the store's value still sat at the previous shipped default, preserving an operator-chosen value verbatim.
+### Requirement: contexture ships no migration mechanism
+contexture SHALL provide no command, and no configuration rewrite, that carries a store from one recorded schema version to another. A release that changes the store's shape SHALL bump the schema version it supports and SHALL document the one-time fixup in its release notes; bringing a store forward is the operator's action, and the schema-version gate is what makes an unmigrated store fail rather than half-work.
+
+#### Scenario: No command claims to migrate a store
+- **WHEN** the CLI's command surface is enumerated
+- **THEN** no command applies a schema migration or rewrites `contexture.yaml` to a different schema version
+
+#### Scenario: A store behind the supported version is refused, not rewritten
+- **WHEN** a command runs against a store whose recorded schema version is older than the running release supports
+- **THEN** the command exits non-zero and no byte of the store's configuration is written
+
+### Requirement: `init` seeds the capture tier and its retrieval exclusion
+`ctxr init` SHALL create the configured inbox directory and SHALL seed the configured capture root into the store's retrieval exclusions, so a freshly initialized store has somewhere to capture into and captures are not retrievable from the first commit. Both values SHALL be read from configuration; no component may hardcode either directory name.
 
 #### Scenario: A fresh store can be captured into
 - **WHEN** `ctxr init` completes in an empty directory
@@ -84,21 +88,24 @@ When `contexture init` runs interactively (a terminal capable of prompting) with
 - **WHEN** `ctxr init` is run again against a store whose inbox directory already exists and whose exclusions already name the capture root
 - **THEN** it reports the store already initialized and writes no duplicate exclusion entry
 
-#### Scenario: An operator-chosen inbox survives migration
-- **WHEN** a store whose inbox path was set to something other than the previous shipped default is migrated
-- **THEN** its inbox path is left exactly as the operator set it, and only the capture root and the retrieval exclusion are added
-
-### Requirement: A change to a shipped default reaches a store that never overrode it
-Where a store's configuration omits a key because it accepted the shipped default, a later release that changes that default SHALL take effect for the store on upgrade, without a migration. A migration SHALL be required only to move a value the store itself recorded. Existing stores SHALL be brought to this shape by a named migration that removes keys whose value already equals the shipped default, changing what no key resolves to.
+### Requirement: A shipped default follows the release for a store that never overrode it
+Where a store's configuration omits a key because it accepted the shipped default, a later release that changes that default SHALL take effect for the store on upgrade, with no edit to its configuration file. A value the store itself recorded SHALL never be changed by contexture: the only command that writes `contexture.yaml` is `ctxr init` against a directory that does not yet hold one, and reconciling an existing store SHALL leave the file untouched.
 
 #### Scenario: An accepted default follows the release
 - **WHEN** a store's configuration omits a key and a later release changes that key's shipped default
-- **THEN** the store resolves the new value on upgrade, with no migration run and no edit to its configuration file
+- **THEN** the store resolves the new value on upgrade, with no edit to its configuration file
 
 #### Scenario: A recorded choice is never moved silently
 - **WHEN** a store's configuration declares a value that a later release's shipped default no longer matches
-- **THEN** the store keeps its declared value, and only a migration that names the change may alter it
+- **THEN** the store keeps its declared value, and no contexture command rewrites it
 
-#### Scenario: Pruning changes no resolved value
-- **WHEN** the migration removes a key whose value equalled the shipped default
-- **THEN** every command resolves that key to the same value it resolved to before the migration ran
+### Requirement: A shipped taxonomy profile may declare its own archive destination
+A shipped taxonomy profile SHALL be able to declare the archive destination that suits its layers, and `init` SHALL seed `organize.archive_destination` from the resolved profile's declaration. A profile that declares none, and a custom taxonomy definition, SHALL fall back to the shipped default. The declaration SHALL live with the profile definitions, so no other component learns a shipped layer name.
+
+#### Scenario: A profile with a retirement layer seeds its own destination
+- **WHEN** a store is initialized with a profile whose layers include a retirement layer and which declares an archive destination
+- **THEN** the store's `organize.archive_destination` is that destination, not the shipped fallback
+
+#### Scenario: A profile without one falls back
+- **WHEN** a store is initialized with a profile that declares no archive destination, or with a custom taxonomy definition
+- **THEN** the store's `organize.archive_destination` is the shipped fallback
