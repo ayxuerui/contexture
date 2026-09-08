@@ -142,14 +142,22 @@ const PLACEMENT: SkillSeed = {
   file: 'ctxr-placement',
   name: 'Placement',
   description: 'Choose the right taxonomy layer and location for a new or relocated note in this contexture store, with the reasoning.',
-  body: (config) => skillTemplate('ctxr-placement').replace('__LAYER_STEP__', placementLayerStep(config).join('\n')).split('\n'),
+  body: (config) =>
+    skillTemplate('ctxr-placement')
+      .replace('__LAYER_STEP__', placementLayerStep(config).join('\n'))
+      .replaceAll('__TEMPLATES_PATH__', config.templates.path)
+      .split('\n'),
 };
 
 const INGEST_ORCHESTRATION: SkillSeed = {
   file: 'ctxr-ingest-orchestration',
   name: 'Ingest orchestration',
   description: 'Capture raw material into the inbox, run the dedupe check, read the existing cluster, decide new/update/merge/restructure, and ingest with source identity via the contexture CLI.',
-  body: () => skillTemplate('ctxr-ingest-orchestration').replaceAll('__GRAPH_DOCUMENT_PATH__', GRAPH_DOCUMENT_RELATIVE_PATH).split('\n'),
+  body: (config) =>
+    skillTemplate('ctxr-ingest-orchestration')
+      .replaceAll('__GRAPH_DOCUMENT_PATH__', GRAPH_DOCUMENT_RELATIVE_PATH)
+      .replaceAll('__TEMPLATES_PATH__', config.templates.path)
+      .split('\n'),
 };
 
 const CONNECTION_FINDING: SkillSeed = {
@@ -245,6 +253,7 @@ const SESSION_CAPTURE: SkillSeed = {
   body: (config) =>
     skillTemplate('ctxr-session-capture')
       .replaceAll('__HOUSE_CONVENTIONS_PATH__', houseConventionsPath(config))
+      .replaceAll('__TEMPLATES_PATH__', config.templates.path)
       .split('\n'),
 };
 

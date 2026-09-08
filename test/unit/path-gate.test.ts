@@ -17,6 +17,7 @@ function makeConfig(writablePaths: string[] = []): StoreConfig {
     write_lifecycle: { diff_size_ceiling_lines: 2000, writable_paths: writablePaths },
     catalog: { path: 'catalog/', section_max_bytes: 32768 },
     publish: { path: 'publish/' },
+    templates: { path: '.contexture/templates/', installed: [] },
     skills: { vendored: [] },
     update_check: SHIPPED_DEFAULTS.update_check,
     ingest: { inbox_path: 'raw/inbox/', capture_root: 'raw/', tracking_params: [] },
@@ -27,6 +28,21 @@ function makeConfig(writablePaths: string[] = []): StoreConfig {
 }
 
 describe('sanctionedPath (session-capture-command D5)', () => {
+  // standardize-note-templates: contexture-owned locations pass the strict
+  // allowlist without being declared in it, so a store can maintain its own
+  // note kinds beside the shipped ones.
+  it('sanctions the templates path under a strict allowlist that does not name it', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const config = makeConfig(['projects/']);
+      await expect(sanctionedPath(config, tmp.root, '.contexture/templates/Company.md')).resolves.toEqual({ ok: true });
+      const refused = await sanctionedPath(config, tmp.root, 'somewhere-else/note.md');
+      expect(refused.ok).toBe(false);
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
   it('accepts an ordinary in-store path when the store root does not exist yet', async () => {
     const result = await sanctionedPath(makeConfig(), '/does/not/exist', 'projects/note.md');
     expect(result.ok).toBe(true);

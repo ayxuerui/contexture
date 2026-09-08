@@ -248,6 +248,8 @@ describe('readConfig', () => {
       expect(config.session.branch_prefix).toBe(SHIPPED_DEFAULTS.session.branch_prefix);
       expect(config.write_lifecycle.diff_size_ceiling_lines).toBe(SHIPPED_DEFAULTS.write_lifecycle.diff_size_ceiling_lines);
       expect(config.publish.path).toBe(SHIPPED_DEFAULTS.publish.path);
+      expect(config.templates.path).toBe(SHIPPED_DEFAULTS.templates.path);
+      expect(config.templates.installed).toEqual([...SHIPPED_DEFAULTS.templates.installed]);
       expect(config.skills.vendored).toEqual([...SHIPPED_DEFAULTS.skills.vendored]);
       expect(config.harness.convention_max_bytes).toBe(SHIPPED_DEFAULTS.harness.convention_max_bytes);
       expect(config.adapters).toEqual([...SHIPPED_DEFAULTS.adapters]);
@@ -296,6 +298,50 @@ describe('readConfig', () => {
       await writeFile(path.join(tmp.root, CONFIG_FILE_NAME), minimalConfig());
       const config = await readConfig(tmp.root);
       expect(config.organize.mission_path).toBeUndefined();
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+});
+
+/**
+ * standardize-note-templates: the `templates` block is additive with shipped
+ * defaults, which is what lets it reach an existing store with no schema bump.
+ */
+describe('templates block (standardize-note-templates)', () => {
+  it('resolves both keys to their defaults when a pre-existing config declares no templates key', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      await writeFile(path.join(tmp.root, CONFIG_FILE_NAME), minimalConfig());
+      const config = await readConfig(tmp.root);
+      expect(config.templates.path).toBe(SHIPPED_DEFAULTS.templates.path);
+      expect(config.templates.installed).toEqual([...SHIPPED_DEFAULTS.templates.installed]);
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('takes a declared path and a declared list over the shipped defaults', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const text = `${minimalConfig()}templates: { path: scaffolds/, installed: [Note] }\n`;
+      await writeFile(path.join(tmp.root, CONFIG_FILE_NAME), text);
+      const config = await readConfig(tmp.root);
+      expect(config.templates.path).toBe('scaffolds/');
+      expect(config.templates.installed).toEqual(['Note']);
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('accepts an empty installed list as an explicit opt-out', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const text = `${minimalConfig()}templates: { installed: [] }\n`;
+      await writeFile(path.join(tmp.root, CONFIG_FILE_NAME), text);
+      const config = await readConfig(tmp.root);
+      expect(config.templates.installed).toEqual([]);
+      expect(config.templates.path).toBe(SHIPPED_DEFAULTS.templates.path);
     } finally {
       await tmp.cleanup();
     }

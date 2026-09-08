@@ -21,6 +21,7 @@ function makeConfig(overrides: Partial<StoreConfig> = {}): StoreConfig {
     write_lifecycle: { diff_size_ceiling_lines: 2000, writable_paths: [] },
     catalog: { path: '.contexture/catalog/', section_max_bytes: 32768 },
     publish: { path: '.contexture/publish/' },
+    templates: { path: '.contexture/templates/', installed: [] },
     skills: { vendored: [] },
     update_check: SHIPPED_DEFAULTS.update_check,
     ingest: { inbox_path: 'raw/inbox/', capture_root: 'raw/', tracking_params: [] },
