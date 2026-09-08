@@ -7,7 +7,6 @@ import {
   graphAmbiguousLinksCheck,
   harnessEntryNoDuplicateConventionTextCheck,
   noUnrecognizedConfigKeysCheck,
-  schemaVersionCurrencyCheck,
 } from '../../src/core/checks/integrity-checks.js';
 import type { CheckContext } from '../../src/core/checks/types.js';
 import type { AdapterDeclaration, StoreConfig } from '../../src/config/schema.js';
@@ -92,23 +91,6 @@ describe('graphAmbiguousLinksCheck', () => {
     const graph: GraphBuildResult = { nodes: [{ id: 'a.md', path: 'a.md', cluster: '(root)' }], edges: [], dangling: [] };
     const result = await graphAmbiguousLinksCheck.run(makeCtx({ graph }));
     expect(result.status).toBe('pass');
-  });
-});
-
-describe('schemaVersionCurrencyCheck', () => {
-  it('is severity: invariant', () => {
-    expect(schemaVersionCurrencyCheck.severity).toBe('invariant');
-  });
-
-  it('passes when the store is at the current schema version', async () => {
-    const result = await schemaVersionCurrencyCheck.run(makeCtx({ config: makeConfig({ schema_version: SUPPORTED_SCHEMA_VERSION }) }));
-    expect(result.status).toBe('pass');
-  });
-
-  it('fails, naming both versions, when the store is behind', async () => {
-    const result = await schemaVersionCurrencyCheck.run(makeCtx({ config: makeConfig({ schema_version: 1 }) }));
-    expect(result.status).toBe('fail');
-    expect(result.findings[0]?.details).toEqual({ current: 1, supported: SUPPORTED_SCHEMA_VERSION });
   });
 });
 

@@ -171,8 +171,6 @@ export const DEFAULT_ADAPTERS: readonly AdapterDeclaration[] = [{ id: 'claude-co
  *   sites branch on the key's presence to decide whether the store has a
  *   mission mechanism at all. `DEFAULT_MISSION_PATH` is what `init` seeds,
  *   not what an omission resolves to.
- * - `harness.procedures_path` and `harness.conventions_path` are pre-rename
- *   spellings, read only as fallbacks by `HarnessSchema`'s transform.
  */
 /**
  * cli-contract (keep-the-installed-cli-current): the release advisory is on by

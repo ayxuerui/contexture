@@ -2,7 +2,8 @@ import path from 'node:path';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { describe, expect, it } from 'vitest';
 import type { StoreConfig } from '../../src/config/schema.js';
-import { conventionsSectionSizeCheck } from '../../src/core/checks/harness-portability-checks.js';
+import { SUPPORTED_SCHEMA_VERSION } from '../../src/config/schema.js';
+import { conventionsSectionSizeCheck, skillsPathIsHarnessBrandedCheck } from '../../src/core/checks/harness-portability-checks.js';
 import { AGENTS_MD_CONVENTIONS_FENCE, agentsMdPath } from '../../src/core/agents-doc.js';
 import { upsertFencedRegionInFile } from '../../src/core/fs/fenced-region.js';
 import type { CheckContext } from '../../src/core/checks/types.js';
@@ -12,7 +13,7 @@ import { makeTmpDir } from '../helpers/tmp-store.js';
 import { SHIPPED_DEFAULTS } from '../../src/config/defaults.js';
 function makeConfig(overrides: Partial<StoreConfig> = {}): StoreConfig {
   return {
-    schema_version: 4,
+    schema_version: SUPPORTED_SCHEMA_VERSION,
     taxonomy: { profile: 'para', layers: [{ name: 'Projects', path: 'projects', description: 'Active work.' }] },
     derived: { paths: [] },
     retrieval: { exclude_paths: [], demote_paths: [], gather_max_notes: 50, relations: [], graph: { cluster_depth: 2, hub_top: 8, bridge_top: 10, orphan_exempt_clusters: [] } },
@@ -93,6 +94,65 @@ describe('conventionsSectionSizeCheck', () => {
       expect(result.status).toBe('fail');
       const finding = result.findings[0];
       expect(finding?.details).toMatchObject({ budget: 32 * 1024 });
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+});
+
+describe('skillsPathIsHarnessBrandedCheck', () => {
+  const harnessGen = 'harness-generation' as const;
+
+  it('is an observation, so it never fails a run', () => {
+    expect(skillsPathIsHarnessBrandedCheck.severity).toBe('observation');
+  });
+
+  it('reports a configured skills path equal to a declared harness\'s own branded directory', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const config = makeConfig({
+        harness: { skills_path: '.claude/skills/', guidance_path: 'guidance/', convention_max_bytes: 32768 },
+        adapters: [{ id: 'claude-code', kind: harnessGen }],
+      });
+      const result = await skillsPathIsHarnessBrandedCheck.run(makeCtx(tmp.root, config));
+      expect(result.status).toBe('fail');
+      expect(result.findings[0]?.code).toBe('harness_portability.skills_path_is_harness_branded');
+      expect(result.findings[0]?.subject).toBe('claude-code');
+      expect(result.findings[0]?.message).toContain('.agents/skills/');
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('reports nothing when the configured skills path is the cross-harness canonical location', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const config = makeConfig({
+        harness: { skills_path: '.agents/skills/', guidance_path: 'guidance/', convention_max_bytes: 32768 },
+        adapters: [{ id: 'claude-code', kind: harnessGen }],
+      });
+      const result = await skillsPathIsHarnessBrandedCheck.run(makeCtx(tmp.root, config));
+      expect(result.status).toBe('pass');
+      expect(result.findings).toEqual([]);
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  /**
+   * The store declared that this harness needs no bridge, which the adapters
+   * spec supports by name. Comparing against `effectiveSkillsDir` instead of
+   * the adapter's own `skillsDir` would report it.
+   */
+  it('reports nothing when a store overrides a harness\'s skills_dir to the configured path', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const config = makeConfig({
+        harness: { skills_path: '.agents/skills/', guidance_path: 'guidance/', convention_max_bytes: 32768 },
+        adapters: [{ id: 'claude-code', kind: harnessGen, skills_dir: '.agents/skills/' }],
+      });
+      const result = await skillsPathIsHarnessBrandedCheck.run(makeCtx(tmp.root, config));
+      expect(result.status).toBe('pass');
     } finally {
       await tmp.cleanup();
     }

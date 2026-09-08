@@ -4,6 +4,7 @@ import { parse as parseYaml } from 'yaml';
 import { CONFIG_FILE_NAME } from '../core/root.js';
 import {
   InvalidConfigError,
+  SchemaVersionBehindError,
   SchemaVersionMissingError,
   SchemaVersionNewerError,
 } from '../core/errors.js';
@@ -16,8 +17,8 @@ export function configPathFor(root: string): string {
 /**
  * store-lifecycle spec: "Schema version is recorded and gated" — every
  * command reads schema_version before operating. This peeks at it loosely,
- * BEFORE full validation, so a store with a genuinely newer/incompatible
- * shape reports "your version is newer" rather than a confusing generic
+ * BEFORE full validation, so a store whose recorded version differs in either
+ * direction reports the version rather than the confusing generic
  * shape-validation error the full schema would otherwise produce.
  */
 export async function readConfig(root: string): Promise<StoreConfig> {
@@ -42,6 +43,16 @@ export async function readConfig(root: string): Promise<StoreConfig> {
   }
   if (rawVersion > SUPPORTED_SCHEMA_VERSION) {
     throw new SchemaVersionNewerError(rawVersion, SUPPORTED_SCHEMA_VERSION);
+  }
+  /**
+   * retire-store-migrations: the older direction is refused here too, and for
+   * the same reason the newer one is — this release cannot read that shape.
+   * It has to happen before `safeParse`, or an older config fails on the keys
+   * whose superseded spellings the schema no longer accepts, reporting a shape
+   * error against keys the operator never wrote instead of the version.
+   */
+  if (rawVersion < SUPPORTED_SCHEMA_VERSION) {
+    throw new SchemaVersionBehindError(rawVersion, SUPPORTED_SCHEMA_VERSION);
   }
 
   const result = StoreConfigSchema.safeParse(raw);

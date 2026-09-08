@@ -7,7 +7,7 @@ import { makeTmpDir } from '../helpers/tmp-store.js';
 
 /** Any instruction to run the CLI under its pre-rename executable name. */
 const STALE_INVOCATION =
-  /contexture (init|doctor|check|adapters|archive|catalog|graph|ingest|lint|migrate|note|rollup|session|source|verify|search)\b/;
+  /contexture (init|doctor|check|adapters|archive|catalog|graph|ingest|lint|note|rollup|session|source|verify|search)\b/;
 
 /** cli-contract (cli-distribution-identity): every shipped instruction to run a command names `ctxr`. */
 describe('cli-contract: shipped instructions name ctxr (real CLI)', () => {

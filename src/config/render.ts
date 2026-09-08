@@ -19,9 +19,10 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 /**
  * config-defaults-as-the-convention (D3, D4): drops every value equal to its
  * shipped default, so what reaches disk is the set of decisions the store has
- * made. Applied here rather than at `init` because this is the single writer —
- * every migration's write-back passes through it too, and one that did not
- * would re-materialize the full resolved shape and undo the omission.
+ * made. Applied here rather than at `init` so the pruning belongs to the act
+ * of writing rather than to one caller — `init` is the only writer since
+ * retire-store-migrations, and a second one that skipped this would
+ * re-materialize the full resolved shape and undo the omission.
  *
  * Equality is deep and order-sensitive: a list holding the same entries in a
  * different order is written as the store wrote it. Treating that as equal
@@ -73,27 +74,4 @@ export function renderStoreConfig(config: StoreConfig): string {
     );
   }
   return text;
-}
-
-/**
- * The dotted paths `renderStoreConfig` would drop from this config — what a
- * migration reports it is about to remove, derived from the same walk that
- * does the removing so the report and the write cannot disagree.
- */
-export function redundantKeyPaths(config: StoreConfig): string[] {
-  const found: string[] = [];
-  const walk = (value: Record<string, unknown>, defaults: Record<string, unknown>, prefix: string): void => {
-    for (const [key, declared] of Object.entries(value)) {
-      const shipped = defaults[key];
-      if (shipped === undefined) continue;
-      const dotted = prefix === '' ? key : `${prefix}.${key}`;
-      if (isPlainObject(declared) && isPlainObject(shipped)) {
-        walk(declared, shipped, dotted);
-        continue;
-      }
-      if (isDeepStrictEqual(declared, shipped)) found.push(dotted);
-    }
-  };
-  walk(config as unknown as Record<string, unknown>, SHIPPED_DEFAULTS as unknown as Record<string, unknown>, '');
-  return found;
 }
