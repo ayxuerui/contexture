@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { configuredAdapters, resolveAdapter } from '../../adapters/registry.js';
-import { StoreConfigSchema, SUPPORTED_SCHEMA_VERSION } from '../../config/schema.js';
+import { StoreConfigSchema } from '../../config/schema.js';
 import {
   AGENTS_MD_CONVENTIONS_FENCE,
   AGENTS_MD_MISSION_FENCE,
@@ -112,31 +112,6 @@ export const graphAmbiguousLinksCheck = defineCheck({
         details: { target: d.target, reason: d.reason },
       }));
     return { status: findings.length > 0 ? 'fail' : 'pass', findings };
-  },
-});
-
-/** store-integrity spec: "schema version currency (per store-lifecycle)." */
-export const schemaVersionCurrencyCheck = defineCheck({
-  id: 'store.schema_version_currency',
-  title: 'The store is at the current schema version',
-  severity: 'invariant',
-  capability: 'store-lifecycle',
-  scopes: ['store'],
-  async run(ctx) {
-    if (ctx.config.schema_version >= SUPPORTED_SCHEMA_VERSION) {
-      return { status: 'pass', findings: [] };
-    }
-    return {
-      status: 'fail',
-      findings: [
-        {
-          code: 'store.schema_version_behind',
-          severity: 'error',
-          message: `The store is at schema_version ${ctx.config.schema_version}, behind the supported version ${SUPPORTED_SCHEMA_VERSION}. Run \`ctxr migrate\`.`,
-          details: { current: ctx.config.schema_version, supported: SUPPORTED_SCHEMA_VERSION },
-        },
-      ],
-    };
   },
 });
 
@@ -285,7 +260,7 @@ export const noUnrecognizedConfigKeysCheck = defineCheck({
     const findings: Finding[] = unrecognized.map((key) => ({
       code: 'store.unrecognized_config_key',
       severity: 'error',
-      message: `contexture.yaml has a top-level "${key}" key that this version of contexture doesn't recognize — a config schema this old, or a capability retired in a later release. Remove it, or check contexture's changelog for a migration note.`,
+      message: `contexture.yaml has a top-level "${key}" key that this version of contexture doesn't recognize — a typo, or a capability retired in a later release. Remove it, or check contexture's release notes for what replaced it.`,
       subject: key,
     }));
     return { status: findings.length > 0 ? 'fail' : 'pass', findings };
@@ -433,7 +408,6 @@ export const stagedAgentsMdInlinedContentCurrentCheck = defineCheck({
 export const INTEGRITY_CHECKS = [
   derivedArtifactStalenessCheck,
   graphAmbiguousLinksCheck,
-  schemaVersionCurrencyCheck,
   adapterCompatibilityCheck,
   harnessEntryNoDuplicateConventionTextCheck,
   harnessSkillsBridgeCheck,

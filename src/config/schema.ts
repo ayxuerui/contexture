@@ -6,58 +6,21 @@ import { SHIPPED_DEFAULTS } from './defaults.js';
  * store-lifecycle spec: schema_version versions STORE STATE (config shape +
  * note frontmatter conventions) — a monotonic integer independent of the npm
  * package version — not "what this CLI release happens to be."
- */
-/**
- * Bumped to 2 by the visibility-field key rename migration (store-lifecycle
- * spec task 9.2). Both that field and the config key naming it were removed
- * at schema 7 (see below); the migration survives only to keep the 1 -> 2
- * step in the chain intact.
  *
- * Bumped to 3 by the procedures-to-skills key rename migration
- * (rename-procedures-to-skills, 0003-rename-procedures-path-to-skills):
- * `harness.procedures_path` -> `harness.skills_path`. HarnessSchema's
- * transform accepts the old key through this version so an unmigrated
- * store still loads (see schema.ts's HarnessSchema comment).
+ * retire-store-migrations: contexture ships no migration mechanism, so this
+ * number is a gate rather than a starting point. `readConfig` refuses any
+ * store whose recorded version is not exactly this one, in either direction:
+ * a newer store because this release cannot know its shape, an older one
+ * because this release no longer reads that shape and offers nothing that
+ * would bring it forward. A release that changes the store's shape bumps this
+ * and documents the one-time fixup in its release notes.
  *
- * Bumped to 4 by the conventions-to-guidance key rename migration
- * (rename-conventions-path-to-guidance-path, 0004-rename-conventions-path-to-guidance-path):
- * `harness.conventions_path` -> `harness.guidance_path`. HarnessSchema's
- * transform accepts the old key through this version too, the same way.
- */
-/**
- * Bumped to 7 on main by the explanation-craft-skill migration
- * (vendor-explanation-craft-skill, 0007-add-explanation-craft-skill), which
- * pins its own local SCHEMA_VERSION and is unaffected by later bumps here.
- *
- * Bumped to 8 by the access-axis removal (retire-the-access-axes,
- * drop-access-axes): the `visibility:` and `disclosure:` blocks and the
- * `fields:` block that named the visibility frontmatter key are all gone.
- * Unlike the rename migrations above, nothing here is accepted loosely for
- * an older store — `noUnrecognizedConfigKeysCheck` derives from this
- * schema's shape, so an unmigrated store fails `doctor` on the three stale
- * keys until `ctxr migrate` drops them, exactly as `identity` did when
- * remove-agent-identity retired it.
- */
-/**
- * Bumped to 9 by the capture-tier change (retain-captures-as-provenance,
- * retain-captures-as-provenance): `ingest.capture_root` is added and
- * `ingest.inbox_path`'s shipped default moves inside it. IngestSchema accepts
- * a config with no `capture_root` so an unmigrated store still loads —
- * `ctxr migrate` has to be able to read the file it is about to rewrite —
- * and skips the nesting rule for exactly that case.
+ * It stayed at 10 through that retirement on purpose: nothing about a
+ * conforming store's shape changed. What was dropped were superseded INPUT
+ * spellings that no store at 10 has ever written, since `renderStoreConfig`
+ * only ever emitted the current names.
  */
 export const SUPPORTED_SCHEMA_VERSION = 10;
-
-/** The version at which the capture tier became part of the store's shape, and its nesting rule enforceable. */
-export const CAPTURE_TIER_SCHEMA_VERSION = 9;
-
-/**
- * Bumped to 10 by config-defaults-as-the-convention: every convention key now
- * carries its shipped default here, and a written config omits what it agrees
- * with. Nothing about the shape got stricter — the bump exists so the pruning
- * migration has a `schema_version <` predicate to decide it still has work,
- * the same way every migration in this repo does.
- */
 
 export const TaxonomyLayerSchema = z.object({
   name: z.string().min(1),
@@ -158,7 +121,7 @@ const PublishSchema = z.object({
  * update consult the release registry, and how long a resolved answer is
  * reused. Schema-optional with defaults, like `publish` and `skills` — a
  * `contexture.yaml` predating this key parses unchanged, which is why this
- * block needs no schema_version bump and no migration.
+ * block needed no schema_version bump.
  */
 const UpdateCheckSchema = z.object({
   enabled: z.boolean().default(SHIPPED_DEFAULTS.update_check.enabled),
@@ -174,10 +137,9 @@ const SkillsSchema = z.object({
  * ledger's root and `inbox_path` is the not-yet-ingested state inside it.
  *
  * Both paths carry the shipped convention as a schema default, so a config
- * written before schema 9 still parses — `ctxr migrate` has to be able to
- * read the file it is about to rewrite. The rule that the inbox sits inside
- * the capture root lives on StoreConfigSchema instead of here, since it is a
- * schema-9 invariant and only that scope can see the version.
+ * that declares neither resolves to it. The rule that the inbox sits inside
+ * the capture root lives on StoreConfigSchema instead of here, because it
+ * spans two keys and only that scope sees both.
  */
 const IngestSchema = z
   .object({
@@ -191,22 +153,15 @@ const IngestSchema = z
  * context-organize spec: archive's destination — independent of taxonomy
  * layers, so it works under any profile.
  *
- * archive-destination-from-taxonomy migration (0006): `archive_destination`
- * is the current key; `archive_path` is its pre-migration name, accepted
- * here so a store on schema 5 still loads. Like `harness.guidance_path` and
- * unlike `harness.skills_path`, this key always had a workable default, so
- * an unmigrated store loads silently onto that default rather than erroring
- * — `ctxr migrate` rewrites the key (and, for a profile that declares a
- * destination, the value) but nothing breaks before it runs.
- *
- * The transform below is the ONLY place the old spelling is read — every
- * other consumer sees `config.organize.archive_destination` and nothing
- * else, so `archive_path` never leaks past config loading.
+ * `archive_destination` is the only spelling. Its pre-rename name
+ * `archive_path` was accepted here as an input while a migration existed to
+ * rewrite it; retire-store-migrations removed both, so a config still
+ * carrying the old name now fails the schema-version gate before it reaches
+ * this schema at all.
  */
 const OrganizeSchema = z
   .object({
     archive_destination: z.string().min(1).optional(),
-    archive_path: z.string().min(1).optional(),
     /** store-primitives-from-migration-audit spec (D4): the grace period, in days, before a stale rollup is reported — bounds noise from a backlink edited moments ago. */
     rollup_stale_days: z.number().int().nonnegative().default(SHIPPED_DEFAULTS.organize.rollup_stale_days),
     /**
@@ -228,13 +183,13 @@ const OrganizeSchema = z
      * archive-destination-from-taxonomy exists to prevent. Absent under both
      * spellings, the key is reported rather than guessed.
      */
-    const archiveDestination = value.archive_destination ?? value.archive_path;
+    const archiveDestination = value.archive_destination;
     if (archiveDestination === undefined) {
       ctx.addIssue({
         code: 'custom',
         path: ['archive_destination'],
         message:
-          'organize.archive_destination is missing. It is resolved from the store taxonomy at init rather than defaulted, so declare it explicitly (or run `ctxr migrate` if this store predates the key).',
+          'organize.archive_destination is missing. It is resolved from the store taxonomy at init rather than defaulted, so declare it explicitly.',
       });
       return z.NEVER;
     }
@@ -260,30 +215,16 @@ const OrganizeSchema = z
  * convention files, and the mission document) AGENTS.md's generated
  * sections read from and inline.
  *
- * rename-procedures-to-skills migration (0003): `skills_path` is the
- * current key; `procedures_path` is its pre-migration name, accepted here
- * so a store on schema 2 still loads (with a message pointing at `ctxr
- * migrate`, not a raw shape-validation error) rather than failing the
- * moment this schema starts requiring the new key.
- *
- * rename-conventions-path-to-guidance-path migration (0004): `guidance_path`
- * is the current key; `conventions_path` is its pre-migration name. Unlike
- * `skills_path`, this key always had a workable default, so an unmigrated
- * store loads silently onto that default rather than erroring — `ctxr
- * migrate` moves the directory and rewrites the key, but nothing breaks if
- * it hasn't run yet.
- *
- * The transform below is the ONLY place any of these spellings is read —
- * every other consumer in the codebase sees `config.harness.skills_path` /
- * `config.harness.guidance_path` and nothing else, so no old key ever leaks
- * past config loading.
+ * `skills_path` and `guidance_path` are the only spellings. Their pre-rename
+ * names `procedures_path` and `conventions_path` were accepted here as inputs
+ * while migrations existed to rewrite them; retire-store-migrations removed
+ * both, so a config still carrying either now fails the schema-version gate
+ * before it reaches this schema at all.
  */
 const HarnessSchema = z
   .object({
     skills_path: z.string().min(1).optional(),
-    procedures_path: z.string().min(1).optional(),
     guidance_path: z.string().min(1).optional(),
-    conventions_path: z.string().min(1).optional(),
     /**
      * compose-store-guidance-documents design.md D6: a size ceiling on
      * AGENTS.md's inlined "Store conventions" section, guarding against
@@ -297,16 +238,11 @@ const HarnessSchema = z
   })
   .transform((value) => {
     /**
-     * config-defaults-as-the-convention: the pre-rename spellings are still
-     * read first, so an unmigrated store keeps the path it declared. What
-     * changed is the end of the chain — absent under BOTH spellings used to
-     * raise a custom "run `ctxr migrate`" error, but an unmigrated store HAS
-     * `procedures_path` and never reached it. What it actually rejected was a
-     * config declining to name a skills path, which is now a config that
-     * accepts the shipped one.
+     * config-defaults-as-the-convention: a config declining to name either
+     * path is a config accepting the shipped one, not an error.
      */
-    const skillsPath = value.skills_path ?? value.procedures_path ?? SHIPPED_DEFAULTS.harness.skills_path;
-    const guidancePath = value.guidance_path ?? value.conventions_path ?? SHIPPED_DEFAULTS.harness.guidance_path;
+    const skillsPath = value.skills_path ?? SHIPPED_DEFAULTS.harness.skills_path;
+    const guidancePath = value.guidance_path ?? SHIPPED_DEFAULTS.harness.guidance_path;
     // Spread, not a plain key, so the output type keeps `convention_max_bytes`
     // genuinely optional (`key?: number`) rather than always-present-but-possibly-undefined
     // (`key: number | undefined`) — the latter would require every existing
@@ -335,19 +271,19 @@ const AdapterDeclarationSchema = z.object({
 });
 
 /**
- * session-keeps-only-what-git-cannot-do (D2): removing the `forge` kind
- * outright would make a store still declaring `{ kind: forge }` fail to
- * load at all — a shape error, not a migration opportunity — since
- * `readConfig` runs this schema before `ctxr migrate` can act. Mirrors
- * `HarnessSchema`'s fallback-transform precedent: accept the legacy shape
- * loosely, drop it here, and let the schema_version < 5 migration rewrite
- * the YAML on disk. Any OTHER unrecognized kind is a genuine error and
- * still fails loudly against `AdapterDeclarationSchema` below.
+ * Every declaration is validated by `AdapterDeclarationSchema` directly, so
+ * an unrecognized `kind` fails loudly.
+ *
+ * retire-store-migrations (D8): this used to pipe through a looser
+ * `z.object({ id, kind, module? })` that filtered out the retired
+ * `kind: forge` before strict validation, so a store still declaring it
+ * could be read by the migration about to rewrite it. That pre-schema was
+ * also silently dropping `skills_dir` — zod strips unknown keys, and the
+ * looser object never declared it — so a store's declared override never
+ * reached `effectiveSkillsDir`. Removing the filter is what makes
+ * `adapters[].skills_dir` work at all.
  */
-const AdaptersFieldSchema = z
-  .array(z.object({ id: z.string().min(1), kind: z.string().min(1), module: z.string().min(1).optional() }))
-  .transform((declarations) => declarations.filter((d) => d.kind !== 'forge'))
-  .pipe(z.array(AdapterDeclarationSchema));
+const AdaptersFieldSchema = z.array(AdapterDeclarationSchema);
 
 export const StoreConfigSchema = z
   .object({
@@ -375,13 +311,12 @@ export const StoreConfigSchema = z
     /**
      * retain-captures-as-provenance (D7): one prefix has to serve both the
      * retrieval exclusion and the write-path gate, which only holds while the
-     * inbox is strictly inside the capture root. Gated on the version that
-     * introduced the capture tier — a store still on an older schema has a
-     * `capture_root` this schema defaulted in, not one it declared, and
-     * migrations of earlier versions must be able to write their configs
-     * back untouched.
+     * inbox is strictly inside the capture root. Unconditional since
+     * retire-store-migrations — every config that reaches this refinement is
+     * at the supported version, which is exactly what the old version guard
+     * tested for. It existed only while migrations had to write configs at
+     * earlier versions back to disk.
      */
-    if (value.schema_version < CAPTURE_TIER_SCHEMA_VERSION) return;
     if (!isStrictlyUnderPrefix(value.ingest.inbox_path, value.ingest.capture_root)) {
       ctx.addIssue({
         code: 'custom',

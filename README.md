@@ -275,8 +275,6 @@ A published page's navigation label follows its own declared `<title>`, falling 
 ctxr version           # the installed version, and where it is installed from
 ctxr version --check   # compare it against the latest published release
 ctxr update            # refresh every contexture-owned file to the installed version
-ctxr migrate --dry-run # report what pending schema migrations would change
-ctxr migrate
 ctxr verify --portable # prove the store works from a harness with no harness-specific state
 ```
 
@@ -290,11 +288,11 @@ The `ctxr-upgrade` skill performs the upgrade: it reads the live answer, refuses
 
 To turn the check off, set `update_check.enabled` to `false` in `contexture.yaml`, or set `CONTEXTURE_UPDATE_CHECK=0` for a single invocation. `update_check.ttl_hours` sets how long a resolved answer is reused (a day by default); the cache lives in the store's gitignored `.contexture/cache/`.
 
-`schema_version` in `contexture.yaml` versions *store state* — the config shape and frontmatter conventions — as a monotonic integer independent of the npm package version. A store recorded at a newer schema than your CLI supports is refused rather than half-read.
+`schema_version` in `contexture.yaml` versions *store state* — the config shape and frontmatter conventions — as a monotonic integer independent of the npm package version. contexture ships no migration mechanism, so the number is a gate: a store whose recorded version is not the one your CLI supports is refused rather than half-read, in **either** direction. Newer, because the CLI cannot know that shape; older, because it no longer reads it. A release that changes the store's shape bumps the version and documents the one-time fixup in its release notes.
 
 ### The config records decisions, not values
 
-A generated `contexture.yaml` is short, and that's the design: **any key it doesn't declare takes contexture's shipped default.** So everything the file *does* contain is a choice someone made, and a store that simply agrees with a convention follows it as the convention improves — a later release that changes a shipped default reaches every store that never overrode it, with no migration.
+A generated `contexture.yaml` is short, and that's the design: **any key it doesn't declare takes contexture's shipped default.** So everything the file *does* contain is a choice someone made, and a store that simply agrees with a convention follows it as the convention improves — a later release that changes a shipped default reaches every store that never overrode it, with no edit to its config file.
 
 Three kinds of key are always written out, because no constant could be right for them:
 
@@ -302,7 +300,7 @@ Three kinds of key are always written out, because no constant could be right fo
 - **Taxonomy-derived** — `organize.archive_destination`, resolved from the profile at init. Defaulting it to a flat constant would send a PARA store's archived notes to `archive/` while its own taxonomy declares `archives/`.
 - **Opt-ins** — `organize.mission_path`, where *not* declaring the key is what says the store has no mission document.
 
-To pin a value against a future default change, declare it. `ctxr migrate` removes keys that merely restate a default; it never changes what any key resolves to.
+To pin a value against a future default change, declare it. Nothing rewrites what you declared: `ctxr init` against a directory with no configuration is the only thing that ever writes `contexture.yaml`, and reconciling an existing store leaves the file alone.
 
 ## Command reference
 
@@ -325,7 +323,6 @@ To pin a value against a future default change, declare it. `ctxr migrate` remov
 | `serve` | Read the store in a browser |
 | `update` | Bring contexture-owned files up to the installed version |
 | `version [--check]` | Report the installed version; `--check` compares it against the latest published release |
-| `migrate [--dry-run]` | Apply pending schema migrations |
 | `verify [--portable]` | Exercise core store operations end to end |
 
 Every command accepts `--root <path>`, `--json`, and `--no-input`. The store root resolves in exactly one order: `--root`, then `CONTEXTURE_STORE_ROOT`, then walking up from the current directory looking for `contexture.yaml`. Nothing else selects it.

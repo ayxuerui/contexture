@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_CAPTURE_ROOT, DEFAULT_PUBLISH_PATH, DEFAULT_VENDORED_SKILLS, SHIPPED_DEFAULTS } from '../../src/config/defaults.js';
 import { readConfig } from '../../src/config/load.js';
+import { SUPPORTED_SCHEMA_VERSION } from '../../src/config/schema.js';
 import { renderStoreConfig } from '../../src/config/render.js';
 import { InvalidConfigError, SchemaVersionMissingError, SchemaVersionNewerError } from '../../src/core/errors.js';
 import { CONFIG_FILE_NAME } from '../../src/core/root.js';
@@ -11,10 +12,10 @@ import { makeTmpDir } from '../helpers/tmp-store.js';
 
 const FIXTURES_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../fixtures/config');
 
-function captureTierConfig(schemaVersion: number, inboxPath: string, captureRoot: string | null): string {
+function captureTierConfig(inboxPath: string, captureRoot: string | null): string {
   const ingest = captureRoot === null ? `{ inbox_path: ${inboxPath} }` : `{ inbox_path: ${inboxPath}, capture_root: ${captureRoot} }`;
   return [
-    `schema_version: ${schemaVersion}`,
+    `schema_version: ${SUPPORTED_SCHEMA_VERSION}`,
     'taxonomy: { profile: para, layers: [] }',
     'derived: { paths: [] }',
     'retrieval: { exclude_paths: [], relations: [], graph: { cluster_depth: 2, hub_top: 8, bridge_top: 10, orphan_exempt_clusters: [] } }',
@@ -38,7 +39,7 @@ function captureTierConfig(schemaVersion: number, inboxPath: string, captureRoot
  */
 function minimalConfig(): string {
   return [
-    'schema_version: 9',
+    `schema_version: ${SUPPORTED_SCHEMA_VERSION}`,
     'taxonomy: { profile: para, layers: [] }',
     'git: { default_branch: main }',
     'organize: { archive_destination: archives/ }',
@@ -72,51 +73,10 @@ describe('readConfig', () => {
   it('throws InvalidConfigError naming the offending key on a shape mismatch', async () => {
     const tmp = await makeTmpDir();
     try {
-      await writeFile(path.join(tmp.root, CONFIG_FILE_NAME), 'schema_version: 1\ntaxonomy: "not an object"\n');
+      await writeFile(path.join(tmp.root, CONFIG_FILE_NAME), `schema_version: ${SUPPORTED_SCHEMA_VERSION}\ntaxonomy: "not an object"\n`);
       await expect(readConfig(tmp.root)).rejects.toBeInstanceOf(InvalidConfigError);
     } finally {
       await tmp.cleanup();
-    }
-  });
-
-  it('reads a pre-migration archive_path onto archive_destination', async () => {
-    // archive-destination-from-taxonomy migration (0006): a store still on
-    // schema 5 must load, not fail shape validation, so `ctxr migrate` can run.
-    for (const [organize, expected] of [
-      ['organize: { archive_path: retired/ }', 'retired/'],
-      ['organize: { archive_destination: archives/ }', 'archives/'],
-      // Both spellings present: the current key wins, never the legacy one.
-      ['organize: { archive_destination: archives/, archive_path: retired/ }', 'archives/'],
-    ] as const) {
-      const tmp = await makeTmpDir();
-      try {
-        const text = [
-          'schema_version: 5',
-          'taxonomy: { profile: para, layers: [] }',
-          'fields: { visibility: lens }',
-          'visibility: { default_context: private, directory_defaults: {} }',
-          'derived: { paths: [] }',
-          'retrieval: { exclude_paths: [], relations: [], graph: { cluster_depth: 2, hub_top: 8, bridge_top: 10, orphan_exempt_clusters: [] } }',
-          'git: { default_branch: main }',
-          'session: { branch_prefix: session/, worktrees_path: .worktrees/ }',
-          'write_lifecycle: { diff_size_ceiling_lines: 2000, writable_paths: [] }',
-          'catalog: { path: catalog/, section_max_bytes: 32768 }',
-          'disclosure: { internal_audiences: [], hard_walls: [], leak_markers: {} }',
-          'ingest: { inbox_path: inbox/ }',
-          organize,
-          'harness: { skills_path: skills/, guidance_path: guidance/ }',
-          'adapters: []',
-          '',
-        ].join('\n');
-        await writeFile(path.join(tmp.root, CONFIG_FILE_NAME), text);
-
-        const config = await readConfig(tmp.root);
-        expect(config.organize.archive_destination, organize).toBe(expected);
-        // The old spelling never survives config loading.
-        expect('archive_path' in config.organize).toBe(false);
-      } finally {
-        await tmp.cleanup();
-      }
     }
   });
 
@@ -124,20 +84,17 @@ describe('readConfig', () => {
     const tmp = await makeTmpDir();
     try {
       const text = [
-        'schema_version: 1',
+        `schema_version: ${SUPPORTED_SCHEMA_VERSION}`,
         'taxonomy: { profile: para, layers: [] }',
-        'fields: { visibility: scope }',
-        'visibility: { default_context: private, directory_defaults: {} }',
         'derived: { paths: [] }',
         'retrieval: { exclude_paths: [], relations: [], graph: { cluster_depth: 2, hub_top: 8, bridge_top: 10, orphan_exempt_clusters: [] } }',
         'git: { default_branch: main }',
         'session: { branch_prefix: session/, worktrees_path: .worktrees/ }',
         'write_lifecycle: { diff_size_ceiling_lines: 2000, writable_paths: [] }',
         'catalog: { path: catalog/, section_max_bytes: 32768 }',
-        'disclosure: { internal_audiences: [], hard_walls: [], leak_markers: {} }',
-        'ingest: { inbox_path: inbox/ }',
+        'ingest: { inbox_path: raw/inbox/ }',
         'organize: { archive_destination: archive/ }',
-        'harness: { procedures_path: procedures/ }',
+        'harness: { skills_path: skills/ }',
         'adapters: []',
         '',
       ].join('\n');
@@ -153,20 +110,17 @@ describe('readConfig', () => {
     const tmp = await makeTmpDir();
     try {
       const text = [
-        'schema_version: 1',
+        `schema_version: ${SUPPORTED_SCHEMA_VERSION}`,
         'taxonomy: { profile: para, layers: [] }',
-        'fields: { visibility: scope }',
-        'visibility: { default_context: private, directory_defaults: {} }',
         'derived: { paths: [] }',
         'retrieval: { exclude_paths: [], relations: [], graph: { cluster_depth: 2, hub_top: 8, bridge_top: 10, orphan_exempt_clusters: [] } }',
         'git: { default_branch: main }',
         'session: { branch_prefix: session/, worktrees_path: .worktrees/ }',
         'write_lifecycle: { diff_size_ceiling_lines: 2000, writable_paths: [] }',
         'catalog: { path: catalog/, section_max_bytes: 32768 }',
-        'disclosure: { internal_audiences: [], hard_walls: [], leak_markers: {} }',
-        'ingest: { inbox_path: inbox/ }',
+        'ingest: { inbox_path: raw/inbox/ }',
         'organize: { archive_destination: archive/ }',
-        'harness: { procedures_path: procedures/ }',
+        'harness: { skills_path: skills/ }',
         'adapters: []',
         '',
       ].join('\n');
@@ -182,20 +136,17 @@ describe('readConfig', () => {
     const tmp = await makeTmpDir();
     try {
       const text = [
-        'schema_version: 1',
+        `schema_version: ${SUPPORTED_SCHEMA_VERSION}`,
         'taxonomy: { profile: para, layers: [] }',
-        'fields: { visibility: scope }',
-        'visibility: { default_context: private, directory_defaults: {} }',
         'derived: { paths: [] }',
         'retrieval: { exclude_paths: [], relations: [], graph: { cluster_depth: 2, hub_top: 8, bridge_top: 10, orphan_exempt_clusters: [] } }',
         'git: { default_branch: main }',
         'session: { branch_prefix: session/, worktrees_path: .worktrees/ }',
         'write_lifecycle: { diff_size_ceiling_lines: 2000, writable_paths: [] }',
         'catalog: { path: catalog/, section_max_bytes: 32768 }',
-        'disclosure: { internal_audiences: [], hard_walls: [], leak_markers: {} }',
-        'ingest: { inbox_path: inbox/ }',
+        'ingest: { inbox_path: raw/inbox/ }',
         'organize: { archive_destination: archive/ }',
-        'harness: { procedures_path: procedures/ }',
+        'harness: { skills_path: skills/ }',
         'adapters: []',
         '',
       ].join('\n');
@@ -211,46 +162,37 @@ describe('readConfig', () => {
     const tmp = await makeTmpDir();
     try {
       const text = [
-        'schema_version: 1',
+        `schema_version: ${SUPPORTED_SCHEMA_VERSION}`,
         'taxonomy: { profile: para, layers: [] }',
-        'fields: { visibility: scope }',
-        'visibility: { default_context: private, directory_defaults: {} }',
         'derived: { paths: [] }',
         'retrieval: { exclude_paths: [], relations: [], graph: { cluster_depth: 2, hub_top: 8, bridge_top: 10, orphan_exempt_clusters: [] } }',
         'git: { default_branch: main }',
         'session: { branch_prefix: session/, worktrees_path: .worktrees/ }',
         'write_lifecycle: { diff_size_ceiling_lines: 2000, writable_paths: [] }',
         'catalog: { path: catalog/, section_max_bytes: 32768 }',
-        'disclosure: { internal_audiences: [], hard_walls: [], leak_markers: {} }',
-        'ingest: { inbox_path: inbox/ }',
+        'ingest: { inbox_path: raw/inbox/ }',
         'organize: { archive_destination: archive/ }',
         "identity: { path: identity/, files: {}, entry_delimiter: '' }",
-        'harness: { procedures_path: procedures/ }',
+        'harness: { skills_path: skills/ }',
         'adapters: []',
         'a_future_section: { anything: true }',
         '',
       ].join('\n');
       await writeFile(path.join(tmp.root, CONFIG_FILE_NAME), text);
       const config = await readConfig(tmp.root);
-      expect(config.schema_version).toBe(1);
+      expect(config.schema_version).toBe(SUPPORTED_SCHEMA_VERSION);
     } finally {
       await tmp.cleanup();
     }
   });
 
-  /**
-   * retain-captures-as-provenance: `readConfig` runs the full schema over a
-   * store pinned at an older version, so a config written before schema 9
-   * has to keep loading — otherwise `ctxr migrate` could never read the file
-   * it exists to rewrite.
-   */
-  it('loads a config predating capture_root and fills in the shipped default', async () => {
+  it('fills in the shipped capture root when a config declares only an inbox', async () => {
     const tmp = await makeTmpDir();
     try {
-      await writeFile(path.join(tmp.root, CONFIG_FILE_NAME), captureTierConfig(8, 'inbox/', null));
+      await writeFile(path.join(tmp.root, CONFIG_FILE_NAME), captureTierConfig('raw/inbox/', null));
       const config = await readConfig(tmp.root);
       expect(config.ingest.capture_root).toBe(DEFAULT_CAPTURE_ROOT);
-      expect(config.ingest.inbox_path).toBe('inbox/');
+      expect(config.ingest.inbox_path).toBe('raw/inbox/');
     } finally {
       await tmp.cleanup();
     }
@@ -259,7 +201,7 @@ describe('readConfig', () => {
   it('refuses an inbox that is not inside the declared capture root, naming both values', async () => {
     const tmp = await makeTmpDir();
     try {
-      await writeFile(path.join(tmp.root, CONFIG_FILE_NAME), captureTierConfig(9, 'inbox/', 'raw/'));
+      await writeFile(path.join(tmp.root, CONFIG_FILE_NAME), captureTierConfig('inbox/', 'raw/'));
       await expect(readConfig(tmp.root)).rejects.toThrow(/"inbox\/".*capture_root.*"raw\/"/);
     } finally {
       await tmp.cleanup();
@@ -269,7 +211,7 @@ describe('readConfig', () => {
   it('refuses an inbox that merely equals the capture root', async () => {
     const tmp = await makeTmpDir();
     try {
-      await writeFile(path.join(tmp.root, CONFIG_FILE_NAME), captureTierConfig(9, 'raw/', 'raw/'));
+      await writeFile(path.join(tmp.root, CONFIG_FILE_NAME), captureTierConfig('raw/', 'raw/'));
       await expect(readConfig(tmp.root)).rejects.toBeInstanceOf(InvalidConfigError);
     } finally {
       await tmp.cleanup();
@@ -279,7 +221,7 @@ describe('readConfig', () => {
   it('accepts an inbox nested inside the declared capture root', async () => {
     const tmp = await makeTmpDir();
     try {
-      await writeFile(path.join(tmp.root, CONFIG_FILE_NAME), captureTierConfig(9, 'raw/inbox/', 'raw/'));
+      await writeFile(path.join(tmp.root, CONFIG_FILE_NAME), captureTierConfig('raw/inbox/', 'raw/'));
       const config = await readConfig(tmp.root);
       expect(config.ingest.capture_root).toBe('raw/');
     } finally {
@@ -360,169 +302,6 @@ describe('readConfig', () => {
   });
 });
 
-describe('harness.skills_path / procedures_path fallback (rename-procedures-to-skills)', () => {
-  it('loads a schema-3 config that declares skills_path', async () => {
-    const tmp = await makeTmpDir();
-    try {
-      const text = [
-        'schema_version: 3',
-        'taxonomy: { profile: para, layers: [] }',
-        'fields: { visibility: scope }',
-        'visibility: { default_context: private, directory_defaults: {} }',
-        'derived: { paths: [] }',
-        'retrieval: { exclude_paths: [], relations: [], graph: { cluster_depth: 2, hub_top: 8, bridge_top: 10, orphan_exempt_clusters: [] } }',
-        'git: { default_branch: main }',
-        'session: { branch_prefix: session/, worktrees_path: .worktrees/ }',
-        'write_lifecycle: { diff_size_ceiling_lines: 2000, writable_paths: [] }',
-        'catalog: { path: catalog/, section_max_bytes: 32768 }',
-        'disclosure: { internal_audiences: [], hard_walls: [], leak_markers: {} }',
-        'ingest: { inbox_path: inbox/ }',
-        'organize: { archive_destination: archive/ }',
-        'harness: { skills_path: .claude/skills/ }',
-        'adapters: []',
-      ].join('\n');
-      await writeFile(path.join(tmp.root, CONFIG_FILE_NAME), text);
-      const config = await readConfig(tmp.root);
-      expect(config.harness.skills_path).toBe('.claude/skills/');
-      expect((config.harness as Record<string, unknown>).procedures_path).toBeUndefined();
-    } finally {
-      await tmp.cleanup();
-    }
-  });
-
-  it('loads a schema-2 config that declares only the old procedures_path key', async () => {
-    const tmp = await makeTmpDir();
-    try {
-      const text = [
-        'schema_version: 2',
-        'taxonomy: { profile: para, layers: [] }',
-        'fields: { visibility: scope }',
-        'visibility: { default_context: private, directory_defaults: {} }',
-        'derived: { paths: [] }',
-        'retrieval: { exclude_paths: [], relations: [], graph: { cluster_depth: 2, hub_top: 8, bridge_top: 10, orphan_exempt_clusters: [] } }',
-        'git: { default_branch: main }',
-        'session: { branch_prefix: session/, worktrees_path: .worktrees/ }',
-        'write_lifecycle: { diff_size_ceiling_lines: 2000, writable_paths: [] }',
-        'catalog: { path: catalog/, section_max_bytes: 32768 }',
-        'disclosure: { internal_audiences: [], hard_walls: [], leak_markers: {} }',
-        'ingest: { inbox_path: inbox/ }',
-        'organize: { archive_destination: archive/ }',
-        'harness: { procedures_path: procedures/ }',
-        'adapters: []',
-      ].join('\n');
-      await writeFile(path.join(tmp.root, CONFIG_FILE_NAME), text);
-      const config = await readConfig(tmp.root);
-      expect(config.harness.skills_path).toBe('procedures/');
-    } finally {
-      await tmp.cleanup();
-    }
-  });
-
-  it('prefers skills_path when both keys are present', async () => {
-    const tmp = await makeTmpDir();
-    try {
-      const text = [
-        'schema_version: 3',
-        'taxonomy: { profile: para, layers: [] }',
-        'fields: { visibility: scope }',
-        'visibility: { default_context: private, directory_defaults: {} }',
-        'derived: { paths: [] }',
-        'retrieval: { exclude_paths: [], relations: [], graph: { cluster_depth: 2, hub_top: 8, bridge_top: 10, orphan_exempt_clusters: [] } }',
-        'git: { default_branch: main }',
-        'session: { branch_prefix: session/, worktrees_path: .worktrees/ }',
-        'write_lifecycle: { diff_size_ceiling_lines: 2000, writable_paths: [] }',
-        'catalog: { path: catalog/, section_max_bytes: 32768 }',
-        'disclosure: { internal_audiences: [], hard_walls: [], leak_markers: {} }',
-        'ingest: { inbox_path: inbox/ }',
-        'organize: { archive_destination: archive/ }',
-        'harness: { skills_path: .claude/skills/, procedures_path: old-procedures/ }',
-        'adapters: []',
-      ].join('\n');
-      await writeFile(path.join(tmp.root, CONFIG_FILE_NAME), text);
-      const config = await readConfig(tmp.root);
-      expect(config.harness.skills_path).toBe('.claude/skills/');
-    } finally {
-      await tmp.cleanup();
-    }
-  });
-
-  /**
-   * config-defaults-as-the-convention (D6): absent under BOTH spellings used
-   * to raise a custom "run `ctxr migrate`" error, but an unmigrated store HAS
-   * `procedures_path` and never reached it. What it actually rejected was a
-   * config declining to name a skills path, which now takes the shipped one.
-   */
-  it('resolves the shipped skills path when neither key is present', async () => {
-    const tmp = await makeTmpDir();
-    try {
-      await writeFile(path.join(tmp.root, CONFIG_FILE_NAME), minimalConfig());
-      const config = await readConfig(tmp.root);
-      expect(config.harness.skills_path).toBe(SHIPPED_DEFAULTS.harness.skills_path);
-      expect(config.harness.guidance_path).toBe(SHIPPED_DEFAULTS.harness.guidance_path);
-    } finally {
-      await tmp.cleanup();
-    }
-  });
-});
-
-describe('adapters kind: forge / session.workspaces_external leniency (session-keeps-only-what-git-cannot-do D2)', () => {
-  it('loads a schema-4 config still declaring a legacy forge adapter and workspaces_external, dropping both', async () => {
-    const tmp = await makeTmpDir();
-    try {
-      const text = [
-        'schema_version: 4',
-        'taxonomy: { profile: para, layers: [] }',
-        'fields: { visibility: scope }',
-        'visibility: { default_context: private, directory_defaults: {} }',
-        'derived: { paths: [] }',
-        'retrieval: { exclude_paths: [], relations: [], graph: { cluster_depth: 2, hub_top: 8, bridge_top: 10, orphan_exempt_clusters: [] } }',
-        'git: { default_branch: main }',
-        'session: { branch_prefix: session/, worktrees_path: .worktrees/, workspaces_external: true }',
-        'write_lifecycle: { diff_size_ceiling_lines: 2000, writable_paths: [] }',
-        'catalog: { path: catalog/, section_max_bytes: 32768 }',
-        'disclosure: { internal_audiences: [], hard_walls: [], leak_markers: {} }',
-        'ingest: { inbox_path: inbox/ }',
-        'organize: { archive_destination: archive/ }',
-        'harness: { skills_path: skills/, guidance_path: guidance/ }',
-        'adapters: [{ id: github, kind: forge }, { id: claude-code, kind: harness-generation }]',
-      ].join('\n');
-      await writeFile(path.join(tmp.root, CONFIG_FILE_NAME), text);
-      const config = await readConfig(tmp.root);
-      expect(config.adapters).toEqual([{ id: 'claude-code', kind: 'harness-generation' }]);
-      expect((config.session as Record<string, unknown>).workspaces_external).toBeUndefined();
-    } finally {
-      await tmp.cleanup();
-    }
-  });
-
-  it('still rejects a genuinely unrecognized adapter kind', async () => {
-    const tmp = await makeTmpDir();
-    try {
-      const text = [
-        'schema_version: 4',
-        'taxonomy: { profile: para, layers: [] }',
-        'fields: { visibility: scope }',
-        'visibility: { default_context: private, directory_defaults: {} }',
-        'derived: { paths: [] }',
-        'retrieval: { exclude_paths: [], relations: [], graph: { cluster_depth: 2, hub_top: 8, bridge_top: 10, orphan_exempt_clusters: [] } }',
-        'git: { default_branch: main }',
-        'session: { branch_prefix: session/, worktrees_path: .worktrees/ }',
-        'write_lifecycle: { diff_size_ceiling_lines: 2000, writable_paths: [] }',
-        'catalog: { path: catalog/, section_max_bytes: 32768 }',
-        'disclosure: { internal_audiences: [], hard_walls: [], leak_markers: {} }',
-        'ingest: { inbox_path: inbox/ }',
-        'organize: { archive_destination: archive/ }',
-        'harness: { skills_path: skills/, guidance_path: guidance/ }',
-        'adapters: [{ id: something, kind: not-a-real-kind }]',
-      ].join('\n');
-      await writeFile(path.join(tmp.root, CONFIG_FILE_NAME), text);
-      await expect(readConfig(tmp.root)).rejects.toBeInstanceOf(InvalidConfigError);
-    } finally {
-      await tmp.cleanup();
-    }
-  });
-});
-
 describe('renderStoreConfig (config-defaults-as-the-convention)', () => {
   async function resolved(text: string) {
     const tmp = await makeTmpDir();
@@ -537,7 +316,7 @@ describe('renderStoreConfig (config-defaults-as-the-convention)', () => {
   it('writes the store facts and omits every value equal to a shipped default', async () => {
     const rendered = renderStoreConfig(await resolved(minimalConfig()));
 
-    expect(rendered).toContain('schema_version: 9');
+    expect(rendered).toContain(`schema_version: ${SUPPORTED_SCHEMA_VERSION}`);
     expect(rendered).toContain('default_branch: main');
     expect(rendered).toContain('archive_destination: archives/');
     for (const omitted of ['inbox_path', 'capture_root', 'exclude_paths', 'worktrees_path', 'section_max_bytes', 'vendored']) {
@@ -566,5 +345,37 @@ describe('renderStoreConfig (config-defaults-as-the-convention)', () => {
   it('round-trips: what it writes resolves to what it was given', async () => {
     const config = await resolved(`${minimalConfig()}session: { branch_prefix: work/ }\n`);
     expect(await resolved(renderStoreConfig(config))).toEqual(config);
+  });
+});
+
+describe('adapters', () => {
+  it('rejects an unrecognized adapter kind', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const text = `${minimalConfig()}adapters: [{ id: something, kind: not-a-real-kind }]\n`;
+      await writeFile(path.join(tmp.root, CONFIG_FILE_NAME), text);
+      await expect(readConfig(tmp.root)).rejects.toBeInstanceOf(InvalidConfigError);
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  /**
+   * retire-store-migrations D8: `skills_dir` used to be stripped before it
+   * reached `AdapterDeclarationSchema`, because the forge pre-filter object
+   * did not declare it and zod strips unknown keys. The override was dead
+   * config — declared in the schema, read by `effectiveSkillsDir`, and
+   * unreachable from a `contexture.yaml`. This is the regression guard.
+   */
+  it('preserves a declared skills_dir through config loading', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const text = `${minimalConfig()}adapters: [{ id: hermes-agent, kind: harness-generation, skills_dir: .agents/skills/ }]\n`;
+      await writeFile(path.join(tmp.root, CONFIG_FILE_NAME), text);
+      const config = await readConfig(tmp.root);
+      expect(config.adapters[0]?.skills_dir).toBe('.agents/skills/');
+    } finally {
+      await tmp.cleanup();
+    }
   });
 });

@@ -4,6 +4,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { describe, expect, it } from 'vitest';
+import { SUPPORTED_SCHEMA_VERSION } from '../../src/config/schema.js';
 import { hermeticGitEnv } from '../helpers/git-env.js';
 import { runCli } from '../helpers/run-cli.js';
 import { makeTmpDir } from '../helpers/tmp-store.js';
@@ -34,6 +35,30 @@ describe.each(['doctor'] as const)('schema-version gate (%s)', (command) => {
       const parsed = JSON.parse(result.stdout);
       expect(parsed.findings[0].code).toBe('config.schema_version.newer');
       expect(parsed.findings[0].message).toContain('999');
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  /**
+   * retire-store-migrations: the older direction is refused at config load,
+   * not merely reported by doctor. The message must name the version, not a
+   * shape error against keys whose superseded spellings the schema dropped.
+   */
+  it('exits 2 naming both versions when schema_version is older than supported', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const env = hermeticGitEnv();
+      await gitInit(tmp.root, env);
+      const text = await readFile(path.join(FIXTURES_DIR, 'older-schema.yaml'), 'utf8');
+      await writeFile(path.join(tmp.root, 'contexture.yaml'), text);
+
+      const result = await runCli([command, '--json'], { cwd: tmp.root, env });
+      expect(result.exitCode).toBe(2);
+      const parsed = JSON.parse(result.stdout);
+      expect(parsed.findings[0].code).toBe('config.schema_version.behind');
+      expect(parsed.findings[0].message).toContain('3');
+      expect(parsed.findings[0].message).toContain(String(SUPPORTED_SCHEMA_VERSION));
     } finally {
       await tmp.cleanup();
     }

@@ -75,6 +75,21 @@ export class SchemaVersionNewerError extends ContextureError {
   }
 }
 
+export class SchemaVersionBehindError extends ContextureError {
+  constructor(storeVersion: number, supportedVersion: number) {
+    super(ExitCode.Usage, {
+      code: 'config.schema_version.behind',
+      severity: 'error',
+      message:
+        `This store's schema_version (${storeVersion}) is older than the ` +
+        `version this contexture release supports (${supportedVersion}). ` +
+        'contexture ships no migration: bring the store forward by hand, ' +
+        "following the fixup in the release notes for the version that raised it.",
+      details: { storeVersion, supportedVersion },
+    });
+  }
+}
+
 export class SchemaVersionMissingError extends ContextureError {
   constructor(configPath: string) {
     super(ExitCode.Usage, {
@@ -82,7 +97,7 @@ export class SchemaVersionMissingError extends ContextureError {
       severity: 'error',
       message:
         `"${configPath}" has no schema_version field — this store predates ` +
-        'the schema-version requirement and must be migrated with an explicit tool.',
+        'the schema-version requirement and is not supported by this release.',
       subject: configPath,
     });
   }
@@ -209,21 +224,6 @@ export class ArchiveDestinationExistsError extends ContextureError {
       severity: 'error',
       message: `Cannot archive: "${destinationPath}" already exists.`,
       subject: destinationPath,
-    });
-  }
-}
-
-export class CaptureRootUndeterminedError extends ContextureError {
-  constructor(inboxPath: string) {
-    super(ExitCode.Usage, {
-      code: 'migrate.capture_root_undetermined',
-      severity: 'error',
-      message:
-        `Cannot determine a capture root for the configured inbox "${inboxPath}": it is a top-level ` +
-        'directory this store chose, so migrating it would either relocate an operator-chosen path or ' +
-        'exclude the store root from retrieval. Set ingest.capture_root by hand, with the inbox inside it, ' +
-        'then re-run migrate.',
-      subject: inboxPath,
     });
   }
 }
