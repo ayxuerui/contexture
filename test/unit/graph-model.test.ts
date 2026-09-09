@@ -70,34 +70,42 @@ describe('graph-context-document: positional clusters (D2)', () => {
 });
 
 describe('graph-context-document: typed edges from relation sections (D3)', () => {
-  const body = ['# Title', 'Intro [[intro-target]].', '', '## Supports:', '- [[supported]]', '', '### Detail', '- [[still-supported]]', '', '## Notes', '- [[plain]]'].join('\n');
+  // fix-the-note-compass: the vocabulary is fixed, so these use the shipped
+  // names rather than a per-test one — there is no longer a vocabulary to pass in.
+  const body = ['# Title', 'Intro [[intro-target]].', '', '## Upstream:', '- [[supported]]', '', '### Detail', '- [[still-supported]]', '', '## Notes', '- [[plain]]'].join('\n');
   const targets = ['intro-target', 'supported', 'still-supported', 'plain'].map((stem) => note(`alpha/${stem}.md`, ''));
 
   it('types a link under a vocabulary heading (case-insensitive, trailing colon ignored), including deeper sub-headings', () => {
-    const graph = buildGraphFromNotes([note('alpha/src.md', body), ...targets], { relations: ['supports'] });
+    const graph = buildGraphFromNotes([note('alpha/src.md', body), ...targets]);
     const types = Object.fromEntries(graph.edges.map((e) => [e.dst, e.type]));
-    expect(types['alpha/supported.md']).toBe('supports');
-    expect(types['alpha/still-supported.md']).toBe('supports');
+    expect(types['alpha/supported.md']).toBe('Upstream');
+    expect(types['alpha/still-supported.md']).toBe('Upstream');
   });
 
   it('a link before any section or after the section closes is an ordinary link', () => {
-    const graph = buildGraphFromNotes([note('alpha/src.md', body), ...targets], { relations: ['supports'] });
+    const graph = buildGraphFromNotes([note('alpha/src.md', body), ...targets]);
     const types = Object.fromEntries(graph.edges.map((e) => [e.dst, e.type]));
     expect(types['alpha/intro-target.md']).toBe(LINK_EDGE_TYPE);
     expect(types['alpha/plain.md']).toBe(LINK_EDGE_TYPE);
   });
 
   it('a heading outside the vocabulary never types anything', () => {
-    const graph = buildGraphFromNotes([note('alpha/src.md', body), ...targets], { relations: ['contradicts'] });
+    const other = ['# Title', '## Depends on', '- [[supported]]'].join('\n');
+    const graph = buildGraphFromNotes([note('alpha/src.md', other), ...targets]);
     expect(graph.edges.every((e) => e.type === LINK_EDGE_TYPE)).toBe(true);
   });
 
-  it('an empty vocabulary records zero typed edges and the same edges as before', () => {
-    const before = buildGraphFromNotes([note('alpha/src.md', body), ...targets]);
-    const explicit = buildGraphFromNotes([note('alpha/src.md', body), ...targets], { relations: [] });
-    expect(before.edges.every((e) => e.type === LINK_EDGE_TYPE)).toBe(true);
-    expect(explicit.edges).toEqual(before.edges);
-    expect(before.edges).toHaveLength(4);
+  it('a note using no vocabulary heading records only ordinary links', () => {
+    const plain = ['# Title', 'Intro [[intro-target]].', '', '## Notes', '- [[plain]]'].join('\n');
+    const graph = buildGraphFromNotes([note('alpha/src.md', plain), ...targets]);
+    expect(graph.edges.every((e) => e.type === LINK_EDGE_TYPE)).toBe(true);
+    expect(graph.edges).toHaveLength(2);
+  });
+
+  it('types an edge with no configuration involved', () => {
+    // The point of the change: nothing had to be declared for this to be typed.
+    const graph = buildGraphFromNotes([note('alpha/src.md', body), ...targets]);
+    expect(graph.edges.some((e) => e.type === 'Upstream')).toBe(true);
   });
 
   it('extractLinkTargets still returns every target regardless of section', () => {

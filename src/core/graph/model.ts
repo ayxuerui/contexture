@@ -1,5 +1,6 @@
 import path from 'node:path';
 import { GraphIdentityCollisionError } from '../errors.js';
+import { RELATION_NAMES } from '../../config/defaults.js';
 import type { Note } from '../notes/list.js';
 
 /**
@@ -44,7 +45,6 @@ export interface GraphBuildResult {
 
 export interface GraphBuildOptions {
   /** Relation names whose section headings type the wikilinks under them (graph-context-document D3). Empty: no typed edges. */
-  relations?: readonly string[];
   /** How many leading directory segments form a node's cluster (graph-context-document D2). */
   clusterDepth?: number;
 }
@@ -76,13 +76,16 @@ function normalizeHeading(text: string): string {
  * heading — trimmed, trailing colon stripped, compared case-insensitively —
  * names a configured relation is typed with that relation; the section ends
  * at the next heading of the same or a higher level. Everything else,
- * including links on heading lines themselves, is an ordinary link. With
- * an empty vocabulary every link is ordinary, so a store that declares no
- * relations gets exactly the graph it had before.
+ * including links on heading lines themselves, is an ordinary link.
+ *
+ * fix-the-note-compass: the vocabulary is fixed and read from
+ * RELATION_NAMES rather than passed in, so typed edges need no
+ * configuration. A heading outside it yields an ordinary link, which is
+ * what every heading yielded before typing existed.
  */
-export function extractLinks(body: string, relations: readonly string[] = []): LinkOccurrence[] {
+export function extractLinks(body: string): LinkOccurrence[] {
   const vocabulary = new Map<string, string>();
-  for (const name of relations) vocabulary.set(normalizeHeading(name), name);
+  for (const name of RELATION_NAMES) vocabulary.set(normalizeHeading(name), name);
 
   const links: LinkOccurrence[] = [];
   let section: { type: string; level: number } | null = null;
@@ -176,7 +179,7 @@ export function buildGraphFromNotes(notes: readonly Note[], options: GraphBuildO
   const dangling: DanglingLink[] = [];
 
   for (const note of notes) {
-    for (const { target, type } of extractLinks(note.body, options.relations ?? [])) {
+    for (const { target, type } of extractLinks(note.body)) {
       const resolution = resolveStem(stemIndex, target);
       if ('reason' in resolution) {
         dangling.push({ from: note.path, target, reason: resolution.reason });
@@ -190,6 +193,6 @@ export function buildGraphFromNotes(notes: readonly Note[], options: GraphBuildO
 }
 
 /** The build options a store's configuration implies — the one place config is translated for the graph. */
-export function graphBuildOptions(config: { retrieval: { relations: readonly string[]; graph: { cluster_depth: number } } }): GraphBuildOptions {
-  return { relations: config.retrieval.relations, clusterDepth: config.retrieval.graph.cluster_depth };
+export function graphBuildOptions(config: { retrieval: { graph: { cluster_depth: number } } }): GraphBuildOptions {
+  return { clusterDepth: config.retrieval.graph.cluster_depth };
 }

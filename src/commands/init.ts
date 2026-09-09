@@ -23,7 +23,6 @@ import {
   DEFAULT_PUBLISH_PATH,
   DEFAULT_TEMPLATES_PATH,
   DEFAULT_INSTALLED_TEMPLATES,
-  DEFAULT_RELATIONS,
   DEFAULT_ROLLUP_STALE_DAYS,
   DEFAULT_SESSION_BRANCH_PREFIX,
   DEFAULT_SKILLS_PATH,
@@ -311,7 +310,6 @@ async function runInitCore(env: RunEnv, flags: InitFlags): Promise<RunInitResult
       // archived material stays retrievable and sorts last (D11).
       demote_paths: [archiveDestination],
       gather_max_notes: DEFAULT_GATHER_MAX_NOTES,
-      relations: [...DEFAULT_RELATIONS],
       graph: { ...DEFAULT_GRAPH_SETTINGS, orphan_exempt_clusters: [] },
     },
     git: { default_branch: defaultBranch },
