@@ -1,6 +1,8 @@
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { configuredAdapters, resolveAdapter } from '../../adapters/registry.js';
+import { parse as parseYaml } from 'yaml';
+import { CONFIG_FILE_NAME } from '../root.js';
 import { StoreConfigSchema } from '../../config/schema.js';
 import {
   AGENTS_MD_CONVENTIONS_FENCE,
@@ -31,6 +33,23 @@ import { defineCheck } from './types.js';
  * the safety net promised at removal time actually exists.
  */
 const KNOWN_TOP_LEVEL_CONFIG_KEYS = new Set(Object.keys(StoreConfigSchema.shape));
+
+/**
+ * fix-the-note-compass: keys contexture used to recognize and no longer does,
+ * as dotted paths.
+ *
+ * A NESTED key needs naming here because the schema strips one silently — zod
+ * drops an unknown key inside a block, so unlike a stray top-level key it
+ * leaves no trace in the parsed config for the check above to find. A store
+ * that keeps declaring one would go on believing it means something. Being
+ * told the key is dead is the whole point of removing it.
+ */
+const RETIRED_CONFIG_KEYS = [
+  {
+    path: 'retrieval.relations',
+    replacedBy: 'The relation vocabulary is fixed and no longer configurable — the names it declared are the names contexture now ships. Delete the key.',
+  },
+] as const;
 
 /**
  * store-integrity spec (task 9.3): "derived-artifact staleness." Covers
@@ -263,6 +282,26 @@ export const noUnrecognizedConfigKeysCheck = defineCheck({
       message: `contexture.yaml has a top-level "${key}" key that this version of contexture doesn't recognize — a typo, or a capability retired in a later release. Remove it, or check contexture's release notes for what replaced it.`,
       subject: key,
     }));
+
+    // Read against the raw file, not the parsed config: a retired nested key has
+    // already been stripped by the time the config is an object.
+    const raw = await readFile(path.join(ctx.storeRoot, CONFIG_FILE_NAME), 'utf8').catch(() => undefined);
+    if (raw !== undefined) {
+      const parsed = parseYaml(raw) as Record<string, unknown> | undefined;
+      for (const retired of RETIRED_CONFIG_KEYS) {
+        const [block = '', key = ''] = retired.path.split('.');
+        const section = parsed?.[block];
+        if (section && typeof section === 'object' && key in (section as Record<string, unknown>)) {
+          findings.push({
+            code: 'store.retired_config_key',
+            severity: 'error',
+            message: `contexture.yaml declares "${retired.path}", which this version of contexture no longer reads. ${retired.replacedBy}`,
+            subject: retired.path,
+          });
+        }
+      }
+    }
+
     return { status: findings.length > 0 ? 'fail' : 'pass', findings };
   },
 });

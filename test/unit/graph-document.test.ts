@@ -26,7 +26,6 @@ function makeConfig(overrides: Partial<StoreConfig['retrieval']['graph']> = {}):
       exclude_paths: ['.contexture/'], // as every real store: the cache the build writes into must not be re-read as notes
       demote_paths: [],
       gather_max_notes: 50,
-      relations: ['supports'],
       graph: { cluster_depth: 2, hub_top: 8, bridge_top: 10, orphan_exempt_clusters: [], ...overrides },
     },
     git: { default_branch: 'main' },
@@ -99,8 +98,8 @@ describe('renderGraphDocument (graph-context-document D5)', () => {
   });
 
   it('reports typed link counts and carries no timestamp', () => {
-    const notes = [note('alpha/x/a.md', '## Supports\n- [[b]]\n\n## Notes\n[[c]]'), note('alpha/x/b.md', ''), note('alpha/x/c.md', '')];
-    const { text, summary } = renderGraphDocument(buildGraphFromNotes(notes, { relations: ['supports'] }), SETTINGS);
+    const notes = [note('alpha/x/a.md', '## Upstream\n- [[b]]\n\n## Notes\n[[c]]'), note('alpha/x/b.md', ''), note('alpha/x/c.md', '')];
+    const { text, summary } = renderGraphDocument(buildGraphFromNotes(notes), SETTINGS);
     expect(summary).toMatchObject({ notes: 3, links: 2, typedLinks: 1, clusters: 1 });
     expect(text).toContain('- Links: 2 (1 typed)');
     expect(text).not.toMatch(/\d{4}-\d{2}-\d{2}/);
@@ -112,7 +111,7 @@ describe('ctxr graph build writes the document (graph-context-document D1)', () 
     const tmp = await makeTmpDir();
     try {
       const store: Store = { root: tmp.root, config: makeConfig() };
-      await writeNote(tmp.root, 'alpha/x/a.md', '## Supports\n- [[b]]\n');
+      await writeNote(tmp.root, 'alpha/x/a.md', '## Upstream\n- [[b]]\n');
       await writeNote(tmp.root, 'alpha/x/b.md', '[[c]]\n');
       await writeNote(tmp.root, 'alpha/y/c.md', '\n');
 

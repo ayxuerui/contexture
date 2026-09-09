@@ -1,3 +1,5 @@
+import { RELATION_DIRECTEDNESS_NOTE, RELATION_VOCABULARY } from '../../src/config/defaults.js';
+import { packagedTemplate } from '../../src/core/templates.js';
 import { readFileSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
@@ -36,7 +38,7 @@ function makeConfig(overrides: Partial<StoreConfig> = {}): StoreConfig {
       ],
     },
     derived: { paths: [] },
-    retrieval: { exclude_paths: ['skills/'], demote_paths: [], gather_max_notes: 50, relations: [], graph: { cluster_depth: 2, hub_top: 8, bridge_top: 10, orphan_exempt_clusters: [] } },
+    retrieval: { exclude_paths: ['skills/'], demote_paths: [], gather_max_notes: 50, graph: { cluster_depth: 2, hub_top: 8, bridge_top: 10, orphan_exempt_clusters: [] } },
     git: { default_branch: 'trunk' },
     session: { branch_prefix: 'session/', worktrees_path: '.worktrees/' },
     write_lifecycle: { diff_size_ceiling_lines: 2000, writable_paths: [] },
@@ -140,11 +142,14 @@ describe('owned-skills-expansion: each skill carries its load-bearing rule (task
     expect(s).toContain('guidance/house-conventions.md');
   });
 
-  it('connection proposal: reads before it proposes, groups by the configured vocabulary with a single fallback group, confirms before writing', () => {
+  it('connection proposal: reads before it proposes, groups by the fixed vocabulary, confirms before writing', () => {
     const s = skills['ctxr-connection-proposal'];
     expect(s).toContain('Read every candidate before proposing it');
-    expect(s).toContain('relation vocabulary'); // configured or absent, the grouping is always stated against the config
-    expect(s).toContain('single **Related** group');
+    // fix-the-note-compass: the vocabulary is fixed, so the grouping is stated
+    // against it directly — the single-group fallback it replaced described a
+    // state that can no longer occur.
+    expect(s).toContain('relation vocabulary');
+    expect(s).not.toContain('single **Related** group');
     expect(s).toContain('Confirm before writing');
     expect(s).toContain('`ctxr graph query orphans`');
   });
@@ -539,21 +544,21 @@ describe('graph-context-document: skills read the vocabulary and the graph docum
     expect(skills['ctxr-ingest-orchestration']).toContain(GRAPH_DOCUMENT_RELATIVE_PATH);
   });
 
-  it('the proposal skill groups by the configured vocabulary and names no other relation', () => {
-    const config = makeConfig();
-    config.retrieval = { ...config.retrieval, relations: ['supports', 'contradicts'] };
-    const s = rendered(config)['ctxr-connection-proposal'];
-    expect(s).toContain('**supports**, **contradicts**');
+  it('the proposal skill groups by the fixed vocabulary, each name with its definition', () => {
+    const s = rendered()['ctxr-connection-proposal'];
+    for (const relation of RELATION_VOCABULARY) {
+      expect(s, relation.name).toContain(`**${relation.name}** — ${relation.definition}`);
+    }
+    expect(s).toContain(RELATION_DIRECTEDNESS_NOTE);
+    // The fallback it replaced described a state that can no longer occur.
     expect(s).not.toContain('single **Related** group');
   });
 
-  it('an empty vocabulary yields one group and no relation name anywhere in the owned skills', () => {
-    const skills = rendered();
-    expect(skills['ctxr-connection-proposal']).toContain('single **Related** group');
-    for (const [file, content] of Object.entries(skills)) {
-      for (const word of ['upstream', 'downstream', 'opposing']) {
-        expect(content, `${file} hardcodes relation "${word}"`).not.toMatch(new RegExp(`\\b${word}\\b`, 'i'));
-      }
+  it('no skill template writes a relation name of its own', () => {
+    // The names may appear only by way of the constant; a literal in a template
+    // is how a skill drifts from the vocabulary the graph actually types.
+    for (const relation of RELATION_VOCABULARY) {
+      expect(packagedTemplate('skills', 'ctxr-connection-proposal'), relation.name).not.toContain(relation.name);
     }
   });
 });

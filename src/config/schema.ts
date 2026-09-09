@@ -69,7 +69,6 @@ const RetrievalSchema = z.object({
   /** compose-the-retrieval-pass spec: the pass's note cap; truncation is reported, never silent. */
   gather_max_notes: z.number().int().positive().default(SHIPPED_DEFAULTS.retrieval.gather_max_notes),
   /** graph-context-document spec: relation names whose section headings type the wikilinks under them; empty = no typed edges. */
-  relations: z.array(z.string().min(1)).default([...SHIPPED_DEFAULTS.retrieval.relations]),
   graph: GraphSettingsSchema.default({ ...SHIPPED_DEFAULTS.retrieval.graph, orphan_exempt_clusters: [] }),
 });
 

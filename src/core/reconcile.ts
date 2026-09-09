@@ -83,10 +83,11 @@ export async function reconcileStore(env: RunEnv, root: string, config: StoreCon
   changed.push(...vendoredResult.changed);
   const findings: Finding[] = [...vendoredResult.findings];
 
-  // standardize-note-templates: the note templates a store declares, rendered
-  // against its own configuration. Carries the same preserve-and-report
-  // contract as a vendored skill — its findings ride out the same way, so a
-  // locally modified template is reported rather than silently skipped.
+  // own-the-shipped-templates: the note templates a store declares, delivered
+  // as fixed content and rewritten unconditionally — unlike a vendored skill,
+  // contexture authored these, so an edit is a divergence rather than operator
+  // work. The findings array stays in the signature because the sync is a
+  // sibling of the two above and a future check may use it; it is empty today.
   const templatesResult = await syncNoteTemplates(root, config, CLI_VERSION);
   changed.push(...templatesResult.changed);
   findings.push(...templatesResult.findings);
