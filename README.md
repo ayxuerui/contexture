@@ -56,11 +56,16 @@ CLAUDE.md                     harness entry file; a one-line managed import of A
   hooks/                      the write-gate shim
   skills/ -> ../.agents/skills   a bridge, so Claude Code auto-discovers the canonical skills
 .agents/skills/               THE canonical skills location, read natively by most harnesses
-  ctxr-*/SKILL.md               13 contexture-owned skills (refreshed by `ctxr update`)
+  ctxr-*/SKILL.md               14 contexture-owned skills (refreshed by `ctxr update`)
   frontend-design/, eli5/       vendored third-party skills, with licenses and provenance
 .contexture/guidance/
   house-conventions.md        your store's own rules — inlined into AGENTS.md verbatim
   mission.md                  the standing "what's active right now" document
+.contexture/templates/
+  Note.md                     the base every note shares — copy it to cut your own kind
+  Concept.md Project.md       the shapes a note starts from (refreshed by `ctxr update`)
+  People.md Company.md Deal.md
+  .ctxr-templates.json        which of these contexture delivered, and their hashes
 .githooks/
   pre-commit                  runs `doctor --staged`
   pre-push                    refuses a push to the default branch
@@ -228,6 +233,8 @@ ctxr doctor        # invariants — exits non-zero, and gates every commit
 ctxr catalog check --stale
 ctxr archive <path>
 ```
+
+A new note starts from a template under `templates.path` (`.contexture/templates/` by default), never from a blank file and never by copying whichever sibling is nearest — that's how a store's notes drift out of any shape at all. `templates.installed` says which of the packaged library a store wants, defaulting to all of it and meaning "install none" when empty, exactly like `skills.vendored`; your own kinds sit in the same directory and are never touched, since contexture only rewrites what its own `.ctxr-templates.json` names. Edit a shipped one and `ctxr update` reports it and leaves it alone rather than overwriting your version. A template is fixed content — the same bytes in every store — so the idea template carries the four relation sections (Upstream, Downstream, Similar, Opposing) literally, each with a note on what belongs under it. `{{title}}` and `{{date}}` are the whole placeholder vocabulary; the agent substitutes them as it writes, no command expands them, and `ctxr lint` reports a note that landed with one still in it. An existing note is extended in place, never re-cut from a template.
 
 The `lint` / `doctor` split is the point: lint reports what's *worth reviewing* and never blocks; doctor reports what's *broken* and does. `ctxr archive` retires a note as a single tracked rename into `organize.archive_destination`, leaving its frontmatter byte-identical and reporting every note that linked to it — move it, don't tag it, or the active layers stop meaning anything. (The note must be committed first; archive won't rename something git isn't tracking.)
 

@@ -128,6 +128,20 @@ const UpdateCheckSchema = z.object({
   ttl_hours: z.number().positive().default(SHIPPED_DEFAULTS.update_check.ttl_hours),
 });
 
+/**
+ * harness-portability spec (a store declares which note templates it installs):
+ * where a store's note templates live, and which of the packaged library it
+ * installs. Shaped as its own block rather than as keys on `harness`, matching
+ * `catalog` and `publish` — an authored-but-tool-owned location with its own
+ * settings. Schema-optional with defaults, so a `contexture.yaml` predating the
+ * block parses unchanged; that is why this needs no schema_version bump and no
+ * migration. An empty `installed` list opts out entirely, same as `skills`.
+ */
+const TemplatesSchema = z.object({
+  path: z.string().min(1).default(SHIPPED_DEFAULTS.templates.path),
+  installed: z.array(z.string()).default([...SHIPPED_DEFAULTS.templates.installed]),
+});
+
 const SkillsSchema = z.object({
   vendored: z.array(z.string()).default([...SHIPPED_DEFAULTS.skills.vendored]),
 });
@@ -299,6 +313,7 @@ export const StoreConfigSchema = z
     write_lifecycle: WriteLifecycleSchema.prefault({}),
     catalog: CatalogSchema.prefault({}),
     publish: PublishSchema.prefault({}),
+    templates: TemplatesSchema.prefault({}),
     skills: SkillsSchema.prefault({}),
     update_check: UpdateCheckSchema.prefault({}),
     ingest: IngestSchema.prefault({}),

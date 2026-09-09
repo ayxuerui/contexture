@@ -26,6 +26,7 @@ function makeConfig(overrides: Partial<StoreConfig['retrieval']> = {}): StoreCon
     write_lifecycle: { diff_size_ceiling_lines: 2000, writable_paths: [] },
     catalog: { path: 'catalog/', section_max_bytes: 32768 },
     publish: { path: 'publish/' },
+    templates: { path: '.contexture/templates/', installed: [] },
     skills: { vendored: [] },
     update_check: SHIPPED_DEFAULTS.update_check,
     ingest: { inbox_path: 'inbox/', tracking_params: [] },

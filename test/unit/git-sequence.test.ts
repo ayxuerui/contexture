@@ -68,6 +68,15 @@ describe('init git call sequence', () => {
           '.agents/skills/eli5/LICENSE.txt',
           '.agents/skills/eli5/SKILL.md',
           '.agents/skills/eli5/.ctxr-vendored.json',
+          // standardize-note-templates: the declared library, in installed
+          // order, with the record that identifies it staged last.
+          '.contexture/templates/Note.md',
+          '.contexture/templates/Concept.md',
+          '.contexture/templates/Project.md',
+          '.contexture/templates/People.md',
+          '.contexture/templates/Company.md',
+          '.contexture/templates/Deal.md',
+          '.contexture/templates/.ctxr-templates.json',
           '.claude/skills',
           '.contexture/guidance/house-conventions.md',
           '.contexture/guidance/mission.md',

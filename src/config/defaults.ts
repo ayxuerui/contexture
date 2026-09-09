@@ -116,6 +116,29 @@ export const DEFAULT_CATALOG_PATH = '.contexture/catalog/';
 /** context-catalog spec: a section exceeding this triggers a failing doctor check, not a silent slowdown. */
 export const DEFAULT_CATALOG_SECTION_MAX_BYTES = 32 * 1024;
 
+/**
+ * context-store spec (a note template is a starting shape, never a note): the
+ * note templates a note is started from — authored-but-tool-owned, like the
+ * catalog and the published pages, and excluded from retrieval for the same
+ * reason. A template is not a note; it is the shape one starts from.
+ */
+export const DEFAULT_TEMPLATES_PATH = '.contexture/templates/';
+
+/**
+ * harness-portability spec (a store declares which note templates it installs):
+ * the packaged library, installed by default and refreshed by update. The list
+ * is contexture's offer, not its assertion about what a store is about — a
+ * store drops what it does not need, and adds its own kinds as files this list
+ * never names. An empty list installs none.
+ *
+ * Appended, never sorted in: the order here is the order init stages and a
+ * rendered configuration lists, so growing the library is a pure insertion.
+ *
+ * `Note` is the base every other one builds on and the file a store copies to
+ * cut its own kind; it is deliberately first.
+ */
+export const DEFAULT_INSTALLED_TEMPLATES = ['Note', 'Concept', 'Project', 'People', 'Company', 'Deal'] as const;
+
 /** publish spec: where published pages live — tracked, authored-but-tool-owned, excluded from retrieval like the catalog and skill pack. */
 export const DEFAULT_PUBLISH_PATH = '.contexture/publish/';
 
@@ -194,6 +217,7 @@ export const SHIPPED_DEFAULTS = {
   write_lifecycle: { diff_size_ceiling_lines: DEFAULT_DIFF_SIZE_CEILING_LINES, writable_paths: [] as string[] },
   catalog: { path: DEFAULT_CATALOG_PATH, section_max_bytes: DEFAULT_CATALOG_SECTION_MAX_BYTES },
   publish: { path: DEFAULT_PUBLISH_PATH },
+  templates: { path: DEFAULT_TEMPLATES_PATH, installed: DEFAULT_INSTALLED_TEMPLATES },
   skills: { vendored: DEFAULT_VENDORED_SKILLS },
   ingest: {
     inbox_path: DEFAULT_INBOX_PATH,

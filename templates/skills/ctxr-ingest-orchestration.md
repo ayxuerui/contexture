@@ -38,7 +38,10 @@ to put the file — "create a new note" is one option among several, never the d
    - Source discipline: a field the source does not confirm is "not reported" — never inferred from
      silence in either direction.
 5. Write the note the decision calls for — create it, expand it, merge, restructure, or add a section —
-   preserving prior content in every case but the deliberate rewrite.
+   preserving prior content in every case but the deliberate rewrite. A NEW note starts from a template
+   under `__TEMPLATES_PATH__`, with `{{title}}` and `{{date}}` substituted as you write (`ctxr-placement`
+   picks which). An EXISTING note is extended in place — never re-cut from a template, which would throw
+   away the content that made it worth expanding.
 6. Register the source against whatever note you just wrote:
    `ctxr ingest <path> --into <note> --source-type <type> --source-id <id>`. Every row of the table above
    ends here, not just the first: the command retains the capture under the capture tier's month, freezes

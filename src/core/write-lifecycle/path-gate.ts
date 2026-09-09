@@ -68,7 +68,10 @@ async function resolveStorePath(root: string, relativePath: string): Promise<Sto
  * not a gap — see `sanctionedPath`'s test for the refusal this now produces.
  */
 function contextureOwnedPrefixes(config: StoreConfig): string[] {
-  const prefixes = [config.catalog.path, config.harness.skills_path, config.harness.guidance_path];
+  // standardize-note-templates: the templates path is contexture-owned for the
+  // gate's purposes, so a store running the strict `writable_paths` allowlist can
+  // edit its own note kinds without declaring the path a second time.
+  const prefixes = [config.catalog.path, config.harness.skills_path, config.harness.guidance_path, config.templates.path];
   try {
     for (const adapter of configuredAdapters(config, 'harness-generation')) {
       if (adapter.entryFileName !== undefined) prefixes.push(adapter.entryFileName);

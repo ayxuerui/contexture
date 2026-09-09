@@ -9,8 +9,20 @@ __LAYER_STEP__
 - Match on what the content IS. When two sibling locations both seem to fit, name the distinction between
   them (abstract vs concrete; outward-facing vs inward-facing; who-we-are vs how-it-runs) and pick by
   altitude and audience, not by keyword.
-- Read one or two sibling notes in the chosen location and match their shape — frontmatter keys, heading
-  style, bullets vs prose — before writing.
+- If the chosen location has a `README.md`, read it first: a folder with one answer about what its notes
+  look like states it there, and that answer wins over anything you would infer.
+
+## 2b. Which template?
+
+Start a new note from a template under `__TEMPLATES_PATH__` — never a blank file, and never by copying a
+sibling wholesale. List that directory and pick the kind the content actually is; `Note` is the base when
+nothing more specific fits, and it is also the file to copy when this store needs a kind it does not have.
+Substitute `{{title}}` and `{{date}}` as you write — no command expands them, and `ctxr lint` reports a
+note that lands with one still in it.
+
+The template is the starting shape, not a cage: delete a section that does not apply rather than leaving
+it empty, and add one the note needs. Read a sibling note only for what the template leaves open — house
+phrasing, bullets vs prose, which tags this location uses.
 
 ## 3. Sub-item under an existing location, or a new top-level one?
 
@@ -36,6 +48,13 @@ manufactures an artifact for the graveyard; capture the durable slice by hand in
 
 Add a one-line wikilink from the relevant hub note so the new note is not an orphan; `ctxr lint` flags
 orphans and notes without a catalog entry.
+
+## An existing note
+
+A note that already exists is EXTENDED, never restarted from a template: add the section it now needs,
+preserve what is there, and leave its frontmatter alone. Re-cutting a note from a template to "bring it up
+to standard" destroys the content that made it worth keeping — a note that has outgrown its starting shape
+is doing the right thing.
 
 ## Relocating an existing note
 

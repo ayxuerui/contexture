@@ -3,6 +3,7 @@ import { HARNESS_PORTABILITY_CHECKS } from './harness-portability-checks.js';
 import { INTEGRITY_CHECKS } from './integrity-checks.js';
 import { ORGANIZE_CHECKS } from './organize-checks.js';
 import { RETRIEVAL_CHECKS } from './retrieval-checks.js';
+import { STORE_CHECKS } from './store-checks.js';
 import { WRITE_LIFECYCLE_CHECKS } from './write-lifecycle-checks.js';
 import type { CheckDefinition } from './types.js';
 
@@ -16,5 +17,6 @@ export const CHECKS: readonly CheckDefinition[] = [
   ...ORGANIZE_CHECKS,
   ...RETRIEVAL_CHECKS,
   ...INTEGRITY_CHECKS,
+  ...STORE_CHECKS,
   ...HARNESS_PORTABILITY_CHECKS,
 ];

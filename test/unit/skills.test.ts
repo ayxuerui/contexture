@@ -42,6 +42,7 @@ function makeConfig(overrides: Partial<StoreConfig> = {}): StoreConfig {
     write_lifecycle: { diff_size_ceiling_lines: 2000, writable_paths: [] },
     catalog: { path: 'catalog/', section_max_bytes: 32768 },
     publish: { path: 'publish/' },
+    templates: { path: '.contexture/templates/', installed: [] },
     skills: { vendored: [] },
     update_check: SHIPPED_DEFAULTS.update_check,
     ingest: { inbox_path: 'raw/inbox/', capture_root: 'raw/', tracking_params: [] },
@@ -114,12 +115,15 @@ describe('SKILLS', () => {
 describe('owned-skills-expansion: each skill carries its load-bearing rule (task 2.1)', () => {
   const skills = rendered();
 
-  it('placement: secrets never enter the store, sub-item promotion, perishable routing, sibling style', () => {
+  it('placement: secrets never enter the store, sub-item promotion, perishable routing, template then sibling style', () => {
     const s = skills['ctxr-placement'];
     expect(s).toContain('Credentials, full account numbers, and secrets never enter the store');
     expect(s).toContain('Promote to its own top-level location');
     expect(s).toContain('fenced `contexture:<region>` block you OVERWRITE');
-    expect(s).toContain('Read one or two sibling notes');
+    // standardize-note-templates: the shape now comes from a template, and a
+    // sibling is read only for what the template leaves open — this assertion
+    // used to pin the imitate-a-sibling instruction that replaced.
+    expect(s).toContain('Read a sibling note only for what the template leaves open');
   });
 
   it('session capture: separates a rule from a fact, defaults to no, proposes removals, and never routes a convention through the notes command', () => {
@@ -610,5 +614,40 @@ describe('clear-access-axis-residue: an owned skill names only affordances the C
     }
     expect(ctxrFlagsIn('Run `git push --force-with-lease` after `ctxr doctor`.')).toEqual([]);
     expect(ctxrFlagsIn('Run `ctxr catalog check --stale`.')).toEqual(['--stale']);
+  });
+});
+
+/**
+ * standardize-note-templates: the rendered skills stop telling an agent to
+ * infer a note's shape by imitation, and name the store's configured path.
+ */
+describe('note templates in the rendered skills', () => {
+  const withPath = (templatesPath: string): StoreConfig => {
+    const config = makeConfig();
+    return { ...config, templates: { path: templatesPath, installed: [] } };
+  };
+
+  it('names the store\'s configured templates path, never a hardcoded one', () => {
+    const skills = renderSkills(withPath('scaffolds/'));
+    const placement = skills.find((s) => s.file === 'ctxr-placement');
+    expect(placement?.content).toContain('scaffolds/');
+    expect(placement?.content).not.toContain('__TEMPLATES_PATH__');
+    expect(placement?.content).not.toContain('.contexture/templates/');
+  });
+
+  it('carries the create-versus-extend split into ingest and capture', () => {
+    const skills = renderSkills(withPath('.contexture/templates/'));
+    for (const slug of ['ctxr-ingest-orchestration', 'ctxr-session-capture']) {
+      const skill = skills.find((s) => s.file === slug);
+      expect(skill?.content, slug).toContain('.contexture/templates/');
+      expect(skill?.content, slug).not.toContain('__TEMPLATES_PATH__');
+    }
+  });
+
+  it('no longer tells the agent to infer a new note\'s shape from siblings alone', () => {
+    const skills = renderSkills(withPath('.contexture/templates/'));
+    const placement = skills.find((s) => s.file === 'ctxr-placement');
+    expect(placement?.content).not.toContain('Read one or two sibling notes in the chosen location and match their shape');
+    expect(placement?.content).toContain('README.md');
   });
 });
