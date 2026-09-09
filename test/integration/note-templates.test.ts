@@ -40,7 +40,7 @@ describe('note templates (real CLI)', () => {
         expect(text, name).toContain('# {{title}}');
       }
       const record = JSON.parse(await readFile(path.join(tmp.root, TEMPLATES_DIR, '.ctxr-templates.json'), 'utf8'));
-      expect(Object.keys(record.templates).sort()).toEqual([...DEFAULT_INSTALLED_TEMPLATES].sort());
+      expect([...record.templates].sort()).toEqual([...DEFAULT_INSTALLED_TEMPLATES].sort());
 
       // The templates live in the tool home directory, not at the store root.
       const doctor = await runCli(['doctor', '--json'], { cwd: tmp.root, env });
@@ -98,22 +98,28 @@ describe('note templates (real CLI)', () => {
     }
   });
 
-  it("an operator's edit survives update and is named in the report", async () => {
+  it("an operator's edit does not survive update, and nothing reports it", async () => {
     const tmp = await makeTmpDir();
     try {
       const env = hermeticGitEnv();
       expect((await runCli(['init', '--profile', 'para', '--harness', 'none'], { cwd: tmp.root, env })).exitCode).toBe(0);
 
       const target = path.join(tmp.root, TEMPLATES_DIR, 'People.md');
-      const edited = '---\ndate_created: "{{date}}"\ntitle: "{{title}}"\ntags: []\n---\n# {{title}}\n\n## Mine\n';
-      await writeFile(target, edited);
+      const packagedBytes = await readFile(target, 'utf8');
+      await writeFile(target, '# mine now\n');
 
       const update = await runCli(['update', '--json'], { cwd: tmp.root, env });
       expect(update.exitCode).toBe(0);
-      expect(await readFile(target, 'utf8')).toBe(edited);
-      const findings = JSON.parse(update.stdout).findings as { code: string; subject?: string }[];
-      const modified = findings.find((f) => f.code === 'templates.locally_modified');
-      expect(modified?.subject).toBe('People');
+      expect(await readFile(target, 'utf8')).toBe(packagedBytes);
+      const findings = JSON.parse(update.stdout).findings as { code: string }[];
+      expect(findings.map((f) => f.code)).not.toContain('templates.locally_modified');
+
+      // And a house variant, under its own name, is left alone.
+      const own = path.join(tmp.root, TEMPLATES_DIR, 'Meeting.md');
+      await writeFile(own, '# our own shape\n');
+      const second = await runCli(['update', '--json'], { cwd: tmp.root, env });
+      expect(JSON.parse(second.stdout).data.changed).toEqual([]);
+      expect(await readFile(own, 'utf8')).toBe('# our own shape\n');
     } finally {
       await tmp.cleanup();
     }

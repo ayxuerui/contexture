@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto';
 import { mkdir, readFile, readdir, rm } from 'node:fs/promises';
 import path from 'node:path';
 import { DEFAULT_INSTALLED_TEMPLATES } from '../config/defaults.js';
@@ -8,19 +7,20 @@ import { writeFileAtomic } from './fs/atomic.js';
 import { packagedTemplate } from './templates.js';
 
 /**
- * standardize-note-templates: the note templates a store starts a note from.
+ * The note templates a store starts a note from.
  *
- * Two existing patterns, combined. Rendering follows `convention-doc.ts` — the
- * prose is packaged markdown, substituted against the store's own configuration,
- * so a vocabulary change reaches the templates rather than silently diverging
- * from the graph that reads them. Ownership follows the vendored-skill half of
- * `skills.ts` — a record with a content hash, not a marker in the file.
+ * A template is FIXED content — the same bytes in every store, no substitution —
+ * so this module delivers files rather than rendering them. That was a
+ * deliberate narrowing: making a template follow a per-store vocabulary bought
+ * synchronisation between two things only one of which needed to exist.
  *
- * The record, and not an in-file header, is the whole point (design D2): a
- * template's bytes are copied into a note, so an "Owned by contexture" comment
- * would appear at the top of every note the store ever writes. This module is
- * deliberately separate from `skills.ts` for the same reason — the two ownership
- * marks must not be confused.
+ * Ownership follows the NAME, and the record is a list of the names contexture
+ * delivered. It cannot be a marker inside the file: a template's bytes are
+ * copied into a note, so an "Owned by contexture" comment would appear at the
+ * top of every note the store ever writes. This module stays separate from
+ * `skills.ts` for that reason — a vendored skill's contract looks alike and is
+ * the opposite, preserving an operator's edit because contexture may not modify
+ * a file it did not author. It authored every one of these.
  */
 
 /** The record naming what contexture delivered, sibling to the templates it names. */
@@ -36,13 +36,15 @@ export const TEMPLATES_RECORD_FILE_NAME = '.ctxr-templates.json';
 export const NOTE_TEMPLATE_PLACEHOLDERS = ['{{title}}', '{{date}}'] as const;
 
 export interface NoteTemplateRecord {
-  /** Template name (no extension) -> sha256 of the rendered bytes contexture wrote. */
-  templates: Record<string, string>;
+  /**
+   * The template names contexture delivered. Not hashes: ownership follows the
+   * packaged library's names, and byte-stability is decided by comparing a file
+   * to the bytes it should have. The record's only job is remembering that a
+   * name was contexture's, so a template the library later drops can still be
+   * removed — nothing else remembers that.
+   */
+  templates: string[];
   ctxrVersion?: string;
-}
-
-function sha256(text: string): string {
-  return createHash('sha256').update(text, 'utf8').digest('hex');
 }
 
 async function readIfExists(absolutePath: string): Promise<string | undefined> {
@@ -84,8 +86,16 @@ async function readRecord(templatesDir: string): Promise<NoteTemplateRecord | un
   const raw = await readIfExists(path.join(templatesDir, TEMPLATES_RECORD_FILE_NAME));
   if (raw === undefined) return undefined;
   try {
-    const parsed = JSON.parse(raw) as NoteTemplateRecord;
-    return parsed.templates && typeof parsed.templates === 'object' ? parsed : undefined;
+    const parsed = JSON.parse(raw) as { templates?: unknown; ctxrVersion?: string };
+    // own-the-shipped-templates: the previous shape was `{name: hash}`. Read the
+    // names out of either form so a store converges on its next update with
+    // nothing to run.
+    const names = Array.isArray(parsed.templates)
+      ? parsed.templates.filter((n): n is string => typeof n === 'string')
+      : parsed.templates && typeof parsed.templates === 'object'
+        ? Object.keys(parsed.templates as Record<string, unknown>)
+        : undefined;
+    return names === undefined ? undefined : { templates: names, ctxrVersion: parsed.ctxrVersion };
   } catch {
     return undefined;
   }
@@ -93,14 +103,14 @@ async function readRecord(templatesDir: string): Promise<NoteTemplateRecord | un
 
 /**
  * Brings every note template a store declares (`config.templates.installed`) to
- * the packaged version rendered for this store, and removes a previously
- * installed template the store no longer wants.
+ * the packaged version, and removes one it no longer declares.
  *
- * The hash in the record decides everything: it matches, so contexture wrote
- * what is on disk and may rewrite it; it does not, so an operator edited the
- * file and it is left exactly as it is with a finding naming it. A file the
- * record does not name is the store's own kind and is never read, rewritten, or
- * removed.
+ * own-the-shipped-templates: ownership follows the NAME. A name the packaged
+ * library uses is contexture's and is rewritten unconditionally — a shipped
+ * template is a starting shape, not content, so an edit to one is a divergence
+ * rather than operator work to preserve. Every other name at the path is the
+ * store's own kind and is never read, rewritten, or removed; that is where a
+ * house variant belongs.
  */
 export async function syncNoteTemplates(
   root: string,
@@ -108,12 +118,11 @@ export async function syncNoteTemplates(
   ctxrVersion: string,
 ): Promise<{ changed: string[]; findings: Finding[] }> {
   const changed: string[] = [];
-  const findings: Finding[] = [];
   const templatesDir = path.join(root, config.templates.path);
   const packaged = new Set<string>(PACKAGED_TEMPLATE_NAMES);
   const wanted = config.templates.installed.filter((name) => packaged.has(name));
-  const previous = (await readRecord(templatesDir))?.templates ?? {};
-  const next: Record<string, string> = {};
+  const previous = (await readRecord(templatesDir))?.templates ?? [];
+  const delivered: string[] = [];
 
   function relative(name: string): string {
     return path.join(config.templates.path, `${name}.md`).split(path.sep).join('/');
@@ -121,56 +130,32 @@ export async function syncNoteTemplates(
 
   for (const name of wanted) {
     const target = path.join(templatesDir, `${name}.md`);
-    const onDisk = await readIfExists(target);
-    const recorded = previous[name];
-
-    if (onDisk !== undefined && recorded === undefined) {
-      // The record never named it, so it is the store's own file at a packaged
-      // name. Leave it alone rather than claiming it.
-      continue;
-    }
-    if (onDisk !== undefined && recorded !== undefined && sha256(onDisk) !== recorded) {
-      findings.push({
-        code: 'templates.locally_modified',
-        severity: 'warning',
-        message: `"${relative(name)}" has been modified locally — left unchanged rather than refreshed.`,
-        subject: name,
-      });
-      next[name] = recorded;
-      continue;
-    }
-
     const rendered = renderNoteTemplate(name, config);
-    next[name] = sha256(rendered);
-    if (onDisk === rendered) continue;
+    delivered.push(name);
+    // Unconditional: a local edit is a divergence from the shape every store
+    // shares, not operator work to preserve. Comparing the bytes is what keeps a
+    // second update from writing anything.
+    if ((await readIfExists(target)) === rendered) continue;
     await mkdir(templatesDir, { recursive: true });
     await writeFileAtomic(target, rendered);
     changed.push(relative(name));
   }
 
-  // A template the record names that the store no longer installs, or that
-  // contexture no longer packages: remove it when unmodified, report it when not.
-  for (const [name, recorded] of Object.entries(previous)) {
-    if (name in next) continue;
+  // A name the record remembers that the store no longer declares, or that the
+  // library no longer carries. Removed whether or not it was edited: an edited
+  // copy of a retired template is a file at a contexture-shaped name that
+  // contexture no longer explains.
+  const keep = new Set(delivered);
+  for (const name of previous) {
+    if (keep.has(name)) continue;
     const target = path.join(templatesDir, `${name}.md`);
-    const onDisk = await readIfExists(target);
-    if (onDisk === undefined) continue;
-    if (sha256(onDisk) !== recorded) {
-      findings.push({
-        code: 'templates.locally_modified',
-        severity: 'warning',
-        message: `"${relative(name)}" is no longer installed but has been modified locally — left on disk rather than removed.`,
-        subject: name,
-      });
-      next[name] = recorded;
-      continue;
-    }
+    if ((await readIfExists(target)) === undefined) continue;
     await rm(target, { force: true });
     changed.push(relative(name));
   }
 
-  await writeRecord(templatesDir, config, next, ctxrVersion, changed);
-  return { changed, findings };
+  await writeRecord(templatesDir, config, delivered, ctxrVersion, changed);
+  return { changed, findings: [] };
 }
 
 /**
@@ -182,15 +167,15 @@ export async function syncNoteTemplates(
 async function writeRecord(
   templatesDir: string,
   config: StoreConfig,
-  templates: Record<string, string>,
+  templates: string[],
   ctxrVersion: string,
   changed: string[],
 ): Promise<void> {
   const recordPath = path.join(templatesDir, TEMPLATES_RECORD_FILE_NAME);
-  const sorted = Object.fromEntries(Object.entries(templates).sort(([a], [b]) => a.localeCompare(b)));
+  const sorted = [...templates].sort((a, b) => a.localeCompare(b));
   const existing = await readIfExists(recordPath);
 
-  if (Object.keys(sorted).length === 0) {
+  if (sorted.length === 0) {
     if (existing !== undefined) {
       await rm(recordPath, { force: true });
       changed.push(path.join(config.templates.path, TEMPLATES_RECORD_FILE_NAME).split(path.sep).join('/'));
