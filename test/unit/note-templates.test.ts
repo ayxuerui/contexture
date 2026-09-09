@@ -174,7 +174,7 @@ describe('syncNoteTemplates', () => {
         expect(changed).toContain(`${TEMPLATES_PATH}${name}.md`);
       }
       const record = JSON.parse(await readFile(at(tmp.root, TEMPLATES_RECORD_FILE_NAME), 'utf8'));
-      expect(Object.keys(record.templates).sort()).toEqual([...DEFAULT_INSTALLED_TEMPLATES].sort());
+      expect([...record.templates].sort()).toEqual([...DEFAULT_INSTALLED_TEMPLATES].sort());
       expect(record.ctxrVersion).toBe('0.0.0-test');
     } finally {
       await tmp.cleanup();
@@ -193,46 +193,22 @@ describe('syncNoteTemplates', () => {
     }
   });
 
-  it('rewrites an unmodified template whose packaged bytes changed', async () => {
+  it('rewrites a template whose bytes differ from the packaged version', async () => {
     const tmp = await makeTmpDir();
     try {
       await syncNoteTemplates(tmp.root, makeConfig(), '0.0.0-test');
-      // Simulate a release that changed the packaged file: the copy on disk no
-      // longer matches a fresh render, but still matches its recorded hash.
-      const stale = renderNoteTemplate('Concept', makeConfig()).replace('## Concept', '## Concept (old)');
-      await writeFile(at(tmp.root, 'Concept.md'), stale);
-      const { templates } = JSON.parse(await readFile(at(tmp.root, TEMPLATES_RECORD_FILE_NAME), 'utf8'));
-      const { createHash } = await import('node:crypto');
-      templates.Concept = createHash('sha256').update(stale, 'utf8').digest('hex');
-      await writeFile(at(tmp.root, TEMPLATES_RECORD_FILE_NAME), `${JSON.stringify({ templates, ctxrVersion: '0.0.0-test' }, null, 2)}\n`);
+      await writeFile(at(tmp.root, 'Concept.md'), '## Concept (stale)\n');
 
       const { changed } = await syncNoteTemplates(tmp.root, makeConfig(), '0.0.0-test');
       expect(changed).toContain(`${TEMPLATES_PATH}Concept.md`);
       expect(changed).not.toContain(`${TEMPLATES_PATH}People.md`);
-      expect(await readFile(at(tmp.root, 'Concept.md'), 'utf8')).not.toContain('## Concept (old)');
+      expect(await readFile(at(tmp.root, 'Concept.md'), 'utf8')).not.toContain('(stale)');
     } finally {
       await tmp.cleanup();
     }
   });
 
-  it("preserves and reports an operator's edit rather than overwriting it", async () => {
-    const tmp = await makeTmpDir();
-    try {
-      await syncNoteTemplates(tmp.root, makeConfig(), '0.0.0-test');
-      const edited = '---\ndate_created: "{{date}}"\ntitle: "{{title}}"\ntags: []\n---\n# {{title}}\n\n## Mine\n';
-      await writeFile(at(tmp.root, 'Concept.md'), edited);
-
-      const { changed, findings } = await syncNoteTemplates(tmp.root, makeConfig(), '0.0.0-test');
-      expect(await readFile(at(tmp.root, 'Concept.md'), 'utf8')).toBe(edited);
-      expect(changed).not.toContain(`${TEMPLATES_PATH}Concept.md`);
-      expect(findings.map((f) => f.code)).toContain('templates.locally_modified');
-      expect(findings.find((f) => f.code === 'templates.locally_modified')?.subject).toBe('Concept');
-    } finally {
-      await tmp.cleanup();
-    }
-  });
-
-  it('never touches a file the record does not name', async () => {
+  it('never touches a file under a name the packaged library does not use', async () => {
     const tmp = await makeTmpDir();
     try {
       await mkdir(at(tmp.root), { recursive: true });
@@ -247,14 +223,15 @@ describe('syncNoteTemplates', () => {
     }
   });
 
-  it("does not claim a store's own file that happens to sit at a packaged name", async () => {
+  it('claims a packaged name even when the store got there first', async () => {
+    // Ownership follows the name: two files claiming one name is the ambiguity
+    // the old hash rule tried to resolve. A house variant takes another name.
     const tmp = await makeTmpDir();
     try {
       await mkdir(at(tmp.root), { recursive: true });
-      const own = '# my own Deal shape\n';
-      await writeFile(at(tmp.root, 'Deal.md'), own);
+      await writeFile(at(tmp.root, 'Deal.md'), '# my own Deal shape\n');
       await syncNoteTemplates(tmp.root, makeConfig(), '0.0.0-test');
-      expect(await readFile(at(tmp.root, 'Deal.md'), 'utf8')).toBe(own);
+      expect(await readFile(at(tmp.root, 'Deal.md'), 'utf8')).toBe(renderNoteTemplate('Deal', makeConfig()));
     } finally {
       await tmp.cleanup();
     }
@@ -286,14 +263,34 @@ describe('syncNoteTemplates', () => {
     }
   });
 
-  it('leaves a dropped-but-modified template on disk and reports it', async () => {
+  it('removes a dropped template even when it was edited', async () => {
+    // An edited copy of a template contexture no longer ships is a file at a
+    // contexture-shaped name that contexture no longer explains.
     const tmp = await makeTmpDir();
     try {
       await syncNoteTemplates(tmp.root, makeConfig(), '0.0.0-test');
       await writeFile(at(tmp.root, 'Deal.md'), '# edited\n');
       const { findings } = await syncNoteTemplates(tmp.root, makeConfig({ installed: ['Note'] }), '0.0.0-test');
-      await expect(readFile(at(tmp.root, 'Deal.md'), 'utf8')).resolves.toBe('# edited\n');
-      expect(findings.map((f) => f.subject)).toContain('Deal');
+      await expect(readFile(at(tmp.root, 'Deal.md'), 'utf8')).rejects.toThrow();
+      expect(findings).toEqual([]);
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('converges a store carrying the previous {name: hash} record', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      await syncNoteTemplates(tmp.root, makeConfig(), '0.0.0-test');
+      await writeFile(
+        at(tmp.root, TEMPLATES_RECORD_FILE_NAME),
+        `${JSON.stringify({ templates: { Note: 'deadbeef', Concept: 'cafe' }, ctxrVersion: '0.0.0-old' }, null, 2)}\n`,
+      );
+      const { findings } = await syncNoteTemplates(tmp.root, makeConfig(), '0.0.0-test');
+      expect(findings).toEqual([]);
+      const record = JSON.parse(await readFile(at(tmp.root, TEMPLATES_RECORD_FILE_NAME), 'utf8'));
+      expect(Array.isArray(record.templates)).toBe(true);
+      expect([...record.templates].sort()).toEqual([...DEFAULT_INSTALLED_TEMPLATES].sort());
     } finally {
       await tmp.cleanup();
     }
