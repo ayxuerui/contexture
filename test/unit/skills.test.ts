@@ -240,6 +240,17 @@ describe('owned-skills-expansion: each skill carries its load-bearing rule (task
     expect(body.indexOf('git push')).toBeLessThan(body.indexOf('`gh pr create'));
     expect(s).not.toContain('ctxr session submit'); // no such command exists anymore
     expect(s).toContain('Verify before any retry');
+    // submit-states-its-entry-condition: the ungated push above is only sound because entering the
+    // skill required a request. The entry condition is the thing that makes that true, so it is
+    // asserted in the same test rather than a separate one — drop it and the assertions above stop
+    // describing a consent model and start describing an unconditional pipeline.
+    expect(s).toContain('## When');
+    expect(s).toContain('Anti-triggers');
+    expect(body.indexOf('## When')).toBeLessThan(body.indexOf('Re-scan (mandatory'));
+    // the entry condition names the failure it exists to stop: finishing the work is not the signal
+    expect(s).toMatch(/merely finished the task/);
+    // and the handoff names land's target, so landing is reachable without reconstructing it
+    expect(s).toContain("pull request's number");
   });
 
   it('land: reads pull-request state before any side effect, merges with gh, confirms after, syncs by fast-forward, and routes conflicts to the lifecycle skill (session-keeps-only-what-git-cannot-do)', () => {
