@@ -189,6 +189,11 @@ describe('owned-skills-expansion: each skill carries its load-bearing rule (task
   it('session lifecycle: start, re-scan discipline, conflict playbook, sequencing, reclaiming — and none of ctxr-submit/ctxr-land\'s own steps (session-keeps-only-what-git-cannot-do)', () => {
     const s = skills['ctxr-session-lifecycle'];
     expect(s).toContain('## Start');
+    // lifecycle-names-the-resting-state: the frame describes how a session RESTS, not only how it
+    // starts and how it is reclaimed. Without this, the only arc the document draws runs
+    // start -> work -> submit, and an agent infers submit from having finished a deliverable.
+    expect(s).toContain('## Between turns');
+    expect(s).toMatch(/A session is not a turn/);
     expect(s).toContain('## Re-scan before any plan');
     expect(s).toContain('## Conflict playbook');
     expect(s).toContain('## Multi-PR sequencing');
