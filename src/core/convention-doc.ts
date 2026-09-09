@@ -1,6 +1,8 @@
 import { mkdir, readFile, rm } from 'node:fs/promises';
 import path from 'node:path';
 import {
+  RELATION_DIRECTEDNESS_NOTE,
+  RELATION_VOCABULARY,
   DEFAULT_BASELINE_CONVENTIONS_FILE_NAME,
   DEFAULT_HOUSE_CONVENTIONS_FILE_NAME,
   LEGACY_BASELINE_CONVENTION_FILE_NAME,
@@ -16,14 +18,20 @@ function conventionTemplate(name: string): string {
   return packagedTemplate('conventions', name);
 }
 
-function relationVocabularyLines(config: StoreConfig): string[] {
-  const { relations } = config.retrieval;
-  if (relations.length === 0) {
-    return ['This store declares no relation vocabulary (`retrieval.relations`) — every link is untyped.'];
-  }
-  const named = relations.map((name) => `**${name}**`).join(', ');
+/**
+ * fix-the-note-compass: the vocabulary is fixed, so there is no empty case to
+ * branch on. Each name is rendered with its definition, because the question an
+ * agent has is which of two adjacent relations a link belongs under, and the
+ * directedness note is rendered with them, because assuming the reciprocal is
+ * written for you is the way to leave half the graph unwritten.
+ */
+function relationVocabularyLines(): string[] {
   return [
-    `This store's configured relation vocabulary, in link-section order: ${named}. A link under one of these section headings in a note's body is typed accordingly; a link under any other heading is untyped.`,
+    "A link under one of these section headings in a note's body is recorded as an edge of that type; a link under any other heading is untyped.",
+    '',
+    ...RELATION_VOCABULARY.map((relation) => `- **${relation.name}** — ${relation.definition}`),
+    '',
+    RELATION_DIRECTEDNESS_NOTE,
   ];
 }
 
@@ -41,7 +49,7 @@ export function renderBaselineConventions(config: StoreConfig): string {
     .replaceAll('__ARCHIVE_DESTINATION__', config.organize.archive_destination)
     .replaceAll('__DEFAULT_BRANCH__', config.git.default_branch)
     .replaceAll('__WORKTREES_PATH__', config.session.worktrees_path);
-  text = substituteBlock(text, '__RELATION_VOCABULARY__', relationVocabularyLines(config));
+  text = substituteBlock(text, '__RELATION_VOCABULARY__', relationVocabularyLines());
   return `${text}\n`;
 }
 

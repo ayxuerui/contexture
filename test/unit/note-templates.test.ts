@@ -1,7 +1,7 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_INSTALLED_TEMPLATES, SHIPPED_DEFAULTS } from '../../src/config/defaults.js';
+import { DEFAULT_INSTALLED_TEMPLATES, RELATION_VOCABULARY, SHIPPED_DEFAULTS } from '../../src/config/defaults.js';
 import type { StoreConfig } from '../../src/config/schema.js';
 import {
   TEMPLATES_RECORD_FILE_NAME,
@@ -13,7 +13,7 @@ import { makeTmpDir } from '../helpers/tmp-store.js';
 
 const TEMPLATES_PATH = '.contexture/templates/';
 
-function makeConfig(overrides: { relations?: string[]; installed?: string[] } = {}): StoreConfig {
+function makeConfig(overrides: { installed?: string[] } = {}): StoreConfig {
   return {
     schema_version: 1,
     taxonomy: { profile: 'para', layers: [] },
@@ -22,7 +22,6 @@ function makeConfig(overrides: { relations?: string[]; installed?: string[] } = 
       exclude_paths: [],
       demote_paths: [],
       gather_max_notes: 50,
-      relations: overrides.relations ?? [],
       graph: { cluster_depth: 2, hub_top: 8, bridge_top: 10, orphan_exempt_clusters: [] },
     },
     git: { default_branch: 'main' },
@@ -94,16 +93,26 @@ describe('the packaged note-template library', () => {
     }
   });
 
-  it('carries the relation sections literally, with a definition for each', () => {
-    // Fixed, not rendered: the compass is part of the template's content, and each
-    // heading is followed by prose saying what belongs under it — a bare name does
-    // not tell an agent how to choose between Similar and Upstream.
-    const lines = packaged('Concept').split('\n');
-    for (const relation of ['Upstream', 'Downstream', 'Similar', 'Opposing']) {
-      const at = lines.indexOf(`## ${relation}`);
-      expect(at, relation).toBeGreaterThan(-1);
-      expect(lines[at + 1], `${relation} definition`).toMatch(/^<!--/);
+  it('carries the relation sections literally, each with the definition from the constant', () => {
+    // Fixed, not rendered — so the definitions are a copy, and this is what stops
+    // the copy rotting: every word of each definition must appear under its heading.
+    const text = packaged('Concept');
+    const lines = text.split('\n');
+    for (const relation of RELATION_VOCABULARY) {
+      const at = lines.indexOf(`## ${relation.name}`);
+      expect(at, relation.name).toBeGreaterThan(-1);
+      const comment = lines.slice(at + 1).join(' ');
+      const words = relation.definition.replace(/\s+/g, ' ').split(' ');
+      for (const word of words) {
+        expect(comment.includes(word), `${relation.name}: "${word}" missing from the template comment`).toBe(true);
+      }
     }
+  });
+
+  it('carries a source section distinguished from the frontmatter ingest writes', () => {
+    const text = packaged('Concept');
+    expect(text).toContain('## Source');
+    expect(text).toContain('`sources:`');
   });
 
   it('leaves no unsubstituted block placeholder in any packaged template', () => {
@@ -147,10 +156,9 @@ describe('renderNoteTemplate', () => {
     expect(text).toBe(`${packagedTemplate('notes', 'Concept').replace(/\n+$/, '')}\n`);
   });
 
-  it('does not vary with the store\'s relation vocabulary', () => {
-    // The compass is fixed content. A store declaring its own names changes the
-    // graph's edge types, not what a template says.
-    expect(renderNoteTemplate('Concept', makeConfig({ relations: ['supports'] }))).toBe(
+  it('does not vary with the store configuration', () => {
+    // Fixed content: two stores installing the same template get the same bytes.
+    expect(renderNoteTemplate('Concept', makeConfig({ installed: ['Concept'] }))).toBe(
       renderNoteTemplate('Concept', makeConfig()),
     );
   });
