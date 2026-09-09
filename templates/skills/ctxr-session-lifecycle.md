@@ -29,6 +29,16 @@ deferring is a normal answer, and the session is unaffected by it. A `cli.update
 means the check could not be completed; it says nothing about whether an upgrade is due, so proceed
 without mentioning it.
 
+## Between turns
+
+A session is not a turn. The worktree persists across as many exchanges as the work takes, and ending a
+turn with uncommitted changes on the branch is the session's normal resting state — not an obligation to
+discharge before replying. Say in one line what is uncommitted and which worktree holds it, then stop.
+
+Nothing about a finished piece of work ends the session. `ctxr-submit` is what ends it, and it waits to
+be asked — see its own entry condition. An agent that treats delivering the thing it was asked for as the
+signal to wrap up will submit into the middle of a conversation that had more coming.
+
 ## Re-scan before any plan
 
 Re-scan whenever state may have moved under you — before presenting a plan, before running `ctxr-submit`,

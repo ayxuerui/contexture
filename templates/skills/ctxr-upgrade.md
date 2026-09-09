@@ -37,7 +37,8 @@ step 3 gates on the operator rather than proceeding from the fact that a newer r
 
 6. Land the re-render as its own pull request. `ctxr update` produces generated-file churn — AGENTS.md
    sections, skill copies, hooks, adapter outputs — and mixing it into unrelated work makes both
-   harder to review. Follow `ctxr-submit`, then `ctxr-land`.
+   harder to review. Submit it with `ctxr-submit` when the re-render is ready to go out; landing it is a
+   separate decision afterwards, and `ctxr-land` keeps its own confirmation.
 
 If step 4 or 5 fails, say which step and what the command reported. A partial upgrade — new executable,
 un-re-rendered store — is a real state worth naming: the store still works, and step 5 can be re-run on
