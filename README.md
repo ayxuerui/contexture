@@ -20,6 +20,8 @@ Requires Node 22.13 or newer.
 
 The package is `ctxr-cli`, the command it installs is `ctxr`, and the project is Contexture — which is why a store’s own files keep the full name (`contexture.yaml`, `.contexture/`, `CONTEXTURE_*`). A `contexture` alias executable is installed too; docs and generated files always say `ctxr`.
 
+Running an agent harness in a container? [contexture-images](https://github.com/ayxuerui/contexture-images) publishes harness runtimes with `ctxr` already installed — currently `ghcr.io/ayxuerui/contexture-hermes`, tagged by the `ctxr` version it carries. Nothing here depends on it; `ctxr` itself is distributed only through npm.
+
 ## Quickstart
 
 ```sh
