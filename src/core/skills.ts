@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { mkdir, readdir, readFile, rm } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { DEFAULT_HOUSE_CONVENTIONS_FILE_NAME } from '../config/defaults.js';
+import { DEFAULT_HOUSE_CONVENTIONS_FILE_NAME, RELATION_DIRECTEDNESS_NOTE, RELATION_VOCABULARY } from '../config/defaults.js';
 import type { StoreConfig, TaxonomyLayerConfig } from '../config/schema.js';
 import type { Finding } from './envelope.js';
 import { scanDocsDir, SKILL_FILE_NAME, type ScannedDoc } from './conventions.js';
@@ -142,14 +142,22 @@ const PLACEMENT: SkillSeed = {
   file: 'ctxr-placement',
   name: 'Placement',
   description: 'Choose the right taxonomy layer and location for a new or relocated note in this contexture store, with the reasoning.',
-  body: (config) => skillTemplate('ctxr-placement').replace('__LAYER_STEP__', placementLayerStep(config).join('\n')).split('\n'),
+  body: (config) =>
+    skillTemplate('ctxr-placement')
+      .replace('__LAYER_STEP__', placementLayerStep(config).join('\n'))
+      .replaceAll('__TEMPLATES_PATH__', config.templates.path)
+      .split('\n'),
 };
 
 const INGEST_ORCHESTRATION: SkillSeed = {
   file: 'ctxr-ingest-orchestration',
   name: 'Ingest orchestration',
   description: 'Capture raw material into the inbox, run the dedupe check, read the existing cluster, decide new/update/merge/restructure, and ingest with source identity via the contexture CLI.',
-  body: () => skillTemplate('ctxr-ingest-orchestration').replaceAll('__GRAPH_DOCUMENT_PATH__', GRAPH_DOCUMENT_RELATIVE_PATH).split('\n'),
+  body: (config) =>
+    skillTemplate('ctxr-ingest-orchestration')
+      .replaceAll('__GRAPH_DOCUMENT_PATH__', GRAPH_DOCUMENT_RELATIVE_PATH)
+      .replaceAll('__TEMPLATES_PATH__', config.templates.path)
+      .split('\n'),
 };
 
 const CONNECTION_FINDING: SkillSeed = {
@@ -164,18 +172,21 @@ const CONNECTION_FINDING: SkillSeed = {
  * relation vocabulary (the same names `ctxr graph build` types edges from)
  * and falls back to one group — never a relation name of its own.
  */
-function relationGroupingStep(relations: readonly string[]): string[] {
-  if (relations.length === 0) {
-    return [
-      '5. This store configures no relation vocabulary (`retrieval.relations` is empty), so present proposals as',
-      '   a single **Related** group. Format each item as `[[Note]]` — reason.',
-    ];
-  }
+/**
+ * fix-the-note-compass: the vocabulary is fixed, so there is no single-group
+ * fallback to fall back to. Each group carries its definition — the agent's
+ * question is which of two adjacent relations a proposal belongs under, and a
+ * bare name does not answer it.
+ */
+function relationGroupingStep(): string[] {
   return [
-    `5. Group proposals by this store's configured relation vocabulary: ${relations.map((r) => `**${r}**`).join(', ')}`,
-    '   (`retrieval.relations` — the section headings carrying these names are what `ctxr graph build` types',
-    '   edges from, so a link written under the right heading becomes a typed edge on the next build). Format',
-    '   each item as `[[Note]]` — reason.',
+    '5. Group proposals by the relation vocabulary. The section headings carrying these names are what',
+    '   `ctxr graph build` types edges from, so a link written under the right heading becomes a typed edge',
+    '   on the next build. Format each item as `[[Note]]` — reason.',
+    '',
+    ...RELATION_VOCABULARY.map((relation) => `   - **${relation.name}** — ${relation.definition}`),
+    '',
+    `   ${RELATION_DIRECTEDNESS_NOTE}`,
   ];
 }
 
@@ -183,7 +194,7 @@ const CONNECTION_PROPOSAL: SkillSeed = {
   file: 'ctxr-connection-proposal',
   name: 'Connection proposal',
   description: 'Discover the links a note should have, read each candidate before proposing, group by the store relation vocabulary, and write only approved links.',
-  body: (config) => skillTemplate('ctxr-connection-proposal').replace('__RELATION_GROUPING_STEP__', relationGroupingStep(config.retrieval.relations).join('\n')).split('\n'),
+  body: (config) => skillTemplate('ctxr-connection-proposal').replace('__RELATION_GROUPING_STEP__', relationGroupingStep().join('\n')).split('\n'),
 };
 
 const ROLLUP: SkillSeed = {
@@ -245,6 +256,7 @@ const SESSION_CAPTURE: SkillSeed = {
   body: (config) =>
     skillTemplate('ctxr-session-capture')
       .replaceAll('__HOUSE_CONVENTIONS_PATH__', houseConventionsPath(config))
+      .replaceAll('__TEMPLATES_PATH__', config.templates.path)
       .split('\n'),
 };
 

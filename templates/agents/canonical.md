@@ -8,6 +8,10 @@ Every contexture command resolves the store root in this order: an explicit `--r
 
 - Source-identity fields (assigned only by `ctxr ingest`, never hand-written): `source_type`, `source_id`, `source_hash`, `ingested`.
 
+### Note templates
+
+A new note starts from a template under `__TEMPLATES_PATH__`, not from a blank file and not by copying whatever sibling happens to be nearby. Substitute `{{title}}` and `{{date}}` as you write it — no command expands them, and a note that lands with one still in it is reported by `ctxr lint`. A template is never a note: nothing under that path is catalogued, graphed, or retrieved. Add your own kinds there alongside the shipped ones; contexture only ever rewrites the ones it delivered.
+
 ### Write path
 
 Every write to this store happens inside a session worktree, never directly on the default branch: `ctxr session start` creates one, then `ctxr-submit` validates with `ctxr doctor`, commits, pushes, and opens (or reports how to open) a pull request. Do not edit files in the store root directly.

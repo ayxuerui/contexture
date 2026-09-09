@@ -21,7 +21,8 @@ import {
   DEFAULT_INBOX_PATH,
   DEFAULT_MISSION_PATH,
   DEFAULT_PUBLISH_PATH,
-  DEFAULT_RELATIONS,
+  DEFAULT_TEMPLATES_PATH,
+  DEFAULT_INSTALLED_TEMPLATES,
   DEFAULT_ROLLUP_STALE_DAYS,
   DEFAULT_SESSION_BRANCH_PREFIX,
   DEFAULT_SKILLS_PATH,
@@ -49,6 +50,7 @@ import {
   agentsMdPath,
 } from '../core/agents-doc.js';
 import { seedHouseConventionsFile } from '../core/convention-doc.js';
+import { syncNoteTemplates } from '../core/note-templates.js';
 import { syncShippedSkills, syncVendoredSkills } from '../core/skills.js';
 import { bridgeHarnessSkills } from '../core/harness/bridge.js';
 import { reconcileStore, WORKTREES_GITIGNORE_FENCE } from '../core/reconcile.js';
@@ -308,7 +310,6 @@ async function runInitCore(env: RunEnv, flags: InitFlags): Promise<RunInitResult
       // archived material stays retrievable and sorts last (D11).
       demote_paths: [archiveDestination],
       gather_max_notes: DEFAULT_GATHER_MAX_NOTES,
-      relations: [...DEFAULT_RELATIONS],
       graph: { ...DEFAULT_GRAPH_SETTINGS, orphan_exempt_clusters: [] },
     },
     git: { default_branch: defaultBranch },
@@ -316,6 +317,7 @@ async function runInitCore(env: RunEnv, flags: InitFlags): Promise<RunInitResult
     write_lifecycle: { diff_size_ceiling_lines: DEFAULT_DIFF_SIZE_CEILING_LINES, writable_paths: [] },
     catalog: { path: DEFAULT_CATALOG_PATH, section_max_bytes: DEFAULT_CATALOG_SECTION_MAX_BYTES },
     publish: { path: DEFAULT_PUBLISH_PATH },
+    templates: { path: DEFAULT_TEMPLATES_PATH, installed: [...DEFAULT_INSTALLED_TEMPLATES] },
     skills: { vendored: [...DEFAULT_VENDORED_SKILLS] },
     update_check: SHIPPED_DEFAULTS.update_check,
     ingest: { inbox_path: DEFAULT_INBOX_PATH, capture_root: DEFAULT_CAPTURE_ROOT, tracking_params: [...DEFAULT_TRACKING_PARAMS] },
@@ -348,6 +350,11 @@ async function runInitCore(env: RunEnv, flags: InitFlags): Promise<RunInitResult
   const { changed: vendoredSkillFilesCreated, findings: vendoredFindings } = await syncVendoredSkills(root, config, CLI_VERSION);
   findings.push(...vendoredFindings);
   const bridged = await bridgeHarnessSkills(root, config);
+  // standardize-note-templates: the declared note templates, rendered against
+  // this store's own configuration. Ordered with the other tool-owned content
+  // rather than with the layers below, since nothing in AGENTS.md reads it.
+  const { changed: templateFilesCreated, findings: templateFindings } = await syncNoteTemplates(root, config, CLI_VERSION);
+  findings.push(...templateFindings);
   await buildAgentsConventionsSection(root, config);
 
   const guidanceFilesCreated = [
@@ -393,6 +400,7 @@ async function runInitCore(env: RunEnv, flags: InitFlags): Promise<RunInitResult
     ...layerGitkeeps,
     ...skillFilesCreated,
     ...vendoredSkillFilesCreated,
+    ...templateFilesCreated,
     ...bridgedPaths,
     ...guidanceFilesCreated,
     ...hookFiles,

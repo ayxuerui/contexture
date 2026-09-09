@@ -8,7 +8,7 @@ Contexture turns a git repository into shared, durable knowledge, and ships the 
 
 This is one layer of agent memory — the shared one. Your harness keeps what an agent knows about you and itself; contexture keeps what *you* know, reviewed and versioned, outliving any single agent or session. Claude Code, Codex, Cursor, Cline, Gemini CLI, a cron job, or you at a terminal all operate the same store through the same files.
 
-A **store** is an ordinary git repository: markdown notes joined by `[[wikilinks]]`, with `contexture.yaml` as the single source of truth for how that particular store is shaped — its taxonomy, its paths, its relation vocabulary. `ctxr` is a mechanism-only CLI over it — it builds indexes, enforces invariants, and performs validated writes, but it makes no editorial decisions. The judgment lives in **skills**: portable markdown decision procedures that `ctxr init` installs into the store, which whatever agent you're talking to reads and follows. That split is the whole design, and it's what makes the same store operable from any harness.
+A **store** is an ordinary git repository: markdown notes joined by `[[wikilinks]]`, with `contexture.yaml` as the single source of truth for how that particular store is shaped — its taxonomy and its paths. `ctxr` is a mechanism-only CLI over it — it builds indexes, enforces invariants, and performs validated writes, but it makes no editorial decisions. The judgment lives in **skills**: portable markdown decision procedures that `ctxr init` installs into the store, which whatever agent you're talking to reads and follows. That split is the whole design, and it's what makes the same store operable from any harness.
 
 ## Install
 
@@ -58,11 +58,16 @@ CLAUDE.md                     harness entry file; a one-line managed import of A
   hooks/                      the write-gate shim
   skills/ -> ../.agents/skills   a bridge, so Claude Code auto-discovers the canonical skills
 .agents/skills/               THE canonical skills location, read natively by most harnesses
-  ctxr-*/SKILL.md               13 contexture-owned skills (refreshed by `ctxr update`)
+  ctxr-*/SKILL.md               14 contexture-owned skills (refreshed by `ctxr update`)
   frontend-design/, eli5/       vendored third-party skills, with licenses and provenance
 .contexture/guidance/
   house-conventions.md        your store's own rules — inlined into AGENTS.md verbatim
   mission.md                  the standing "what's active right now" document
+.contexture/templates/
+  Note.md                     the base every note shares — copy it to cut your own kind
+  Concept.md Project.md       the shapes a note starts from (refreshed by `ctxr update`)
+  People.md Company.md Deal.md
+  .ctxr-templates.json        which of these contexture delivered, and their hashes
 .githooks/
   pre-commit                  runs `doctor --staged`
   pre-push                    refuses a push to the default branch
@@ -92,7 +97,7 @@ Two distinctions make the rest of this readable:
 
 **`AGENTS.md`**, with six managed sections: *Store fundamentals* (root resolution, the frontmatter schema, the write path), *Mission*, *Retrieval: which leg to use*, *Capturing and ingesting*, *Placing a new note* (rendered from your actual taxonomy layers), and *Store conventions*.
 
-**The skills**, installed as full copies at `.agents/skills/ctxr-<name>/SKILL.md`. That path is the cross-harness canonical location; a harness that reads its own branded directory instead gets that directory bridged to it (`.claude/skills/` is a symlink), so skill auto-discovery works with no wrapper and no second copy. A harness without auto-discovery reaches the same file by path from `AGENTS.md`. They're contexture-owned — refreshed by `ctxr update`, never hand-edited — and they're written against *your* store's configured taxonomy and relation vocabulary, so no shipped profile's layer names leak into them. Your own skills live alongside, untouched by sync.
+**The skills**, installed as full copies at `.agents/skills/ctxr-<name>/SKILL.md`. That path is the cross-harness canonical location; a harness that reads its own branded directory instead gets that directory bridged to it (`.claude/skills/` is a symlink), so skill auto-discovery works with no wrapper and no second copy. A harness without auto-discovery reaches the same file by path from `AGENTS.md`. They're contexture-owned — refreshed by `ctxr update`, never hand-edited — and they're written against *your* store's configured taxonomy, so no shipped profile's layer names leak into them. Your own skills live alongside, untouched by sync.
 
 | Skill | What it decides |
 | --- | --- |
@@ -216,7 +221,7 @@ ctxr graph query hubs
 ctxr graph query orphans
 ```
 
-The **catalog** is coverage-guaranteed: every retrievable note has exactly one section, so nothing is silently unindexed. Section ids are your layer paths plus `uncategorized` (or a single `notes` section under a zero-layer profile). The **graph** enumerates structure and ranks nothing — neighbors, shortest path, hubs, clusters, bridges, orphans; `--type <relation>` follows one configured relation. `graph build` also writes a human-readable `graph.md` summarizing hubs by cluster. The third leg is **your own grep**, for literal strings the first two can't answer, scoped to exclude `.contexture/`.
+The **catalog** is coverage-guaranteed: every retrievable note has exactly one section, so nothing is silently unindexed. Section ids are your layer paths plus `uncategorized` (or a single `notes` section under a zero-layer profile). The **graph** enumerates structure and ranks nothing — neighbors, shortest path, hubs, clusters, bridges, orphans; `--type <relation>` follows one relation. The vocabulary is fixed, not configurable: a link under `## Upstream` (what this note is built on), `## Downstream` (what follows from it), `## Similar` (what it resembles, where neither depends on the other), or `## Opposing` (what contradicts it) becomes an edge of that type. Edges are directed — naming a note Upstream does not write the reciprocal Downstream edge on it — and a heading outside the four yields an ordinary untyped link. `graph build` also writes a human-readable `graph.md` summarizing hubs by cluster. The third leg is **your own grep**, for literal strings the first two can't answer, scoped to exclude `.contexture/`.
 
 There is no `ctxr search`, and no semantic ranking. That's deliberate, not missing.
 
@@ -230,6 +235,8 @@ ctxr doctor        # invariants — exits non-zero, and gates every commit
 ctxr catalog check --stale
 ctxr archive <path>
 ```
+
+A new note starts from a template under `templates.path` (`.contexture/templates/` by default), never from a blank file and never by copying whichever sibling is nearest — that's how a store's notes drift out of any shape at all. `templates.installed` says which of the packaged library a store wants, defaulting to all of it and meaning "install none" when empty, exactly like `skills.vendored`; your own kinds sit in the same directory and are never touched, since contexture only owns the names it packages. A shipped template is contexture's: edit one and `ctxr update` puts it back. A house variant lives under a name the packaged set doesn't use, which nothing touches. A template is fixed content — the same bytes in every store — so the idea template carries the four relation sections literally, each with a note on what belongs under it, plus a `## Source` section for the prose account of where an idea came from (distinct from the `sources:` frontmatter `ctxr ingest` writes). `{{title}}` and `{{date}}` are the whole placeholder vocabulary; the agent substitutes them as it writes, no command expands them, and `ctxr lint` reports a note that landed with one still in it. An existing note is extended in place, never re-cut from a template.
 
 The `lint` / `doctor` split is the point: lint reports what's *worth reviewing* and never blocks; doctor reports what's *broken* and does. `ctxr archive` retires a note as a single tracked rename into `organize.archive_destination`, leaving its frontmatter byte-identical and reporting every note that linked to it — move it, don't tag it, or the active layers stop meaning anything. (The note must be committed first; archive won't rename something git isn't tracking.)
 

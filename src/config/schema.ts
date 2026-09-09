@@ -69,7 +69,6 @@ const RetrievalSchema = z.object({
   /** compose-the-retrieval-pass spec: the pass's note cap; truncation is reported, never silent. */
   gather_max_notes: z.number().int().positive().default(SHIPPED_DEFAULTS.retrieval.gather_max_notes),
   /** graph-context-document spec: relation names whose section headings type the wikilinks under them; empty = no typed edges. */
-  relations: z.array(z.string().min(1)).default([...SHIPPED_DEFAULTS.retrieval.relations]),
   graph: GraphSettingsSchema.default({ ...SHIPPED_DEFAULTS.retrieval.graph, orphan_exempt_clusters: [] }),
 });
 
@@ -126,6 +125,20 @@ const PublishSchema = z.object({
 const UpdateCheckSchema = z.object({
   enabled: z.boolean().default(SHIPPED_DEFAULTS.update_check.enabled),
   ttl_hours: z.number().positive().default(SHIPPED_DEFAULTS.update_check.ttl_hours),
+});
+
+/**
+ * harness-portability spec (a store declares which note templates it installs):
+ * where a store's note templates live, and which of the packaged library it
+ * installs. Shaped as its own block rather than as keys on `harness`, matching
+ * `catalog` and `publish` — an authored-but-tool-owned location with its own
+ * settings. Schema-optional with defaults, so a `contexture.yaml` predating the
+ * block parses unchanged; that is why this needs no schema_version bump and no
+ * migration. An empty `installed` list opts out entirely, same as `skills`.
+ */
+const TemplatesSchema = z.object({
+  path: z.string().min(1).default(SHIPPED_DEFAULTS.templates.path),
+  installed: z.array(z.string()).default([...SHIPPED_DEFAULTS.templates.installed]),
 });
 
 const SkillsSchema = z.object({
@@ -299,6 +312,7 @@ export const StoreConfigSchema = z
     write_lifecycle: WriteLifecycleSchema.prefault({}),
     catalog: CatalogSchema.prefault({}),
     publish: PublishSchema.prefault({}),
+    templates: TemplatesSchema.prefault({}),
     skills: SkillsSchema.prefault({}),
     update_check: UpdateCheckSchema.prefault({}),
     ingest: IngestSchema.prefault({}),

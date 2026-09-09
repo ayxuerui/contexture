@@ -84,7 +84,11 @@ notes:
     path: <layer>/<location>/<Title>.md
     mode: create            # or: append
     body: |
-      matching the frontmatter and style of the sibling notes (`ctxr-placement` decides the location)
+      for create: started from a template under `__TEMPLATES_PATH__`, with {{title}} and {{date}}
+      substituted, sections that do not apply deleted rather than left empty
+      for append: only the new material, extending the note rather than restarting it — the
+      command appends your body verbatim and never rewrites what is already there
+      (`ctxr-placement` decides both the location and the template)
 ```
 
 Then run `ctxr session capture --proposal <file>`. It validates and writes every item independently —

@@ -11,12 +11,13 @@ function makeConfig(overrides: Partial<StoreConfig> = {}): StoreConfig {
     schema_version: 1,
     taxonomy: { profile: 'para', layers: [] },
     derived: { paths: ['.contexture/'] },
-    retrieval: { exclude_paths: ['identity/'], demote_paths: [], gather_max_notes: 50, relations: [], graph: { cluster_depth: 2, hub_top: 8, bridge_top: 10, orphan_exempt_clusters: [] } },
+    retrieval: { exclude_paths: ['identity/'], demote_paths: [], gather_max_notes: 50, graph: { cluster_depth: 2, hub_top: 8, bridge_top: 10, orphan_exempt_clusters: [] } },
     git: { default_branch: 'main' },
     session: { branch_prefix: 'session/', worktrees_path: '.worktrees/' },
     write_lifecycle: { diff_size_ceiling_lines: 2000, writable_paths: [] },
     catalog: { path: 'catalog/', section_max_bytes: 32768 },
     publish: { path: 'publish/' },
+    templates: { path: '.contexture/templates/', installed: [] },
     skills: { vendored: [] },
     update_check: SHIPPED_DEFAULTS.update_check,
     ingest: { inbox_path: 'raw/inbox/', capture_root: 'raw/', tracking_params: [] },
@@ -34,6 +35,28 @@ async function writeNote(root: string, relPath: string, content = '# Note\n'): P
 }
 
 describe('listNotes', () => {
+  // standardize-note-templates: a template is the shape a note starts from, never a note.
+  it('excludes the configured templates path, at the default location and elsewhere', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      await writeNote(tmp.root, 'projects/a.md');
+      await writeNote(tmp.root, '.contexture/templates/Note.md');
+      const notes = await listNotes(tmp.root, makeConfig());
+      expect(notes.map((n) => n.path)).toEqual(['projects/a.md']);
+
+      // A store that points the path outside `.contexture/` gets the same exclusion,
+      // so it never depends on the default sitting inside the tool home directory.
+      await writeNote(tmp.root, 'scaffolds/Note.md');
+      const elsewhere = await listNotes(
+        tmp.root,
+        makeConfig({ templates: { path: 'scaffolds/', installed: [] } }),
+      );
+      expect(elsewhere.map((n) => n.path)).not.toContain('scaffolds/Note.md');
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
   it('finds .md files across nested directories, sorted', async () => {
     const tmp = await makeTmpDir();
     try {
@@ -201,7 +224,6 @@ describe('listCaptures', () => {
         exclude_paths: ['raw/'],
         demote_paths: [],
         gather_max_notes: 50,
-        relations: [],
         graph: { cluster_depth: 2, hub_top: 8, bridge_top: 10, orphan_exempt_clusters: [] },
       },
     });

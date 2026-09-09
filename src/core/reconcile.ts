@@ -19,6 +19,7 @@ import { removeFencedRegionFromFile, reorderFencedRegionsInFile, upsertFencedReg
 import { bridgeHarnessSkills } from './harness/bridge.js';
 import { configureHooksPath, installHooks } from './hooks.js';
 import { commentFence, DERIVED_GITIGNORE_FENCE, htmlCommentFence } from './markers.js';
+import { syncNoteTemplates } from './note-templates.js';
 import { syncShippedSkills, syncVendoredSkills } from './skills.js';
 
 export const WORKTREES_GITIGNORE_FENCE = commentFence('worktrees');
@@ -81,6 +82,15 @@ export async function reconcileStore(env: RunEnv, root: string, config: StoreCon
   const vendoredResult = await syncVendoredSkills(root, config, CLI_VERSION);
   changed.push(...vendoredResult.changed);
   const findings: Finding[] = [...vendoredResult.findings];
+
+  // own-the-shipped-templates: the note templates a store declares, delivered
+  // as fixed content and rewritten unconditionally — unlike a vendored skill,
+  // contexture authored these, so an edit is a divergence rather than operator
+  // work. The findings array stays in the signature because the sync is a
+  // sibling of the two above and a future check may use it; it is empty today.
+  const templatesResult = await syncNoteTemplates(root, config, CLI_VERSION);
+  changed.push(...templatesResult.changed);
+  findings.push(...templatesResult.findings);
 
   // Bridges every declared harness's skills directory to the canonical
   // path (creating, or repairing a broken one) — after the skills

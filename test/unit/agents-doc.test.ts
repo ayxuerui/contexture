@@ -27,12 +27,13 @@ function makeConfig(overrides: Partial<StoreConfig> = {}): StoreConfig {
     schema_version: 1,
     taxonomy: { profile: 'para', layers: [] },
     derived: { paths: ['.contexture/'] },
-    retrieval: { exclude_paths: ['identity/'], demote_paths: [], gather_max_notes: 50, relations: [], graph: { cluster_depth: 2, hub_top: 8, bridge_top: 10, orphan_exempt_clusters: [] } },
+    retrieval: { exclude_paths: ['identity/'], demote_paths: [], gather_max_notes: 50, graph: { cluster_depth: 2, hub_top: 8, bridge_top: 10, orphan_exempt_clusters: [] } },
     git: { default_branch: 'main' },
     session: { branch_prefix: 'session/', worktrees_path: '.worktrees/' },
     write_lifecycle: { diff_size_ceiling_lines: 2000, writable_paths: [] },
     catalog: { path: 'catalog/', section_max_bytes: 32768 },
     publish: { path: 'publish/' },
+    templates: { path: '.contexture/templates/', installed: [] },
     skills: { vendored: [] },
     update_check: SHIPPED_DEFAULTS.update_check,
     ingest: { inbox_path: 'raw/inbox/', capture_root: 'raw/', tracking_params: [] },
@@ -77,7 +78,7 @@ describe('renderLegRoutingSection', () => {
 
   it('preserves a bare file exclusion (no trailing slash) alongside directory prefixes', () => {
     const lines = renderLegRoutingSection(
-      makeConfig({ retrieval: { exclude_paths: ['AGENTS.md', 'log.md'], demote_paths: [], gather_max_notes: 50, relations: [], graph: { cluster_depth: 2, hub_top: 8, bridge_top: 10, orphan_exempt_clusters: [] } } }),
+      makeConfig({ retrieval: { exclude_paths: ['AGENTS.md', 'log.md'], demote_paths: [], gather_max_notes: 50, graph: { cluster_depth: 2, hub_top: 8, bridge_top: 10, orphan_exempt_clusters: [] } } }),
     ).join('\n');
     expect(lines).toContain('`AGENTS.md`');
     expect(lines).toContain('`log.md`');
@@ -120,7 +121,7 @@ describe('buildAgentsLegRoutingSection', () => {
     const tmp = await makeTmpDir();
     try {
       await buildAgentsLegRoutingSection(tmp.root, makeConfig());
-      await buildAgentsLegRoutingSection(tmp.root, makeConfig({ retrieval: { exclude_paths: ['secrets/'], demote_paths: [], gather_max_notes: 50, relations: [], graph: { cluster_depth: 2, hub_top: 8, bridge_top: 10, orphan_exempt_clusters: [] } } }));
+      await buildAgentsLegRoutingSection(tmp.root, makeConfig({ retrieval: { exclude_paths: ['secrets/'], demote_paths: [], gather_max_notes: 50, graph: { cluster_depth: 2, hub_top: 8, bridge_top: 10, orphan_exempt_clusters: [] } } }));
       const content = await readFile(agentsMdPath(tmp.root), 'utf8');
       expect(content).toContain('`secrets/`');
       expect(content).not.toContain('`identity/`');
@@ -608,6 +609,10 @@ describe('exact rendered output', () => {
       "### Frontmatter schema",
       "",
       "- Source-identity fields (assigned only by `ctxr ingest`, never hand-written): `source_type`, `source_id`, `source_hash`, `ingested`.",
+      "",
+      "### Note templates",
+      "",
+      "A new note starts from a template under `.contexture/templates/`, not from a blank file and not by copying whatever sibling happens to be nearby. Substitute `{{title}}` and `{{date}}` as you write it — no command expands them, and a note that lands with one still in it is reported by `ctxr lint`. A template is never a note: nothing under that path is catalogued, graphed, or retrieved. Add your own kinds there alongside the shipped ones; contexture only ever rewrites the ones it delivered.",
       "",
       "### Write path",
       "",

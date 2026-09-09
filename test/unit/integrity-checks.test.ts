@@ -21,12 +21,13 @@ function makeConfig(overrides: Partial<StoreConfig> = {}): StoreConfig {
     schema_version: SUPPORTED_SCHEMA_VERSION,
     taxonomy: { profile: 'para', layers: [] },
     derived: { paths: [] },
-    retrieval: { exclude_paths: [], demote_paths: [], gather_max_notes: 50, relations: [], graph: { cluster_depth: 2, hub_top: 8, bridge_top: 10, orphan_exempt_clusters: [] } },
+    retrieval: { exclude_paths: [], demote_paths: [], gather_max_notes: 50, graph: { cluster_depth: 2, hub_top: 8, bridge_top: 10, orphan_exempt_clusters: [] } },
     git: { default_branch: 'main' },
     session: { branch_prefix: 'session/', worktrees_path: '.worktrees/' },
     write_lifecycle: { diff_size_ceiling_lines: 2000, writable_paths: [] },
     catalog: { path: 'catalog/', section_max_bytes: 32768 },
     publish: { path: 'publish/' },
+    templates: { path: '.contexture/templates/', installed: [] },
     skills: { vendored: [] },
     update_check: SHIPPED_DEFAULTS.update_check,
     ingest: { inbox_path: 'raw/inbox/', capture_root: 'raw/', tracking_params: [] },
@@ -50,6 +51,43 @@ function makeCtx(
     catalog: async () => undefined,
   };
 }
+
+/**
+ * fix-the-note-compass: a retired NESTED key is stripped by the schema, so it
+ * leaves nothing in the loaded config — it has to be caught against the file.
+ */
+describe('noUnrecognizedConfigKeysCheck: retired nested keys', () => {
+  it('names a retired nested key the store still declares', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      await writeFile(
+        path.join(tmp.root, 'contexture.yaml'),
+        'schema_version: 10\ntaxonomy: { profile: para, layers: [] }\ngit: { default_branch: main }\norganize: { archive_destination: archives/ }\nretrieval:\n  relations:\n    - Upstream\n',
+      );
+      const result = await noUnrecognizedConfigKeysCheck.run(makeCtx({ storeRoot: tmp.root }));
+      expect(result.status).toBe('fail');
+      const finding = result.findings.find((f) => f.code === 'store.retired_config_key');
+      expect(finding?.subject).toBe('retrieval.relations');
+      expect(finding?.message).toContain('no longer reads');
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('passes a store that does not declare it', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      await writeFile(
+        path.join(tmp.root, 'contexture.yaml'),
+        'schema_version: 10\ntaxonomy: { profile: para, layers: [] }\ngit: { default_branch: main }\norganize: { archive_destination: archives/ }\n',
+      );
+      const result = await noUnrecognizedConfigKeysCheck.run(makeCtx({ storeRoot: tmp.root }));
+      expect(result.findings.filter((f) => f.code === 'store.retired_config_key')).toEqual([]);
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+});
 
 describe('graphAmbiguousLinksCheck', () => {
   it('is severity: invariant', () => {

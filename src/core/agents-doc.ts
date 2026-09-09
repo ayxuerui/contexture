@@ -164,7 +164,8 @@ export function renderCanonicalSection(config: StoreConfig): string[] {
   return substituteBlock(
     agentsTemplate('canonical')
       .replaceAll('__CONFIG_FILE_NAME__', CONFIG_FILE_NAME)
-      .replaceAll('__SKILLS_PATH__', config.harness.skills_path),
+      .replaceAll('__SKILLS_PATH__', config.harness.skills_path)
+      .replaceAll('__TEMPLATES_PATH__', config.templates.path),
     '__MISSION_POINTER__',
     renderMissionPointer(config),
   ).split('\n');

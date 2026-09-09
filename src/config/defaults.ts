@@ -89,8 +89,51 @@ export const DEFAULT_DEMOTE_PATHS: readonly string[] = [];
 /** compose-the-retrieval-pass spec: how many notes `ctxr context gather` returns before it reports truncation. */
 export const DEFAULT_GATHER_MAX_NOTES = 50;
 
-/** graph-context-document spec: no relation vocabulary by default — no typed edges until a store declares names. */
-export const DEFAULT_RELATIONS: readonly string[] = [];
+/**
+ * context-retrieval spec ("Relation sections yield typed edges"): the fixed
+ * relation vocabulary, and the one place either a name or its definition is
+ * written. Not configurable — a store that wants a different edge type writes
+ * an ordinary heading and gets an untyped link, the same as any other heading.
+ *
+ * The definition is not decoration. The only question the vocabulary actually
+ * raises is which of two adjacent relations a link belongs under, so each one
+ * says when to use it and how it differs from its nearest neighbour. Every
+ * artifact that names a relation — the graph, the entry document, the
+ * connection-proposal skill, the note template — reads this pair, so a
+ * definition cannot drift from the name it explains.
+ */
+export const RELATION_VOCABULARY = [
+  {
+    name: 'Upstream',
+    definition:
+      'The thinking this note is built on: prior ideas, sources, and decisions that had to exist first. If removing the linked note would leave this one unfounded, it is upstream.',
+  },
+  {
+    name: 'Downstream',
+    definition: 'What follows from this note: what it enables, informs, or raises. The inverse of Upstream.',
+  },
+  {
+    name: 'Similar',
+    definition:
+      'A note this one resembles in structure, pattern, or topic, where neither depends on the other. Use it when the observation is that the two rhyme, not that one caused the other.',
+  },
+  {
+    name: 'Opposing',
+    definition:
+      'A note that contradicts this one, or that holds under conditions where this one fails. The tension is the content; record it rather than resolving it by dropping a side.',
+  },
+] as const;
+
+/** Just the names, for the vocabulary match the graph performs on a heading. */
+export const RELATION_NAMES: readonly string[] = RELATION_VOCABULARY.map((r) => r.name);
+
+/**
+ * Stated wherever the vocabulary is explained: an edge is recorded only on the
+ * note carrying the link. An agent that assumes the reciprocal is written for
+ * it will leave half the graph unwritten, and nothing in the output would say so.
+ */
+export const RELATION_DIRECTEDNESS_NOTE =
+  'An edge is recorded only on the note carrying the link — naming a note Upstream does not write the reciprocal Downstream edge on it.';
 
 /** graph-context-document spec: positional clusters two directory segments deep; document sections capped for readability. */
 export const DEFAULT_GRAPH_SETTINGS = {
@@ -115,6 +158,29 @@ export const DEFAULT_CATALOG_PATH = '.contexture/catalog/';
 
 /** context-catalog spec: a section exceeding this triggers a failing doctor check, not a silent slowdown. */
 export const DEFAULT_CATALOG_SECTION_MAX_BYTES = 32 * 1024;
+
+/**
+ * context-store spec (a note template is a starting shape, never a note): the
+ * note templates a note is started from — authored-but-tool-owned, like the
+ * catalog and the published pages, and excluded from retrieval for the same
+ * reason. A template is not a note; it is the shape one starts from.
+ */
+export const DEFAULT_TEMPLATES_PATH = '.contexture/templates/';
+
+/**
+ * harness-portability spec (a store declares which note templates it installs):
+ * the packaged library, installed by default and refreshed by update. The list
+ * is contexture's offer, not its assertion about what a store is about — a
+ * store drops what it does not need, and adds its own kinds as files this list
+ * never names. An empty list installs none.
+ *
+ * Appended, never sorted in: the order here is the order init stages and a
+ * rendered configuration lists, so growing the library is a pure insertion.
+ *
+ * `Note` is the base every other one builds on and the file a store copies to
+ * cut its own kind; it is deliberately first.
+ */
+export const DEFAULT_INSTALLED_TEMPLATES = ['Note', 'Concept', 'Project', 'People', 'Company', 'Deal'] as const;
 
 /** publish spec: where published pages live — tracked, authored-but-tool-owned, excluded from retrieval like the catalog and skill pack. */
 export const DEFAULT_PUBLISH_PATH = '.contexture/publish/';
@@ -187,13 +253,13 @@ export const SHIPPED_DEFAULTS = {
     exclude_paths: DEFAULT_EXCLUDE_PATHS,
     demote_paths: DEFAULT_DEMOTE_PATHS,
     gather_max_notes: DEFAULT_GATHER_MAX_NOTES,
-    relations: DEFAULT_RELATIONS,
     graph: DEFAULT_GRAPH_SETTINGS,
   },
   session: { branch_prefix: DEFAULT_SESSION_BRANCH_PREFIX, worktrees_path: DEFAULT_WORKTREES_PATH },
   write_lifecycle: { diff_size_ceiling_lines: DEFAULT_DIFF_SIZE_CEILING_LINES, writable_paths: [] as string[] },
   catalog: { path: DEFAULT_CATALOG_PATH, section_max_bytes: DEFAULT_CATALOG_SECTION_MAX_BYTES },
   publish: { path: DEFAULT_PUBLISH_PATH },
+  templates: { path: DEFAULT_TEMPLATES_PATH, installed: DEFAULT_INSTALLED_TEMPLATES },
   skills: { vendored: DEFAULT_VENDORED_SKILLS },
   ingest: {
     inbox_path: DEFAULT_INBOX_PATH,

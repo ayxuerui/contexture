@@ -69,6 +69,11 @@ export function excludedPrefixesFor(config: StoreConfig): string[] {
     // Tool-owned instruction docs (skills, guidance) are never notes, wherever they live.
     config.harness.skills_path,
     config.harness.guidance_path,
+    // standardize-note-templates: a note template is the shape a note starts
+    // from, never a note itself (context-store spec). Listed explicitly rather
+    // than relying on the default path sitting inside `.contexture/`, so the
+    // exclusion follows a store that configures the path elsewhere.
+    config.templates.path,
   ];
 }
 
