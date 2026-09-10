@@ -546,34 +546,21 @@ The library SHALL cover, at minimum: a base carrying the frontmatter and top-lev
 - **THEN** that template is written to the configured path, and nothing else at that path changes
 
 ### Requirement: An installed note template carries a record that identifies it
-Each installed note template SHALL be accompanied by a machine-readable record written by contexture at the templates path, naming each template contexture delivered and a content hash of the delivered file. contexture SHALL treat a file at that path as one it manages if and only if that record names it, so a file the record does not name is store-authored and is never rewritten, removed, or reported as drifted. The record SHALL be the sole ownership mark, because a marker inside a template's bytes would be copied into every note started from it.
+Each installed note template SHALL be accompanied by a machine-readable record written by contexture at the templates path, naming every template contexture delivered. The record exists so a template can be removed when the store stops declaring it, or when the packaged library stops carrying it — nothing else remembers that a given file was contexture's. It SHALL NOT record a content hash: ownership follows the packaged library's names rather than a file's contents, and byte-stability is decided by comparing the file to the bytes it should have.
+
+A file at the templates path whose name the packaged library does not use SHALL be treated as store-authored: never read, rewritten, removed, or reported.
 
 #### Scenario: The record accompanies the installed set
 - **WHEN** the declared templates are written into a store
-- **THEN** the templates path contains a record naming each delivered template and its content hash
+- **THEN** the templates path contains a record naming each delivered template
 
 #### Scenario: A file the record does not name is left alone
-- **WHEN** `ctxr update` runs against a store holding a template at that path that the record does not name
+- **WHEN** `ctxr update` runs against a store holding a template at that path under a name the packaged library does not use
 - **THEN** that file is not rewritten, not removed, and not reported as drifted
 
 #### Scenario: A template dropped from the library is removed only when unmodified
 - **WHEN** the installed version no longer packages a template the store's record names, and `ctxr update` runs
-- **THEN** the file is removed if its hash still matches the record, and otherwise left on disk and reported
-
-### Requirement: A locally modified installed note template is preserved and reported, never overwritten
-When an installed note template's delivered file no longer matches the content hash in its record, `ctxr update` SHALL leave that file unchanged and SHALL report the divergence naming the template. When the hash still matches and a fresh render differs, update SHALL rewrite the file and update the record. When the hash matches and a fresh render is identical, update SHALL write nothing.
-
-#### Scenario: An operator's edit survives an update
-- **WHEN** an operator edits an installed note template and `ctxr update` runs
-- **THEN** the edited file is byte-identical afterwards and the command's output names that template as locally modified
-
-#### Scenario: An unmodified template is refreshed
-- **WHEN** a store's installed template still matches its recorded hash and the packaged version renders differently
-- **THEN** `ctxr update` rewrites it and updates the record
-
-#### Scenario: A current set makes update a no-op
-- **WHEN** `ctxr update` runs twice against a store whose installed templates are current
-- **THEN** the second run writes no bytes and reports nothing changed for them
+- **THEN** the file is removed, whether or not it was edited locally — a shipped template carries nothing an operator is entitled to keep, and leaving an edited copy of a retired template behind would leave a name contexture no longer explains
 
 ### Requirement: The shipped skills distinguish starting a note from extending one
 The rendered placement, ingest-orchestration and session-capture skills SHALL direct the agent to start a new note from a template at the configured templates path and to substitute the placeholder vocabulary as it does so, rather than to infer a shape by imitating sibling notes. For a note that already exists, the same skills SHALL direct the agent to extend it in place — preserving existing content — rather than to restart it from a template. The generated entry document SHALL name the configured templates path, so an agent reaches the templates without reading the CLI.
@@ -612,3 +599,20 @@ The entry document SHALL likewise name the vocabulary with its definitions, and 
 #### Scenario: No skill carries a relation name of its own
 - **WHEN** the shipped skills are rendered for any store
 - **THEN** every relation name and definition they contain matches the single enumerated source, and none is written into a skill template as a literal
+
+### Requirement: A shipped note template is refreshed unconditionally
+`ctxr update` SHALL rewrite every installed note template whose name the packaged library uses, to the packaged version, regardless of any local edit. A shipped template is contexture's: it is a starting shape rather than content, so an edit to one is not operator work to be preserved but a divergence from the shape every store is meant to share. Update SHALL be byte-stable — a template already matching the packaged version SHALL not be rewritten — and that determination SHALL be made by comparing the file to the bytes it should have, requiring no stored hash.
+
+A store wanting a variant SHALL keep it under a name the packaged library does not use, which contexture never reads, rewrites, or removes. That is the supported way to hold a house shape, and the only one.
+
+#### Scenario: A local edit does not survive an update
+- **WHEN** an operator edits an installed note template and `ctxr update` runs
+- **THEN** the file is restored to the packaged version, and no finding reports it as locally modified
+
+#### Scenario: A current set makes update a no-op
+- **WHEN** `ctxr update` runs twice against a store whose installed templates are current
+- **THEN** the second run writes no bytes and reports nothing changed for them
+
+#### Scenario: A store's own kind is untouched
+- **WHEN** a store keeps a template at the templates path under a name the packaged library does not use, and `ctxr update` runs
+- **THEN** that file is byte-identical afterwards, and is neither removed nor reported
