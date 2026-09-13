@@ -80,3 +80,46 @@ describe('buildPathTree', () => {
     expect(tree([])).toEqual([]);
   });
 });
+
+describe('buildPathTree directory labels', () => {
+  it('labels a directory whose path the callback answers and leaves the others unlabelled', () => {
+    const nodes = buildPathTree(['ctx-a/one.md', 'ctx-b/two.md'], label, href, (dir) =>
+      dir === 'ctx-a' ? 'Ctx A' : undefined,
+    );
+    expect(directory(nodes[0]).label).toBe('Ctx A');
+    expect(directory(nodes[1]).label).toBeUndefined();
+  });
+
+  it('leaves every directory unlabelled when no callback is given', () => {
+    const nodes = tree(['ctx-a/ctx-b/one.md']);
+    const a = directory(nodes[0]);
+    expect(a.label).toBeUndefined();
+    expect(directory(a.children[0]).label).toBeUndefined();
+  });
+
+  it('asks the callback for each directory\'s full path, not its last segment', () => {
+    const asked: string[] = [];
+    buildPathTree(['ctx-a/ctx-b/ctx-c/one.md'], label, href, (dir) => {
+      asked.push(dir);
+      return undefined;
+    });
+    expect(asked.sort()).toEqual(['ctx-a', 'ctx-a/ctx-b', 'ctx-a/ctx-b/ctx-c']);
+  });
+
+  it('does not label a deeper directory that merely shares a labelled path\'s last segment', () => {
+    const nodes = buildPathTree(['ctx-a/one.md', 'elsewhere/ctx-a/two.md'], label, href, (dir) =>
+      dir === 'ctx-a' ? 'Ctx A' : undefined,
+    );
+    const [top, elsewhere] = [directory(nodes[0]), directory(nodes[1])];
+    expect([top.name, elsewhere.name]).toEqual(['ctx-a', 'elsewhere']);
+    expect(top.label).toBe('Ctx A');
+    expect(directory(elsewhere.children[0]).label).toBeUndefined();
+  });
+
+  it('orders siblings by their directory segment even when their labels would sort the other way', () => {
+    const labels: Readonly<Record<string, string>> = { 'ctx-a': 'Zebra', 'ctx-b': 'Aardvark' };
+    const nodes = buildPathTree(['ctx-a/one.md', 'ctx-b/two.md'], label, href, (dir) => labels[dir]);
+    expect(nodes.map((node) => node.name)).toEqual(['ctx-a', 'ctx-b']);
+    expect(nodes.map((node) => directory(node).label)).toEqual(['Zebra', 'Aardvark']);
+  });
+});
