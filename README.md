@@ -260,11 +260,11 @@ The store's own `.contexture/guidance/mission.md` uses the same write path, but 
 
 ```sh
 ctxr publish gather --under resources/    # or --note <path>, or --entity <name>
-ctxr publish new comparison               # scaffolds the page folder and its sibling README
-ctxr publish check .contexture/publish/comparison
+ctxr publish new resources/comparison     # scaffolds the page folder and its sibling README
+ctxr publish check .contexture/publish/resources/comparison/index.html
 ```
 
-`gather` resolves a subject to its note set — never a hand-picked list, which is how an unintended note slips onto a page unnoticed. `check` runs the structural gates: no external references, viewport meta, a print rule, provenance, the sibling README, script syntax. What a page may *contain*, given who will read it, is a judgment `ctxr-publish` walks you through and no check can make.
+A page is filed under the top-level folder its subject's notes live in and named for the subject, so the published-pages navigation reads like the store rather than like one long list. `gather` resolves a subject to its note set — never a hand-picked list, which is how an unintended note slips onto a page unnoticed. `check` runs the structural gates: no external references, viewport meta, a print rule, provenance, the sibling README, script syntax, and that filing location. What a page may *contain*, given who will read it — and which folder a cross-cutting subject belongs under — is a judgment `ctxr-publish` walks you through and no check can make.
 
 → `ctxr-publish`, plus the vendored `frontend-design` and `eli5` skills for the craft contexture supplies none of.
 
@@ -276,7 +276,7 @@ ctxr serve
 
 Renders notes, catalog sections, the graph document, and published pages as cross-linked HTML. It binds loopback (`127.0.0.1`) by default. `--host` widens that, but note what it does not change: `serve` applies **no per-requester filtering at any bind address**. Widening it exposes the whole store to whatever can reach that address, so only do it behind a front end you've arranged yourself.
 
-A published page's navigation label follows its own declared `<title>`, falling back to its folder name when it declares none. The header's light/dark/system links choose a display theme, and the ☰ control shows and hides the navigation — both persist across pages via cookies, and neither requires client-side script. A published page itself is still served byte-verbatim, so neither the theme nor the navigation reaches into it; `ctxr publish new`'s scaffold instead follows the viewer's own system preference on its own.
+A published page's navigation label follows its own declared `<title>`, falling back to its folder name when it declares none. A folder group is labelled with the declared name of the taxonomy layer whose path it matches — so a store's own words for its top-level folders reach the sidebar — and with the bare directory name otherwise; either way a group sits where its directory name sorts, not where its label does. The header's light/dark/system links choose a display theme, and the ☰ control shows and hides the navigation — both persist across pages via cookies, and neither requires client-side script. A published page itself is still served byte-verbatim, so neither the theme nor the navigation reaches into it; `ctxr publish new`'s scaffold instead follows the viewer's own system preference on its own.
 
 ## Keeping a store current
 

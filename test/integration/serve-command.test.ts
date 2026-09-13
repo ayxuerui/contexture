@@ -55,8 +55,11 @@ describe('ctxr serve (real CLI)', () => {
         const indexHtml = await indexRes.text();
         expect(navHeadings(indexHtml)).toEqual(NAV_AREA_ORDER);
         expect([...indexHtml.matchAll(/<h2 id="[^"]*">([^<]*)<\/h2>/g)].map((m) => m[1]!)).toEqual(NAV_AREA_ORDER);
-        // Notes are grouped by folder, not listed as whole paths.
-        expect(indexHtml).toContain('<summary>projects</summary>');
+        // Notes are grouped by folder, not listed as whole paths. A group matching a
+        // configured taxonomy layer's path carries that layer's declared name; a group
+        // matching none keeps its bare directory segment.
+        expect(indexHtml).toContain('<summary>Projects</summary>');
+        expect(indexHtml).not.toContain('<summary>projects</summary>');
         expect(indexHtml).toContain('<summary>nested</summary>');
         expect(indexHtml).toContain('<a href="/notes/projects/deep/nested/c.md">c</a>');
         expect(indexHtml).toContain('<a href="/notes/root-note.md">root-note</a>');

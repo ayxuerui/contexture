@@ -22,10 +22,20 @@ export interface TreeDirectory {
   name: string;
   /** The full `/`-separated path of this directory, for a stable node key. */
   path: string;
+  /**
+   * file-published-pages-by-location design.md D7: what this directory is
+   * *called*, when its caller knows a name for it other than its own segment.
+   * Separate from `name` because `name` is what orders it (see `compareNodes`),
+   * and a label must not be able to move a directory.
+   */
+  label?: string;
   children: TreeNode[];
 }
 
 export type TreeNode = TreeDirectory | TreeLeaf;
+
+/** Answers what a directory at this full tree-relative path is called, or nothing to keep its segment. */
+export type DirectoryLabelFor = (directoryPath: string) => string | undefined;
 
 interface DirectoryBuilder {
   path: string;
@@ -37,6 +47,12 @@ interface DirectoryBuilder {
  * Directories before leaves, then by codepoint — the same ordering
  * `listNotes()` and `publishPages()` already produce, so the tree is a
  * regrouping of a sorted enumeration rather than a reordering of it.
+ *
+ * file-published-pages-by-location D7: this deliberately reads `name` and
+ * never `label`. A directory's label is operator-authored display text, and
+ * sorting on it would make the tree's order depend on wording rather than on
+ * the enumeration it regroups — the same reason a leaf already sorts on its
+ * path segment and not on its title. The omission is the decision.
  */
 function compareNodes(a: TreeNode, b: TreeNode): number {
   if (a.kind !== b.kind) return a.kind === 'directory' ? -1 : 1;
@@ -45,12 +61,22 @@ function compareNodes(a: TreeNode, b: TreeNode): number {
   return 0;
 }
 
-function finalize(builder: DirectoryBuilder): TreeNode[] {
+function finalize(builder: DirectoryBuilder, directoryLabelFor?: DirectoryLabelFor): TreeNode[] {
   const directories = [...builder.directories.entries()].map(
-    ([name, child]): TreeDirectory => ({ kind: 'directory', name, path: child.path, children: finalize(child) }),
+    ([name, child]): TreeDirectory => ({
+      kind: 'directory',
+      name,
+      path: child.path,
+      // D6: asked about the directory's full path within the tree, not its last
+      // segment, so a caller can label the folder that stands for something and
+      // leave a deeper folder that merely shares its name alone.
+      label: directoryLabelFor?.(child.path),
+      children: finalize(child, directoryLabelFor),
+    }),
   );
   return [...directories, ...builder.leaves].sort(compareNodes);
 }
+
 
 /**
  * Groups `paths` by their directory segments, to the full depth they carry.
@@ -62,6 +88,7 @@ export function buildPathTree(
   paths: readonly string[],
   labelFor: (path: string) => string,
   hrefFor: (path: string) => string,
+  directoryLabelFor?: DirectoryLabelFor,
 ): TreeNode[] {
   const root: DirectoryBuilder = { path: '', directories: new Map(), leaves: [] };
 
@@ -82,5 +109,5 @@ export function buildPathTree(
     node.leaves.push({ kind: 'leaf', name, path: entryPath, label: labelFor(entryPath), href: hrefFor(entryPath) });
   }
 
-  return finalize(root);
+  return finalize(root, directoryLabelFor);
 }
