@@ -1,5 +1,5 @@
 /** Kept in sync with package.json's "version" field. */
-export const CLI_VERSION = '0.12.0';
+export const CLI_VERSION = '0.13.0';
 
 /**
  * The npm package this executable is published as. Bound here, beside the
