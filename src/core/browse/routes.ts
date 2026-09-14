@@ -26,6 +26,15 @@ export interface RouteTable {
   publishFiles: ReadonlyMap<string, PublishFileRoute>;
   /** Keyed by page path (the same key `publishPages` reports); the page's own declared name, when it has one. */
   publishTitles: ReadonlyMap<string, string>;
+  /**
+   * Keyed by a directory path within either the notes or the published-pages
+   * tree; the display name something other than the directory segment gives
+   * it. file-published-pages-by-location D5: resolved here and handed to the
+   * navigation already flattened to paths and strings, the same shape
+   * `publishTitles` has — so `nav.ts` renders labels and resolves none, and
+   * stays clear of the taxonomy entirely.
+   */
+  groupLabels: ReadonlyMap<string, string>;
 }
 
 async function walkFiles(root: string, relative = ''): Promise<PublishFileRoute[]> {
@@ -180,9 +189,18 @@ export async function buildRouteTable(store: Store): Promise<RouteTable> {
     ]),
   );
 
+  // D5: a configured layer's path is store-relative and carries no trailing
+  // separator as shipped, but a hand-written contexture.yaml may add one —
+  // stripped here so the key matches the tree paths it is looked up against.
+  const groupLabels = new Map(
+    store.config.taxonomy.layers
+      .map((layer): [string, string] => [layer.path.replace(/\/+$/, ''), layer.name])
+      .filter(([layerPath]) => layerPath.length > 0),
+  );
+
   const publishRoot = path.join(store.root, store.config.publish.path);
   const publishFiles = new Map((await walkFiles(publishRoot)).map((file) => [file.urlPath, file]));
   const publishTitles = await resolvePublishTitles(pagesFromPublishFiles(publishFiles), publishFiles);
 
-  return { notes, catalog, graphDocumentPath: graphDocumentPath(store), publishFiles, publishTitles };
+  return { notes, catalog, graphDocumentPath: graphDocumentPath(store), publishFiles, publishTitles, groupLabels };
 }

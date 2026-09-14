@@ -1,7 +1,7 @@
 import { titleFor } from '../catalog/model.js';
 import { escapeHtml } from './render.js';
 import { publishPages, PUBLISH_INDEX_FILE, type RouteTable } from './routes.js';
-import { buildPathTree, type TreeNode } from './tree.js';
+import { buildPathTree, type DirectoryLabelFor, type TreeNode } from './tree.js';
 
 /**
  * The four content areas the browsing surface serves, in the one order both
@@ -52,7 +52,12 @@ function renderTree(nodes: readonly TreeNode[], depth: number): string {
     }
     const open = depth === 0 ? ' open' : '';
     const children = renderTree(node.children, depth + 1);
-    return `<li class="ctxr-tree-dir"><details${open}><summary>${escapeHtml(node.name)}</summary>${children}</details></li>`;
+    // file-published-pages-by-location D7: a directory's label is what it is
+    // called; `node.name` is what ordered it, and `compareNodes` already read
+    // that. Falling back to the segment is the same "one answer to what this is
+    // called" rule a page entry follows for its declared name.
+    const summary = escapeHtml(node.label ?? node.name);
+    return `<li class="ctxr-tree-dir"><details${open}><summary>${summary}</summary>${children}</details></li>`;
   });
 
   return `<ul class="ctxr-tree">${items.join('')}</ul>`;
@@ -66,6 +71,16 @@ function renderFlatList(items: readonly string[], hrefFor: (item: string) => str
   return `<ul class="ctxr-tree">${listItems.join('')}</ul>`;
 }
 
+/**
+ * file-published-pages-by-location D8: both folder trees resolve a group's
+ * label the same way, because they render through one primitive into one
+ * sidebar — a folder reading `Ctx A` in one area and `ctx-a` in the other,
+ * inches apart, is the surprising outcome rather than the smaller one.
+ */
+function groupLabelFor(table: RouteTable): DirectoryLabelFor {
+  return (directoryPath) => table.groupLabels.get(directoryPath);
+}
+
 /** The listing for one area, rendered once and used by both the navigation and the index page. */
 function renderAreaContent(table: RouteTable, area: AreaId): string {
   switch (area) {
@@ -77,6 +92,7 @@ function renderAreaContent(table: RouteTable, area: AreaId): string {
         // directory segment — the same "one answer to what this is called" principle D6 gives notes.
         (page) => table.publishTitles.get(page) ?? lastSegment(page),
         (page) => `/publish/${encodeURI(page)}/${PUBLISH_INDEX_FILE}`,
+        groupLabelFor(table),
       );
       return renderTree(tree, 0);
     }
@@ -87,6 +103,7 @@ function renderAreaContent(table: RouteTable, area: AreaId): string {
         // D6: the same answer the catalog gives to "what is this note called".
         (notePath) => titleFor(table.notes.get(notePath)!),
         (notePath) => `/notes/${encodeURI(notePath)}`,
+        groupLabelFor(table),
       );
       return renderTree(tree, 0);
     }

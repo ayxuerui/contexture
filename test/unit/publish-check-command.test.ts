@@ -51,11 +51,12 @@ describe('publish check', () => {
     const tmp = await makeTmpDir();
     try {
       const store: Store = { root: tmp.root, config: makeConfig() };
-      const htmlPath = await writePage(tmp.root, 'good', GOOD_HTML);
+      // Filed under a grouping directory, which the filing-location check now requires.
+      const htmlPath = await writePage(tmp.root, 'ctx-a/good', GOOD_HTML);
 
       const outcome = await executeCheck(store, { path: htmlPath });
       expect(outcome.exitCode).toBe(ExitCode.Ok);
-      expect(outcome.data).toEqual({ path: 'publish/good/index.html', passed: true, failures: [] });
+      expect(outcome.data).toEqual({ path: 'publish/ctx-a/good/index.html', passed: true, failures: [] });
     } finally {
       await tmp.cleanup();
     }
@@ -163,6 +164,89 @@ describe('publish check', () => {
       const outcome = await executeCheck(store, { path: htmlPath });
       expect(outcome.exitCode).toBe(ExitCode.CheckFailed);
       expect(outcome.data?.failures.map((f) => f.check)).toContain('title');
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('fails and names the location check for a page filed directly at the publish path', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const store: Store = { root: tmp.root, config: makeConfig() };
+      const htmlPath = await writePage(tmp.root, 'flat-page', GOOD_HTML);
+
+      const outcome = await executeCheck(store, { path: htmlPath });
+      expect(outcome.exitCode).toBe(ExitCode.CheckFailed);
+      expect(outcome.data?.failures.map((f) => f.check)).toEqual(['page-location']);
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('reports the location failure alongside every other failing check in the same run', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const store: Store = { root: tmp.root, config: makeConfig() };
+      const html = GOOD_HTML.replace('<title>Good Page</title>', '');
+      const htmlPath = await writePage(tmp.root, 'flat-and-untitled', html);
+
+      const outcome = await executeCheck(store, { path: htmlPath });
+      const checks = outcome.data?.failures.map((f) => f.check) ?? [];
+      expect(checks).toContain('page-location');
+      expect(checks).toContain('title');
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('passes the location check for a page filed several grouping directories deep', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const store: Store = { root: tmp.root, config: makeConfig() };
+      const htmlPath = await writePage(tmp.root, 'ctx-a/ctx-b/deep', GOOD_HTML);
+
+      const outcome = await executeCheck(store, { path: htmlPath });
+      expect(outcome.exitCode).toBe(ExitCode.Ok);
+      expect(outcome.data?.failures).toEqual([]);
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('names no expected directory in the location failure', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      // A store with layers configured: the failure must still not point at one of them,
+      // because which grouping directory is correct is not derivable from the page.
+      const config = makeConfig();
+      const store: Store = {
+        root: tmp.root,
+        config: { ...config, taxonomy: { profile: 'custom', layers: [{ name: 'Ctx A', path: 'ctx-a', description: 'a' }] } },
+      };
+      const htmlPath = await writePage(tmp.root, 'flat-page', GOOD_HTML);
+
+      const outcome = await executeCheck(store, { path: htmlPath });
+      const message = outcome.data?.failures.find((f) => f.check === 'page-location')?.message ?? '';
+      expect(message).toContain('publish/');
+      expect(message).not.toContain('ctx-a');
+      expect(message).not.toContain('Ctx A');
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('reports no location failure for a checked file outside the configured publish path', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const store: Store = { root: tmp.root, config: makeConfig() };
+      const dir = path.join(tmp.root, 'elsewhere');
+      await mkdir(dir, { recursive: true });
+      const htmlPath = path.join(dir, 'index.html');
+      await writeFile(htmlPath, GOOD_HTML);
+      await writeFile(path.join(dir, 'README.md'), '');
+
+      const outcome = await executeCheck(store, { path: htmlPath });
+      expect(outcome.data?.failures.map((f) => f.check)).not.toContain('page-location');
     } finally {
       await tmp.cleanup();
     }

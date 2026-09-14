@@ -25,13 +25,27 @@ content belongs in front of this page's intended readers — a page written for 
 not carry material written about that party, or about anyone else who did not expect to be quoted.
 When you are unsure about a note, leave it out and name it to the operator rather than guessing.
 
-## 4. Fix the identity once
+## 4. Fix the identity once, and file it where its subject lives
 
-`ctxr publish new <slug>` creates the page's folder. A slug starting with a date (`YYYY-` or
-`YYYY-MM-DD-`) is reserved for a frozen snapshot — never used for a page you intend to keep updating.
-The command refuses to overwrite an existing folder; if one already exists for this subject, edit its
-files directly rather than re-running `publish new` — a rename or an overwrite breaks any link already
-handed out.
+`ctxr publish new <slug>` creates the page's folder. The slug is a path, and its shape carries
+meaning: file the page under the top-level folder its subject's notes live in, and name it for the
+subject — `<top-level-folder>/<subject>`, never `<subject>` alone at the root. Two levels, no more:
+the first says where in the store this belongs, the second says what it is. That is what makes the
+published-pages navigation read like the store instead of like one long list, and
+`ctxr publish check` reports a page filed flat at the publish root as a failing check.
+
+When the notes step 2 gathered span more than one top-level folder — or the store's taxonomy declares
+none at all — no folder is derivable and the choice is yours to make and to own: pick the one that
+best names the subject to the reader, write that choice and your reason into the page's README, and
+name it to the operator. Nothing checks this for you, by design. A page whose sources aren't
+co-located is exactly the kind step 1 says most earns a page, and filing it under a word that names
+nothing serves nobody who reads it.
+
+A slug starting with a date (`YYYY-` or `YYYY-MM-DD-`) is reserved for a frozen snapshot — never used
+for a page you intend to keep updating. That rule binds the page's own final segment, not the folders
+it is filed under. The command refuses to overwrite an existing folder; if one already exists for
+this subject, edit its files directly rather than re-running `publish new` — a rename or an overwrite
+breaks any link already handed out.
 
 ## 5. Choose the form, then delegate the craft
 
@@ -58,8 +72,8 @@ lower is the same material in shorter words.
 ## 6. Verify the output invariants
 
 `ctxr publish check <path>` runs the mechanical half of the checklist — no external network address,
-a viewport meta tag, at least one print rule, a provenance line, a sibling README, balanced tags, and
-valid syntax in every embedded script. It exits non-zero naming every failing check; fix all of them
+a viewport meta tag, at least one print rule, a provenance line, a sibling README, balanced tags,
+valid syntax in every embedded script, and the page's filing location from step 4. It exits non-zero naming every failing check; fix all of them
 before reporting the page as ready. It answers only what's derivable from the file itself — the DO-test
 in step 1, the form and reader choices in step 5, and factual accuracy stay judgment calls, not checker output.
 

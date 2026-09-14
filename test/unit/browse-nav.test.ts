@@ -14,6 +14,7 @@ function makeTable(overrides: Partial<RouteTable> = {}): RouteTable {
     graphDocumentPath: '/nowhere/graph.md',
     publishFiles: new Map(),
     publishTitles: new Map(),
+    groupLabels: new Map(),
     ...overrides,
   };
 }
@@ -27,6 +28,11 @@ function withPublishFiles(...urlPaths: readonly string[]): RouteTable {
   return makeTable({
     publishFiles: new Map(urlPaths.map((urlPath) => [urlPath, { urlPath, absolutePath: `/abs/${urlPath}` }])),
   });
+}
+
+/** The resolved path -> display-name map `buildRouteTable` derives from the configured taxonomy layers. */
+function withGroupLabels(table: RouteTable, labels: Readonly<Record<string, string>>): RouteTable {
+  return { ...table, groupLabels: new Map(Object.entries(labels)) };
 }
 
 function navHeadings(html: string): string[] {
@@ -131,6 +137,56 @@ describe('renderNav', () => {
     expect(html).toContain('&lt;script&gt;alert(1)&lt;/script&gt;');
     expect(html).not.toContain('<script>');
     expect(html).toContain('href="/notes/fol%3Cder/a&amp;b.md"');
+  });
+});
+
+describe('renderNav grouping-directory labels', () => {
+  it("labels a published page's grouping directory with its configured layer name", () => {
+    const html = renderNav(withGroupLabels(withPublishFiles('ctx-a/example-page/index.html'), { 'ctx-a': 'Ctx A' }));
+    expect(html).toContain('<summary>Ctx A</summary>');
+    expect(html).not.toContain('<summary>ctx-a</summary>');
+    expect(html).toContain('<a href="/publish/ctx-a/example-page/index.html">example-page</a>');
+  });
+
+  it('keeps the directory segment for a grouping directory matching no configured layer', () => {
+    const html = renderNav(withGroupLabels(withPublishFiles('ctx-b/example-page/index.html'), { 'ctx-a': 'Ctx A' }));
+    expect(html).toContain('<summary>ctx-b</summary>');
+  });
+
+  it('labels a note folder the same way it labels a published page folder', () => {
+    const html = renderNav(withGroupLabels(withNotes('ctx-a/example.md'), { 'ctx-a': 'Ctx A' }));
+    expect(html).toContain('<summary>Ctx A</summary>');
+    expect(html).not.toContain('<summary>ctx-a</summary>');
+  });
+
+  it('leaves a deeper directory sharing a labelled path\'s segment unlabelled', () => {
+    const table = withGroupLabels(withPublishFiles('elsewhere/ctx-a/example-page/index.html'), { 'ctx-a': 'Ctx A' });
+    const html = renderNav(table);
+    expect(html).toContain('<summary>ctx-a</summary>');
+    expect(html).not.toContain('<summary>Ctx A</summary>');
+  });
+
+  it('renders byte-identically to an unlabelled store when no layer is configured', () => {
+    const pages = withPublishFiles('ctx-a/example-page/index.html');
+    const notes = withNotes('ctx-a/example.md');
+    expect(renderNav({ ...pages, notes: notes.notes })).toBe(
+      renderNav(withGroupLabels({ ...pages, notes: notes.notes }, {})),
+    );
+  });
+
+  it('places a labelled group where its directory segment sorts, not where its label does', () => {
+    const table = withGroupLabels(withPublishFiles('ctx-a/page-one/index.html', 'ctx-b/page-two/index.html'), {
+      'ctx-a': 'Zebra',
+      'ctx-b': 'Aardvark',
+    });
+    const html = renderNav(table);
+    expect(html.indexOf('<summary>Zebra</summary>')).toBeLessThan(html.indexOf('<summary>Aardvark</summary>'));
+  });
+
+  it('escapes a configured layer name', () => {
+    const html = renderNav(withGroupLabels(withPublishFiles('ctx-a/example-page/index.html'), { 'ctx-a': '<b>X</b>' }));
+    expect(html).toContain('<summary>&lt;b&gt;X&lt;/b&gt;</summary>');
+    expect(html).not.toContain('<summary><b>X</b></summary>');
   });
 });
 

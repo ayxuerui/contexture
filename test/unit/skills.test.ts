@@ -343,6 +343,17 @@ describe('owned-skills-expansion: each skill carries its load-bearing rule (task
     expect(s).toContain('leave it out and name it to the operator');
     expect(s).toContain('`ctxr publish new <slug>`');
     expect(s).toContain('refuses to overwrite an existing folder');
+    // The filing rule and the judgment call it leaves open. Wrap-tolerant for the
+    // same reason as the craft-delegation matches below.
+    expect(s).toMatch(/file the page under the top-level folder its subject's notes live in/);
+    expect(s).toContain('`<top-level-folder>/<subject>`');
+    expect(s).toMatch(/span more than one top-level folder/);
+    expect(s).toMatch(/write that choice and your reason into the page's README/);
+    // No shipped taxonomy profile's layer may be named here: the store's taxonomy
+    // is whatever contexture.yaml declares, and this prose must read for all of them.
+    for (const layerPath of SHIPPED_PROFILES.flatMap((profile) => profile.layers.map((layer) => layer.path))) {
+      expect(s).not.toContain(`${layerPath}/<subject>`);
+    }
     // Wrap-tolerant on purpose: these pin the rule, not the column the template
     // happens to wrap at. Re-flowing a paragraph is not a behavior change and
     // must not fail here, which the previous newline-spanning literals did.

@@ -55,6 +55,37 @@ function checkTitle(html: string): PublishCheckFailure[] {
   return [{ check: 'title', message: 'no non-empty <title> element' }];
 }
 
+/**
+ * publish spec / file-published-pages-by-location design.md D1–D2: the page's
+ * filing *shape*, and nothing more. It fires only when the page folder is an
+ * immediate child of the configured publish path, and never names a parent the
+ * page should have had — which grouping directory is correct depends on where
+ * the subject's notes live and, for a subject whose sources aren't co-located,
+ * on a reading of the subject. Neither is derivable from the file being
+ * checked, and this command answers only what is (D1). Depth beyond one
+ * grouping directory passes: the publish spec already blesses a slug of any
+ * depth, so the check is a floor rather than the convention (D2), which the
+ * publish skill states instead.
+ *
+ * A checked file outside the configured publish path entirely reports nothing
+ * here — it is not a published page, so it has no filing to judge.
+ */
+function checkPageLocation(relativePath: string, publishPath: string): PublishCheckFailure[] {
+  const publishPrefix = publishPath.split(path.sep).join('/').replace(/\/+$/, '');
+  if (!relativePath.startsWith(`${publishPrefix}/`)) return [];
+
+  const underPublish = relativePath.slice(publishPrefix.length + 1);
+  const pageFolder = underPublish.slice(0, Math.max(underPublish.lastIndexOf('/'), 0));
+  if (pageFolder.includes('/')) return [];
+
+  return [
+    {
+      check: 'page-location',
+      message: `filed directly at the configured publish path ("${publishPrefix}/") — a page belongs inside a grouping directory under it`,
+    },
+  ];
+}
+
 function checkProvenanceLine(html: string): PublishCheckFailure[] {
   const hasDate = /\d{4}-\d{2}-\d{2}/.test(html);
   const hasReadmeLink = /href\s*=\s*["'][^"']*readme[^"']*["']/i.test(html);
@@ -118,6 +149,7 @@ export async function execute(store: Store, flags: PublishCheckFlags): Promise<C
     ...checkProvenanceLine(html),
     ...checkTitle(html),
     ...checkTagBalance(html),
+    ...checkPageLocation(relativePath, store.config.publish.path),
   ];
 
   if (!existsSync(readmePath)) {
