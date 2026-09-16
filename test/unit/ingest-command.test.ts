@@ -6,7 +6,7 @@ import { execute as executeIngest } from '../../src/commands/ingest.js';
 import { execute as executeSourceCheck } from '../../src/commands/source-check.js';
 import { execute as executeSourceHash } from '../../src/commands/source-hash.js';
 import type { StoreConfig } from '../../src/config/schema.js';
-import { AlreadyIngestedError, NoteNotFoundError } from '../../src/core/errors.js';
+import { AlreadyIngestedError, MissingRequiredCaptureSectionError, NoteNotFoundError } from '../../src/core/errors.js';
 import { ExitCode } from '../../src/core/exit-codes.js';
 import type { Store } from '../../src/core/store.js';
 import { makeFakeEnv } from '../helpers/fake-env.js';
@@ -195,6 +195,110 @@ describe('ingest command', () => {
     } finally {
       await tmp.cleanup();
     }
+  });
+
+  /**
+   * context-ingest spec: "A store may require a capture to carry the record
+   * it rests on." The four cases below are one requirement read from both
+   * sides — a store that declares nothing must be untouched by this, which is
+   * what every store predating the key relies on.
+   */
+  describe('required capture sections', () => {
+    function configRequiring(section: string, sourceType = 'ctx-a'): StoreConfig {
+      const config = makeConfig();
+      return { ...config, ingest: { ...config.ingest, required_capture_sections: { [sourceType]: section } } };
+    }
+
+    it('refuses a capture missing its declared section, and writes nothing', async () => {
+      const tmp = await makeTmpDir();
+      try {
+        const store = await setUpStore(tmp.root);
+        store.config = configRequiring('Transcript');
+        await writeNote(tmp.root, CAPTURE, '# Captured\n\n## Summary\n\nWhat the service thought.\n');
+        const env = makeFakeEnv({ cwd: tmp.root });
+
+        await expect(
+          executeIngest(env, store, { path: CAPTURE, into: NOTE, sourceType: 'ctx-a', sourceId: 'src-1' }),
+        ).rejects.toBeInstanceOf(MissingRequiredCaptureSectionError);
+
+        // Refused whole: still in the inbox, unstamped, and uncited.
+        expect(existsSync(path.join(tmp.root, RETAINED))).toBe(false);
+        const capture = await readFile(path.join(tmp.root, CAPTURE), 'utf8');
+        expect(capture).not.toContain('source_hash');
+        expect(capture).not.toContain('ingested:');
+        expect(await readFile(path.join(tmp.root, NOTE), 'utf8')).not.toContain('sources:');
+      } finally {
+        await tmp.cleanup();
+      }
+    });
+
+    it('carries the check exit code, not the usage one', async () => {
+      const tmp = await makeTmpDir();
+      try {
+        const store = await setUpStore(tmp.root);
+        store.config = configRequiring('Transcript');
+        const env = makeFakeEnv({ cwd: tmp.root });
+
+        await executeIngest(env, store, { path: CAPTURE, into: NOTE, sourceType: 'ctx-a', sourceId: 'src-1' }).then(
+          () => expect.unreachable('ingest should have refused the capture'),
+          (err: unknown) => {
+            expect(err).toBeInstanceOf(MissingRequiredCaptureSectionError);
+            expect((err as { exitCode: number }).exitCode).toBe(ExitCode.CheckFailed);
+          },
+        );
+      } finally {
+        await tmp.cleanup();
+      }
+    });
+
+    it('ingests normally once the declared section is present, at any heading level', async () => {
+      const tmp = await makeTmpDir();
+      try {
+        const store = await setUpStore(tmp.root);
+        store.config = configRequiring('Transcript');
+        await writeNote(tmp.root, CAPTURE, '# Captured\n\n## Summary\n\nDerived.\n\n### Transcript\n\nWhat was said.\n');
+        const env = makeFakeEnv({ cwd: tmp.root });
+
+        const outcome = await executeIngest(env, store, { path: CAPTURE, into: NOTE, sourceType: 'ctx-a', sourceId: 'src-1' });
+        expect(outcome.exitCode).toBe(ExitCode.Ok);
+        expect(outcome.data?.capture).toBe(RETAINED);
+      } finally {
+        await tmp.cleanup();
+      }
+    });
+
+    it('leaves a source type the store declared nothing for unconstrained', async () => {
+      const tmp = await makeTmpDir();
+      try {
+        const store = await setUpStore(tmp.root);
+        store.config = configRequiring('Transcript', 'ctx-b');
+        const env = makeFakeEnv({ cwd: tmp.root });
+
+        const outcome = await executeIngest(env, store, { path: CAPTURE, into: NOTE, sourceType: 'ctx-a', sourceId: 'src-1' });
+        expect(outcome.exitCode).toBe(ExitCode.Ok);
+      } finally {
+        await tmp.cleanup();
+      }
+    });
+
+    it('looks in the sidecar for material that is not markdown, not in its bytes', async () => {
+      const tmp = await makeTmpDir();
+      try {
+        const store = await setUpStore(tmp.root);
+        store.config = configRequiring('Transcript');
+        // The bytes say "Transcript"; the sidecar, which is the markdown the
+        // capture presents, does not. The bytes must not rescue it.
+        await writeNote(tmp.root, 'raw/inbox/deck.pdf', '%PDF-1.7 ## Transcript\n');
+        await writeNote(tmp.root, 'raw/inbox/deck.pdf.md', '---\ncapture_file: deck.pdf\n---\nA description of the deck.\n');
+        const env = makeFakeEnv({ cwd: tmp.root });
+
+        await expect(
+          executeIngest(env, store, { path: 'raw/inbox/deck.pdf.md', into: NOTE, sourceType: 'ctx-a', sourceId: 'src-deck' }),
+        ).rejects.toBeInstanceOf(MissingRequiredCaptureSectionError);
+      } finally {
+        await tmp.cleanup();
+      }
+    });
   });
 
   it('moves a binary capture with its sidecar, and hashes the bytes rather than the prose', async () => {

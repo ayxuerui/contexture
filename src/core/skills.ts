@@ -149,6 +149,22 @@ const PLACEMENT: SkillSeed = {
       .split('\n'),
 };
 
+/**
+ * capture-is-an-owned-skill spec: the capture stage's procedure. Named for
+ * the judgment rather than a command (design D2) — it runs exactly one,
+ * `ctxr source check`, because deciding what a faithful record is cannot be
+ * mechanized. It deliberately stops at the inbox and hands to
+ * `ctxr-ingest-orchestration`, which is where reading the existing cluster
+ * and deciding what the store should know lives.
+ */
+const CAPTURE: SkillSeed = {
+  file: 'ctxr-capture',
+  name: 'Capture',
+  description:
+    'Bring material from outside the store into the inbox as a faithful record carrying its source identity, then hand off to ingest.',
+  body: (config) => skillTemplate('ctxr-capture').replaceAll('__INBOX_PATH__', config.ingest.inbox_path).split('\n'),
+};
+
 const INGEST_ORCHESTRATION: SkillSeed = {
   file: 'ctxr-ingest-orchestration',
   name: 'Ingest orchestration',
@@ -282,6 +298,7 @@ const PUBLISH: SkillSeed = {
 };
 
 export const SKILLS: readonly SkillSeed[] = [
+  CAPTURE,
   INGEST_ORCHESTRATION,
   PLACEMENT,
   CONNECTION_FINDING,

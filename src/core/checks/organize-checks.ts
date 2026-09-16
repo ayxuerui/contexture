@@ -5,6 +5,9 @@ import { checkCatalogCoverage } from '../catalog/build.js';
 import type { Finding } from '../envelope.js';
 import { reorderFencedRegions } from '../fs/fenced-region.js';
 import { orphans } from '../graph/query.js';
+import { SOURCE_TYPE_FIELD } from '../ingest/identity.js';
+import { missingRequiredSection } from '../ingest/required-sections.js';
+import { parseNote } from '../notes/parse.js';
 import { findStaleRollups } from '../rollup.js';
 import { defineCheck } from './types.js';
 
@@ -89,6 +92,55 @@ export const uningestedInboxCheck = defineCheck({
         message: `"${capturePath}" is in the inbox but has not been ingested.`,
         subject: capturePath,
       }));
+    return { status: findings.length > 0 ? 'fail' : 'pass', findings };
+  },
+});
+
+/**
+ * context-ingest spec: inbox material whose source type carries a declared
+ * section it does not have. An observation, not an invariant — a capture that
+ * is not ready is not a broken store, it is material not ready, and the same
+ * condition is refused with the check code the moment ingest is asked to
+ * treat it as provenance. That split is the lint/doctor line.
+ *
+ * Read off the filesystem for the same reason the check above is: the inbox
+ * sits inside a declared retrieval exclusion, so note enumeration cannot see
+ * it. Only the markdown a capture presents is examined; a capture that is not
+ * markdown carries its sections in its sidecar, which is itself a file here.
+ */
+export const captureMissingRequiredSectionCheck = defineCheck({
+  id: 'ingest.missing_required_capture_section',
+  title: 'Inbox material missing the section its source type requires',
+  severity: 'observation',
+  capability: 'context-ingest',
+  scopes: ['store'],
+  appliesTo: (ctx) =>
+    ctx.config.ingest.required_capture_sections === undefined
+      ? { applicable: false, reason: 'this store declares no required capture section' }
+      : { applicable: true },
+  async run(ctx) {
+    const inboxPath = ctx.config.ingest.inbox_path;
+    const findings: Finding[] = [];
+    for (const relativeToInbox of (await filesUnder(path.join(ctx.storeRoot, inboxPath))).sort()) {
+      const capturePath = `${inboxPath.replace(/\/+$/, '')}/${relativeToInbox}`;
+      if (!capturePath.endsWith('.md')) continue;
+      let capture;
+      try {
+        capture = await parseNote(path.join(ctx.storeRoot, capturePath), capturePath);
+      } catch {
+        continue; // Unreadable or unparseable material is the inbox check's business, not this one's.
+      }
+      const sourceType = capture.frontmatter?.[SOURCE_TYPE_FIELD];
+      const missing = missingRequiredSection(ctx.config, typeof sourceType === 'string' ? sourceType : undefined, capture.body);
+      if (missing === undefined) continue;
+      findings.push({
+        code: 'ingest.missing_required_capture_section',
+        severity: 'info',
+        message: `"${capturePath}" carries no "${missing}" section, which this store requires of every "${sourceType as string}" capture.`,
+        subject: capturePath,
+        details: { section: missing, source_type: sourceType as string },
+      });
+    }
     return { status: findings.length > 0 ? 'fail' : 'pass', findings };
   },
 });
@@ -207,6 +259,7 @@ export const ORGANIZE_CHECKS = [
   orphanNotesCheck,
   brokenLinksCheck,
   uningestedInboxCheck,
+  captureMissingRequiredSectionCheck,
   catalogGapsLintCheck,
   rollupStaleCheck,
   agentsMdSectionOrderBlockedCheck,

@@ -4,7 +4,7 @@ import path from 'node:path';
 import type { CommandOutcome, CommandRequires } from '../core/command.js';
 import { buildCatalog } from '../core/catalog/build.js';
 import type { RunEnv } from '../core/env.js';
-import { AlreadyIngestedError, CaptureDestinationExistsError, NoteNotFoundError } from '../core/errors.js';
+import { AlreadyIngestedError, CaptureDestinationExistsError, MissingRequiredCaptureSectionError, NoteNotFoundError } from '../core/errors.js';
 import { ExitCode } from '../core/exit-codes.js';
 import { isUnderPrefix } from '../core/fs/prefix.js';
 import { writeFileAtomic } from '../core/fs/atomic.js';
@@ -18,6 +18,7 @@ import {
   SOURCE_TYPE_FIELD,
   SOURCES_FIELD,
 } from '../core/ingest/identity.js';
+import { missingRequiredSection } from '../core/ingest/required-sections.js';
 import { parseNote } from '../core/notes/parse.js';
 import { renderNoteText } from '../core/notes/render.js';
 import type { Store } from '../core/store.js';
@@ -105,6 +106,16 @@ export async function execute(env: RunEnv, store: Store, flags: IngestFlags): Pr
   const capture = await readOrThrow(store, capturePath);
   if (hasAssignedIdentity(capture)) {
     throw new AlreadyIngestedError(capturePath);
+  }
+  /**
+   * Before anything is written. A capture missing the section its store
+   * requires is refused whole — not stamped, not moved, not cited — so a
+   * paraphrase never becomes the provenance behind a note by getting halfway
+   * through ingest.
+   */
+  const missingSection = missingRequiredSection(store.config, flags.sourceType, capture.body);
+  if (missingSection !== undefined) {
+    throw new MissingRequiredCaptureSectionError(capturePath, flags.sourceType, missingSection);
   }
   const note = await readOrThrow(store, notePath);
 
