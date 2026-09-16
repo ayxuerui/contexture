@@ -209,6 +209,16 @@ ctxr ingest raw/inbox/note.md --into resources/topic.md --source-type article --
 
 Material that isn't markdown can't carry frontmatter, so it travels with a markdown sidecar naming it in `capture_file`; the hash is taken over that file's bytes and the two move together.
 
+A capture stands as provenance only if it carries the record it rests on. Where a source hands you its own summary *and* the verbatim record behind it, the summary is a derivation — it answers only what it was written to answer, and a hash frozen over it records a conclusion with no evidence behind it. A store can hold itself to the record with `ingest.required_capture_sections`, a map from a source type to the section a capture of that type must carry:
+
+```yaml
+ingest:
+  required_capture_sections:
+    interview: Transcript
+```
+
+`ctxr ingest` then refuses a capture recorded under `interview` that has no non-empty `## Transcript` section, naming the capture and the section and writing nothing — so it never becomes a note's provenance. Both words are yours: contexture reserves no source type and no section name, and a store that declares nothing is unaffected. The check is shape only, deliberately — no byte-level test can tell a whole record from its first five minutes, so whether what's under the heading is really complete stays your discipline, not a guarantee contexture pretends to make.
+
 The commands are the easy part. `ctxr-ingest-orchestration` exists because ingest is **synthesis, not filing** — "create a new note" is one option among several, and the skill's decision table (new note / expand an existing one / merge two / restructure / add a section to a hub) is the actual work. Every row of that table ends in the same `ingest` call, so provenance is recorded whichever one you take. `ctxr-placement` decides where the result lives, and says why.
 
 ### 2. Retrieve — three legs, no ranker

@@ -160,6 +160,26 @@ const IngestSchema = z
     capture_root: z.string().min(1).default(SHIPPED_DEFAULTS.ingest.capture_root),
     /** store-primitives-from-migration-audit spec (D2): query parameters stripped when canonicalizing a URL source identity, in addition to the shipped defaults. */
     tracking_params: z.array(z.string()).default([...SHIPPED_DEFAULTS.ingest.tracking_params]),
+    /**
+     * require-a-capture-s-verbatim-record (D1): source type -> the section
+     * heading required of a capture recorded under that type. Both halves are
+     * the store's own vocabulary and contexture reserves neither, so the rule
+     * reads the same whether the record a capture rests on is a transcript, a
+     * testimony, or anything else that store decided is its evidence.
+     *
+     * Optional with NO default (D7) — the `organize.mission_path` semantics
+     * context-store already names: absence means the store has not opted in,
+     * not that it accepts a default. Defaulting would arm the refusal for
+     * every store predating the key, against source types contexture has
+     * never looked at. An empty map is refused rather than treated as none,
+     * because omitting the key is already how a store says it wants none.
+     */
+    required_capture_sections: z
+      .record(z.string().min(1), z.string().min(1))
+      .refine((sections) => Object.keys(sections).length > 0, {
+        message: 'declares no source type - omit the key entirely to require no section of any capture',
+      })
+      .optional(),
   });
 
 /**

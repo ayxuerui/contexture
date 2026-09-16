@@ -6,7 +6,8 @@ import { execute as executeIngest } from '../../src/commands/ingest.js';
 import { execute as executeSourceCheck } from '../../src/commands/source-check.js';
 import { execute as executeSourceHash } from '../../src/commands/source-hash.js';
 import type { StoreConfig } from '../../src/config/schema.js';
-import { AlreadyIngestedError, NoteNotFoundError } from '../../src/core/errors.js';
+import { AlreadyIngestedError, CaptureSectionMissingError, NoteNotFoundError } from '../../src/core/errors.js';
+import { hasNonEmptySection } from '../../src/core/ingest/required-sections.js';
 import { ExitCode } from '../../src/core/exit-codes.js';
 import type { Store } from '../../src/core/store.js';
 import { makeFakeEnv } from '../helpers/fake-env.js';
@@ -333,6 +334,233 @@ describe('source check command (via the CLI command layer)', () => {
       const outcome = await executeSourceCheck(env, store, { path: 'raw/inbox/a.md', sourceId: 'src-1' });
       expect(outcome.data?.verdict).toBe('drift');
       expect(outcome.data?.matches).toEqual(['projects/prior.md']);
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+});
+
+/**
+ * require-a-capture-s-verbatim-record: the store declared that captures of a
+ * source type carry the record they rest on, and ingest is where that claim is
+ * refused if they do not. Both the source type and the section heading are the
+ * store's own words, so these cases use pairs contexture has never heard of.
+ */
+describe('hasNonEmptySection (require-a-capture-s-verbatim-record)', () => {
+  it('accepts a section with content and refuses one with none', () => {
+    expect(hasNonEmptySection('## section-a\n\nSomething.\n', 'section-a')).toBe(true);
+    expect(hasNonEmptySection('## section-a\n\n## other\n\nSomething.\n', 'section-a')).toBe(false);
+    expect(hasNonEmptySection('# Title\n\nNo such section.\n', 'section-a')).toBe(false);
+  });
+
+  it('matches the heading without regard to case or surrounding blank lines', () => {
+    expect(hasNonEmptySection('## SECTION-A\n\nSomething.\n', 'section-a')).toBe(true);
+    expect(hasNonEmptySection('## section-a   \nSomething.\n', 'Section-A')).toBe(true);
+  });
+
+  it('only matches at level two, so a deeper heading of the same name is not the section', () => {
+    expect(hasNonEmptySection('### section-a\n\nSomething.\n', 'section-a')).toBe(false);
+  });
+
+  it('counts a subheading under the section as content', () => {
+    expect(hasNonEmptySection('## section-a\n\n### detail\n', 'section-a')).toBe(true);
+  });
+
+  /** A transcript may quote a line beginning `##`; treating it as a heading would end the section early. */
+  it('does not end the section on a heading-looking line inside fenced code', () => {
+    expect(hasNonEmptySection('## section-a\n\n```\n## not a heading\n```\n', 'section-a')).toBe(true);
+  });
+
+  it('does not let a fenced heading stand in for the section itself', () => {
+    expect(hasNonEmptySection('# Title\n\n```\n## section-a\ncontent\n```\n', 'section-a')).toBe(false);
+  });
+
+  /** An empty first occurrence must not condemn a capture that plainly holds the record further down. */
+  it('judges a repeated heading on whether any occurrence has content', () => {
+    expect(hasNonEmptySection('## section-a\n\n## section-a\n\nSomething.\n', 'section-a')).toBe(true);
+  });
+});
+
+describe('ingest refuses a capture missing its declared section', () => {
+  const CAPTURE = 'raw/inbox/a.md';
+  const NOTE = 'projects/topic.md';
+  const RETAINED = 'raw/202601/a.md';
+
+  function configRequiring(sections: Record<string, string>): StoreConfig {
+    const config = makeConfig();
+    config.ingest.required_capture_sections = sections;
+    return config;
+  }
+
+  async function setUp(root: string, body: string, sections?: Record<string, string>): Promise<Store> {
+    await writeNote(root, CAPTURE, body);
+    await writeNote(root, NOTE, '# Topic\n\nWhat the store knows.\n');
+    return { root, config: sections === undefined ? makeConfig() : configRequiring(sections) };
+  }
+
+  it('refuses it, writing nothing at all', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const store = await setUp(tmp.root, '# Captured\n\nOnly a summary.\n', { 'source-a': 'section-a' });
+      const env = makeFakeEnv({ cwd: tmp.root });
+
+      await expect(
+        executeIngest(env, store, { path: CAPTURE, into: NOTE, sourceType: 'source-a', sourceId: 'src-1' }),
+      ).rejects.toBeInstanceOf(CaptureSectionMissingError);
+
+      // The capture is untouched: still in the inbox, unstamped, and not retained.
+      const capture = await readFile(path.join(tmp.root, CAPTURE), 'utf8');
+      expect(capture).toBe('# Captured\n\nOnly a summary.\n');
+      expect(existsSync(path.join(tmp.root, RETAINED))).toBe(false);
+      // The note never learned about it, and no catalog was rebuilt on the way out.
+      expect(await readFile(path.join(tmp.root, NOTE), 'utf8')).not.toContain('sources');
+      expect(existsSync(path.join(tmp.root, 'catalog'))).toBe(false);
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('names the capture and the section, and no completeness standard', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const store = await setUp(tmp.root, '# Captured\n\nOnly a summary.\n', { 'source-a': 'section-a' });
+      const env = makeFakeEnv({ cwd: tmp.root });
+      const error = await executeIngest(env, store, {
+        path: CAPTURE,
+        into: NOTE,
+        sourceType: 'source-a',
+        sourceId: 'src-1',
+      }).then(
+        () => undefined,
+        (err: unknown) => err as CaptureSectionMissingError,
+      );
+
+      expect(error).toBeInstanceOf(CaptureSectionMissingError);
+      expect(error?.finding.message).toContain(CAPTURE);
+      expect(error?.finding.message).toContain('section-a');
+      for (const overreach of ['complete', 'full', 'entire', 'length', 'minutes', 'words']) {
+        expect(error?.finding.message, `refusal should not imply a ${overreach} standard`).not.toContain(overreach);
+      }
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('refuses a heading with nothing under it on the same footing as no heading at all', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const store = await setUp(tmp.root, '# Captured\n\n## section-a\n\n## Notes\n\nA summary.\n', {
+        'source-a': 'section-a',
+      });
+      const env = makeFakeEnv({ cwd: tmp.root });
+      await expect(
+        executeIngest(env, store, { path: CAPTURE, into: NOTE, sourceType: 'source-a', sourceId: 'src-1' }),
+      ).rejects.toBeInstanceOf(CaptureSectionMissingError);
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('ingests a capture carrying the section exactly as an undeclared one', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const store = await setUp(tmp.root, '# Captured\n\n## section-a\n\nWhat was actually said.\n', {
+        'source-a': 'section-a',
+      });
+      const env = makeFakeEnv({ cwd: tmp.root });
+      const outcome = await executeIngest(env, store, {
+        path: CAPTURE,
+        into: NOTE,
+        sourceType: 'source-a',
+        sourceId: 'src-1',
+      });
+      expect(outcome.exitCode).toBe(ExitCode.Ok);
+      expect(outcome.data?.capture).toBe(RETAINED);
+      expect(await readFile(path.join(tmp.root, NOTE), 'utf8')).toContain(`- ${RETAINED}`);
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  /** D3: the declaration is the store's, not the invocation's, so a different flag value is not a bypass. */
+  it('refuses when the declared type sits in frontmatter and the invocation names another', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const store = await setUp(tmp.root, '---\nsource_type: source-a\n---\n# Captured\n\nOnly a summary.\n', {
+        'source-a': 'section-a',
+      });
+      const env = makeFakeEnv({ cwd: tmp.root });
+      await expect(
+        executeIngest(env, store, { path: CAPTURE, into: NOTE, sourceType: 'source-b', sourceId: 'src-1' }),
+      ).rejects.toBeInstanceOf(CaptureSectionMissingError);
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('gates every declared type, so a store mid-migration is covered on both', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const store = await setUp(tmp.root, '# Captured\n\nOnly a summary.\n', {
+        'source-a': 'section-a',
+        'source-b': 'section-b',
+      });
+      const env = makeFakeEnv({ cwd: tmp.root });
+      await expect(
+        executeIngest(env, store, { path: CAPTURE, into: NOTE, sourceType: 'source-b', sourceId: 'src-2' }),
+      ).rejects.toBeInstanceOf(CaptureSectionMissingError);
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('leaves a capture of an undeclared source type ungated', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const store = await setUp(tmp.root, '# Captured\n\nNo sections at all.\n', { 'source-a': 'section-a' });
+      const env = makeFakeEnv({ cwd: tmp.root });
+      const outcome = await executeIngest(env, store, {
+        path: CAPTURE,
+        into: NOTE,
+        sourceType: 'source-b',
+        sourceId: 'src-1',
+      });
+      expect(outcome.exitCode).toBe(ExitCode.Ok);
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('leaves every capture ungated in a store that declares nothing', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const store = await setUp(tmp.root, '# Captured\n\nNo sections at all.\n');
+      const env = makeFakeEnv({ cwd: tmp.root });
+      const outcome = await executeIngest(env, store, {
+        path: CAPTURE,
+        into: NOTE,
+        sourceType: 'source-a',
+        sourceId: 'src-1',
+      });
+      expect(outcome.exitCode).toBe(ExitCode.Ok);
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  /** A non-markdown capture cannot carry sections; the record ingest reads is the sidecar it is given. */
+  it('checks the sidecar for a capture that is not markdown', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const store = await setUp(tmp.root, '---\ncapture_file: a.pdf\n---\n# Captured\n\nOnly a summary.\n', {
+        'source-a': 'section-a',
+      });
+      await writeNote(tmp.root, 'raw/inbox/a.pdf', '%PDF-1.4 bytes\n');
+      const env = makeFakeEnv({ cwd: tmp.root });
+      await expect(
+        executeIngest(env, store, { path: CAPTURE, into: NOTE, sourceType: 'source-a', sourceId: 'src-1' }),
+      ).rejects.toBeInstanceOf(CaptureSectionMissingError);
+      expect(existsSync(path.join(tmp.root, 'raw/inbox/a.pdf'))).toBe(true);
     } finally {
       await tmp.cleanup();
     }

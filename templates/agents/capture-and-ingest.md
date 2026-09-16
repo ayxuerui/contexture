@@ -15,6 +15,13 @@ It MUST NOT carry either of these; contexture assigns them once, at ingest, and 
 - `source_hash`
 - `ingested`
 
+A capture stands as provenance only if it carries the record it rests on. Where a source offers both its own
+summary and the verbatim record behind it — a transcript, a recording's text, the original document — the
+summary is a derivation of that record, not a substitute for it: it answers only what it was written to
+answer, and a hash frozen over it records a conclusion with no evidence behind it. Capture the record, and
+keep the summary beside it when it earns the room.
+__REQUIRED_SECTIONS__
+
 Before ingesting, run `ctxr source check <path> --source-id <id>` to get one of five verdicts: `new`,
 `already_ingested`, `drift` (same identity, the source's content moved), `alternate_source_match`, or
 `multiple_matches` — the last one means stop and resolve the ambiguity yourself rather than guessing which

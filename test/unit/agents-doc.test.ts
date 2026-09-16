@@ -544,6 +544,12 @@ describe('exact rendered output', () => {
       "- `source_hash`",
       "- `ingested`",
       "",
+      "A capture stands as provenance only if it carries the record it rests on. Where a source offers both its own",
+      "summary and the verbatim record behind it \u2014 a transcript, a recording's text, the original document \u2014 the",
+      "summary is a derivation of that record, not a substitute for it: it answers only what it was written to",
+      "answer, and a hash frozen over it records a conclusion with no evidence behind it. Capture the record, and",
+      "keep the summary beside it when it earns the room.",
+      "",
       "Before ingesting, run `ctxr source check <path> --source-id <id>` to get one of five verdicts: `new`,",
       "`already_ingested`, `drift` (same identity, the source's content moved), `alternate_source_match`, or",
       "`multiple_matches` \u2014 the last one means stop and resolve the ambiguity yourself rather than guessing which",
@@ -642,5 +648,53 @@ describe('exact rendered output', () => {
       "",
       "_Source: MISSION.md_",
     ]);
+  });
+});
+
+/**
+ * require-a-capture-s-verbatim-record (D6): the rule reaches an agent through
+ * the section every store loads every session, and a store that has not opted
+ * in must carry no trace of the mechanism it declined.
+ */
+describe('renderCaptureSection: required capture sections', () => {
+  function requiring(sections: Record<string, string>): StoreConfig {
+    return makeConfig({ ingest: { inbox_path: 'raw/inbox/', capture_root: 'raw/', tracking_params: [], required_capture_sections: sections } });
+  }
+
+  it('states the principle for every store, declared or not', () => {
+    for (const config of [makeConfig(), requiring({ 'source-a': 'section-a' })]) {
+      expect(renderCaptureSection(config).join('\n')).toContain('A capture stands as provenance only if it carries the record it rests on.');
+    }
+  });
+
+  it('names the declared source type and its section', () => {
+    const lines = renderCaptureSection(requiring({ 'source-a': 'section-a' })).join('\n');
+    expect(lines).toContain('`source_type: source-a`');
+    expect(lines).toContain('`## section-a`');
+    expect(lines).toContain('`ctxr ingest` refuses');
+  });
+
+  it('names every declared pair, in a stable order regardless of declaration order', () => {
+    const forward = renderCaptureSection(requiring({ 'source-a': 'section-a', 'source-b': 'section-b' }));
+    const reversed = renderCaptureSection(requiring({ 'source-b': 'section-b', 'source-a': 'section-a' }));
+    expect(forward).toEqual(reversed);
+    const body = forward.join('\n');
+    expect(body.indexOf('source-a')).toBeLessThan(body.indexOf('source-b'));
+  });
+
+  /**
+   * The empty-list case of `substituteBlock`: the token's line is removed
+   * outright, so an undeclared store gets no dangling heading and no second
+   * blank line where a declaration would have been.
+   */
+  it('leaves no trace of the mechanism when nothing is declared', () => {
+    const lines = renderCaptureSection(makeConfig());
+    expect(lines.join('\n')).not.toContain('This store requires');
+    expect(lines.join('\n')).not.toContain('__REQUIRED_SECTIONS__');
+
+    const principleEnd = lines.indexOf('keep the summary beside it when it earns the room.');
+    expect(principleEnd).toBeGreaterThan(-1);
+    expect(lines[principleEnd + 1]).toBe('');
+    expect(lines[principleEnd + 2]).toMatch(/^Before ingesting,/);
   });
 });

@@ -206,6 +206,29 @@ export class AlreadyIngestedError extends ContextureError {
   }
 }
 
+/**
+ * require-a-capture-s-verbatim-record (D4): the store declared that captures
+ * of this source type carry a particular section, and this one does not.
+ *
+ * The message names the capture and the heading looked for, and deliberately
+ * names no expected length, coverage, or completeness standard — none is
+ * derivable from the capture, and implying one would misrepresent what the
+ * check actually tested.
+ */
+export class CaptureSectionMissingError extends ContextureError {
+  constructor(capturePath: string, heading: string) {
+    super(ExitCode.Usage, {
+      code: 'ingest.capture_section_missing',
+      severity: 'error',
+      message:
+        `"${capturePath}" carries no non-empty "${heading}" section, which this store requires of ` +
+        'captures recorded under its source type.',
+      subject: capturePath,
+      details: { heading },
+    });
+  }
+}
+
 export class NoteNotTrackedError extends ContextureError {
   constructor(notePath: string) {
     super(ExitCode.Usage, {

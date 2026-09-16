@@ -90,11 +90,40 @@ export async function buildAgentsLegRoutingSection(root: string, config: StoreCo
  */
 export const AGENTS_MD_CAPTURE_FENCE = htmlCommentFence('capture-and-ingest');
 
+/**
+ * require-a-capture-s-verbatim-record (D6): the rule lives here rather than in
+ * a skill of its own, because a skill would have to carry a fetch procedure to
+ * justify existing and the fetch is exactly what contexture does not claim to
+ * know. Every store loads this section every session, which is the right place
+ * for a rule whose whole failure mode is not being noticed.
+ *
+ * A store that has declared nothing renders no trace of the mechanism:
+ * `substituteBlock` removes the token's line outright for an empty list, so
+ * there is no empty heading and no blank line left where a declaration would
+ * have been.
+ */
+function requiredSectionLines(config: StoreConfig): string[] {
+  const declared = config.ingest.required_capture_sections;
+  if (declared === undefined) return [];
+  return [
+    '',
+    'This store requires a capture to carry the record behind it, and `ctxr ingest` refuses one that arrives',
+    'without it:',
+    '',
+    ...Object.entries(declared)
+      .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+      .map(([sourceType, heading]) => `- \`source_type: ${sourceType}\` — a non-empty \`## ${heading}\` section`),
+  ];
+}
+
 export function renderCaptureSection(config: StoreConfig): string[] {
-  return agentsTemplate('capture-and-ingest')
-    .replaceAll('__INBOX_PATH__', config.ingest.inbox_path)
-    .replaceAll('__CAPTURE_ROOT__', config.ingest.capture_root)
-    .split('\n');
+  return substituteBlock(
+    agentsTemplate('capture-and-ingest')
+      .replaceAll('__INBOX_PATH__', config.ingest.inbox_path)
+      .replaceAll('__CAPTURE_ROOT__', config.ingest.capture_root),
+    '__REQUIRED_SECTIONS__',
+    requiredSectionLines(config),
+  ).split('\n');
 }
 
 export async function buildAgentsCaptureSection(root: string, config: StoreConfig): Promise<{ changed: boolean }> {
