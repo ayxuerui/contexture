@@ -88,4 +88,47 @@ describe('lint command', () => {
       await tmp.cleanup();
     }
   });
+  /**
+   * context-ingest spec: the observation side of the required-section rule.
+   * Lint reports it and still exits 0 — ingest is where the same condition is
+   * refused, and a capture that is not ready yet is not a broken store.
+   */
+  it('reports inbox material missing its required section, and still exits 0', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const config = makeConfig();
+      const store: Store = {
+        root: tmp.root,
+        config: { ...config, ingest: { ...config.ingest, required_capture_sections: { 'ctx-a': 'Transcript' } } },
+      };
+      await writeNote(tmp.root, 'raw/inbox/a.md', '---\nsource_type: ctx-a\n---\n\n## Summary\n\nOnly the derivation.\n');
+      await writeNote(tmp.root, 'raw/inbox/b.md', '---\nsource_type: ctx-a\n---\n\n## Transcript\n\nWhat was said.\n');
+      await writeNote(tmp.root, 'raw/inbox/c.md', '---\nsource_type: ctx-b\n---\n\nNo declaration covers this one.\n');
+
+      const env = makeFakeEnv({ cwd: tmp.root });
+      const outcome = await execute(env, store);
+
+      expect(outcome.exitCode).toBe(ExitCode.Ok);
+      const finding = outcome.data?.checks.find((c) => c.id === 'ingest.missing_required_capture_section');
+      expect(finding?.findings?.map((f) => f.subject)).toEqual(['raw/inbox/a.md']);
+      expect(finding?.findings?.[0]?.message).toContain('Transcript');
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('skips the required-section check entirely when the store declares none', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const store: Store = { root: tmp.root, config: makeConfig() };
+      await writeNote(tmp.root, 'raw/inbox/a.md', '---\nsource_type: ctx-a\n---\n\nNothing declared, nothing owed.\n');
+      const env = makeFakeEnv({ cwd: tmp.root });
+      const outcome = await execute(env, store);
+      expect(outcome.exitCode).toBe(ExitCode.Ok);
+      expect(outcome.data?.checks.find((c) => c.id === 'ingest.missing_required_capture_section')?.result).toBe('skip');
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
 });

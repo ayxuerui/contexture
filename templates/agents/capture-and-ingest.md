@@ -4,8 +4,10 @@ Captures live under `__CAPTURE_ROOT__`, which is excluded from retrieval: nothin
 nothing in it is returned by a search, listed in the catalog, or drawn in the graph. It is tracked in git
 all the same — a capture is the provenance behind a note, not scratch space.
 
-To capture something new, write the material into `__INBOX_PATH__` — no CLI command wraps this. It may
-already carry these two fields, since whatever fetched it usually knows them:
+To capture something new, write the material into `__INBOX_PATH__` — no CLI command wraps this, but
+`ctxr-capture` carries the procedure: what counts as the record rather than a summary of it, how to
+identify it, and where capture stops. The material may already carry these two fields, since whatever
+fetched it usually knows them:
 
 - `source_type`
 - `source_id`

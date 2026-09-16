@@ -58,7 +58,7 @@ CLAUDE.md                     harness entry file; a one-line managed import of A
   hooks/                      the write-gate shim
   skills/ -> ../.agents/skills   a bridge, so Claude Code auto-discovers the canonical skills
 .agents/skills/               THE canonical skills location, read natively by most harnesses
-  ctxr-*/SKILL.md               14 contexture-owned skills (refreshed by `ctxr update`)
+  ctxr-*/SKILL.md               15 contexture-owned skills (refreshed by `ctxr update`)
   frontend-design/, eli5/       vendored third-party skills, with licenses and provenance
 .contexture/guidance/
   house-conventions.md        your store's own rules — inlined into AGENTS.md verbatim
@@ -101,6 +101,7 @@ Two distinctions make the rest of this readable:
 
 | Skill | What it decides |
 | --- | --- |
+| `ctxr-capture` | What the record of a source actually is, and where capture stops |
 | `ctxr-ingest-orchestration` | What the store should know after a source — not where to file it |
 | `ctxr-placement` | Which layer and location a note belongs in, and why |
 | `ctxr-connection-finding` | Traversing links that already exist |
@@ -195,7 +196,7 @@ Four of these are the moves knowledge work is made of: **capture** what arrives,
 
 ### 1. Capture — get material in without duplicating it
 
-Capture is just writing the material into `raw/inbox/`; no CLI wraps it. It may already carry `source_type` and `source_id` — whatever fetched it usually knows them — but never `source_hash` or `ingested`, which contexture assigns once, at ingest. Then:
+Capture is writing the material into `raw/inbox/`; no CLI wraps it, and contexture fetches nothing — the transport is whatever your harness has connected, which is what keeps a vendor's release cadence off this tool's. What contexture owns is the shape: a capture may already carry `source_type` and `source_id` — whatever fetched it usually knows them — but never `source_hash` or `ingested`, which contexture assigns once, at ingest. Then:
 
 ```sh
 ctxr source check raw/inbox/note.md --source-id https://example.com/a
@@ -208,6 +209,10 @@ ctxr ingest raw/inbox/note.md --into resources/topic.md --source-type article --
 `ctxr ingest` stamps the four identity fields **onto the capture**, moves it out of the inbox into `raw/<YYYYMM>/`, records its path in the destination note's `sources` list, and rebuilds the catalog. The note carries no source identity of its own, which is what lets it be rewritten, merged or restructured without invalidating the frozen hash — and what lets one note cite the several captures it was built from. `--into` is required: ingest never creates the note, because deciding what the store should know is the work.
 
 Material that isn't markdown can't carry frontmatter, so it travels with a markdown sidecar naming it in `capture_file`; the hash is taken over that file's bytes and the two move together.
+
+A capture stands as provenance only if it carries the record it rests on, and a service's own summary is its *derivation* of that record, not the record. `ingest.required_capture_sections` maps a source type to the section a capture of that type must contain — `ctxr ingest` refuses one that doesn't (exit 3, nothing written), and `ctxr lint` reports it while it waits in the inbox. Undeclared by default, and a source type with no entry is unconstrained; the store names its own source types, because contexture knows none of them.
+
+`ctxr-capture` carries the procedure that produces such a capture — finding the material among whatever sources are connected, writing the record as the source supplied it rather than a reading of it, and stopping at the inbox. It matters most when material reaches the store through an agent rather than a script, which is why the section rule above is a check and not only an instruction.
 
 The commands are the easy part. `ctxr-ingest-orchestration` exists because ingest is **synthesis, not filing** — "create a new note" is one option among several, and the skill's decision table (new note / expand an existing one / merge two / restructure / add a section to a hub) is the actual work. Every row of that table ends in the same `ingest` call, so provenance is recorded whichever one you take. `ctxr-placement` decides where the result lives, and says why.
 

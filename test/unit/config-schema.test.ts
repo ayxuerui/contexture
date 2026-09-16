@@ -276,6 +276,35 @@ describe('readConfig', () => {
   });
 
   /**
+   * capture-is-an-owned-skill: an opt-in key with no shipped default, so a
+   * store that declares nothing constrains nothing. Read as a pair — the
+   * absent case is what every store predating the key relies on.
+   */
+  it('leaves required capture sections undeclared when the store says nothing', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      await writeFile(path.join(tmp.root, CONFIG_FILE_NAME), minimalConfig());
+      const config = await readConfig(tmp.root);
+      expect(config.ingest.required_capture_sections).toBeUndefined();
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('reads a declared required capture section per source type', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const text = `${minimalConfig()}ingest: { required_capture_sections: { ctx-a: Transcript } }\n`;
+      await writeFile(path.join(tmp.root, CONFIG_FILE_NAME), text);
+      const config = await readConfig(tmp.root);
+      expect(config.ingest.required_capture_sections).toEqual({ 'ctx-a': 'Transcript' });
+      expect(config.ingest.inbox_path).toBe(SHIPPED_DEFAULTS.ingest.inbox_path);
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  /**
    * `organize.archive_destination` is derived from the taxonomy, not a
    * convention: defaulting it to the flat constant would send a PARA store's
    * archived notes to `archive/` while its own taxonomy declares `archives/`.

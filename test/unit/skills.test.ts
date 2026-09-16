@@ -62,11 +62,19 @@ function rendered(config = makeConfig()): Record<string, string> {
 const SHIPPED_NAMES = [...new Set(SHIPPED_PROFILES.flatMap((p) => [p.name, ...p.layers.map((l) => l.name)]))];
 
 /** Words a real deployment uses as visibility values; a skill may only ever say `<context>` / `<value>`. */
+/**
+ * Capture services a store might connect, none of which may appear in the
+ * shipped capture skill. Not exhaustive and not meant to be — it is a tripwire
+ * for the habit of writing a procedure against the vendor in front of you.
+ */
+const CAPTURE_SERVICE_NAMES = ['granola', 'otter', 'circleback', 'fathom', 'fireflies', 'zoom', 'notion', 'readwise', 'pocket'];
+
 const TIER_WORDS = ['personal', 'private', 'public', 'shared', 'internal', 'team', 'confidential'];
 
 describe('SKILLS', () => {
-  it('names the fourteen owned skills, in index order', () => {
+  it('names the fifteen owned skills, in index order', () => {
     expect(SKILLS.map((p) => p.file)).toEqual([
+      'ctxr-capture',
       'ctxr-ingest-orchestration',
       'ctxr-placement',
       'ctxr-connection-finding',
@@ -382,6 +390,24 @@ describe('owned-skills-expansion: each skill carries its load-bearing rule (task
     expect(s['ctxr-derived-artifacts']).toContain('`ctxr entry append <note> --region <name>`');
   });
 
+  /**
+   * capture-is-an-owned-skill spec: "The capture skill names no particular
+   * source." The whole design rests on transport living outside contexture,
+   * and a service name in the shipped text is how that boundary erodes — the
+   * skill starts documenting one vendor's shape and stops holding for the
+   * next. Listed here rather than in the skill, which is the point.
+   */
+  it('the capture skill names no capture service and no source-type literal', () => {
+    expect(CAPTURE_SERVICE_NAMES.length).toBeGreaterThan(0); // anti-vacuity
+    const capture = rendered()['ctxr-capture'];
+    expect(capture).toBeDefined();
+    for (const name of CAPTURE_SERVICE_NAMES) {
+      expect(capture, `ctxr-capture names the capture service "${name}"`).not.toMatch(new RegExp(`\\b${name}\\b`, 'i'));
+    }
+    // It has to say something in their place: the source system's own name.
+    expect(capture).toContain("the source system's own name");
+  });
+
   it('no skill names a shipped profile or layer, and none names a real visibility value (D3)', () => {
     expect(SHIPPED_NAMES.length).toBeGreaterThan(0);
     for (const [file, content] of Object.entries(skills)) {
@@ -460,7 +486,7 @@ describe('syncShippedSkills', () => {
     try {
       const written = await syncShippedSkills(tmp.root, makeConfig());
       expect(written.sort()).toEqual(skillPaths(makeConfig()).sort());
-      expect(written).toHaveLength(14);
+      expect(written).toHaveLength(15);
       const placement = await readFile(path.join(tmp.root, 'skills/ctxr-placement/SKILL.md'), 'utf8');
       expect(placement).toContain('name: ctxr-placement');
       expect(placement).toContain('description:');

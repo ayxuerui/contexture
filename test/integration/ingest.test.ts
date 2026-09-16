@@ -165,4 +165,33 @@ describe('contexture ingest / source (real CLI)', () => {
       await tmp.cleanup();
     }
   });
+  /**
+   * The exit code is the contract a hook or a script reads, so it is asserted
+   * through the real CLI rather than only at the command layer: `3` is "ran
+   * correctly, found a real problem", not `2`'s "you called me wrong".
+   */
+  it('exits with the check code when a capture lacks the section its store requires', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const env = hermeticGitEnv();
+      await runCli(['init'], { cwd: tmp.root, env });
+      await writeFile(
+        path.join(tmp.root, 'contexture.yaml'),
+        `${await readFile(path.join(tmp.root, 'contexture.yaml'), 'utf8')}ingest:\n  required_capture_sections:\n    ctx-a: Transcript\n`,
+      );
+      await writeNote(tmp.root, 'raw/inbox/a.md', '# Fixture\n\n## Summary\n\nOnly the derivation.\n');
+      await writeNote(tmp.root, 'projects/topic.md', '# Topic\n\nWhat the store knows.\n');
+
+      const refused = await runCli(
+        ['ingest', 'raw/inbox/a.md', '--into', 'projects/topic.md', '--source-type', 'ctx-a', '--source-id', 'src-1', '--json'],
+        { cwd: tmp.root, env },
+      );
+      expect(refused.exitCode).toBe(3);
+      expect(JSON.parse(refused.stdout).findings[0].code).toBe('ingest.missing_required_capture_section');
+      expect(await readFile(path.join(tmp.root, 'raw/inbox/a.md'), 'utf8')).not.toContain('source_hash');
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
 });

@@ -160,6 +160,18 @@ const IngestSchema = z
     capture_root: z.string().min(1).default(SHIPPED_DEFAULTS.ingest.capture_root),
     /** store-primitives-from-migration-audit spec (D2): query parameters stripped when canonicalizing a URL source identity, in addition to the shipped defaults. */
     tracking_params: z.array(z.string()).default([...SHIPPED_DEFAULTS.ingest.tracking_params]),
+    /**
+     * capture-is-an-owned-skill spec: per source type, the section a capture
+     * must carry for `ingest` to accept it as provenance — the mechanism
+     * behind "a service's summary is its derivation; the record is what the
+     * capture must carry."
+     *
+     * An opt-in key with no shipped default, like `organize.mission_path`:
+     * the key being absent is what says this store constrains nothing, and
+     * defaulting it would refuse captures in every store predating it. A
+     * source type with no entry here is unconstrained.
+     */
+    required_capture_sections: z.record(z.string().min(1), z.string().min(1)).optional(),
   });
 
 /**

@@ -206,6 +206,23 @@ export class AlreadyIngestedError extends ContextureError {
   }
 }
 
+/**
+ * context-ingest spec: a store declared which section a capture of this
+ * source type must carry, and this one does not carry it. `CheckFailed`, not
+ * `Usage` — the command ran correctly and found a real problem with the
+ * material, which is a different thing from being called wrongly.
+ */
+export class MissingRequiredCaptureSectionError extends ContextureError {
+  constructor(capturePath: string, sourceType: string, section: string) {
+    super(ExitCode.CheckFailed, {
+      code: 'ingest.missing_required_capture_section',
+      severity: 'error',
+      message: `"${capturePath}" carries no "${section}" section, which this store requires of every "${sourceType}" capture before it can stand as provenance.`,
+      subject: capturePath,
+    });
+  }
+}
+
 export class NoteNotTrackedError extends ContextureError {
   constructor(notePath: string) {
     super(ExitCode.Usage, {
