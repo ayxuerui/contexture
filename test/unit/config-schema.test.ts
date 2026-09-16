@@ -425,3 +425,69 @@ describe('adapters', () => {
     }
   });
 });
+
+/**
+ * require-a-capture-s-verbatim-record: an opt-in whose absence means the store
+ * has not asked any of its captures to carry the record they rest on. Both the
+ * source type and the section heading are the store's own words, so these
+ * cases deliberately use pairs contexture has never heard of.
+ */
+describe('ingest.required_capture_sections (require-a-capture-s-verbatim-record)', () => {
+  async function resolved(text: string) {
+    const tmp = await makeTmpDir();
+    try {
+      await writeFile(path.join(tmp.root, CONFIG_FILE_NAME), text);
+      return await readConfig(tmp.root);
+    } finally {
+      await tmp.cleanup();
+    }
+  }
+
+  async function refuses(text: string) {
+    const tmp = await makeTmpDir();
+    try {
+      await writeFile(path.join(tmp.root, CONFIG_FILE_NAME), text);
+      await expect(readConfig(tmp.root)).rejects.toBeInstanceOf(InvalidConfigError);
+    } finally {
+      await tmp.cleanup();
+    }
+  }
+
+  it('leaves the key unset rather than defaulting it', async () => {
+    const config = await resolved(minimalConfig());
+    expect(config.ingest.required_capture_sections).toBeUndefined();
+  });
+
+  it('resolves a declared pair', async () => {
+    const config = await resolved(`${minimalConfig()}ingest: { required_capture_sections: { source-a: section-a } }\n`);
+    expect(config.ingest.required_capture_sections).toEqual({ 'source-a': 'section-a' });
+  });
+
+  it('resolves more than one pair, so a store mid-migration can declare both of its sources', async () => {
+    const config = await resolved(
+      `${minimalConfig()}ingest: { required_capture_sections: { source-a: section-a, source-b: section-b } }\n`,
+    );
+    expect(config.ingest.required_capture_sections).toEqual({ 'source-a': 'section-a', 'source-b': 'section-b' });
+  });
+
+  it('leaves the capture tier siblings at their shipped defaults when only this key is declared', async () => {
+    const config = await resolved(`${minimalConfig()}ingest: { required_capture_sections: { source-a: section-a } }\n`);
+    expect(config.ingest.inbox_path).toBe(SHIPPED_DEFAULTS.ingest.inbox_path);
+    expect(config.ingest.capture_root).toBe(DEFAULT_CAPTURE_ROOT);
+  });
+
+  it('refuses an empty map, because omitting the key is already how a store requires nothing', async () => {
+    await refuses(`${minimalConfig()}ingest: { required_capture_sections: {} }\n`);
+  });
+
+  it('refuses an entry whose section heading is empty', async () => {
+    await refuses(`${minimalConfig()}ingest: { required_capture_sections: { source-a: "" } }\n`);
+  });
+
+  it('survives a render round-trip, since the key has no shipped default to be folded away', async () => {
+    const config = await resolved(`${minimalConfig()}ingest: { required_capture_sections: { source-a: section-a } }\n`);
+    const rendered = renderStoreConfig(config);
+    expect(rendered).toContain('required_capture_sections');
+    expect(await resolved(rendered)).toEqual(config);
+  });
+});

@@ -4,7 +4,7 @@ import path from 'node:path';
 import type { CommandOutcome, CommandRequires } from '../core/command.js';
 import { buildCatalog } from '../core/catalog/build.js';
 import type { RunEnv } from '../core/env.js';
-import { AlreadyIngestedError, CaptureDestinationExistsError, NoteNotFoundError } from '../core/errors.js';
+import { AlreadyIngestedError, CaptureDestinationExistsError, CaptureSectionMissingError, NoteNotFoundError } from '../core/errors.js';
 import { ExitCode } from '../core/exit-codes.js';
 import { isUnderPrefix } from '../core/fs/prefix.js';
 import { writeFileAtomic } from '../core/fs/atomic.js';
@@ -18,6 +18,7 @@ import {
   SOURCE_TYPE_FIELD,
   SOURCES_FIELD,
 } from '../core/ingest/identity.js';
+import { hasNonEmptySection, requiredSectionFor } from '../core/ingest/required-sections.js';
 import { parseNote } from '../core/notes/parse.js';
 import { renderNoteText } from '../core/notes/render.js';
 import type { Store } from '../core/store.js';
@@ -105,6 +106,17 @@ export async function execute(env: RunEnv, store: Store, flags: IngestFlags): Pr
   const capture = await readOrThrow(store, capturePath);
   if (hasAssignedIdentity(capture)) {
     throw new AlreadyIngestedError(capturePath);
+  }
+  /**
+   * require-a-capture-s-verbatim-record (D2): beside the already-ingested
+   * refusal, and before anything is written, because this is the moment the
+   * claim is made — ingest is where a hash is frozen and where a note starts
+   * citing the capture as its provenance. A capture refused here is left
+   * exactly where it was, still reported as inbox material by lint.
+   */
+  const requiredSection = requiredSectionFor(store.config.ingest.required_capture_sections, flags.sourceType, capture.frontmatter);
+  if (requiredSection !== undefined && !hasNonEmptySection(capture.body, requiredSection)) {
+    throw new CaptureSectionMissingError(capturePath, requiredSection);
   }
   const note = await readOrThrow(store, notePath);
 
