@@ -264,12 +264,13 @@ The store's own `.contexture/guidance/mission.md` uses the same write path, but 
 ### 5. Express — publish a page
 
 ```sh
-ctxr publish gather --under resources/    # or --note <path>, or --entity <name>
-ctxr publish new resources/comparison     # scaffolds the page folder and its sibling README
-ctxr publish check .contexture/publish/resources/comparison/index.html
+ctxr publish gather --note <path>          # or --under <prefix>, or --entity <name>
+                                           # -> "Page filing: <derived path>/<page-name>"
+ctxr publish new <derived path>/comparison # scaffolds the page folder and its sibling README
+ctxr publish check .contexture/publish/<derived path>/comparison/index.html
 ```
 
-A page is filed under the top-level folder its subject's notes live in and named for the subject, so the published-pages navigation reads like the store rather than like one long list. `gather` resolves a subject to its note set — never a hand-picked list, which is how an unintended note slips onto a page unnoticed. `check` runs the structural gates: no external references, viewport meta, a print rule, provenance, the sibling README, script syntax, and that filing location. What a page may *contain*, given who will read it — and which folder a cross-cutting subject belongs under — is a judgment `ctxr-publish` walks you through and no check can make.
+`gather` resolves a subject to its note set — never a hand-picked list, which is how an unintended note slips onto a page unnoticed — and derives where the page belongs from where the subject's own notes live, at whatever depth the store carries them to. So the published-pages navigation reads like the store rather than like one long list, and a subject's second page collects beside its first under one folder naming the subject; `gather` reports the page that move would displace, and moves nothing. `check` runs the structural gates: no external references, viewport meta, a print rule, provenance, the sibling README, script syntax, and that the page is not filed flat at the publish root. What a page may *contain*, given who will read it, is a judgment `ctxr-publish` walks you through and no check can make.
 
 → `ctxr-publish`, plus the vendored `frontend-design` and `eli5` skills for the craft contexture supplies none of.
 

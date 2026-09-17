@@ -353,14 +353,22 @@ describe('owned-skills-expansion: each skill carries its load-bearing rule (task
     expect(s).toContain('refuses to overwrite an existing folder');
     // The filing rule and the judgment call it leaves open. Wrap-tolerant for the
     // same reason as the craft-delegation matches below.
-    expect(s).toMatch(/file the page under the top-level folder its subject's notes live in/);
-    expect(s).toContain('`<top-level-folder>/<subject>`');
-    expect(s).toMatch(/span more than one top-level folder/);
+    expect(s).toContain('ctxr publish new <reported path>/<page-name>');
+    expect(s).toMatch(/Take it verbatim, append the page's own name/);
+    expect(s).toMatch(/depth is the store's own, not a fixed number of levels/);
+    expect(s).toMatch(/Name the page for what it \*is\*, never for its subject/);
+    // derive-the-page-filing-path: the cap is gone, and the guard says so
+    // outright so a future edit cannot quietly reinstate it.
+    expect(s).not.toContain('Two levels, no more');
+    // A reported move costs a URL somebody may hold, so the prose must say both
+    // that the page moves and that the operator is told.
+    expect(s).toMatch(/tell the operator its URL changed/);
+    expect(s).toMatch(/Lead a page's source notes with the note it is a representation\s+of/);
     expect(s).toMatch(/write that choice and your reason into the page's README/);
     // No shipped taxonomy profile's layer may be named here: the store's taxonomy
     // is whatever contexture.yaml declares, and this prose must read for all of them.
     for (const layerPath of SHIPPED_PROFILES.flatMap((profile) => profile.layers.map((layer) => layer.path))) {
-      expect(s).not.toContain(`${layerPath}/<subject>`);
+      expect(s).not.toContain(`${layerPath}/<page-name>`);
     }
     // Wrap-tolerant on purpose: these pin the rule, not the column the template
     // happens to wrap at. Re-flowing a paragraph is not a behavior change and
