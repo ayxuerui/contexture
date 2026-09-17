@@ -1,7 +1,8 @@
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, readdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { execute as executeGather } from '../../src/commands/publish-gather.js';
+import { execute as executeNew } from '../../src/commands/publish-new.js';
 import type { StoreConfig } from '../../src/config/schema.js';
 import { ExitCode } from '../../src/core/exit-codes.js';
 import {
@@ -136,3 +137,134 @@ describe('publish gather: --entity resolves the same backlinks as rollup gather'
   });
 });
 
+
+describe('publish gather: the derived filing path', () => {
+  async function writePage(root: string, publishRelative: string, readme: string): Promise<void> {
+    const dir = path.join(root, 'publish', publishRelative);
+    await mkdir(dir, { recursive: true });
+    await writeFile(path.join(dir, 'index.html'), '<!doctype html><title>x</title>');
+    await writeFile(path.join(dir, 'README.md'), readme);
+  }
+
+  it('derives a subtree subject from the prefix it names', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const store: Store = { root: tmp.root, config: makeConfig() };
+      await writeNote(tmp.root, 'projects/ctx-a/work/a.md', '# A\n');
+      const env = makeFakeEnv({ cwd: tmp.root });
+
+      const outcome = await executeGather(env, store, { under: 'projects/ctx-a/work' });
+      expect(outcome.data?.filing.prefix).toBe('projects/ctx-a/work');
+      expect(outcome.data?.filing.path).toBe('publish/projects/ctx-a/work');
+      expect(outcome.data?.filing.subject_segment).toBeNull();
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('derives a note subject from the directory holding it, at the store`s own depth', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const store: Store = { root: tmp.root, config: makeConfig() };
+      await writeNote(tmp.root, 'projects/Ctx A/Work Notes/Ctx Note.md', '# Ctx Note\n');
+      const env = makeFakeEnv({ cwd: tmp.root });
+
+      const outcome = await executeGather(env, store, { note: 'projects/Ctx A/Work Notes/Ctx Note.md' });
+      // Three segments deep, not truncated to two.
+      expect(outcome.data?.filing.prefix).toBe('projects/ctx-a/work-notes');
+      expect(outcome.humanSummary).toContain('projects/ctx-a/work-notes/<page-name>');
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('does not let an entity subject`s backlinks change where its page belongs', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const store: Store = { root: tmp.root, config: makeConfig() };
+      await writeNote(tmp.root, 'projects/ctx-a/topic.md', 'The topic.\n');
+      await writeNote(tmp.root, 'areas/ctx-b/a.md', 'Discusses [[topic]].\n');
+      await writeNote(tmp.root, 'resources/ctx-c/b.md', 'Also [[topic]].\n');
+      const env = makeFakeEnv({ cwd: tmp.root });
+
+      const outcome = await executeGather(env, store, { entity: 'projects/ctx-a/topic.md' });
+      expect(outcome.data?.count).toBe(2);
+      // The backlinks span three top-level folders; the filing path follows the
+      // named note, not their (root) common ancestor.
+      expect(outcome.data?.filing.prefix).toBe('projects/ctx-a');
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('inserts the subject segment and reports the move once the subject has a page', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const store: Store = { root: tmp.root, config: makeConfig() };
+      await writeNote(tmp.root, 'projects/ctx-a/Ctx Note.md', '# Ctx Note\n');
+      await writePage(tmp.root, 'projects/ctx-a/page-one', '# page-one\n\n## Source notes\n- [[Ctx Note]]\n');
+      const env = makeFakeEnv({ cwd: tmp.root });
+
+      const before = await readdir(path.join(tmp.root, 'publish/projects/ctx-a'));
+      const outcome = await executeGather(env, store, { note: 'projects/ctx-a/Ctx Note.md' });
+
+      expect(outcome.data?.filing.prefix).toBe('projects/ctx-a/ctx-note');
+      expect(outcome.data?.filing.moves).toEqual([
+        { from: 'projects/ctx-a/page-one', to: 'projects/ctx-a/ctx-note/page-one', matched_by: 'readme-link' },
+      ]);
+      expect(outcome.notices?.[0]).toContain('changes a URL already handed out');
+      expect(outcome.exitCode).toBe(ExitCode.Ok);
+      // D5: the command reports the move and performs nothing.
+      expect(await readdir(path.join(tmp.root, 'publish/projects/ctx-a'))).toEqual(before);
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('reports that no path derives for a subtree subject naming the store root', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const store: Store = { root: tmp.root, config: makeConfig() };
+      await writeNote(tmp.root, 'projects/a.md', '# A\n');
+      const env = makeFakeEnv({ cwd: tmp.root });
+
+      const outcome = await executeGather(env, store, { under: '' });
+      expect(outcome.data?.filing.prefix).toBeNull();
+      expect(outcome.humanSummary).toContain('no folder path names this subject');
+      expect(outcome.exitCode).toBe(ExitCode.Ok);
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('reports a filing path for an empty resolved set, exactly as for a full one', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const store: Store = { root: tmp.root, config: makeConfig() };
+      const env = makeFakeEnv({ cwd: tmp.root });
+
+      const outcome = await executeGather(env, store, { under: 'projects/ctx-a' });
+      expect(outcome.data?.count).toBe(0);
+      expect(outcome.data?.filing.prefix).toBe('projects/ctx-a');
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('hands `publish new` a prefix it accepts, so the two cannot drift apart', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const store: Store = { root: tmp.root, config: makeConfig() };
+      await writeNote(tmp.root, 'projects/Ctx A/Work Notes/Ctx Note.md', '# Ctx Note\n');
+      const env = makeFakeEnv({ cwd: tmp.root });
+
+      const gathered = await executeGather(env, store, { note: 'projects/Ctx A/Work Notes/Ctx Note.md' });
+      const created = await executeNew(store, { slug: `${gathered.data!.filing.prefix}/page-one` });
+
+      expect(created.exitCode).toBe(ExitCode.Ok);
+      expect(created.data?.path).toBe('publish/projects/ctx-a/work-notes/page-one');
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+});

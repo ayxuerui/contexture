@@ -526,7 +526,7 @@ export async function run(argv: readonly string[], env: RunEnv): Promise<ExitCod
 
   publishCommand
     .command('gather')
-    .description('resolve a subject (--under/--note/--entity) to its note set')
+    .description('resolve a subject (--under/--note/--entity) to its note set, and report the path a page for it belongs at')
     .option('--under <prefix>', 'every retrievable note under this path prefix')
     .option('--note <path>', 'exactly one note')
     .option('--entity <name>', 'every note linking to this entity (same enumeration as rollup gather)')
