@@ -2,7 +2,9 @@
 
 ### Root resolution
 
-Every contexture command resolves the store root in this order: an explicit `--root <path>` flag; the `CONTEXTURE_STORE_ROOT` environment variable; walking up from the current directory looking for `__CONFIG_FILE_NAME__`. No other flag or environment variable selects the root.
+Every contexture command resolves the store root in this order: an explicit `--root <path>` flag; the store found by walking up from the current directory when it is a linked git worktree of the store named by `CONTEXTURE_STORE_ROOT`; the `CONTEXTURE_STORE_ROOT` environment variable; walking up from the current directory looking for `__CONFIG_FILE_NAME__`. No other flag or environment variable selects the root.
+
+The worktree step is why a command run inside a session worktree operates on that worktree rather than on the canonical clone, even with `CONTEXTURE_STORE_ROOT` exported: the variable names which *store*, and a worktree raises which *checkout* of it. Standing in a different store still resolves the variable, unchanged. To target the canonical clone from inside a worktree, name it: `--root "$CONTEXTURE_STORE_ROOT"`.
 
 ### Frontmatter schema
 
