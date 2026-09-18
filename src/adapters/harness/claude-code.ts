@@ -11,6 +11,19 @@ import type { HarnessGenerationAdapter, PermissionConfigInput } from '../types.j
 /** Store-relative — where the generated write-gate hook script lands. */
 const HOOK_TARGET_PATH = '.claude/hooks/claude-code-write-gate.sh';
 
+/**
+ * Claude Code's own placeholder for the root of the project the session
+ * opened. The harness expands it when the hook fires, not when this config
+ * is written, which is what lets the generated file be byte-identical on
+ * every machine and therefore safe to commit (reference-the-hook-by-project-dir).
+ *
+ * Held as a literal and joined with '/' rather than `path.join`: this is a
+ * harness-interpreted token that merely looks like a path, and `path.join`
+ * on Windows would backslash it into something Claude Code no longer
+ * recognizes. `HOOK_TARGET_PATH` above is forward-slashed for the same reason.
+ */
+const PROJECT_DIR_PLACEHOLDER = '${CLAUDE_PROJECT_DIR}';
+
 export const claudeCodeHarnessAdapter: HarnessGenerationAdapter = {
   id: 'claude-code',
   kind: 'harness-generation',
@@ -50,17 +63,28 @@ export const claudeCodeHarnessAdapter: HarnessGenerationAdapter = {
      * pre-commit path allowlist can never disagree about what counts as an
      * escape.
      */
-    render({ mainRoot }: PermissionConfigInput): Record<string, unknown> {
+    render(): Record<string, unknown> {
       return {
         hooks: {
           PreToolUse: [
             {
               matcher: 'Edit|Write|NotebookEdit',
-              // Anchored at the main worktree, never the checkout currently
-              // running the generator (stabilize-write-gate-hook-path) — a
-              // session worktree is deleted once its own session lands, and
-              // a hook command that no longer resolves fails open silently.
-              hooks: [{ type: 'command', command: path.join(mainRoot, HOOK_TARGET_PATH) }],
+              // Named through Claude Code's project-root placeholder rather
+              // than resolved here (reference-the-hook-by-project-dir). The
+              // predecessor anchored an absolute path at the main worktree
+              // (stabilize-write-gate-hook-path) so it would survive its
+              // generating worktree's removal; that fixed staleness but not
+              // portability, and this file is committed, so the baked path
+              // was wrong on every machine but the last one to generate it.
+              //
+              // The placeholder cannot go stale: it is expanded against the
+              // project the harness actually has open, and the hook script is
+              // tracked in git, so it is present in the canonical checkout and
+              // in every worktree cut from it. A bare relative path would be
+              // equally portable but would resolve against the hook process's
+              // working directory, which the harness does not promise is the
+              // project root — and a command that fails to resolve fails open.
+              hooks: [{ type: 'command', command: `${PROJECT_DIR_PLACEHOLDER}/${HOOK_TARGET_PATH}` }],
             },
           ],
         },

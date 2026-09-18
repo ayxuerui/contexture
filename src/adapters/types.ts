@@ -46,10 +46,15 @@ export const SUPPORTED_ADAPTER_INTERFACE_VERSION: Record<AdapterKind, number> = 
  *
  * `mainRoot` (stabilize-write-gate-hook-path) is the store's main/canonical
  * worktree — the one persistent checkout that outlives any session worktree.
- * Use this, never `root`, for any absolute path an enforcement primitive
- * itself is invoked by (a hook command): `root` is deleted the moment the
- * session worktree that generated it lands, so a path anchored there goes
- * stale as soon as that happens.
+ *
+ * It is the FALLBACK for the path an enforcement primitive is invoked by, not
+ * the default. Prefer the target harness's own project-root placeholder when
+ * it publishes one (reference-the-hook-by-project-dir): a permission config is
+ * typically committed, and any path resolved here — `mainRoot` included — is
+ * correct only on the machine that generated it. Reach for `mainRoot` only for
+ * a harness with no such placeholder, and never for `root`: `root` is deleted
+ * the moment the session worktree that generated it lands, so a path anchored
+ * there goes stale as soon as that happens.
  */
 export interface PermissionConfigInput {
   root: string;
