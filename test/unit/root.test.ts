@@ -92,6 +92,147 @@ describe('resolveExistingRoot', () => {
   });
 });
 
+// resolve-the-worktree-you-are-in: CONTEXTURE_STORE_ROOT names WHICH STORE;
+// a session worktree raises WHICH CHECKOUT of it. Contexture cuts those
+// worktrees itself, so a command run from one must operate on it rather than
+// silently on the canonical clone.
+describe('resolveExistingRoot — the worktree the caller is standing in', () => {
+  /**
+   * Builds a canonical store and a linked worktree of it, laid out exactly as
+   * git does: the worktree's `.git` is a FILE reading `gitdir: <owner>/.git/
+   * worktrees/<name>`, and both checkouts carry contexture.yaml.
+   */
+  async function makeStoreWithWorktree(tmpRoot: string, name = 'session-1') {
+    const owner = path.join(tmpRoot, 'store');
+    const worktree = path.join(owner, '.worktrees', name);
+    await mkdir(path.join(owner, '.git', 'worktrees', name), { recursive: true });
+    await mkdir(worktree, { recursive: true });
+    await writeFile(path.join(owner, CONFIG_FILE_NAME), 'schema_version: 1\n');
+    await writeFile(path.join(worktree, CONFIG_FILE_NAME), 'schema_version: 1\n');
+    await writeFile(
+      path.join(worktree, '.git'),
+      `gitdir: ${path.join(owner, '.git', 'worktrees', name)}\n`,
+    );
+    return { owner, worktree };
+  }
+
+  it('resolves the worktree, not the store the env var names', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const { owner, worktree } = await makeStoreWithWorktree(tmp.root);
+      const env = makeFakeEnv({ cwd: worktree, env: { CONTEXTURE_STORE_ROOT: owner } });
+      expect(resolveExistingRoot(env, {})).toBe(worktree);
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('resolves the worktree from a subdirectory of it', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const { owner, worktree } = await makeStoreWithWorktree(tmp.root);
+      const nested = path.join(worktree, 'areas', 'deep');
+      await mkdir(nested, { recursive: true });
+      const env = makeFakeEnv({ cwd: nested, env: { CONTEXTURE_STORE_ROOT: owner } });
+      expect(resolveExistingRoot(env, {})).toBe(worktree);
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('accepts a relative gitdir pointer (git worktree add --relative-paths)', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const { owner, worktree } = await makeStoreWithWorktree(tmp.root);
+      await writeFile(
+        path.join(worktree, '.git'),
+        `gitdir: ${path.relative(worktree, path.join(owner, '.git', 'worktrees', 'session-1'))}\n`,
+      );
+      const env = makeFakeEnv({ cwd: worktree, env: { CONTEXTURE_STORE_ROOT: owner } });
+      expect(resolveExistingRoot(env, {})).toBe(worktree);
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('lets an explicit --root beat the worktree the caller is standing in', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const { owner, worktree } = await makeStoreWithWorktree(tmp.root);
+      const env = makeFakeEnv({ cwd: worktree, env: { CONTEXTURE_STORE_ROOT: owner } });
+      expect(resolveExistingRoot(env, { root: owner })).toBe(owner);
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('still pins across stores: a worktree of ANOTHER repo does not redirect', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const { worktree } = await makeStoreWithWorktree(tmp.root, 'session-1');
+      // A second, unrelated store the env var names.
+      const other = path.join(tmp.root, 'other-store');
+      await mkdir(other, { recursive: true });
+      await writeFile(path.join(other, CONFIG_FILE_NAME), 'schema_version: 1\n');
+      const env = makeFakeEnv({ cwd: worktree, env: { CONTEXTURE_STORE_ROOT: other } });
+      expect(resolveExistingRoot(env, {})).toBe(other);
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('does not redirect from the main working tree (.git is a directory)', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const { owner } = await makeStoreWithWorktree(tmp.root);
+      const env = makeFakeEnv({ cwd: owner, env: { CONTEXTURE_STORE_ROOT: owner } });
+      expect(resolveExistingRoot(env, {})).toBe(owner);
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('does not redirect to a sibling directory that merely looks like the worktrees dir', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const { owner, worktree } = await makeStoreWithWorktree(tmp.root);
+      // `.git/worktrees-backup/x` must not match the `.git/worktrees` prefix.
+      const decoy = path.join(owner, '.git', 'worktrees-backup', 'x');
+      await mkdir(decoy, { recursive: true });
+      await writeFile(path.join(worktree, '.git'), `gitdir: ${decoy}\n`);
+      const env = makeFakeEnv({ cwd: worktree, env: { CONTEXTURE_STORE_ROOT: owner } });
+      expect(resolveExistingRoot(env, {})).toBe(owner);
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('falls back to the env var when the cwd store is not a git checkout at all', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const { owner } = await makeStoreWithWorktree(tmp.root);
+      const plain = path.join(tmp.root, 'plain');
+      await mkdir(plain, { recursive: true });
+      await writeFile(path.join(plain, CONFIG_FILE_NAME), 'schema_version: 1\n');
+      const env = makeFakeEnv({ cwd: plain, env: { CONTEXTURE_STORE_ROOT: owner } });
+      expect(resolveExistingRoot(env, {})).toBe(owner);
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('leaves the no-env cwd walk unchanged', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const { worktree } = await makeStoreWithWorktree(tmp.root);
+      const env = makeFakeEnv({ cwd: worktree, env: {} });
+      expect(resolveExistingRoot(env, {})).toBe(worktree);
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+});
+
 describe('resolveRootForInit', () => {
   it('never walks up, even when an ancestor has contexture.yaml', async () => {
     const tmp = await makeTmpDir();
@@ -119,6 +260,29 @@ describe('resolveRootForInit', () => {
   it('refuses when only the superseded CONTEXTURE_ROOT is set', () => {
     const env = makeFakeEnv({ cwd: '/cwd', env: { CONTEXTURE_ROOT: '/old-root' } });
     expect(() => resolveRootForInit(env, {})).toThrow(SupersededStoreRootEnvVarError);
+  });
+
+  // resolve-the-worktree-you-are-in D6: init CREATES a store rather than
+  // finding one, so redirecting it into an existing worktree is the opposite
+  // of what it is for.
+  it('never redirects into a linked worktree of the store the env var names', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const owner = path.join(tmp.root, 'store');
+      const worktree = path.join(owner, '.worktrees', 'session-1');
+      await mkdir(path.join(owner, '.git', 'worktrees', 'session-1'), { recursive: true });
+      await mkdir(worktree, { recursive: true });
+      await writeFile(path.join(owner, CONFIG_FILE_NAME), 'schema_version: 1\n');
+      await writeFile(path.join(worktree, CONFIG_FILE_NAME), 'schema_version: 1\n');
+      await writeFile(
+        path.join(worktree, '.git'),
+        `gitdir: ${path.join(owner, '.git', 'worktrees', 'session-1')}\n`,
+      );
+      const env = makeFakeEnv({ cwd: worktree, env: { CONTEXTURE_STORE_ROOT: owner } });
+      expect(resolveRootForInit(env, {})).toBe(owner);
+    } finally {
+      await tmp.cleanup();
+    }
   });
 
   it('lets an explicit --root beat a set superseded CONTEXTURE_ROOT without refusing', () => {

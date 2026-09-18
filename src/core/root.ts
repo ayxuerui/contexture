@@ -2,6 +2,7 @@ import { existsSync } from 'node:fs';
 import path from 'node:path';
 import type { RunEnv } from './env.js';
 import { NoStoreRootError, SupersededStoreRootEnvVarError } from './errors.js';
+import { isWorktreeOf } from './git/repo.js';
 
 /** The one config filename every root-resolution function looks for. */
 export const CONFIG_FILE_NAME = 'contexture.yaml';
@@ -12,9 +13,21 @@ export interface RootFlags {
 
 /**
  * Root resolution for every command except `init` (harness-portability spec):
- * an explicit --root argument beats an inherited CONTEXTURE_STORE_ROOT env
- * var, which beats walking up from cwd looking for contexture.yaml. If none
- * resolves, throws NoStoreRootError rather than guessing a fallback.
+ * an explicit --root argument beats the worktree the caller is standing in,
+ * which beats an inherited CONTEXTURE_STORE_ROOT env var, which beats walking
+ * up from cwd looking for contexture.yaml. If none resolves, throws
+ * NoStoreRootError rather than guessing a fallback.
+ *
+ * The worktree step (resolve-the-worktree-you-are-in) exists because the env
+ * var answers WHICH STORE, while a session worktree raises WHICH CHECKOUT of
+ * that store — an orthogonal question the var cannot answer. Contexture cuts
+ * those worktrees itself and tells agents to work in them, so without this
+ * step every command run from one silently audits the canonical clone
+ * instead. It is consulted only when the var would otherwise resolve: with
+ * the var unset the walk below already reaches the same directory, so there
+ * is nothing to redirect. Cross-store pinning is untouched by construction —
+ * the redirect requires the cwd store to be a worktree of the very store the
+ * var names.
  *
  * Exactly one env var (CONTEXTURE_STORE_ROOT) and one flag (--root) are
  * recognized — no aliases are checked here, ever, by construction. The
@@ -29,23 +42,36 @@ export function resolveExistingRoot(env: RunEnv, flags: RootFlags): string {
   }
   const fromEnv = env.env.CONTEXTURE_STORE_ROOT;
   if (fromEnv) {
-    return path.resolve(env.cwd, fromEnv);
+    const named = path.resolve(env.cwd, fromEnv);
+    const here = findRootFromCwd(env.cwd);
+    if (here !== null && here !== named && isWorktreeOf(here, named)) {
+      return here;
+    }
+    return named;
   }
   if (env.env.CONTEXTURE_ROOT) {
     throw new SupersededStoreRootEnvVarError();
   }
 
-  let dir = path.resolve(env.cwd);
+  const walked = findRootFromCwd(env.cwd);
+  if (walked !== null) {
+    return walked;
+  }
+
+  throw new NoStoreRootError({ flag: Boolean(flags.root), env: Boolean(fromEnv), cwd: env.cwd });
+}
+
+/** The nearest ancestor of `cwd` (inclusive) holding contexture.yaml, or null. */
+function findRootFromCwd(cwd: string): string | null {
+  let dir = path.resolve(cwd);
   for (;;) {
     if (existsSync(path.join(dir, CONFIG_FILE_NAME))) {
       return dir;
     }
     const parent = path.dirname(dir);
-    if (parent === dir) break;
+    if (parent === dir) return null;
     dir = parent;
   }
-
-  throw new NoStoreRootError({ flag: Boolean(flags.root), env: Boolean(fromEnv), cwd: env.cwd });
 }
 
 /**

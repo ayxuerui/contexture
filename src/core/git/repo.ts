@@ -65,6 +65,64 @@ export function isLinkedWorktreeRoot(root: string): boolean {
 }
 
 /**
+ * The administrative directory a linked worktree's `.git` file points at, or
+ * null when `root` is not a linked worktree. A linked worktree's `.git` is a
+ * text file reading `gitdir: <path>`, where <path> is that worktree's own
+ * directory inside the OWNING repository — `<owner>/.git/worktrees/<name>`.
+ *
+ * Git may write that path relative to the worktree (`worktree add
+ * --relative-paths`, git 2.48+), so it is resolved against `root` before
+ * being returned; an absolute pointer resolves to itself.
+ */
+export function linkedWorktreeGitDir(root: string): string | null {
+  const gitPath = path.join(root, '.git');
+  let stat;
+  try {
+    stat = statSync(gitPath);
+  } catch {
+    return null;
+  }
+  if (!stat.isFile()) return null;
+  let contents;
+  try {
+    contents = readFileSync(gitPath, 'utf8');
+  } catch {
+    return null;
+  }
+  const line = contents.split('\n')[0]?.trim() ?? '';
+  if (!line.startsWith('gitdir:')) return null;
+  const pointer = line.slice('gitdir:'.length).trim();
+  if (pointer === '') return null;
+  return path.resolve(root, pointer);
+}
+
+/**
+ * Whether `candidate` is a linked worktree of the repository whose main
+ * working tree is `owner` — the "same store, different checkout" question
+ * root resolution asks (resolve-the-worktree-you-are-in D2).
+ *
+ * Decided from the worktree's own `gitdir:` pointer rather than by comparing
+ * `git rev-parse --git-common-dir` on both sides: root resolution is
+ * synchronous, has no GitRunner, and runs ahead of every command, so it
+ * cannot spend two subprocesses here. `isLinkedWorktreeRoot` above already
+ * made that trade for the same reason.
+ *
+ * Containment is compared with `path.relative` rather than `startsWith`, so
+ * that `<owner>/.git/worktrees-backup/x` does not match
+ * `<owner>/.git/worktrees` (D3). `realpath` is deliberately not called: it
+ * would make a symlinked store root fail to match the operator's own
+ * configured path, and skipping it fails closed — to the caller's current
+ * answer, never to a wrong tree.
+ */
+export function isWorktreeOf(candidate: string, owner: string): boolean {
+  const gitDir = linkedWorktreeGitDir(candidate);
+  if (gitDir === null) return false;
+  const worktreesDir = path.resolve(owner, '.git', 'worktrees');
+  const rel = path.relative(worktreesDir, gitDir);
+  return rel !== '' && !rel.startsWith('..') && !path.isAbsolute(rel);
+}
+
+/**
  * Whether git has an explicit author identity available, from either source
  * it actually uses at commit time: `GIT_AUTHOR_*`/`GIT_COMMITTER_*`
  * env vars, or `git config user.email`/`user.name`. If neither, init
