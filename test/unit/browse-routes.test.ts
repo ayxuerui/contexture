@@ -2,7 +2,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import type { StoreConfig } from '../../src/config/schema.js';
-import { buildRouteTable, publishPages } from '../../src/core/browse/routes.js';
+import { buildRouteTable, previewPages, publishPages } from '../../src/core/browse/routes.js';
 import type { Store } from '../../src/core/store.js';
 import { makeTmpDir } from '../helpers/tmp-store.js';
 
@@ -285,6 +285,143 @@ describe('buildRouteTable publishTitles', () => {
       // No assertion on the exact value — only that reading it does not throw and produces a string.
       const title = table.publishTitles.get('my-page');
       expect(title === undefined || typeof title === 'string').toBe(true);
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+});
+
+describe('buildRouteTable previews', () => {
+  const PAGE = 'ctx-a/draft-page';
+  const inWorktree = (name: string, rel: string) => `.worktrees/${name}/.contexture/publish/${rel}`;
+
+  it('carries the pages a session worktree holds, keyed by worktree directory name', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const store: Store = { root: tmp.root, config: makeConfig() };
+      await write(tmp.root, inWorktree('session-a', `${PAGE}/index.html`), '<title>Draft</title>');
+
+      const table = await buildRouteTable(store);
+
+      expect([...table.previews.keys()]).toEqual(['session-a']);
+      expect(table.previews.get('session-a')!.files.has(`${PAGE}/index.html`)).toBe(true);
+      expect(previewPages(table, 'session-a')).toEqual([PAGE]);
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it("reads a previewed page's declared name from inside the worktree", async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const store: Store = { root: tmp.root, config: makeConfig() };
+      await write(tmp.root, inWorktree('session-a', `${PAGE}/index.html`), '<html><head><title>Still Drafting</title></head></html>');
+
+      const table = await buildRouteTable(store);
+
+      expect(table.previews.get('session-a')!.titles.get(PAGE)).toBe('Still Drafting');
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('keys a nested previewed page at its full path under the worktree publish path', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const store: Store = { root: tmp.root, config: makeConfig() };
+      await write(tmp.root, inWorktree('session-a', 'a/b/c/deep-page/index.html'), '<title>Deep</title>');
+
+      const table = await buildRouteTable(store);
+
+      expect(previewPages(table, 'session-a')).toEqual(['a/b/c/deep-page']);
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('gives a worktree holding no index page no entry at all', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const store: Store = { root: tmp.root, config: makeConfig() };
+      await write(tmp.root, inWorktree('session-a', 'ctx-a/notes-only/README.md'), '# not a page\n');
+
+      const table = await buildRouteTable(store);
+
+      expect(table.previews.size).toBe(0);
+      expect(previewPages(table, 'session-a')).toEqual([]);
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('gives a worktree with no publish path no entry at all', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const store: Store = { root: tmp.root, config: makeConfig() };
+      await write(tmp.root, '.worktrees/session-a/projects/a.md', '# A\n');
+
+      const table = await buildRouteTable(store);
+
+      expect(table.previews.size).toBe(0);
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('keeps two worktrees separate', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const store: Store = { root: tmp.root, config: makeConfig() };
+      await write(tmp.root, inWorktree('session-a', 'page-a/index.html'), '<title>A</title>');
+      await write(tmp.root, inWorktree('session-b', 'page-b/index.html'), '<title>B</title>');
+
+      const table = await buildRouteTable(store);
+
+      expect([...table.previews.keys()]).toEqual(['session-a', 'session-b']);
+      expect(previewPages(table, 'session-a')).toEqual(['page-a']);
+      expect(previewPages(table, 'session-b')).toEqual(['page-b']);
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('is empty for a store with no worktrees path', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const store: Store = { root: tmp.root, config: makeConfig() };
+      await write(tmp.root, '.contexture/publish/landed-page/index.html', '<title>Landed</title>');
+
+      const table = await buildRouteTable(store);
+
+      expect(table.previews.size).toBe(0);
+      expect(publishPages(table)).toEqual(['landed-page']);
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('reports no pages for a worktree name it does not know', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const store: Store = { root: tmp.root, config: makeConfig() };
+      const table = await buildRouteTable(store);
+
+      expect(previewPages(table, 'session-nope')).toEqual([]);
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('does not let a worktree page reach the publish route', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const store: Store = { root: tmp.root, config: makeConfig() };
+      await write(tmp.root, inWorktree('session-a', `${PAGE}/index.html`), '<title>Draft</title>');
+
+      const table = await buildRouteTable(store);
+
+      expect(publishPages(table)).toEqual([]);
+      expect(table.publishFiles.size).toBe(0);
     } finally {
       await tmp.cleanup();
     }

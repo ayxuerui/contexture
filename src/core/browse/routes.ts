@@ -3,6 +3,7 @@ import path from 'node:path';
 import { catalogSectionsFor, sectionFileName } from '../catalog/model.js';
 import { graphDocumentPath } from '../graph/persist.js';
 import { listNotes, type Note } from '../notes/list.js';
+import { listSessionWorktreeDirs } from '../session.js';
 import type { Store } from '../store.js';
 
 export interface CatalogRoute {
@@ -14,6 +15,20 @@ export interface PublishFileRoute {
   /** URL-relative path under /publish/, e.g. "my-page/index.html". */
   urlPath: string;
   absolutePath: string;
+}
+
+/** The published pages one session worktree holds, ready to serve before they land. */
+export interface PreviewRoute {
+  /**
+   * Keyed by the exact URL-relative path under this worktree's publish path —
+   * a lookup miss is the only traversal guard needed, exactly as the
+   * `publishFiles` field above records for the publish route. A path that
+   * would escape this worktree's publish path is absent from the map by
+   * construction, so it fails the lookup before any read is attempted.
+   */
+  files: ReadonlyMap<string, PublishFileRoute>;
+  /** Keyed by page path; the page's own declared name, when it has one. */
+  titles: ReadonlyMap<string, string>;
 }
 
 export interface RouteTable {
@@ -35,6 +50,12 @@ export interface RouteTable {
    * stays clear of the taxonomy entirely.
    */
   groupLabels: ReadonlyMap<string, string>;
+  /**
+   * Keyed by session worktree directory name (preview-pages-before-they-land
+   * D2: the directory name is both the URL segment and the navigation label).
+   * A worktree holding no published page has no entry here at all.
+   */
+  previews: ReadonlyMap<string, PreviewRoute>;
 }
 
 async function walkFiles(root: string, relative = ''): Promise<PublishFileRoute[]> {
@@ -82,6 +103,16 @@ function pagesFromPublishFiles(publishFiles: ReadonlyMap<string, PublishFileRout
  */
 export function publishPages(table: RouteTable): string[] {
   return pagesFromPublishFiles(table.publishFiles);
+}
+
+/**
+ * The pages one session worktree holds, in the same sorted form `publishPages`
+ * returns — so `nav.ts` renders a preview listing by the same rules it renders
+ * the published-pages listing, and still resolves nothing itself.
+ */
+export function previewPages(table: RouteTable, worktree: string): string[] {
+  const preview = table.previews.get(worktree);
+  return preview ? pagesFromPublishFiles(preview.files) : [];
 }
 
 /** design.md D4 (serve-page-names-theme-and-nav-toggle): a page's title is always in its <head>, well within this bound. */
@@ -172,6 +203,34 @@ async function resolvePublishTitles(
 }
 
 /**
+ * Every session worktree's published pages, walked through the very same
+ * `walkFiles` / `pagesFromPublishFiles` / `resolvePublishTitles` the store's
+ * own publish path goes through — a worktree's publish path is an ordinary
+ * directory of pages, and a second way of reading one could disagree with the
+ * first about what a page is or what it is called.
+ *
+ * A worktree that yields no page contributes no entry, so a session that has
+ * not published anything costs one `readdir` and then disappears rather than
+ * adding an empty group to the navigation.
+ */
+async function buildPreviews(store: Store): Promise<ReadonlyMap<string, PreviewRoute>> {
+  const worktreeNames = await listSessionWorktreeDirs(store.root, store.config);
+  const worktreesRoot = path.join(store.root, store.config.session.worktrees_path);
+
+  const entries = await Promise.all(
+    worktreeNames.map(async (name): Promise<[string, PreviewRoute] | undefined> => {
+      const publishRoot = path.join(worktreesRoot, name, store.config.publish.path);
+      const files = new Map((await walkFiles(publishRoot)).map((file) => [file.urlPath, file]));
+      const pages = pagesFromPublishFiles(files);
+      if (pages.length === 0) return undefined;
+      return [name, { files, titles: await resolvePublishTitles(pages, files) }];
+    }),
+  );
+
+  return new Map(entries.filter((entry): entry is [string, PreviewRoute] => entry !== undefined));
+}
+
+/**
  * local-browsing-surface design.md D2: built fresh from the store's own
  * enumeration on every call, never cached — so a path outside every
  * configured location is absent from the table by construction, and a
@@ -202,5 +261,7 @@ export async function buildRouteTable(store: Store): Promise<RouteTable> {
   const publishFiles = new Map((await walkFiles(publishRoot)).map((file) => [file.urlPath, file]));
   const publishTitles = await resolvePublishTitles(pagesFromPublishFiles(publishFiles), publishFiles);
 
-  return { notes, catalog, graphDocumentPath: graphDocumentPath(store), publishFiles, publishTitles, groupLabels };
+  const previews = await buildPreviews(store);
+
+  return { notes, catalog, graphDocumentPath: graphDocumentPath(store), publishFiles, publishTitles, groupLabels, previews };
 }
