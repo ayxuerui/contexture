@@ -64,7 +64,7 @@ describe('adapters generate command', () => {
       expect(settings.permissions?.allow).toBeUndefined();
       expect(settings.hooks.PreToolUse[0]).toMatchObject({
         matcher: 'Edit|Write|NotebookEdit',
-        hooks: [{ type: 'command', command: path.join(tmp.root, '.claude/hooks/claude-code-write-gate.sh') }],
+        hooks: [{ type: 'command', command: '${CLAUDE_PROJECT_DIR}/.claude/hooks/claude-code-write-gate.sh' }],
       });
     } finally {
       await tmp.cleanup();
@@ -87,9 +87,7 @@ describe('adapters generate command', () => {
       // generated config would forbid the `git commit` / `git push` its own ctxr-submit skill instructs.
       const settings = JSON.parse(await readFile(path.join(tmp.root, '.claude/settings.json'), 'utf8'));
       expect(settings.permissions?.deny).toBeUndefined();
-      expect(settings.hooks.PreToolUse[0].hooks[0].command).toBe(
-        path.join(tmp.root, '.claude/hooks/claude-code-write-gate.sh'),
-      );
+      expect(settings.hooks.PreToolUse[0].hooks[0].command).toBe('${CLAUDE_PROJECT_DIR}/.claude/hooks/claude-code-write-gate.sh');
     } finally {
       await tmp.cleanup();
     }
@@ -109,17 +107,41 @@ describe('adapters generate command', () => {
     }
   });
 
-  it('anchors the hook command at the store root, not the launch cwd, so a session opened directly inside a worktree still resolves it', async () => {
+  // reference-the-hook-by-project-dir: the config is committed, so the command
+  // must name no checkout at all — the harness expands the placeholder against
+  // whichever project it has open, canonical checkout or session worktree.
+  it('names the hook through the project-root placeholder, carrying no filesystem path', async () => {
     const tmp = await makeTmpDir();
     try {
       const store: Store = { root: tmp.root, config: makeConfig([{ id: 'claude-code', kind: 'harness-generation' }]) };
       await execute(makeFakeEnv(), store);
       const settings = JSON.parse(await readFile(path.join(tmp.root, '.claude/settings.json'), 'utf8'));
       const command = settings.hooks.PreToolUse[0].hooks[0].command as string;
-      expect(command).toBe(path.join(tmp.root, '.claude/hooks/claude-code-write-gate.sh'));
-      expect(path.isAbsolute(command)).toBe(true);
+      expect(command).toBe('${CLAUDE_PROJECT_DIR}/.claude/hooks/claude-code-write-gate.sh');
+      expect(command.startsWith('${CLAUDE_PROJECT_DIR}/')).toBe(true);
+      expect(path.isAbsolute(command)).toBe(false);
+      expect(command).not.toContain(tmp.root);
     } finally {
       await tmp.cleanup();
+    }
+  });
+
+  it('emits a byte-identical hook command for two stores at different filesystem locations', async () => {
+    const a = await makeTmpDir();
+    const b = await makeTmpDir();
+    try {
+      for (const root of [a.root, b.root]) {
+        const store: Store = { root, config: makeConfig([{ id: 'claude-code', kind: 'harness-generation' }]) };
+        await execute(makeFakeEnv(), store);
+      }
+      const read = async (root: string) =>
+        JSON.parse(await readFile(path.join(root, '.claude/settings.json'), 'utf8')).hooks.PreToolUse[0].hooks[0]
+          .command as string;
+      expect(a.root).not.toBe(b.root);
+      expect(await read(a.root)).toBe(await read(b.root));
+    } finally {
+      await a.cleanup();
+      await b.cleanup();
     }
   });
 
@@ -170,7 +192,7 @@ describe('adapters generate command', () => {
       // operator's own rule, which the generator never emitted, survives.
       expect(settings.permissions.deny).toEqual(['Bash(hand-added-rule:*)']);
       expect(settings.permissions.allow).toBeUndefined();
-      expect(settings.hooks.PreToolUse[0].hooks[0].command).toBe(path.join(tmp.root, '.claude/hooks/claude-code-write-gate.sh'));
+      expect(settings.hooks.PreToolUse[0].hooks[0].command).toBe('${CLAUDE_PROJECT_DIR}/.claude/hooks/claude-code-write-gate.sh');
 
       const before = await readFile(path.join(tmp.root, '.claude/settings.json'), 'utf8');
       const second = await execute(makeFakeEnv(), store);
@@ -231,7 +253,12 @@ describe('adapters generate command', () => {
   });
 
   describe('stabilize-write-gate-hook-path', () => {
-    it('anchors the hook command at the main worktree, not store.root, when store.root is a linked session worktree', async () => {
+    // The guarantee this block was written for — a command that outlives the
+    // worktree that generated it — now holds for a stronger reason: the command
+    // names no checkout at all, so generating from inside a worktree produces
+    // the same string as generating from the canonical checkout
+    // (reference-the-hook-by-project-dir).
+    it('names neither the generating worktree nor the main worktree when store.root is a linked session worktree', async () => {
       const tmp = await makeTmpDir();
       const main = await makeTmpDir();
       try {
@@ -246,8 +273,9 @@ describe('adapters generate command', () => {
 
         const settings = JSON.parse(await readFile(path.join(worktreeRoot, '.claude/settings.json'), 'utf8'));
         const command = settings.hooks.PreToolUse[0].hooks[0].command as string;
-        expect(command).toBe(path.join(main.root, '.claude/hooks/claude-code-write-gate.sh'));
-        expect(command).not.toBe(path.join(worktreeRoot, '.claude/hooks/claude-code-write-gate.sh'));
+        expect(command).toBe('${CLAUDE_PROJECT_DIR}/.claude/hooks/claude-code-write-gate.sh');
+        expect(command).not.toContain(worktreeRoot);
+        expect(command).not.toContain(main.root);
       } finally {
         await tmp.cleanup();
         await main.cleanup();
@@ -281,13 +309,13 @@ describe('adapters generate command', () => {
 
         const settings = JSON.parse(await readFile(path.join(tmp.root, '.claude/settings.json'), 'utf8'));
         expect(settings.hooks.PreToolUse).toHaveLength(1);
-        expect(settings.hooks.PreToolUse[0].hooks[0].command).toBe(path.join(tmp.root, '.claude/hooks/claude-code-write-gate.sh'));
+        expect(settings.hooks.PreToolUse[0].hooks[0].command).toBe('${CLAUDE_PROJECT_DIR}/.claude/hooks/claude-code-write-gate.sh');
       } finally {
         await tmp.cleanup();
       }
     });
 
-    it('generates the same hook path as before this change when the store has no linked worktrees', async () => {
+    it('emits the same placeholder command when the store has no linked worktrees', async () => {
       const tmp = await makeTmpDir();
       try {
         const store: Store = { root: tmp.root, config: makeConfig([{ id: 'claude-code', kind: 'harness-generation' }]) };
@@ -298,7 +326,40 @@ describe('adapters generate command', () => {
         await execute(makeFakeEnv({ git }), store);
 
         const settings = JSON.parse(await readFile(path.join(tmp.root, '.claude/settings.json'), 'utf8'));
-        expect(settings.hooks.PreToolUse[0].hooks[0].command).toBe(path.join(tmp.root, '.claude/hooks/claude-code-write-gate.sh'));
+        expect(settings.hooks.PreToolUse[0].hooks[0].command).toBe('${CLAUDE_PROJECT_DIR}/.claude/hooks/claude-code-write-gate.sh');
+      } finally {
+        await tmp.cleanup();
+      }
+    });
+
+    // The real-world migration: a store whose committed config still carries an
+    // absolute path a previous release resolved, on a machine where that path
+    // does not exist. One `adapters generate` converges it, with no duplicate.
+    it('replaces a previously generated absolute command with the placeholder form', async () => {
+      const tmp = await makeTmpDir();
+      try {
+        await mkdir(path.join(tmp.root, '.claude'), { recursive: true });
+        const foreign = '/home/someone-else/workspace/pkm/.claude/hooks/claude-code-write-gate.sh';
+        await writeFile(
+          path.join(tmp.root, '.claude/settings.json'),
+          JSON.stringify(
+            {
+              hooks: {
+                PreToolUse: [{ matcher: 'Edit|Write|NotebookEdit', hooks: [{ type: 'command', command: foreign }] }],
+              },
+            },
+            null,
+            2,
+          ),
+        );
+
+        const store: Store = { root: tmp.root, config: makeConfig([{ id: 'claude-code', kind: 'harness-generation' }]) };
+        await execute(makeFakeEnv(), store);
+
+        const settings = JSON.parse(await readFile(path.join(tmp.root, '.claude/settings.json'), 'utf8'));
+        expect(settings.hooks.PreToolUse).toHaveLength(1);
+        expect(settings.hooks.PreToolUse[0].hooks[0].command).toBe('${CLAUDE_PROJECT_DIR}/.claude/hooks/claude-code-write-gate.sh');
+        expect(JSON.stringify(settings)).not.toContain(foreign);
       } finally {
         await tmp.cleanup();
       }
