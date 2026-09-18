@@ -173,6 +173,28 @@ async function handleRequest(store: Store, stderr: NodeJS.WritableStream, req: I
     return;
   }
 
+  /**
+   * preview-pages-before-they-land D6: the same treatment the publish branch
+   * above gives a page that has already landed — byte-verbatim, no shell, no
+   * navigation, no theme — because a preview that differs from the thing being
+   * previewed is not one. Two exact-key lookups and no path normalisation: a
+   * path that would escape a worktree's publish path is absent from that
+   * worktree's map by construction, so the miss IS the traversal guard, exactly
+   * as it is for `/publish/`.
+   */
+  if (pathname.startsWith('/preview/')) {
+    const rest = pathname.slice('/preview/'.length);
+    const separator = rest.indexOf('/');
+    const preview = separator === -1 ? undefined : table.previews.get(rest.slice(0, separator));
+    const file = preview?.files.get(rest.slice(separator + 1));
+    if (!file) {
+      send(res, method, 404, 'text/plain; charset=utf-8', 'not found\n');
+      return;
+    }
+    send(res, method, 200, contentTypeFor(file.absolutePath), await readFile(file.absolutePath));
+    return;
+  }
+
   send(res, method, 404, 'text/plain; charset=utf-8', 'not found\n');
 }
 

@@ -1,4 +1,5 @@
 import { randomBytes } from 'node:crypto';
+import { readdir } from 'node:fs/promises';
 import path from 'node:path';
 import type { StoreConfig } from '../config/schema.js';
 
@@ -48,4 +49,39 @@ export function worktreeDirNameFor(branch: string): string {
 
 export function worktreePathFor(store: { root: string; config: StoreConfig }, branch: string): string {
   return path.join(store.root, store.config.session.worktrees_path, worktreeDirNameFor(branch));
+}
+
+/**
+ * The session worktrees present on disk, by directory name.
+ *
+ * preview-pages-before-they-land D1: discovery is a listing of the CONFIGURED
+ * worktrees path rather than `listWorktrees()`, which is better informed and
+ * would be the obvious choice anywhere else. The browsing surface rebuilds its
+ * route table on every request and caches nothing (local-browsing-surface D2),
+ * so asking git here would put a subprocess fork behind every page view, every
+ * stylesheet miss, every favicon probe — and caching the answer to avoid that
+ * would hide a session started after the server booted, which is the very
+ * discovery failure previewing exists to fix.
+ *
+ * Scanning the path is also the identity rule this module already committed
+ * to: `isSessionWorktreePath` above declares a session's durable identity to
+ * be its path shape, and `worktreePathFor` puts every session the CLI creates
+ * under that path. What it gives up is a worktree made by hand somewhere else,
+ * which the CLI never produces.
+ *
+ * A missing worktrees path yields no worktrees rather than throwing, matching
+ * how the published-page walk already treats a store with no publish directory.
+ */
+export async function listSessionWorktreeDirs(storeRoot: string, config: StoreConfig): Promise<string[]> {
+  let entries;
+  try {
+    entries = await readdir(path.join(storeRoot, config.session.worktrees_path), { withFileTypes: true });
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return [];
+    throw err;
+  }
+  return entries
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name)
+    .sort();
 }

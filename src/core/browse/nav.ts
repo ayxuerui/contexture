@@ -1,19 +1,25 @@
 import { titleFor } from '../catalog/model.js';
 import { escapeHtml } from './render.js';
-import { publishPages, PUBLISH_INDEX_FILE, type RouteTable } from './routes.js';
+import { previewPages, publishPages, PUBLISH_INDEX_FILE, type RouteTable } from './routes.js';
 import { buildPathTree, type DirectoryLabelFor, type TreeNode } from './tree.js';
 
 /**
- * The four content areas the browsing surface serves, in the one order both
+ * The five content areas the browsing surface serves, in the one order both
  * the navigation and the index page render them — declared once here so the
  * two cannot disagree about what that order is.
+ *
+ * preview-pages-before-they-land: the preview area sits directly after the
+ * published pages because it holds the same kind of thing in a different
+ * state, and reading the two adjacently is the whole point of serving them
+ * from one process.
  */
-const AREAS = ['publish', 'notes', 'catalog', 'graph'] as const;
+const AREAS = ['publish', 'preview', 'notes', 'catalog', 'graph'] as const;
 
 type AreaId = (typeof AREAS)[number];
 
 const AREA_TITLES: Readonly<Record<AreaId, string>> = {
   publish: 'Published pages',
+  preview: 'Preview',
   notes: 'Notes',
   catalog: 'Catalog',
   graph: 'Graph',
@@ -22,6 +28,7 @@ const AREA_TITLES: Readonly<Record<AreaId, string>> = {
 /** The index page's anchor for each area, which is also what the navigation links to. */
 const AREA_ANCHORS: Readonly<Record<AreaId, string>> = {
   publish: 'published-pages',
+  preview: 'preview',
   notes: 'notes',
   catalog: 'catalog',
   graph: 'graph',
@@ -81,6 +88,24 @@ function groupLabelFor(table: RouteTable): DirectoryLabelFor {
   return (directoryPath) => table.groupLabels.get(directoryPath);
 }
 
+/**
+ * preview-pages-before-they-land D5: a preview tree's paths carry the session
+ * worktree as their first segment, so `ctx-a` arrives here as
+ * `<worktree>/ctx-a` and would miss `groupLabels`, which `buildRouteTable`
+ * keys by store-relative layer path. Stripping the leading segment before the
+ * lookup is file-published-pages-by-location D8 applied unchanged — a folder
+ * reading `Ctx A` in one area and `ctx-a` in the other, inches apart, is the
+ * surprising outcome rather than the smaller one. The worktree segment itself
+ * strips to nothing, matches no layer, and keeps its own directory name (D2).
+ */
+function previewGroupLabelFor(table: RouteTable): DirectoryLabelFor {
+  return (directoryPath) => {
+    const separator = directoryPath.indexOf('/');
+    if (separator === -1) return undefined;
+    return table.groupLabels.get(directoryPath.slice(separator + 1));
+  };
+}
+
 /** The listing for one area, rendered once and used by both the navigation and the index page. */
 function renderAreaContent(table: RouteTable, area: AreaId): string {
   switch (area) {
@@ -93,6 +118,28 @@ function renderAreaContent(table: RouteTable, area: AreaId): string {
         (page) => table.publishTitles.get(page) ?? lastSegment(page),
         (page) => `/publish/${encodeURI(page)}/${PUBLISH_INDEX_FILE}`,
         groupLabelFor(table),
+      );
+      return renderTree(tree, 0);
+    }
+    case 'preview': {
+      // One flat path list of `<worktree>/<page>` fed to the same primitive the
+      // publish area uses, so the worktree becomes the top-level group without
+      // a second tree-building path existing to disagree with the first.
+      const worktrees = [...table.previews.keys()].sort();
+      const entries = worktrees.flatMap((worktree) =>
+        previewPages(table, worktree).map((page) => ({ worktree, page, path: `${worktree}/${page}` })),
+      );
+      const byPath = new Map(entries.map((entry) => [entry.path, entry]));
+      const tree = buildPathTree(
+        entries.map((entry) => entry.path),
+        // The same "one answer to what this is called" rule the publish area
+        // follows: the page's own declared name, else its directory segment.
+        (treePath) => {
+          const entry = byPath.get(treePath)!;
+          return table.previews.get(entry.worktree)?.titles.get(entry.page) ?? lastSegment(entry.page);
+        },
+        (treePath) => `/preview/${encodeURI(treePath)}/${PUBLISH_INDEX_FILE}`,
+        previewGroupLabelFor(table),
       );
       return renderTree(tree, 0);
     }
@@ -133,7 +180,8 @@ export function renderNav(table: RouteTable): string {
 
 /** The index page's body: the same four areas, in the same order, from the same listings. */
 export function renderIndexBody(table: RouteTable): string {
-  const counts = `<p class="ctxr-summary">${publishPages(table).length} published page(s), ${table.notes.size} note(s), ${table.catalog.size} catalog section(s).</p>`;
+  const previewCount = [...table.previews.keys()].reduce((total, worktree) => total + previewPages(table, worktree).length, 0);
+  const counts = `<p class="ctxr-summary">${publishPages(table).length} published page(s), ${previewCount} page(s) in preview, ${table.notes.size} note(s), ${table.catalog.size} catalog section(s).</p>`;
 
   const sections = AREAS.map((area) => {
     const heading = `<h2 id="${AREA_ANCHORS[area]}">${escapeHtml(AREA_TITLES[area])}</h2>`;

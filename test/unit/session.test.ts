@@ -1,9 +1,13 @@
+import { mkdir, writeFile } from 'node:fs/promises';
+import path from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { makeTmpDir } from '../helpers/tmp-store.js';
 import type { StoreConfig } from '../../src/config/schema.js';
 import {
   generateSessionBranchName,
   isSessionBranch,
   isSessionWorktreePath,
+  listSessionWorktreeDirs,
   worktreeDirNameFor,
   worktreePathFor,
 } from '../../src/core/session.js';
@@ -91,5 +95,53 @@ describe('isSessionWorktreePath (session-submit-and-land: survives a --branch re
     expect(isSessionWorktreePath(makeConfig(), '/repo')).toBe(false);
     expect(isSessionWorktreePath(makeConfig(), '/elsewhere/worktree')).toBe(false);
     expect(isSessionWorktreePath(makeConfig(), '/repo/.worktrees/nested/too-deep')).toBe(false);
+  });
+});
+
+describe('listSessionWorktreeDirs', () => {
+  it('returns the directory names under the configured worktrees path', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      await mkdir(path.join(tmp.root, '.worktrees', 'session-b'), { recursive: true });
+      await mkdir(path.join(tmp.root, '.worktrees', 'session-a'), { recursive: true });
+
+      expect(await listSessionWorktreeDirs(tmp.root, makeConfig())).toEqual(['session-a', 'session-b']);
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('skips a stray file under the worktrees path', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      await mkdir(path.join(tmp.root, '.worktrees', 'session-a'), { recursive: true });
+      await writeFile(path.join(tmp.root, '.worktrees', 'README'), 'not a worktree\n');
+
+      expect(await listSessionWorktreeDirs(tmp.root, makeConfig())).toEqual(['session-a']);
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('returns nothing when the worktrees path does not exist', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      expect(await listSessionWorktreeDirs(tmp.root, makeConfig())).toEqual([]);
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('honours a worktrees path other than the shipped default', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      await mkdir(path.join(tmp.root, 'trees', 'session-a'), { recursive: true });
+      await mkdir(path.join(tmp.root, '.worktrees', 'session-ignored'), { recursive: true });
+
+      const config = makeConfig({ worktrees_path: 'trees/' });
+      expect(await listSessionWorktreeDirs(tmp.root, config)).toEqual(['session-a']);
+    } finally {
+      await tmp.cleanup();
+    }
   });
 });

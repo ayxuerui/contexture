@@ -1,5 +1,7 @@
+import { execFile } from 'node:child_process';
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import { promisify } from 'node:util';
 import { describe, expect, it } from 'vitest';
 import { hermeticGitEnv } from '../helpers/git-env.js';
 import { runCli, runCliBackground, stopCliBackground } from '../helpers/run-cli.js';
@@ -11,7 +13,12 @@ async function writeNote(root: string, relPath: string, content: string): Promis
   await writeFile(full, content);
 }
 
-const NAV_AREA_ORDER = ['Published pages', 'Notes', 'Catalog', 'Graph'];
+const NAV_AREA_ORDER = ['Published pages', 'Preview', 'Notes', 'Catalog', 'Graph'];
+
+/** Runs git directly; `runCli` always spawns the built CLI and has no bin override. */
+const git = async (args: readonly string[], cwd: string, env: Record<string, string | undefined>): Promise<void> => {
+  await promisify(execFile)('git', [...args], { cwd, env: env as NodeJS.ProcessEnv });
+};
 
 function navHeadings(html: string): string[] {
   return [...html.matchAll(/<h2 class="ctxr-nav-heading"><a href="[^"]*">([^<]*)<\/a><\/h2>/g)].map((m) => m[1]!);
@@ -256,4 +263,92 @@ describe('ctxr serve (real CLI)', () => {
       await tmp.cleanup();
     }
   }, 20_000);
+});
+
+describe('ctxr serve preview of a session worktree (real CLI)', () => {
+  it('serves a page that exists only in a session worktree, byte-verbatim, and nothing else from it', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const env = hermeticGitEnv();
+      expect((await runCli(['init'], { cwd: tmp.root, env })).exitCode).toBe(0);
+
+      // A landed page, so the two areas can be told apart in one response.
+      await writeNote(tmp.root, '.contexture/publish/landed-page/index.html', '<!doctype html><title>Landed Page</title>');
+
+      // A real linked worktree, made by the command that makes them.
+      const started = await runCli(['--json', 'session', 'start'], { cwd: tmp.root, env });
+      expect(started.exitCode).toBe(0);
+      const session = (JSON.parse(started.stdout) as { data: { worktree: string; branch: string } }).data;
+      const worktree = session.worktree;
+      const worktreeName = path.basename(worktree);
+      expect(worktreeName).toBe(session.branch.replace(/\//g, '-'));
+
+      // Put a page in the worktree the store root has never seen.
+      const draft = '<!doctype html><html><head><title>Still Drafting</title></head><body>Draft body.</body></html>';
+      await writeNote(worktree, '.contexture/publish/ctx-a/draft-page/index.html', draft);
+      await writeNote(worktree, '.contexture/publish/ctx-a/draft-page/README.md', '# draft-page\n');
+      await writeNote(worktree, 'projects/worktree-only-note.md', '# Worktree Only\n');
+
+      const { child, firstLine } = await runCliBackground(['serve', '--port', '0', '--json'], { cwd: tmp.root, env });
+      try {
+        const envelope = JSON.parse(firstLine) as { data: { url: string } };
+        const baseUrl = envelope.data.url;
+        const previewUrl = `${baseUrl}preview/${worktreeName}/ctx-a/draft-page/index.html`;
+
+        // The page is reachable, and byte-identical to the file on disk.
+        const pageRes = await fetch(previewUrl);
+        expect(pageRes.status).toBe(200);
+        expect(await pageRes.text()).toBe(draft);
+
+        // It is NOT reachable on the publish route — the two areas stay separate.
+        expect((await fetch(`${baseUrl}publish/ctx-a/draft-page/index.html`)).status).toBe(404);
+
+        // The navigation names the area, groups by worktree, and uses the declared title.
+        const indexHtml = await (await fetch(baseUrl)).text();
+        expect(navHeadings(indexHtml)).toEqual(NAV_AREA_ORDER);
+        expect(indexHtml).toContain(`<summary>${worktreeName}</summary>`);
+        expect(indexHtml).toContain('>Still Drafting</a>');
+        expect(indexHtml).toContain(`href="/preview/${worktreeName}/ctx-a/draft-page/index.html"`);
+        expect(indexHtml).toContain('>Landed Page</a>');
+
+        // An unknown worktree, and a bare worktree segment, are ordinary misses.
+        expect((await fetch(`${baseUrl}preview/session-nope/ctx-a/draft-page/index.html`)).status).toBe(404);
+        expect((await fetch(`${baseUrl}preview/${worktreeName}`)).status).toBe(404);
+
+        // The map miss is the traversal guard: nothing outside the worktree's
+        // publish path is reachable, however the path is spelled. The escapes
+        // below encode the SEPARATOR rather than the dots — `..` and `%2e%2e`
+        // are both normalized away by WHATWG URL parsing before the handler
+        // ever sees them, so only `..%2f` actually reaches it as a dot segment
+        // and only it tests the guard rather than the URL parser.
+        for (const escape of [
+          `preview/${worktreeName}/..%2f..%2fcontexture.yaml`,
+          `preview/${worktreeName}/..%2f..%2f..%2fcontexture.yaml`,
+          `preview/${worktreeName}/..%2fprojects%2fworktree-only-note.md`,
+        ]) {
+          const res = await fetch(`${baseUrl}${escape}`);
+          expect(res.status, escape).toBe(404);
+          expect(await res.text(), escape).not.toContain('schema_version');
+        }
+
+        // Published pages only: a note living in the worktree stays unreachable
+        // on both the preview route and the note route.
+        expect((await fetch(`${baseUrl}preview/${worktreeName}/projects/worktree-only-note.md`)).status).toBe(404);
+        expect((await fetch(`${baseUrl}notes/.worktrees/${worktreeName}/projects/worktree-only-note.md`)).status).toBe(404);
+        expect(indexHtml).not.toContain('Worktree Only');
+
+        // The route consults no commit, push, or review state: the page above was
+        // never committed, and committing it changes nothing about the response.
+        await git(['add', '-A'], worktree, env);
+        await git(['commit', '-m', 'wip'], worktree, env);
+        const afterCommit = await fetch(previewUrl);
+        expect(afterCommit.status).toBe(200);
+        expect(await afterCommit.text()).toBe(draft);
+      } finally {
+        await stopCliBackground(child);
+      }
+    } finally {
+      await tmp.cleanup();
+    }
+  }, 30_000);
 });

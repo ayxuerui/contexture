@@ -15,6 +15,7 @@ function makeTable(overrides: Partial<RouteTable> = {}): RouteTable {
     publishFiles: new Map(),
     publishTitles: new Map(),
     groupLabels: new Map(),
+    previews: new Map(),
     ...overrides,
   };
 }
@@ -27,6 +28,26 @@ function withNotes(...paths: readonly (string | Note)[]): RouteTable {
 function withPublishFiles(...urlPaths: readonly string[]): RouteTable {
   return makeTable({
     publishFiles: new Map(urlPaths.map((urlPath) => [urlPath, { urlPath, absolutePath: `/abs/${urlPath}` }])),
+  });
+}
+
+/** One session worktree's previewable pages, as `buildRouteTable` reports them. */
+function withPreviews(
+  worktrees: Readonly<Record<string, readonly string[]>>,
+  titles: Readonly<Record<string, string>> = {},
+): RouteTable {
+  return makeTable({
+    previews: new Map(
+      Object.entries(worktrees).map(([worktree, pages]) => [
+        worktree,
+        {
+          files: new Map(
+            pages.map((page) => [`${page}/index.html`, { urlPath: `${page}/index.html`, absolutePath: `/abs/${worktree}/${page}/index.html` }]),
+          ),
+          titles: new Map(pages.filter((page) => titles[page] !== undefined).map((page) => [page, titles[page]!])),
+        },
+      ]),
+    ),
   });
 }
 
@@ -43,10 +64,10 @@ function indexHeadings(html: string): string[] {
   return [...html.matchAll(/<h2 id="[^"]*">([^<]*)<\/h2>/g)].map((m) => m[1]!);
 }
 
-const REQUIRED_ORDER = ['Published pages', 'Notes', 'Catalog', 'Graph'];
+const REQUIRED_ORDER = ['Published pages', 'Preview', 'Notes', 'Catalog', 'Graph'];
 
 describe('renderNav', () => {
-  it('names the four content areas in the required order', () => {
+  it('names the five content areas in the required order', () => {
     expect(navHeadings(renderNav(makeTable()))).toEqual(REQUIRED_ORDER);
   });
 
@@ -79,7 +100,7 @@ describe('renderNav', () => {
   it('still names an area that holds nothing, reporting it as empty', () => {
     const html = renderNav(makeTable());
     expect(navHeadings(html)).toEqual(REQUIRED_ORDER);
-    expect(html.match(/none yet/g)).toHaveLength(3); // publish, notes, catalog — the graph is a single document
+    expect(html.match(/none yet/g)).toHaveLength(4); // publish, preview, notes, catalog — the graph is a single document
     expect(html).toContain('<a href="/graph">graph document</a>');
   });
 
@@ -204,18 +225,87 @@ describe('renderIndexBody', () => {
 
   it('carries an anchor for each area so the navigation can link to it', () => {
     const html = renderIndexBody(makeTable());
-    for (const anchor of ['published-pages', 'notes', 'catalog', 'graph']) {
+    for (const anchor of ['published-pages', 'preview', 'notes', 'catalog', 'graph']) {
       expect(html).toContain(`<h2 id="${anchor}">`);
     }
     expect(renderNav(makeTable())).toContain('href="/#published-pages"');
   });
 
-  it('counts published pages, notes, and catalog sections', () => {
+  it('counts published pages, previewable pages, notes, and catalog sections', () => {
     const table = makeTable({
       notes: new Map([['a.md', note('a.md')]]),
       catalog: new Map([['layer-a', { id: 'layer-a', absolutePath: '/abs/layer-a.md' }]]),
       publishFiles: new Map([['p/index.html', { urlPath: 'p/index.html', absolutePath: '/abs/p/index.html' }]]),
     });
-    expect(renderIndexBody(table)).toContain('1 published page(s), 1 note(s), 1 catalog section(s).');
+    expect(renderIndexBody(table)).toContain('1 published page(s), 0 page(s) in preview, 1 note(s), 1 catalog section(s).');
+  });
+});
+
+describe('the preview area', () => {
+  it('renders second, after published pages, in both the nav and the index', () => {
+    const table = makeTable();
+
+    expect(navHeadings(renderNav(table))).toEqual(['Published pages', 'Preview', 'Notes', 'Catalog', 'Graph']);
+    expect([...renderIndexBody(table).matchAll(/<h2 id="([^"]*)">/g)].map((m) => m[1])).toEqual([
+      'published-pages',
+      'preview',
+      'notes',
+      'catalog',
+      'graph',
+    ]);
+  });
+
+  it('groups a previewable page under the worktree holding it', () => {
+    const html = renderNav(withPreviews({ 'session-a': ['ctx-a/draft-page'] }));
+
+    expect(html).toContain('<summary>session-a</summary>');
+    expect(html).toContain('<summary>ctx-a</summary>');
+    expect(html).toContain('href="/preview/session-a/ctx-a/draft-page/index.html"');
+  });
+
+  it("labels an entry with the page's declared name", () => {
+    const html = renderNav(withPreviews({ 'session-a': ['ctx-a/draft-page'] }, { 'ctx-a/draft-page': 'Still Drafting' }));
+
+    expect(html).toContain('>Still Drafting</a>');
+    expect(html).not.toContain('>draft-page</a>');
+  });
+
+  it('falls back to the directory segment when the page declares no name', () => {
+    expect(renderNav(withPreviews({ 'session-a': ['ctx-a/draft-page'] }))).toContain('>draft-page</a>');
+  });
+
+  it('gives a folder inside a worktree the same declared name the published area gives it', () => {
+    const table = withGroupLabels(withPreviews({ 'session-a': ['ctx-a/draft-page'] }), { 'ctx-a': 'Ctx A' });
+    const html = renderNav(table);
+
+    expect(html).toContain('<summary>Ctx A</summary>');
+    expect(html).not.toContain('<summary>ctx-a</summary>');
+    // D2: the worktree segment matches no layer and keeps its own directory name.
+    expect(html).toContain('<summary>session-a</summary>');
+  });
+
+  it('keeps two worktrees as separate groups', () => {
+    const html = renderNav(withPreviews({ 'session-a': ['page-a'], 'session-b': ['page-b'] }));
+
+    expect(html).toContain('<summary>session-a</summary>');
+    expect(html).toContain('<summary>session-b</summary>');
+    expect(html).toContain('href="/preview/session-a/page-a/index.html"');
+    expect(html).toContain('href="/preview/session-b/page-b/index.html"');
+  });
+
+  it('names the area and reports it empty when nothing is in flight', () => {
+    const html = renderNav(makeTable());
+
+    expect(navHeadings(html)).toContain('Preview');
+    const previewSection = html.slice(html.indexOf('id="nav-preview"'));
+    expect(previewSection.slice(0, previewSection.indexOf('</section>'))).toContain('none yet');
+  });
+
+  it('counts previewable pages on the index page', () => {
+    expect(renderIndexBody(withPreviews({ 'session-a': ['page-a', 'page-b'] }))).toContain('2 page(s) in preview');
+  });
+
+  it('introduces no client-side script', () => {
+    expect(renderNav(withPreviews({ 'session-a': ['ctx-a/draft-page'] }))).not.toContain('<script');
   });
 });
