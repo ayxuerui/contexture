@@ -3,7 +3,6 @@ import * as catalogBuildCommand from './commands/catalog-build.js';
 import * as catalogCheckCommand from './commands/catalog-check.js';
 import * as catalogShowCommand from './commands/catalog-show.js';
 import * as adaptersGenerateCommand from './commands/adapters-generate.js';
-import * as adaptersWriteGateCommand from './commands/adapters-write-gate.js';
 import * as archiveCommand from './commands/archive.js';
 import * as doctorCommand from './commands/doctor.js';
 import * as ingestCommand from './commands/ingest.js';
@@ -575,17 +574,6 @@ export async function run(argv: readonly string[], env: RunEnv): Promise<ExitCod
         const store = await openStore(runEnv, { root });
         return adaptersGenerateCommand.execute(runEnv, store);
       });
-    });
-
-  adaptersCommand
-    .command('write-gate')
-    .description('PreToolUse hook target: deny an edit under the store root outside the active session worktree')
-    .action(async (_cmdOpts: object, cmd: Command) => {
-      // Deliberately bypasses runCommand/the --json envelope: this speaks
-      // Claude Code's own hook protocol (see adapters-write-gate.ts) on
-      // stdout/exit code, not contexture's.
-      const { runEnv, root } = deriveRunEnv(env, cmd);
-      result = await adaptersWriteGateCommand.execute(runEnv, { root });
     });
 
   program

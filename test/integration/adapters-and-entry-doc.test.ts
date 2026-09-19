@@ -29,12 +29,13 @@ describe('adapters (real CLI)', () => {
       const first = await runCli(['adapters', 'generate', '--json'], { cwd: tmp.root, env });
       expect(first.exitCode).toBe(0);
       const claudeMdBefore = await readFile(path.join(tmp.root, 'CLAUDE.md'), 'utf8');
-      const settingsBefore = await readFile(path.join(tmp.root, '.claude/settings.json'), 'utf8');
+      // No settings.json on a fresh store since retire-the-write-gate; its absence must be stable too.
+      const settingsBefore = await readFile(path.join(tmp.root, '.claude/settings.json'), 'utf8').catch(() => null);
 
       const second = await runCli(['adapters', 'generate', '--json'], { cwd: tmp.root, env });
       expect(second.exitCode).toBe(0);
       const claudeMdAfter = await readFile(path.join(tmp.root, 'CLAUDE.md'), 'utf8');
-      const settingsAfter = await readFile(path.join(tmp.root, '.claude/settings.json'), 'utf8');
+      const settingsAfter = await readFile(path.join(tmp.root, '.claude/settings.json'), 'utf8').catch(() => null);
 
       expect(claudeMdAfter).toBe(claudeMdBefore);
       expect(settingsAfter).toBe(settingsBefore);

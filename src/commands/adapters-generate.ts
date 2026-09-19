@@ -6,8 +6,7 @@ import type { RunEnv } from '../core/env.js';
 import { ExitCode } from '../core/exit-codes.js';
 import { upsertFencedRegionInFile } from '../core/fs/fenced-region.js';
 import type { GitRunner } from '../core/git/exec.js';
-import { mainWorktreePath } from '../core/git/worktree.js';
-import { installTemplatedHookScript } from '../core/hooks.js';
+import { retireInstalledHookScript } from '../core/hooks.js';
 import { mergeJsonArrayLists, type MergePatch, type RemovePatch } from '../core/json-config-merge.js';
 import { harnessEntryFence } from '../core/markers.js';
 import type { Store } from '../core/store.js';
@@ -33,10 +32,6 @@ export interface AdaptersGenerateData {
 /** The generation itself, shared with `ctxr update`. */
 export async function generateAdapterOutputs(git: GitRunner, store: Store): Promise<AdaptersGenerateFileResult[]> {
   const files: AdaptersGenerateFileResult[] = [];
-  // Resolved once per run, not per adapter: every adapter's permission
-  // config that needs a stable absolute path (stabilize-write-gate-hook-path)
-  // anchors it here, regardless of which checkout is running this generator.
-  const mainRoot = await mainWorktreePath(git, store.root);
 
   for (const adapter of configuredAdapters(store.config, 'harness-generation')) {
     if (adapter.entryFileName !== undefined && adapter.render !== undefined) {
@@ -52,18 +47,17 @@ export async function generateAdapterOutputs(git: GitRunner, store: Store): Prom
     if (adapter.permissionConfig) {
       const input = {
         root: store.root,
-        mainRoot,
         worktreesPath: store.config.session.worktrees_path,
       };
       let permChanged = false;
 
-      if (adapter.permissionConfig.hookFile) {
-        const { changed: hookScriptChanged } = await installTemplatedHookScript(
-          store.root,
-          adapter.permissionConfig.hookFile.targetPath,
-          adapter.permissionConfig.hookFile.templateFileName,
-        );
-        permChanged = permChanged || hookScriptChanged;
+      // retire-the-write-gate: the script this adapter used to install is
+      // removed rather than left orphaned. contexture delivered it, so
+      // contexture takes it away; it is version-controlled, so an operator
+      // who wants it back has it in history.
+      for (const targetPath of adapter.permissionConfig.retiredHookFiles ?? []) {
+        const { changed: retired } = await retireInstalledHookScript(store.root, targetPath);
+        permChanged = permChanged || retired;
       }
 
       const permPath = path.join(store.root, adapter.permissionConfig.path);

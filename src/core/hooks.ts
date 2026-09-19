@@ -1,4 +1,4 @@
-import { chmod, mkdir, readFile } from 'node:fs/promises';
+import { chmod, mkdir, readFile, rm } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { writeFileAtomic } from './fs/atomic.js';
@@ -97,20 +97,27 @@ export async function installHooks(root: string, defaultBranch: string): Promise
 }
 
 /**
- * A harness adapter's own generated hook script (e.g. Claude Code's
- * PreToolUse write-gate) — same idempotent render+chmod discipline as git
- * hooks, without assuming the `.githooks` directory. Shares `renderTemplate`
- * with `renderHook`, so it gets the same `__RESOLVE_CTXR__` inlining.
+ * Deletes a script a previous release installed into the store and the
+ * current one no longer generates (retire-the-write-gate). Reports whether
+ * anything was actually removed, so a second run is a true no-op rather than
+ * a repeated "changed". Absent is success: a fresh store never had it, and a
+ * store that already converged must not be reported as changing every run.
+ *
+ * Deliberately narrow — it deletes only the exact store-relative path an
+ * adapter names as retired, never a directory and never by pattern.
  */
-export async function installTemplatedHookScript(
+export async function retireInstalledHookScript(
   root: string,
   relativeTargetPath: string,
-  templateFileName: string,
 ): Promise<{ changed: boolean }> {
-  const rendered = await renderTemplate(templateFileName);
   const targetPath = path.join(root, relativeTargetPath);
-  const changed = await writeRenderedScript(targetPath, rendered);
-  return { changed };
+  try {
+    await rm(targetPath);
+    return { changed: true };
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return { changed: false };
+    throw err;
+  }
 }
 
 export async function configureHooksPath(git: GitRunner, cwd: string): Promise<void> {

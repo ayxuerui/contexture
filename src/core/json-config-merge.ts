@@ -12,7 +12,15 @@ export interface HookMatcherEntry {
 
 export type MergeListValue = readonly string[] | readonly HookMatcherEntry[];
 export type MergePatch = Readonly<Record<string, Readonly<Record<string, MergeListValue>>>>;
-export type RemovePatch = Readonly<Record<string, Readonly<Record<string, readonly string[]>>>>;
+/**
+ * Entries a previous release emitted that the current one no longer does.
+ * Carries both vocabularies: a string list (permission rules, removed by
+ * exact match) and a hook-entry list (removed by the same
+ * `(matcher, script basename)` identity `mergeHookEntries` upserts by, so a
+ * hook retired outright is removed whatever absolute path any past release
+ * baked into it — retire-the-write-gate).
+ */
+export type RemovePatch = Readonly<Record<string, Readonly<Record<string, MergeListValue>>>>;
 
 function isHookEntryList(value: MergeListValue): value is readonly HookMatcherEntry[] {
   return value.length > 0 && typeof value[0] === 'object' && value[0] !== null;
@@ -40,14 +48,28 @@ function hookCommandBasename(entry: HookMatcherEntry): string {
  * matcher or a different script basename — an operator's own hook — is
  * always left untouched.
  */
+/**
+ * The identity two hook entries are "the same rule" by: same matcher, same
+ * script filename, deliberately ignoring the path prefix. Shared by the
+ * upsert below and by retirement removal, so the two can never disagree
+ * about which entry is contexture's and which is the operator's.
+ */
+function isSameHook(a: HookMatcherEntry, b: HookMatcherEntry): boolean {
+  return a.matcher === b.matcher && hookCommandBasename(a) === hookCommandBasename(b);
+}
+
+/** Drops every entry matching one this release has retired; leaves all others. */
+function removeHookEntries(existing: readonly HookMatcherEntry[], retired: readonly HookMatcherEntry[]): HookMatcherEntry[] {
+  if (retired.length === 0) return [...existing];
+  return existing.filter((candidate) => !retired.some((r) => isSameHook(candidate, r)));
+}
+
 function mergeHookEntries(existing: readonly HookMatcherEntry[], incoming: readonly HookMatcherEntry[]): HookMatcherEntry[] {
   let result = [...existing];
   for (const entry of incoming) {
-    const isSameHook = (candidate: HookMatcherEntry): boolean =>
-      candidate.matcher === entry.matcher && hookCommandBasename(candidate) === hookCommandBasename(entry);
     let inserted = false;
     result = result.flatMap((candidate) => {
-      if (!isSameHook(candidate)) return [candidate];
+      if (!isSameHook(candidate, entry)) return [candidate];
       if (inserted) return []; // a further stale duplicate of the same rule — drop it
       inserted = true;
       return [entry]; // replace the first match in place
@@ -101,19 +123,27 @@ export async function mergeJsonArrayLists(
 
     for (const listKey of listKeys) {
       const newValues = sections[listKey] ?? [];
-      const toRemove = removeSections[listKey] ?? [];
+      const toRemove: MergeListValue = removeSections[listKey] ?? [];
       const existingRaw = existingTop[listKey];
       const existingListPresent = Array.isArray(existingRaw);
       const existingList = existingListPresent ? (existingRaw as unknown[]) : [];
 
-      if (isHookEntryList(newValues) || (existingList.length > 0 && typeof existingList[0] === 'object')) {
-        mergedTop[listKey] = mergeHookEntries(existingList as HookMatcherEntry[], newValues as readonly HookMatcherEntry[]);
+      if (isHookEntryList(newValues) || isHookEntryList(toRemove) || (existingList.length > 0 && typeof existingList[0] === 'object')) {
+        const retired = isHookEntryList(toRemove) ? toRemove : [];
+        const kept = removeHookEntries(existingList as HookMatcherEntry[], retired);
+        const result = mergeHookEntries(kept, isHookEntryList(newValues) ? newValues : []);
+        // A list emptied by retirement is dropped rather than left as [],
+        // matching the string branch below, so a store that converges to no
+        // generated hook at all ends with no vestigial key.
+        if (result.length === 0) delete mergedTop[listKey];
+        else mergedTop[listKey] = result;
         continue;
       }
 
       const existingStrings = existingList as string[];
-      const removedCount = existingStrings.filter((v) => toRemove.includes(v)).length;
-      const afterRemoval = existingStrings.filter((v) => !toRemove.includes(v));
+      const removeStrings = toRemove as readonly string[];
+      const removedCount = existingStrings.filter((v) => removeStrings.includes(v)).length;
+      const afterRemoval = existingStrings.filter((v) => !removeStrings.includes(v));
       const additions = (newValues as readonly string[]).filter((v) => !afterRemoval.includes(v));
       const result = [...afterRemoval, ...additions];
 
@@ -128,7 +158,11 @@ export async function mergeJsonArrayLists(
       mergedTop[listKey] = result;
     }
 
-    merged[topKey] = mergedTop;
+    // Same rule one level up: a section left empty by retirement is dropped,
+    // unless it was already an empty object on disk (the operator's, not ours).
+    const topWasEmptyOnDisk = topKey in existing && Object.keys(existingTop).length === 0;
+    if (Object.keys(mergedTop).length === 0 && !topWasEmptyOnDisk) delete merged[topKey];
+    else merged[topKey] = mergedTop;
   }
 
   const after = JSON.stringify(merged);
