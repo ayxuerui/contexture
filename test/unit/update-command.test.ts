@@ -29,8 +29,10 @@ describe('ctxr update', () => {
     try {
       const { store, env } = await freshStore(tmp.root);
       // init does not run the adapters, so the first update legitimately writes their outputs…
+      // `.claude/settings.json` is absent from this list since retire-the-write-gate: the
+      // claude-code permission config is cleanup-only and emits nothing for a fresh store.
       const first = await update(env, store);
-      expect(first.data?.changed?.sort()).toEqual(['.claude/settings.json', 'CLAUDE.md']);
+      expect(first.data?.changed?.sort()).toEqual(['CLAUDE.md']);
       // …and only then is the store current.
       const outcome = await update(env, store);
       expect(outcome.exitCode).toBe(ExitCode.Ok);

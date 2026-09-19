@@ -44,21 +44,16 @@ export const SUPPORTED_ADAPTER_INTERFACE_VERSION: Record<AdapterKind, number> = 
  * launched with its cwd already inside a worktree rather than at the store
  * root — a cwd-relative rule would then resolve against the wrong directory.
  *
- * `mainRoot` (stabilize-write-gate-hook-path) is the store's main/canonical
- * worktree — the one persistent checkout that outlives any session worktree.
- *
- * It is the FALLBACK for the path an enforcement primitive is invoked by, not
- * the default. Prefer the target harness's own project-root placeholder when
- * it publishes one (reference-the-hook-by-project-dir): a permission config is
- * typically committed, and any path resolved here — `mainRoot` included — is
- * correct only on the machine that generated it. Reach for `mainRoot` only for
- * a harness with no such placeholder, and never for `root`: `root` is deleted
- * the moment the session worktree that generated it lands, so a path anchored
- * there goes stale as soon as that happens.
+ * There is deliberately no main-worktree input. `stabilize-write-gate-hook-path`
+ * added one so a hook command could be anchored at a checkout that outlives
+ * the generating worktree; retire-the-write-gate removed the only primitive
+ * that was ever invoked by a path, and with it the reason to resolve one.
+ * A future adapter that needs an absolute invocation path should prefer its
+ * harness's own project-root placeholder — a committed config cannot hold a
+ * path that is correct on more than one machine.
  */
 export interface PermissionConfigInput {
   root: string;
-  mainRoot: string;
   worktreesPath: string;
 }
 
@@ -88,13 +83,13 @@ export interface HarnessGenerationAdapter extends Adapter<'harness-generation'> 
      * this adapter has never emitted, including one an operator added by hand.
      */
     retiredRules(input: PermissionConfigInput): Record<string, unknown>;
-    /** Optional: an additional generated script this harness's config depends on (e.g. a PreToolUse hook). */
-    hookFile?: {
-      /** Filename under templates/hooks/. */
-      templateFileName: string;
-      /** Relative to the store root — where the rendered script is installed. */
-      targetPath: string;
-    };
+    /**
+     * Store-relative paths to scripts a previous release of this adapter
+     * installed and the current one no longer does — deleted on generate, so
+     * retiring a generated primitive does not leave an orphaned executable
+     * behind that nothing invokes (retire-the-write-gate).
+     */
+    retiredHookFiles?: readonly string[];
   };
 }
 

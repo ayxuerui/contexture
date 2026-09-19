@@ -172,7 +172,7 @@ async function resolveTaxonomy(env: RunEnv, flags: InitFlags): Promise<ResolvedT
  * presented at init and never inferred by inspecting the host machine.
  */
 const SELECTABLE_HARNESSES: readonly { id: string; name: string; description: string }[] = [
-  { id: 'claude-code', name: 'Claude Code', description: 'Generates CLAUDE.md importing AGENTS.md, plus a permission config with the write-gate hook.' },
+  { id: 'claude-code', name: 'Claude Code', description: 'Generates CLAUDE.md importing AGENTS.md.' },
   { id: 'hermes-agent', name: 'Hermes', description: 'Reads AGENTS.md directly — no entry file generated.' },
 ];
 
