@@ -125,8 +125,14 @@ describe('session lifecycle (real git, real CLI)', () => {
       const env = hermeticGitEnv();
       await runCli(['init'], { cwd: tmp.root, env });
       const first = await runCli(['session', 'start', 'ctx-a', '--json'], { cwd: tmp.root, env });
-      const worktree = JSON.parse(first.stdout).data.worktree;
+      const { worktree, branch } = JSON.parse(first.stdout).data;
+
+      // What landing a session leaves behind: the worktree removed AND its branch
+      // gone. Removing only the worktree would leave the branch holding the
+      // composed name, which the next start collides with whenever both runs fall
+      // in the same clock second — git refuses it, correctly, as a usage error.
       await execFileAsync('git', ['worktree', 'remove', '--force', worktree], { cwd: tmp.root, env });
+      await execFileAsync('git', ['branch', '-D', branch], { cwd: tmp.root, env });
 
       const second = await runCli(['session', 'start', 'ctx-a', '--json'], { cwd: tmp.root, env });
       expect(second.exitCode).toBe(0);
