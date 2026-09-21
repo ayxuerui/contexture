@@ -29,4 +29,4 @@
 
 ## 6. Release
 
-- [ ] 6.1 Confirm with the operator before publishing — a downstream store is gated on the npm release, not the merge, so this change is not "done" at merge, but publishing is an operator action and not automatic
+- [x] 6.1 Confirm with the operator before publishing — a downstream store is gated on the npm release, not the merge, so this change is not "done" at merge, but publishing is an operator action and not automatic — confirmed 2026-09-21: the release gate was satisfied long ago, `npm view ctxr-cli version` reports 0.17.0, several releases past the 2026-09-04 merge
