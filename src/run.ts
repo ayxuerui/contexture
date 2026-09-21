@@ -628,11 +628,12 @@ export async function run(argv: readonly string[], env: RunEnv): Promise<ExitCod
   sessionCommand
     .command('start')
     .description('create a new session worktree off a freshly fetched default branch')
-    .action(async (_cmdOpts: object, cmd: Command) => {
+    .argument('[label]', 'a short name for what the session is for — becomes part of the branch and worktree name')
+    .action(async (label: string | undefined, _cmdOpts: object, cmd: Command) => {
       const { runEnv, jsonMode, root } = deriveRunEnv(env, cmd);
       result = await runCommand('session.start', runEnv, jsonMode, async () => {
         const store = await openStore(runEnv, { root });
-        return sessionStartCommand.execute(runEnv, store);
+        return sessionStartCommand.execute(runEnv, store, { label });
       });
     });
 

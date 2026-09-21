@@ -1,8 +1,9 @@
 import type { CommandOutcome, CommandRequires } from '../core/command.js';
 import type { RunEnv } from '../core/env.js';
 import { ExitCode } from '../core/exit-codes.js';
+import { SessionLabelUnusableError, SessionNameExistsError, SessionWorktreeRefusedError } from '../core/errors.js';
 import { addWorktree, fetchOrigin, hasRemote } from '../core/git/worktree.js';
-import { generateSessionBranchName, worktreePathFor } from '../core/session.js';
+import { findSessionWorktreeByLabel, generateSessionBranchName, sessionLabelSlug, worktreePathFor } from '../core/session.js';
 import type { Store } from '../core/store.js';
 import { updateAdvisory } from '../core/version-check.js';
 
@@ -13,6 +14,13 @@ export interface SessionStartData {
   branch: string;
   startPoint: string;
   fetched: boolean;
+  /** The normalized label this session was named with, or null when none was given. */
+  label: string | null;
+}
+
+export interface SessionStartOptions {
+  /** A short name for what the session is for; becomes part of the branch and worktree name. */
+  label?: string;
 }
 
 /**
@@ -21,9 +29,28 @@ export interface SessionStartData {
  * local store), this degrades honestly to the local default branch's
  * current tip — fetching is simply not possible without a remote.
  */
-export async function execute(env: RunEnv, store: Store): Promise<CommandOutcome<SessionStartData>> {
+export async function execute(
+  env: RunEnv,
+  store: Store,
+  opts: SessionStartOptions = {},
+): Promise<CommandOutcome<SessionStartData>> {
   const git = env.git;
   const defaultBranch = store.config.git.default_branch;
+
+  // Ahead of the fetch, so a label that can never work costs no network round
+  // trip and leaves nothing behind.
+  let labelSlug: string | null = null;
+  if (opts.label !== undefined) {
+    labelSlug = sessionLabelSlug(opts.label);
+    if (labelSlug === '') throw new SessionLabelUnusableError(opts.label);
+
+    // A label identifies at most one session at a time. Checked against the
+    // sessions on disk rather than against the composed branch name, which
+    // carries a timestamp and so would almost never collide (D4).
+    const existing = await findSessionWorktreeByLabel(store.root, store.config, labelSlug);
+    if (existing !== null) throw new SessionNameExistsError(labelSlug, existing);
+  }
+
   const remoteExists = await hasRemote(git, store.root);
 
   let startPoint: string;
@@ -36,10 +63,14 @@ export async function execute(env: RunEnv, store: Store): Promise<CommandOutcome
   // has been pushed yet) — both are honest, expected states, not errors.
   startPoint = fetched ? `origin/${defaultBranch}` : defaultBranch;
 
-  const branch = generateSessionBranchName(store.config);
+  const branch = generateSessionBranchName(store.config, new Date(), labelSlug ?? undefined);
   const worktreeDir = worktreePathFor(store, branch);
 
-  await addWorktree(git, store.root, worktreeDir, branch, startPoint);
+  // git decides whether the worktree can actually be created: the label scan
+  // above knows nothing about an unusable branch prefix, an occupied path, or a
+  // repository problem, and any of those is still the caller's problem to see (D7).
+  const added = await addWorktree(git, store.root, worktreeDir, branch, startPoint, { allowFailure: true });
+  if (added.exitCode !== 0) throw new SessionWorktreeRefusedError(branch, worktreeDir, added.stderr);
 
   // cli-contract: the skill-path trigger for the release advisory — once per
   // session, at the command the lifecycle skill names first, on a command that
@@ -50,7 +81,7 @@ export async function execute(env: RunEnv, store: Store): Promise<CommandOutcome
 
   return {
     exitCode: ExitCode.Ok,
-    data: { worktree: worktreeDir, branch, startPoint, fetched },
+    data: { worktree: worktreeDir, branch, startPoint, fetched, label: labelSlug },
     findings: advisory.findings,
     notices: advisory.notice ? [advisory.notice] : undefined,
     humanSummary: `Session worktree at "${worktreeDir}" on branch "${branch}" (from ${startPoint}).`,

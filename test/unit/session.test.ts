@@ -4,7 +4,10 @@ import { describe, expect, it } from 'vitest';
 import { makeTmpDir } from '../helpers/tmp-store.js';
 import type { StoreConfig } from '../../src/config/schema.js';
 import {
+  findSessionWorktreeByLabel,
   generateSessionBranchName,
+  sessionLabelFromDirName,
+  sessionLabelSlug,
   isSessionBranch,
   isSessionWorktreePath,
   listSessionWorktreeDirs,
@@ -55,6 +58,97 @@ describe('generateSessionBranchName', () => {
     const earlier = generateSessionBranchName(makeConfig(), new Date('2026-01-01T00:00:00Z'));
     const later = generateSessionBranchName(makeConfig(), new Date('2026-06-01T00:00:00Z'));
     expect(earlier < later).toBe(true);
+  });
+
+  it('a label takes the random suffix place, behind the stamp', () => {
+    const name = generateSessionBranchName(makeConfig(), new Date('2026-01-01T00:00:00Z'), 'ctx-a');
+    expect(name).toBe('session/20260101-000000-ctx-a');
+  });
+
+  it('a label respects a custom prefix', () => {
+    const name = generateSessionBranchName(makeConfig({ branch_prefix: 'agent/' }), new Date('2026-01-01T00:00:00Z'), 'ctx-a');
+    expect(name).toBe('agent/20260101-000000-ctx-a');
+  });
+
+  it('labelled names stay sortable by creation time', () => {
+    const earlier = generateSessionBranchName(makeConfig(), new Date('2026-01-01T00:00:00Z'), 'work');
+    const later = generateSessionBranchName(makeConfig(), new Date('2026-06-01T00:00:00Z'), 'ctx-a');
+    expect(earlier < later).toBe(true);
+  });
+
+  it('an empty label falls back to the random suffix', () => {
+    const a = generateSessionBranchName(makeConfig(), new Date('2026-01-01T00:00:00Z'), '');
+    const b = generateSessionBranchName(makeConfig(), new Date('2026-01-01T00:00:00Z'), '');
+    expect(a).not.toBe(b);
+  });
+
+  it('the same label at the same instant produces the same name, which the command refuses (D4)', () => {
+    const at = new Date('2026-01-01T00:00:00Z');
+    expect(generateSessionBranchName(makeConfig(), at, 'ctx-a')).toBe(generateSessionBranchName(makeConfig(), at, 'ctx-a'));
+  });
+});
+
+describe('sessionLabelSlug', () => {
+  it('normalizes with the publish slug rule', () => {
+    expect(sessionLabelSlug('Ctx A')).toBe('ctx-a');
+    expect(sessionLabelSlug('  Ctx A — B ')).toBe('ctx-a-b');
+  });
+
+  it('is empty when nothing survives normalization', () => {
+    expect(sessionLabelSlug('...')).toBe('');
+    expect(sessionLabelSlug('   ')).toBe('');
+  });
+
+  it('truncates a long label on a word boundary, with no trailing separator', () => {
+    const slug = sessionLabelSlug('ctx a director of engineering quality and research and more');
+    expect(slug.length).toBeLessThanOrEqual(48);
+    expect(slug).toBe('ctx-a-director-of-engineering-quality-and');
+    expect(slug.endsWith('-')).toBe(false);
+  });
+
+  it('cuts a single over-long word at the cap, since it has no boundary', () => {
+    expect(sessionLabelSlug('a'.repeat(60))).toBe('a'.repeat(48));
+  });
+
+  it('leaves a label at the cap untouched', () => {
+    const exact = 'a'.repeat(48);
+    expect(sessionLabelSlug(exact)).toBe(exact);
+  });
+});
+
+describe('sessionLabelFromDirName', () => {
+  it('recovers a label from a composed directory name', () => {
+    expect(sessionLabelFromDirName(makeConfig(), 'session-20260101-000000-ctx-a')).toBe('ctx-a');
+  });
+
+  it('reports an unlabelled session as carrying no label', () => {
+    expect(sessionLabelFromDirName(makeConfig(), 'session-20260101-000000-a1b2c3')).toBeNull();
+  });
+
+  it('does not read a longer label as a shorter one', () => {
+    expect(sessionLabelFromDirName(makeConfig(), 'session-20260101-000000-ctx-a')).not.toBe('a');
+  });
+
+  it('follows the configured prefix, and ignores a directory that is not a session', () => {
+    expect(sessionLabelFromDirName(makeConfig({ branch_prefix: 'agent/' }), 'agent-20260101-000000-work')).toBe('work');
+    expect(sessionLabelFromDirName(makeConfig(), 'session-20260101-000000-ctx-a')).toBe('ctx-a');
+    expect(sessionLabelFromDirName(makeConfig(), 'not-a-session')).toBeNull();
+  });
+});
+
+describe('findSessionWorktreeByLabel', () => {
+  it('finds the worktree carrying a label, and distinguishes a shorter one', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const config = makeConfig();
+      await mkdir(path.join(tmp.root, '.worktrees', 'session-20260101-000000-ctx-a'), { recursive: true });
+      const found = await findSessionWorktreeByLabel(tmp.root, config, 'ctx-a');
+      expect(found).toBe(path.join(tmp.root, '.worktrees', 'session-20260101-000000-ctx-a'));
+      expect(await findSessionWorktreeByLabel(tmp.root, config, 'a')).toBeNull();
+      expect(await findSessionWorktreeByLabel(tmp.root, config, 'ctx-b')).toBeNull();
+    } finally {
+      await tmp.cleanup();
+    }
   });
 });
 
