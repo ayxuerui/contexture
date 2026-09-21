@@ -305,6 +305,47 @@ describe('readConfig', () => {
   });
 
   /**
+   * publish-names-where-the-page-is-served: the base URL a store's browsing
+   * surface is reachable at — opt-in, with no shipped default, because
+   * contexture cannot know it. Read as a pair, like the capture sections
+   * above: the absent case is every store that predates the key.
+   */
+  it('leaves the browsing-surface base URL undeclared when the store says nothing', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      await writeFile(path.join(tmp.root, CONFIG_FILE_NAME), minimalConfig());
+      const config = await readConfig(tmp.root);
+      expect(config.serve).toBeUndefined();
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('reads a declared browsing-surface base URL', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const text = `${minimalConfig()}serve: { base_url: "https://ctx-a.example.test/ctx-a/" }\n`;
+      await writeFile(path.join(tmp.root, CONFIG_FILE_NAME), text);
+      const config = await readConfig(tmp.root);
+      expect(config.serve?.base_url).toBe('https://ctx-a.example.test/ctx-a/');
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('refuses a base URL that is not an absolute http(s) base', async () => {
+    for (const value of ['ctx-a.example.test', 'ftp://ctx-a.example.test', 'https://ctx-a.example.test/?a=b', 'https://ctx-a.example.test/#top']) {
+      const tmp = await makeTmpDir();
+      try {
+        await writeFile(path.join(tmp.root, CONFIG_FILE_NAME), `${minimalConfig()}serve: { base_url: "${value}" }\n`);
+        await expect(readConfig(tmp.root), `"${value}" should be refused`).rejects.toThrow(InvalidConfigError);
+      } finally {
+        await tmp.cleanup();
+      }
+    }
+  });
+
+  /**
    * `organize.archive_destination` is derived from the taxonomy, not a
    * convention: defaulting it to the flat constant would send a PARA store's
    * archived notes to `archive/` while its own taxonomy declares `archives/`.
@@ -415,6 +456,24 @@ describe('renderStoreConfig (config-defaults-as-the-convention)', () => {
       await resolved(`${minimalConfig()}retrieval: { exclude_paths: [${reversed.join(', ')}] }\n`),
     );
     expect(rendered).toContain('exclude_paths:');
+  });
+
+  /**
+   * publish-names-where-the-page-is-served (D7): the `serve` block is declared
+   * `.optional()` rather than prefaulted like every block beside it, because
+   * `withoutShippedDefaults` keeps any key absent from `SHIPPED_DEFAULTS`
+   * verbatim — prefaulted, every store would resolve to `serve: {}` and every
+   * generated config would carry an empty block it never chose.
+   */
+  it('writes no serve block for a store that declares no base URL', async () => {
+    const rendered = renderStoreConfig(await resolved(minimalConfig()));
+    expect(rendered).not.toContain('serve:');
+    expect(rendered).not.toContain('base_url');
+  });
+
+  it('writes a declared base URL, which carries no shipped default to be omitted against', async () => {
+    const rendered = renderStoreConfig(await resolved(`${minimalConfig()}serve: { base_url: "https://ctx-a.example.test" }\n`));
+    expect(rendered).toContain('base_url: https://ctx-a.example.test');
   });
 
   it('round-trips: what it writes resolves to what it was given', async () => {

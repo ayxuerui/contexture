@@ -237,6 +237,11 @@ export const DEFAULT_ADAPTERS: readonly AdapterDeclaration[] = [{ id: 'claude-co
  *   sites branch on the key's presence to decide whether the store has a
  *   mission mechanism at all. `DEFAULT_MISSION_PATH` is what `init` seeds,
  *   not what an omission resolves to.
+ * - `serve.base_url` is an opt-in whose absence is meaningful in the same way,
+ *   and unknowable besides: contexture cannot know the address a store's
+ *   browsing surface is reachable at. Undeclared, a command reporting where a
+ *   page is served reports the server-relative route alone and invents no
+ *   origin, so there is nothing for `init` to seed either.
  */
 /**
  * cli-contract (keep-the-installed-cli-current): the release advisory is on by

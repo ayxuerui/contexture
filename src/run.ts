@@ -567,7 +567,7 @@ export async function run(argv: readonly string[], env: RunEnv): Promise<ExitCod
 
   publishCommand
     .command('new <slug>')
-    .description('scaffold a page folder with a sibling README — the slug may name a path of folders under the publish path — refusing a reserved or already-existing slug')
+    .description('scaffold a page folder with a sibling README, and name the address it is served at — the slug may name a path of folders under the publish path — refusing a reserved or already-existing slug')
     .action(async (slug: string, _cmdOpts: object, cmd: Command) => {
       const { runEnv, jsonMode, root } = deriveRunEnv(env, cmd);
       result = await runCommand('publish.new', runEnv, jsonMode, async () => {
@@ -578,7 +578,7 @@ export async function run(argv: readonly string[], env: RunEnv): Promise<ExitCod
 
   publishCommand
     .command('check <path>')
-    .description('the mechanized structural checks a published page must pass (no external references, viewport meta, print rule, provenance, sibling README, script syntax)')
+    .description('the mechanized structural checks a published page must pass (no external references, viewport meta, print rule, provenance, sibling README, script syntax), and the address it is served at')
     .action(async (pagePath: string, _cmdOpts: object, cmd: Command) => {
       const { runEnv, jsonMode, root } = deriveRunEnv(env, cmd);
       result = await runCommand('publish.check', runEnv, jsonMode, async () => {

@@ -1,6 +1,7 @@
 import { existsSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
+import { pageServedAt, type ServedAt, servedAtSentence } from '../core/browse/page-url.js';
 import type { CommandOutcome, CommandRequires } from '../core/command.js';
 import { PublishPageNotFoundError } from '../core/errors.js';
 import { ExitCode } from '../core/exit-codes.js';
@@ -23,6 +24,12 @@ export interface PublishCheckData {
   path: string;
   passed: boolean;
   failures: PublishCheckFailure[];
+  /**
+   * Where the browsing surface answers for the checked page. Null for a file
+   * outside the configured publish path — no route in the store serves it,
+   * which is the same verdict `checkPageLocation` reaches for such a file.
+   */
+  served_at: ServedAt | null;
 }
 
 /** publish spec: the fixed tag list a tag-balance pass counts, matching the source convention's checker. */
@@ -164,14 +171,19 @@ export async function execute(store: Store, flags: PublishCheckFlags): Promise<C
 
   failures.push(...(await checkInlineScriptSyntax(html)));
 
+  // Reported on both exit paths: a page whose checks failed is exactly the one
+  // somebody needs to open, and naming its address gates nothing.
+  const servedAt = pageServedAt(store, relativePath);
+  const sentence = servedAtSentence(servedAt);
+
   return {
     exitCode: failures.length === 0 ? ExitCode.Ok : ExitCode.CheckFailed,
-    data: { path: relativePath, passed: failures.length === 0, failures },
+    data: { path: relativePath, passed: failures.length === 0, failures, served_at: servedAt },
     findings: [],
     humanSummary:
       failures.length === 0
-        ? `${relativePath}: all checks passed.`
-        : `${relativePath}: ${failures.length} failing check(s): ${failures.map((f) => f.check).join(', ')}.`,
+        ? `${relativePath}: all checks passed.${sentence}`
+        : `${relativePath}: ${failures.length} failing check(s): ${failures.map((f) => f.check).join(', ')}.${sentence}`,
     storeRoot: store.root,
     schemaVersion: store.config.schema_version,
   };

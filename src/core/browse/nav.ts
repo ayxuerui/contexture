@@ -1,4 +1,5 @@
 import { titleFor } from '../catalog/model.js';
+import { previewRoute, publishRoute } from './page-url.js';
 import { escapeHtml } from './render.js';
 import { previewPages, publishPages, PUBLISH_INDEX_FILE, type RouteTable } from './routes.js';
 import { buildPathTree, type DirectoryLabelFor, type TreeNode } from './tree.js';
@@ -116,7 +117,7 @@ function renderAreaContent(table: RouteTable, area: AreaId): string {
         // serve-page-names-theme-and-nav-toggle D1: a page's declared name, falling back to its
         // directory segment — the same "one answer to what this is called" principle D6 gives notes.
         (page) => table.publishTitles.get(page) ?? lastSegment(page),
-        (page) => `/publish/${encodeURI(page)}/${PUBLISH_INDEX_FILE}`,
+        (page) => publishRoute(`${page}/${PUBLISH_INDEX_FILE}`),
         groupLabelFor(table),
       );
       return renderTree(tree, 0);
@@ -138,7 +139,10 @@ function renderAreaContent(table: RouteTable, area: AreaId): string {
           const entry = byPath.get(treePath)!;
           return table.previews.get(entry.worktree)?.titles.get(entry.page) ?? lastSegment(entry.page);
         },
-        (treePath) => `/preview/${encodeURI(treePath)}/${PUBLISH_INDEX_FILE}`,
+        (treePath) => {
+          const entry = byPath.get(treePath)!;
+          return previewRoute(entry.worktree, `${entry.page}/${PUBLISH_INDEX_FILE}`);
+        },
         previewGroupLabelFor(table),
       );
       return renderTree(tree, 0);

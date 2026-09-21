@@ -386,6 +386,14 @@ describe('owned-skills-expansion: each skill carries its load-bearing rule (task
     expect(s).toContain('never a reason to put more on the page');
     expect(s).toContain('excluded from retrieval by default');
     expect(s).toContain('`ctxr publish check <path>`');
+    // publish-names-where-the-page-is-served: the commands now name an address,
+    // and the step that verifies the page has to send somebody to open it --
+    // that is the half no mechanical check can answer. Wrap-tolerant.
+    expect(s).toMatch(/each end by naming the address `ctxr serve` answers for\s+this page/);
+    expect(s).toMatch(/Open it and look at the page before you hand it on/);
+    // The address is time-bounded, and the successor travels with it.
+    expect(s).toMatch(/stops answering the moment the worktree is reclaimed/);
+    expect(s).toMatch(/Report the address you actually opened/);
   });
 
   it('store-primitives-from-migration-audit: owned skills call the new verbs instead of a manual equivalent', () => {
