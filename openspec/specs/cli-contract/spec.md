@@ -27,6 +27,13 @@ condition it reports on is reached (for a server, once its listener is ready to 
 and SHALL NOT write anything further to stdout for the remainder of the process's life; any activity it
 logs afterward SHALL go to stderr, if anywhere.
 
+A usage error raised while parsing the command line — before any command has been selected to run —
+SHALL emit the same envelope on stdout when `--json` was requested, carrying the setup/usage exit code,
+the error status, and a finding that names what was rejected. The envelope SHALL identify the deepest
+registered command the invocation reached, and SHALL NOT report an argument or an unrecognized word as
+though it were a command. A request for help or for the version is not a usage error and is not
+required to emit an envelope on this path.
+
 #### Scenario: JSON output is parseable in isolation
 - **WHEN** a command is invoked with `--json`
 - **THEN** stdout, parsed as JSON, succeeds and yields the command's full result; any human-readable
@@ -42,6 +49,32 @@ logs afterward SHALL go to stderr, if anywhere.
   condition it reports on
 - **THEN** stdout receives exactly one JSON value at that moment, and no further writes to stdout occur
   for the rest of the process's life, regardless of how long it continues running
+
+#### Scenario: A rejected command line still answers in JSON
+- **WHEN** an invocation carrying `--json` is rejected while its command line is being parsed, such as
+  by naming an option that does not exist
+- **THEN** stdout carries one envelope reporting the setup/usage exit code and the error status, with a
+  finding naming what was rejected
+
+#### Scenario: The envelope names the command that was asked for
+- **WHEN** a subcommand invocation carrying `--json` is rejected during parsing, and the invocation also
+  carries an argument of its own
+- **THEN** the envelope identifies the subcommand that was reached, and neither the argument nor an
+  unrecognized word appears as the command
+
+### Requirement: A usage error is reported once
+A usage error SHALL be written to stderr exactly once per invocation, whether it was raised while
+parsing the command line or by the command itself, so that a caller capturing stderr can tell one
+failure from two. The human-readable report SHALL NOT be repeated on stdout, in either output mode.
+
+#### Scenario: A rejected command line reports one message
+- **WHEN** an invocation is rejected while its command line is being parsed
+- **THEN** stderr carries the explanation exactly once, and the exit code is the setup/usage code
+
+#### Scenario: Machine-readable mode does not duplicate the human report
+- **WHEN** that same invocation carries `--json`
+- **THEN** stdout carries only the envelope, and the human explanation appears only on stderr, still
+  exactly once
 
 ### Requirement: Fail-loud error contract
 When a command cannot determine an input it needs (a store root, a required config value, a resolvable identity), it SHALL exit non-zero and name specifically what could not be determined. It SHALL NOT substitute a guessed or hardcoded fallback value in place of the missing input.
