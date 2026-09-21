@@ -7,7 +7,7 @@ Governs how new material enters the store without becoming a duplicate: capture 
 ## Requirements
 
 ### Requirement: Two-stage content-addressed dedupe
-`contexture source check` SHALL evaluate, in order: (1) whether an identity record already exists with the same source-id; (2) if not, whether an identity record already exists with the same canonicalized-content hash under a different source-id. The set of identity records SHALL be every capture in the capture tier plus every note carrying source-identity fields assigned before identity moved to the capture, so that excluding the capture tier from retrieval does not narrow dedupe. It SHALL report one of a documented set of verdicts, and SHALL NOT proceed automatically past a stage where more than one record matches.
+`contexture source check` SHALL evaluate, in order: (1) whether an identity record already exists with the same source-id; (2) if not, whether an identity record already exists with the same canonicalized-content hash under a different source-id. The set of identity records SHALL be every capture in the capture tier plus every note carrying source-identity fields assigned before identity moved to the capture, so that excluding the capture tier from retrieval does not narrow dedupe. If the candidate being checked has not yet been assigned identity by ingest (carries neither a source-hash nor an ingested date), it SHALL be excluded from that set: a record that has not been ingested is never a match for itself, at either stage. A candidate that has already been assigned identity SHALL remain in the set, so that checking an already-ingested record against its own identity correctly reports it as already ingested. It SHALL report one of a documented set of verdicts, and SHALL NOT proceed automatically past a stage where more than one record matches.
 
 #### Scenario: Same source, already ingested
 - **WHEN** `source check` is run against material whose source-id already exists on an identity record in the store
@@ -24,6 +24,18 @@ Governs how new material enters the store without becoming a duplicate: capture 
 #### Scenario: A note ingested before the capture tier still dedupes
 - **WHEN** `source check` is run against material whose source-id was recorded on a note by an ingest that predates the capture tier
 - **THEN** that note is found as an identity record and the verdict names it, exactly as a retained capture would be
+
+#### Scenario: A not-yet-ingested capture carrying its own identity is not a match for itself
+- **WHEN** `source check` is run against a capture that already carries the source-id it is being checked against, carries neither a source-hash nor an ingested date, and no other identity record carries that source-id or the candidate's content hash
+- **THEN** the verdict is `new` — the candidate is excluded from its own comparison set because it has not been assigned identity by ingest, so it matches nothing
+
+#### Scenario: An already-ingested capture still matches itself
+- **WHEN** `source check` is run against a capture that carries a source-hash or an ingested date, checked against its own source-id, and no other identity record carries that source-id
+- **THEN** the verdict is `already_ingested`, naming the candidate itself — a record that has been assigned identity is not excluded from its own comparison set
+
+#### Scenario: Self-exclusion does not hide a real prior record
+- **WHEN** `source check` is run against a not-yet-ingested capture carrying its own source-id while a *different* identity record also carries that source-id
+- **THEN** the verdict names that other record, not the candidate, and reports already-ingested or drift on that record's hash — excluding the candidate never suppresses a genuine match
 
 ### Requirement: Canonicalization is a single shared primitive
 The transformation from a capture's raw body to its canonicalized form (used to compute the content hash) SHALL exist in exactly one place in the codebase and SHALL be invoked, not reimplemented, by every component that needs a content hash (dedupe, catalog gloss-rot detection). Hashing a capture that is not markdown SHALL be a documented variant of that same primitive, over the file's bytes, and SHALL NOT be a second implementation.
@@ -117,3 +129,30 @@ A capture that is not markdown cannot carry frontmatter, and SHALL therefore rec
 #### Scenario: A binary capture is dedupable
 - **WHEN** a PDF is captured, ingested with a sidecar, and the same PDF is later offered again
 - **THEN** `source check` reports it already ingested, naming the sidecar
+
+### Requirement: A store may require a capture to carry the record it rests on
+A store SHALL be able to declare, in its configuration, which section a capture of a given source type must contain for that capture to stand as provenance — a mapping from source type to section name. `ctxr ingest` SHALL refuse a capture whose source type carries a declaration when the named section is absent, exiting with the check exit code and performing no write: no identity stamped, no move out of the inbox, no note updated, no derived artifact rebuilt. `ctxr lint` SHALL report the same condition over material still in the inbox as an observation, without changing its own exit code.
+
+The mapping SHALL be undeclared by default, and a source type with no entry SHALL be unconstrained — a store that declares nothing ingests exactly as it does today. The section SHALL be matched against the markdown the capture presents: the capture file itself, or for material that is not markdown, the sidecar that names it.
+
+This is a precondition on ingest, not a judgement about content. Whether the named section is complete, accurate, or faithful to the source is outside what any check can decide; only its presence is.
+
+#### Scenario: A capture missing its declared section is refused, and nothing is written
+- **WHEN** a store declares a required section for a source type and `ctxr ingest` is run against a capture of that type that does not contain it
+- **THEN** the command exits with the check exit code, the capture remains in the inbox with no identity stamped, and the destination note and derived artifacts are unchanged
+
+#### Scenario: A capture carrying its declared section ingests normally
+- **WHEN** a store declares a required section for a source type and `ctxr ingest` is run against a capture of that type that contains it
+- **THEN** ingest proceeds exactly as it would with no declaration in force
+
+#### Scenario: An undeclared source type is unconstrained
+- **WHEN** `ctxr ingest` is run against a capture whose source type the store has not declared a required section for
+- **THEN** no section requirement applies, whether or not other source types carry declarations
+
+#### Scenario: Lint reports the condition without blocking
+- **WHEN** material in the inbox is of a source type with a declared section and does not contain it, and `ctxr lint` runs
+- **THEN** lint reports it as an observation naming the capture and the missing section, and still exits zero
+
+#### Scenario: Material that is not markdown is checked against its sidecar
+- **WHEN** a capture that is not markdown travels with a sidecar naming it, its source type carries a declaration, and `ctxr ingest` is run against it
+- **THEN** the required section is looked for in the sidecar, and the binary capture's own bytes are not searched

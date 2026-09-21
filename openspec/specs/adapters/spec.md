@@ -27,41 +27,14 @@ If a registered adapter declares a capability-interface version that the install
 - **WHEN** a registered adapter's declared interface version is not one the current contexture release supports
 - **THEN** the relevant command refuses to invoke that adapter and reports the specific version mismatch
 
-### Requirement: A harness's generated permission config scopes writes to the active session worktree
-For a harness whose adapter declares a permission config, `contexture adapters generate` SHALL emit rules that, through whichever enforcement primitive the harness provides (a permission rule, a pre-tool hook, or equivalent), deny edits to the store's own content in the canonical checkout while leaving the active session worktree editable, regardless of where the configured session worktree path is nested relative to the store root. The generator SHALL NOT emit a rule the harness accepts but does not enforce. The enforcement primitive's own runtime resolution of "the store" (for example, walking up from a working directory to the nearest store config file) SHALL still resolve the active session worktree as editable even when that working directory is inside the worktree itself, not only when it is the canonical checkout.
-
-When the enforcement primitive is invoked by an absolute path (for example, a hook command), `contexture adapters generate` SHALL resolve that absolute path against the store's main/canonical worktree, never against whichever checkout is currently running the generator, so the primitive keeps resolving after a session worktree that once ran the generator is removed. A primitive that fails to resolve SHALL NOT be treated as equivalent to a passing enforcement decision — an enforcement primitive that cannot run MUST NOT cause the edit it would have evaluated to be silently allowed.
-
-A generated enforcement primitive that itself shells out to `contexture` SHALL locate that executable from its own runtime environment — an explicit override read from a `CONTEXTURE_*` environment variable if set, otherwise the executable resolved on `PATH` — and SHALL NOT have any installation-specific filesystem path baked into it at generation time. The rendered primitive SHALL therefore be byte-identical regardless of which machine or checkout generated it. When neither the override nor `PATH` resolves an executable, the primitive SHALL deny the edit it was invoked to evaluate, per the fail-closed rule above, rather than allowing it to proceed unevaluated.
-
-#### Scenario: The canonical checkout is protected without disabling the worktree
-- **WHEN** a permission config is generated for a store whose session worktree path is nested inside the store root, and a session runs with that config in effect
-- **THEN** an edit to a file in the store root outside the worktree is denied, and an edit to a file inside the active session worktree succeeds
-
-#### Scenario: A working directory inside the worktree still resolves the worktree as editable
-- **WHEN** a session's own working directory is already inside the active session worktree (itself a full checkout carrying its own copy of the store's configuration) rather than the canonical checkout
-- **THEN** an edit to a file inside that worktree succeeds, the same as when the session's working directory is the canonical checkout
-
-#### Scenario: No unenforceable rule is emitted
-- **WHEN** the harness accepts a rule shape but never consults it when deciding whether to allow an edit
-- **THEN** the generator does not emit a rule of that shape
-
-#### Scenario: The enforcement primitive's path survives the generating worktree's removal
-- **WHEN** `contexture adapters generate` runs from inside a session worktree, and that worktree is later removed
-- **THEN** the absolute path the generated config invokes still resolves, because it was resolved against the store's main worktree rather than the worktree that ran the generator
-
-#### Scenario: The generated primitive is identical regardless of which machine generated it
-- **WHEN** `contexture adapters generate` runs on two different machines, each with `contexture` installed at a different filesystem location, against otherwise identical store configuration
-- **THEN** the generated enforcement primitive script is byte-identical on both machines
-
-#### Scenario: A primitive that cannot find the executable denies rather than allows
-- **WHEN** the generated enforcement primitive runs on a machine where no `CONTEXTURE_*` override is set and no `contexture` executable is found on `PATH`
-- **THEN** it denies the edit it was invoked to evaluate, naming what to fix, instead of allowing the edit to proceed
-
 ### Requirement: Regenerating a permission config repairs a previously generated one
 `contexture adapters generate` SHALL remove, by exact match, any rule that a previous version of the generator emitted and the current version no longer emits, before writing the current rules, so a store whose permission config was generated by an earlier, defective version converges to the corrected behavior on the next run. A rule not previously emitted by the generator (including one an operator added by hand) SHALL be left untouched.
 
-For a rule whose enforcement primitive is invoked by an absolute path resolved per the requirement above, `contexture adapters generate` SHALL additionally remove any existing rule that matches the current rule in every respect except that resolved absolute path, before writing the current rule — so a permission config that has accumulated one such rule per checkout that has ever run the generator converges to exactly one rule on the next run, not only when the generator's own version changes.
+For a generated entry that names a script by path — which a previous release may have resolved differently on every machine — `contexture adapters generate` SHALL identify the entry to remove by the rule's own identity rather than by the resolved path, so the entry is removed whatever path was baked into it. An entry whose identity the generator has never emitted SHALL be left untouched.
+
+When a previous release installed a script that the current release no longer generates, `contexture adapters generate` SHALL delete that script from the store, so retiring a generated primitive does not leave an executable behind that nothing invokes. A script that is already absent SHALL be reported as no change rather than as a repeated removal.
+
+A generated permission config that retirement leaves with no contexture-contributed content SHALL be reduced rather than left holding empty sections, and a store for which the generator now emits nothing SHALL NOT have a permission config created for it.
 
 #### Scenario: A stale generated rule is removed on regenerate
 - **WHEN** `contexture adapters generate` runs against a permission config file containing a rule emitted by a previous version of the generator that the current version no longer emits
@@ -71,9 +44,17 @@ For a rule whose enforcement primitive is invoked by an absolute path resolved p
 - **WHEN** an operator has added a rule to the permission config file that the generator has never emitted
 - **THEN** running `contexture adapters generate` again leaves that rule in place
 
-#### Scenario: A rule left behind by a prior run from a different checkout is replaced, not accumulated
-- **WHEN** a permission config already contains a rule this same generator emitted on an earlier run, whose only difference from the rule the current run would emit is the absolute path baked into it
-- **THEN** running `contexture adapters generate` leaves exactly one such rule in the file — the one it just emitted — and removes the other
+#### Scenario: A retired entry is removed whatever path a past release baked into it
+- **WHEN** a permission config carries a generated entry naming a script by an absolute path belonging to a different machine, and the current release has retired that entry
+- **THEN** running `contexture adapters generate` removes it, and an entry the generator never emitted — including one sharing the same matcher but naming a different script — is left in place
+
+#### Scenario: A retired script is deleted from the store
+- **WHEN** a store carries a script a previous release installed, and the current release no longer generates it
+- **THEN** running `contexture adapters generate` deletes that script, and running it a second time reports no further change
+
+#### Scenario: A store the generator contributes nothing to gains no permission config
+- **WHEN** `contexture adapters generate` runs against a store with no existing permission config, for a harness whose adapter now emits no rules and no hook
+- **THEN** no permission config file is created, and a second run is likewise a no-op
 
 ### Requirement: A harness-generation adapter declares where that harness reads skills
 A harness-generation adapter at interface version 2 SHALL declare the store-relative directory the harness it represents reads skills from. Contexture SHALL treat that declaration as the location to bridge to the store's canonical skills directory, and SHALL NOT derive it by inspecting the host machine. A store MAY override an adapter's declared directory in its own adapter declaration, so a harness configured to read a different location — including the canonical one directly, needing no bridge — is expressible without changing the adapter. `adapters.compatibility` SHALL report a configured harness-generation adapter whose interface version is below 2, and the commands that write skills SHALL refuse to run it per the existing version-mismatch rule rather than guessing a directory for it.
