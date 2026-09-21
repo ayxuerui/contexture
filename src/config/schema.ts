@@ -105,8 +105,51 @@ const CatalogSchema = z.object({
  * no default-merging, so a required field here would break every pre-existing
  * store. `init` still writes it explicitly for a freshly generated config.
  */
+/**
+ * An absolute `http`/`https` base URL: scheme and host only, optionally with a
+ * port and a path prefix. Query and fragment are refused because a base URL
+ * carrying either cannot be joined to a route without producing nonsense.
+ */
+function isAbsoluteHttpBase(value: string): boolean {
+  let parsed: URL;
+  try {
+    parsed = new URL(value);
+  } catch {
+    return false;
+  }
+  return (parsed.protocol === 'http:' || parsed.protocol === 'https:') && parsed.search === '' && parsed.hash === '';
+}
+
 const PublishSchema = z.object({
   path: z.string().min(1).default(SHIPPED_DEFAULTS.publish.path),
+});
+
+/**
+ * publish-names-where-the-page-is-served (D6): the base URL at which this
+ * store's browsing surface is reachable, so a command that names a page can
+ * name a URL rather than a bare route.
+ *
+ * A full base URL rather than a host name: a host alone forces the tool to
+ * guess `http` against `https`, and cannot carry a port or the path prefix a
+ * store behind a reverse proxy is served under. Validated here so a typo fails
+ * at config load, where every other malformed value fails, rather than at the
+ * point some command tries to print it.
+ *
+ * `local-browsing-surface` D6 declined a `serve.port` key because an
+ * invocation-time choice with no store-specific default does not belong in the
+ * config. That test still stands and a port still fails it; an origin passes
+ * it — the address a store's pages are published at is a durable fact about
+ * that store, unknowable to the tool, and read by `publish new` and
+ * `publish check` rather than by any flag-bearing invocation.
+ */
+const ServeSchema = z.object({
+  base_url: z
+    .string()
+    .min(1)
+    .refine(isAbsoluteHttpBase, {
+      message: 'must be an absolute http(s) base URL with no query or fragment, e.g. "https://ctx.example.com" or "https://example.com/ctx/"',
+    })
+    .optional(),
 });
 
 /**
@@ -324,6 +367,14 @@ export const StoreConfigSchema = z
     write_lifecycle: WriteLifecycleSchema.prefault({}),
     catalog: CatalogSchema.prefault({}),
     publish: PublishSchema.prefault({}),
+    // `.optional()`, not `.prefault({})` like every block above it (D7):
+    // `withoutShippedDefaults` keeps any key absent from `SHIPPED_DEFAULTS`
+    // verbatim, so a prefaulted block would resolve to `serve: {}` for every
+    // store and `ctxr init` would start writing an empty `serve:` block into
+    // every new config — against the requirement that a written configuration
+    // records only the store's own decisions. Absent, it stays absent through
+    // parse, render and reparse.
+    serve: ServeSchema.optional(),
     templates: TemplatesSchema.prefault({}),
     skills: SkillsSchema.prefault({}),
     update_check: UpdateCheckSchema.prefault({}),

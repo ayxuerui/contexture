@@ -101,6 +101,22 @@ describe('single-source-literals guard', () => {
     expect(unsourced, `schema default(s) not read from SHIPPED_DEFAULTS: ${unsourced.join(' | ')}`).toEqual([]);
   });
 
+  /**
+   * publish-names-where-the-page-is-served (D1): the two addresses the
+   * browsing surface answers for a published page now have three readers —
+   * the serve handler that slices them, the navigation that builds hrefs from
+   * them, and the publish commands that report them. A route spelled in three
+   * places is the guessing this change exists to end, one level down.
+   */
+  it('the published-page route prefixes appear only in core/browse/page-url.ts', () => {
+    const prefixes = ['/publish/', '/preview/'];
+    expect(prefixes.length).toBeGreaterThan(0); // anti-vacuity: there is something to check
+    for (const prefix of prefixes) {
+      const hits = filesContainingQuotedLiteral(prefix, ['core/browse/page-url.ts']);
+      expect(hits, `route prefix "${prefix}" leaked outside core/browse/page-url.ts: ${hits.join(', ')}`).toEqual([]);
+    }
+  });
+
   it('no file outside core/reporter.ts writes to process.stdout directly', () => {
     expect(filesContainingSubstring('process.stdout', ['core/reporter.ts', 'core/env.ts'])).toEqual([]);
   });
