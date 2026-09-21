@@ -40,7 +40,8 @@ and which worktree holds it, then stop. The work is safe on the branch and the n
    healthy, not merely pass one commit's gate). Fix a failure; never bypass it, and never proceed past it.
 6. Commit: `git commit -m "<message>"`, describing the unit staged in step 3.
 7. Name the branch: if it still carries a generated name, `git branch -m "<name>"` before pushing — never
-   let a generated name reach the forge.
+   let a generated name reach the forge. A name given at `ctxr session start` does not settle this: it
+   named a worktree when the work began, and what ships is decided here.
 8. Run: `git push -u origin "<branch>"`, then `gh pr create --base __DEFAULT_BRANCH__ --title "<title>" --body
    "<why / what changed / verification / follow-ups>"`. Do not stop to confirm first — the request to
    submit is the consent for both, and `ctxr doctor` in step 5 is the gate on this path. If `gh` has no

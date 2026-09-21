@@ -1,4 +1,4 @@
-import type { GitRunner } from './exec.js';
+import type { GitResult, GitRunner } from './exec.js';
 
 export async function hasRemote(git: GitRunner, cwd: string, name = 'origin'): Promise<boolean> {
   const result = await git.run(['remote'], { cwd, allowFailure: true });
@@ -19,14 +19,24 @@ export async function fetchOrigin(git: GitRunner, cwd: string, branch: string, r
   return result.exitCode === 0;
 }
 
+/**
+ * `allowFailure` is what lets `session start` report git's refusal as the usage
+ * error it almost always is — a name already taken — instead of letting an
+ * uncaught exec failure be classified as an internal error
+ * (name-the-session-at-start design.md D5). Callers that omit it keep throwing.
+ */
 export async function addWorktree(
   git: GitRunner,
   cwd: string,
   worktreePath: string,
   newBranch: string,
   startPoint: string,
-): Promise<void> {
-  await git.run(['worktree', 'add', '-b', newBranch, worktreePath, startPoint], { cwd });
+  opts: { allowFailure?: boolean } = {},
+): Promise<GitResult> {
+  return git.run(['worktree', 'add', '-b', newBranch, worktreePath, startPoint], {
+    cwd,
+    allowFailure: opts.allowFailure,
+  });
 }
 
 /**

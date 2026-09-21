@@ -9,6 +9,15 @@ the two verbs at the seams; their steps are not repeated here.
 If you find yourself on the default branch or in the root checkout, stop — `ctxr session list` shows the
 active sessions to work in instead.
 
+Name the session for what it is for, when you know: `ctxr session start inbox-triage`. The name lands
+in the branch and in the worktree's directory name, which is what `ctxr session list` and the preview
+listing read, so a named session is the one that can be found again among several. Starting without a
+name stays normal — a session whose subject is still forming is better unnamed than named wrongly, and
+nothing later depends on the name being right. A name that another live session already carries is
+refused rather than adjusted, and the refusal says which worktree holds it; a name frees up once its
+session's worktree is gone. The name becomes a git ref and a directory, so keep out of it anything
+that should not be written down.
+
 Before starting, bring the store's canonical clone up to date — the repository's main worktree, not
 whichever checkout you are standing in. From the canonical clone: `git fetch origin`, then
 `git merge --ff-only origin/__DEFAULT_BRANCH__`. If it is on another branch, carries uncommitted
