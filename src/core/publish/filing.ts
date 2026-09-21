@@ -4,6 +4,7 @@ import path from 'node:path';
 import { PUBLISH_INDEX_FILE } from '../browse/routes.js';
 import { extractLinkTargets } from '../graph/model.js';
 import { parseNoteText } from '../notes/parse.js';
+import { slugifyPath, slugifySegment } from '../slug.js';
 
 /** What names the page's subject: the folder its notes live in, plus the note itself when a note names it. */
 export interface FilingSubject {
@@ -33,44 +34,11 @@ export interface Filing {
 }
 
 /**
- * derive-the-page-filing-path design.md D6. Lowercase, then NFC — in that
- * order, so a decomposed filename and a composed one derive the same slug even
- * when lowercasing decomposes a character. Every run of characters that is not
- * a letter, digit, or combining mark becomes ONE separator, so no separate
- * collapse pass is needed; combining marks survive so a decomposing lowercase
- * cannot leave a stray separator behind.
- *
- * `&` is deliberately not expanded to `and`: that embeds English in a
- * derivation shipped to stores written in any language, and `&` is punctuation
- * like every other mark. There is deliberately no length cap either —
- * slugifying never lengthens its input, so a segment is already bounded by the
- * filesystem, and truncation is the one transform that can silently merge two
- * distinct subjects onto one path.
- *
- * Letters and digits of ANY script are kept (`\p{L}`, `\p{N}`). ASCII-folding
- * was rejected as a Latin-centric half-measure that slugifies a CJK or Cyrillic
- * store's whole taxonomy to empty strings.
- *
- * Idempotent, and that is load-bearing: `pagesNamingSubject` runs both sides of
- * every comparison through this function, which is what makes the scan
- * insensitive to filesystem normalization and to whatever case an author typed.
+ * Re-exported from `core/slug.ts`, which owns the one normalization rule; the
+ * filing module was where it was first written and is still where most callers
+ * expect to find it.
  */
-export function slugifySegment(raw: string): string {
-  return raw
-    .toLowerCase()
-    .normalize('NFC')
-    .replace(/[^\p{L}\p{N}\p{M}]+/gu, '-')
-    .replace(/^-+|-+$/g, '');
-}
-
-/** Slugifies a `/`-separated path a segment at a time, dropping any segment that slugifies to nothing (D6). */
-export function slugifyPath(relativePath: string): string {
-  return relativePath
-    .split('/')
-    .map(slugifySegment)
-    .filter((segment) => segment.length > 0)
-    .join('/');
-}
+export { slugifyPath, slugifySegment };
 
 /** A published page is a directory holding an index page — the same definition the browsing surface uses. */
 async function pageDirectoriesIn(absoluteDirectory: string): Promise<string[]> {

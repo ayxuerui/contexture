@@ -491,3 +491,55 @@ export class PublishPageNotFoundError extends ContextureError {
     });
   }
 }
+
+/**
+ * write-lifecycle spec: a session label that normalizes to nothing is refused
+ * rather than dropped — dropping it would hand back a session named nothing like
+ * what the caller asked for, with no indication that anything happened.
+ */
+export class SessionLabelUnusableError extends ContextureError {
+  constructor(label: string) {
+    super(ExitCode.Usage, {
+      code: 'session.label_unusable',
+      severity: 'error',
+      message: `"${label}" has no letters or digits to name a session with — give a label like "ctx-a", or none at all.`,
+      subject: label,
+    });
+  }
+}
+
+/**
+ * write-lifecycle spec: a label that is already taken is refused, never adjusted
+ * to fit (name-the-session-at-start design.md D4). Names the worktree as well as
+ * the branch, because returning to the earlier session is the likely next step.
+ */
+export class SessionNameExistsError extends ContextureError {
+  constructor(label: string, worktreePath: string) {
+    super(ExitCode.Usage, {
+      code: 'session.name_exists',
+      severity: 'error',
+      message: `A session labelled "${label}" already exists at "${worktreePath}" — work there, or start this one under another label.`,
+      subject: label,
+      details: { worktree: worktreePath },
+    });
+  }
+}
+
+/**
+ * write-lifecycle spec: git refusing to create the worktree is reported as the
+ * usage error it almost always is — the name it was handed — rather than as an
+ * internal error, which is what an uncaught exec failure would produce. git's own
+ * stderr rides in details rather than in the message, so the sentence stays about
+ * what contexture asked for.
+ */
+export class SessionWorktreeRefusedError extends ContextureError {
+  constructor(branch: string, worktreePath: string, stderr: string) {
+    super(ExitCode.Usage, {
+      code: 'session.worktree_refused',
+      severity: 'error',
+      message: `git refused to create the session worktree at "${worktreePath}" on branch "${branch}".`,
+      subject: worktreePath,
+      details: { branch, worktree: worktreePath, git_stderr: stderr.trim() },
+    });
+  }
+}
