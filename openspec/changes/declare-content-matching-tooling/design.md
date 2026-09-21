@@ -36,10 +36,25 @@ which contexture *does* consume, but whose stated purpose is equally to be read 
 invoking contexture." If a later change wants contexture to actually call a retrieval backend, that is the
 deferred adapter seam and needs its own argument; this deliberately does not build toward it.
 
-**D3 — Schema-optional with no default.** `publish.path`'s pattern: `readConfig` does a strict parse with no
-default-merging, so a required key breaks every store that predates it. Optional-with-no-default means a
-store that declares nothing is unchanged and no migration or schema bump is needed. There is deliberately no
-shipped default — defaulting to `ripgrep` would assert something about a store contexture has not looked at.
+**D3 — One `.optional()` field with no shipped default, inside the already-prefaulted `retrieval` block.**
+The precedent is `ingest.required_capture_sections`: `.optional()`, no `SHIPPED_DEFAULTS` entry, nothing
+seeded at init — and, most recently, `serve.base_url`. It is **not** `publish.path`, which does carry a
+shipped default; what makes `publish.path` safe for a config predating it is its parent block being
+prefaulted (`publish: PublishSchema.prefault({})`), a different mechanism that would quietly reintroduce a
+default here. `organize.mission_path` is the same `.optional()` shape but `init` seeds it with
+`DEFAULT_MISSION_PATH`, which this key must not copy — there is nothing to seed when contexture has not
+looked at the store.
+
+The existing `context-store` requirement *"Configuration keys that cannot carry a shipped default do not get
+one"* already governs this class in its second paragraph, on a key whose absence is itself meaningful, so
+**this change needs no `context-store` delta**.
+
+Mechanically that makes the schema change small: `retrieval` is already `RetrievalSchema.prefault({})` on
+`StoreConfigSchema`, so one optional field inside it is the whole edit — no new block, nothing added to
+`SHIPPED_DEFAULTS` (a `.default()` would need an entry there to satisfy the single-source-literals guard),
+and no `schema_version` bump. A store that declares nothing parses and renders byte-unchanged. There is
+deliberately no shipped default — defaulting to `ripgrep` would assert something about a store contexture
+has not looked at.
 
 **D4 — Surface it where the agent already reads.** `templates/agents/retrieval-leg-routing.md` is the
 generated section telling an agent which leg answers which question, and it currently ends the content-matching

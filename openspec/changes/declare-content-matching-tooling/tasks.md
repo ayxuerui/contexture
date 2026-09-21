@@ -2,15 +2,21 @@ Parked, not implemented. Implementation is a separate, separately-requested pass
 
 ## 1. Config
 
-- [ ] 1.1 `src/config/schema.ts`: add the optional declaration under `RetrievalSchema` — schema-optional with
-      no default, the `publish.path` pattern, so a `contexture.yaml` written before this key still parses
-      under `readConfig`'s strict `safeParse`. No shipped default: defaulting to a tool asserts something
-      about a store contexture has not looked at.
-- [ ] 1.2 Confirm nothing in `src/` reads the key to make a decision — the only consumer is the generated
+- [ ] 1.1 `src/config/schema.ts`: add the declaration as one `.optional()` field on `RetrievalSchema` — the
+      `ingest.required_capture_sections` / `serve.base_url` pattern, NOT `publish.path`, which carries a
+      shipped default (D3). `retrieval` is already prefaulted on `StoreConfigSchema`, so that one field is
+      the whole schema edit: no new block, and no `schema_version` bump.
+- [ ] 1.2 `src/config/defaults.ts`: add nothing to `SHIPPED_DEFAULTS` — a `.default()` would need an entry
+      there to pass `test/unit/single-source-literals.test.ts`, and defaulting to a tool asserts something
+      about a store contexture has not looked at. Extend instead the comment enumerating what is
+      deliberately absent from that object, beside `organize.mission_path` and `serve.base_url`.
+- [ ] 1.3 Confirm nothing in `src/` reads the key to make a decision — the only consumer is the generated
       guidance in task 2.1. This is the property that keeps D2 deferred, so it is worth asserting rather
       than assuming.
-- [ ] 1.3 Verify: `npx vitest run test/unit/config-schema.test.ts --exclude '**/.claude/**'`, including a
-      case that a config omitting the key parses.
+- [ ] 1.4 Verify: `npx vitest run test/unit/config-schema.test.ts --exclude '**/.claude/**'`, with the
+      absent/declared pair the other opt-in keys carry — a config omitting the key parses and resolves it
+      undefined, a declared value survives the `renderStoreConfig` round trip, and a store declaring
+      nothing renders no such key at all.
 
 ## 2. Surface it where the agent reads
 
