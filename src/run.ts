@@ -151,6 +151,30 @@ function isGlobalVersionRequest(argv: readonly string[]): boolean {
   return argv.every((arg) => VERSION_FLAGS.has(arg) || GLOBAL_PASSTHROUGH_FLAGS.has(arg));
 }
 
+/**
+ * The deepest registered command an invocation reached, dot-joined — so a
+ * rejected `ctxr session start --nope` still reports `session.start`.
+ *
+ * Walks the registered command tree rather than reading argv positionally, which
+ * would be wrong in the case that matters: `publish new my-page --bogus` must
+ * report `publish.new`, not name a page slug as though it were a command
+ * (parser-errors-answer-in-the-envelope design.md D2).
+ */
+function commandPathFor(program: Command, argv: readonly string[]): string {
+  const matched: string[] = [];
+  let level: Command = program;
+
+  for (const token of argv) {
+    if (token.startsWith('-')) break;
+    const next = level.commands.find((cmd) => cmd.name() === token || cmd.aliases().includes(token));
+    if (next === undefined) break;
+    matched.push(next.name());
+    level = next;
+  }
+
+  return matched.join('.');
+}
+
 /** Accumulates a repeatable option's values — commander keeps only the last without it. */
 function collect(value: string, previous: string[]): string[] {
   return [...previous, value];
@@ -667,7 +691,32 @@ export async function run(argv: readonly string[], env: RunEnv): Promise<ExitCod
       if (err.code === 'commander.helpDisplayed' || err.code === 'commander.version') {
         return ExitCode.Ok;
       }
-      env.io.stderr.write(`${err instanceof Error ? err.message : String(err)}\n`);
+
+      // commander has ALREADY written this message through configureOutput above,
+      // so nothing is written here: the human line belongs on stderr exactly once
+      // (design.md D4). The envelope is built here rather than routed through
+      // runCommand because a parse failure has no command body to wrap (D1), and
+      // --json is read from raw argv because no parse completed to read it from (D5).
+      const jsonMode = argv.includes('--json');
+      if (jsonMode) {
+        const message = (err instanceof Error ? err.message : String(err)).replace(/^error: /, '');
+        const finding: Finding = {
+          code: 'cli.usage',
+          severity: 'error',
+          message,
+          details: { commander_code: err.code.replace(/^commander\./, '') },
+        };
+        const envelope = buildEnvelope({
+          cliVersion: CLI_VERSION,
+          command: commandPathFor(program, argv),
+          storeRoot: null,
+          schemaVersion: null,
+          findings: [finding],
+          data: null,
+          exitCode: ExitCode.Usage,
+        });
+        createReporter(env.io, true).emitResult(envelope, message);
+      }
       return ExitCode.Usage;
     }
     throw err;
