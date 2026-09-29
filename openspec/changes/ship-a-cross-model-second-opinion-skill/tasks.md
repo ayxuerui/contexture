@@ -2,17 +2,19 @@ Parked, not implemented. Implementation is a separate, separately-requested pass
 
 ## 1. Owned skills carry supporting files
 
-- [ ] 1.1 `src/core/skills.ts`: give `SkillSeed` an optional supporting-file set, read from
+- [x] 1.1 `src/core/skills.ts`: give `SkillSeed` an optional supporting-file set, read from
       `templates/skills/<slug>/` with the same sorted recursive walk `readVendoredPayload` uses (lift it
-      into a helper both call rather than duplicating it). The body template stays at
+      into a helper both call rather than duplicating it — as built, `skillSupportingFiles` is a separate
+      synchronous walk, because `renderSkills` is synchronous and `readVendoredPayload` is async and skips
+      `provenance.json`; the two are left independent). The body template stays at
       `templates/skills/<slug>.md`. Supporting files are copied verbatim, with no `__TOKEN__` substitution:
       they are code and prompt text, not store-rendered prose.
-- [ ] 1.2 `renderSkills` / `skillPaths`: include each supporting file's path, so init stages it and the
+- [x] 1.2 `renderSkills` / `skillPaths`: include each supporting file's path, so init stages it and the
       copy-mode bridge (`src/core/harness/bridge.ts`, already recursive) carries it without change.
-- [ ] 1.3 `syncShippedSkills`: write each supporting file with `writeFileAtomic` only when its bytes differ.
+- [x] 1.3 `syncShippedSkills`: write each supporting file with `writeFileAtomic` only when its bytes differ.
       Then, inside a directory whose `SKILL.md` carries the managed header, remove every file the package
       does not ship and report each removed path. Leave a directory without the header untouched, as today.
-- [ ] 1.4 Tests in `test/unit/skills.test.ts` (or a sibling file), one per spec scenario of *Owned skills may
+- [x] 1.4 Tests in `test/unit/skills.test.ts` (or a sibling file), one per spec scenario of *Owned skills may
       carry supporting files*:
       - delivery is byte-identical;
       - a dropped file is removed and named;
@@ -20,7 +22,7 @@ Parked, not implemented. Implementation is a separate, separately-requested pass
       - an unmanaged directory is untouched;
       - a second update is a no-op;
       - copy-bridge parity.
-- [ ] 1.5 Verify: `npx vitest run test/unit/skills.test.ts --exclude '**/.claude/**'` green, and the
+- [x] 1.5 Verify: `npx vitest run test/unit/skills.test.ts --exclude '**/.claude/**'` green, and the
       existing 15 skills render byte-identically to before (no supporting files, same output).
 
 ## 2. The skill body and prompt fragments
