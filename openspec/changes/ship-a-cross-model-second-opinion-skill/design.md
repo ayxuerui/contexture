@@ -305,6 +305,17 @@ per the skill-naming contract a `ctxr-<group>` name would falsely assert one. Th
   → Anonymization (D4) reduces self-preference. The skill tells the agent to name the shared model family
   whenever the Claude critic's finding drives the recommendation.
 
+- **A fresh `ctxr init` no longer passes its own write gate (found while applying).** Init stages the
+  whole store in one commit, and the staged-diff ceiling (`write_lifecycle.diff_size_ceiling_lines`,
+  default 2000) refuses it: 2660 changed lines with this skill registered, of which 783 are the skill.
+  The baseline was already about 1880 (the fifteen owned skills 985, vendored skills 386, `AGENTS.md` 209,
+  note templates 134, the rest 163), so any owned skill added after this one would trip it too, and a
+  store updating across several releases stages a similarly large tool-written diff in one commit.
+  Registering the skill is what breaks it, so the registering change cannot merge until the ceiling's
+  treatment of tool-written skill files is decided. Options on the table: exempt files under the skills
+  path from the count, raise the default, or exempt only init's first commit. This needs a
+  `write-lifecycle` delta and is not resolved in this change yet.
+
 ## Migration Plan
 
 This change is additive. After release:

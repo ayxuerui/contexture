@@ -57,7 +57,10 @@ Parked, not implemented. Implementation is a separate, separately-requested pass
 - [x] 2.3 Register the seed in `SKILLS` (`src/core/skills.ts`). Add the `__SKILLS_PATH__` substitution if
       the body needs the configured path. Check the naming contract: nothing names a `ctxr second-opinion`
       command.
-- [x] 2.4 Update the pinned counts and lists:
+- [x] 2.4 Update the pinned counts and lists. Also tighten the flag-attribution guard in
+      `test/unit/skills.test.ts` so an executable is a whole word and not the tail of a path
+      (`skills/ctxr-second-opinion/run.mjs`) or the head of a skill name (`ctxr-land`); without it the
+      runner's flags are attributed to `ctxr`:
       - the 15→16 slug list and count in `test/unit/skills.test.ts`;
       - `SKILLS_ADDED_BY_THIS_RELEASE` and the count in `test/integration/owned-skills.test.ts`;
       - the staged-path vector in `test/unit/git-sequence.test.ts`.
@@ -108,7 +111,11 @@ Parked, not implemented. Implementation is a separate, separately-requested pass
 
 ## 4. Docs and full verification
 
-- [ ] 4.1 `README.md`:
+Blocked on the ceiling decision in design.md Risks: with the skill registered, `ctxr init` stages 2660
+changed lines against a ceiling of 2000, so the integration suite fails until that is resolved. Tasks 4.3 to
+4.6 stay open until then.
+
+- [x] 4.1 `README.md`:
       - add a row for the skill in the "Skill | What it decides" table, plus the missing `ctxr-upgrade`
         row;
       - bump the owned-skill count in the layout block;
