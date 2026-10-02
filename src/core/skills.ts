@@ -326,6 +326,22 @@ const PUBLISH: SkillSeed = {
   body: () => skillTemplate('ctxr-publish').split('\n'),
 };
 
+/**
+ * ship-a-cross-model-second-opinion-skill: the first owned skill that ships
+ * more than its SKILL.md. The runner and its prompt fragments live under
+ * `templates/skills/ctxr-second-opinion/`, and the body names where the
+ * store's skills path put them. Named for the judgment, not a command: there
+ * is no `ctxr second-opinion`, and the skill drives no ctxr command at all.
+ */
+const SECOND_OPINION: SkillSeed = {
+  file: 'ctxr-second-opinion',
+  name: 'Second opinion',
+  description:
+    'Get an independent critique of a plan, or a poll on a taste call, from three different model families run in parallel, and synthesize their answers without running the plan.',
+  body: (config) => skillTemplate('ctxr-second-opinion').replaceAll('__SKILLS_PATH__', config.harness.skills_path.replace(/\/+$/, '')).split('\n'),
+  supportingFiles: () => skillSupportingFiles('ctxr-second-opinion'),
+};
+
 export const SKILLS: readonly SkillSeed[] = [
   CAPTURE,
   INGEST_ORCHESTRATION,
@@ -342,6 +358,7 @@ export const SKILLS: readonly SkillSeed[] = [
   DERIVED_ARTIFACTS,
   ORGANIZE_AUDIT,
   PUBLISH,
+  SECOND_OPINION,
 ];
 
 /** The owned skills, rendered against one store's configuration — what `syncShippedSkills` writes. */

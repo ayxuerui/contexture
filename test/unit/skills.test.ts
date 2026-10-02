@@ -72,7 +72,7 @@ const CAPTURE_SERVICE_NAMES = ['granola', 'otter', 'circleback', 'fathom', 'fire
 const TIER_WORDS = ['personal', 'private', 'public', 'shared', 'internal', 'team', 'confidential'];
 
 describe('SKILLS', () => {
-  it('names the fifteen owned skills, in index order', () => {
+  it('names the sixteen owned skills, in index order', () => {
     expect(SKILLS.map((p) => p.file)).toEqual([
       'ctxr-capture',
       'ctxr-ingest-orchestration',
@@ -89,6 +89,7 @@ describe('SKILLS', () => {
       'ctxr-derived-artifacts',
       'ctxr-organize-audit',
       'ctxr-publish',
+      'ctxr-second-opinion',
     ]);
   });
 
@@ -502,7 +503,7 @@ describe('syncShippedSkills', () => {
     try {
       const written = await syncShippedSkills(tmp.root, makeConfig());
       expect(written.sort()).toEqual(skillPaths(makeConfig()).sort());
-      expect(written).toHaveLength(15);
+      expect(written).toHaveLength(skillPaths(makeConfig()).length);
       const placement = await readFile(path.join(tmp.root, 'skills/ctxr-placement/SKILL.md'), 'utf8');
       expect(placement).toContain('name: ctxr-placement');
       expect(placement).toContain('description:');
@@ -635,7 +636,9 @@ describe('graph-context-document: skills read the vocabulary and the graph docum
  */
 const SRC_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../src');
 const EXECUTABLES = ['ctxr', 'git', 'gh', 'npm', 'npx', 'node', 'rg', 'grep', 'jq', 'sed', 'awk'];
-const TOKEN = new RegExp(String.raw`\b(${EXECUTABLES.join('|')})\b|(--[a-z][a-z0-9-]*)`, 'g');
+// An executable is a whole word: not the tail of a path (`skills/ctxr-x/run.mjs`) and not the head of a
+// hyphenated name (`ctxr-land`), which name a skill directory or a skill, never the command being run.
+const TOKEN = new RegExp(String.raw`(?<![\w/.-])(${EXECUTABLES.join('|')})(?![\w/.-])|(--[a-z][a-z0-9-]*)`, 'g');
 
 /** Every long option `src/run.ts` registers — commander is wired in that one file and nowhere else. */
 function registeredOptions(): Set<string> {
@@ -688,6 +691,9 @@ describe('clear-access-axis-residue: an owned skill names only affordances the C
     }
     expect(ctxrFlagsIn('Run `git push --force-with-lease` after `ctxr doctor`.')).toEqual([]);
     expect(ctxrFlagsIn('Run `ctxr catalog check --stale`.')).toEqual(['--stale']);
+    // A skill's own directory is not the executable: its runner's flags belong to `node`.
+    expect(ctxrFlagsIn('Run `node skills/ctxr-second-opinion/run.mjs --preflight`.')).toEqual([]);
+    expect(ctxrFlagsIn('Hand off to `ctxr-land` and then run `git push --force-with-lease`.')).toEqual([]);
   });
 });
 
@@ -723,5 +729,60 @@ describe('note templates in the rendered skills', () => {
     const placement = skills.find((s) => s.file === 'ctxr-placement');
     expect(placement?.content).not.toContain('Read one or two sibling notes in the chosen location and match their shape');
     expect(placement?.content).toContain('README.md');
+  });
+});
+
+/**
+ * ship-a-cross-model-second-opinion-skill: the conventions the runner cannot
+ * enforce (synthesis order, bias disclosure, hand-off without executing) are
+ * asserted against the rendered text, which is all they can be.
+ */
+describe('the second-opinion skill', () => {
+  // Prose wraps mid-phrase; assertions read it with whitespace collapsed.
+  const skill = () => rendered()['ctxr-second-opinion']!.replace(/[ \t]*\n(?!\n)[ \t]*/g, ' ');
+
+  it('ships its runner and prompt fragments beside SKILL.md, and points at them through the configured skills path', () => {
+    const owned = renderSkills(makeConfig()).find((s) => s.file === 'ctxr-second-opinion')!;
+    expect([...owned.supportingFiles.keys()]).toEqual([
+      'critic-contract.md',
+      'lenses.md',
+      'personas/architect.md',
+      'personas/pragmatist.md',
+      'personas/skeptic.md',
+      'run.mjs',
+    ]);
+    expect(skill()).toContain('node skills/ctxr-second-opinion/run.mjs --preflight');
+    const moved = renderSkills({ ...makeConfig(), harness: { ...makeConfig().harness, skills_path: 'agent/skills/' } }).find((s) => s.file === 'ctxr-second-opinion')!;
+    expect(moved.content).toContain('node agent/skills/ctxr-second-opinion/run.mjs --preflight');
+  });
+
+  it('names no ctxr command, because none exists to drive', () => {
+    // The managed header above the H1 names `ctxr init`; the procedure below it drives no ctxr command at all.
+    const procedure = rendered()['ctxr-second-opinion']!.split('\n# Second opinion\n')[1]!;
+    expect(procedure.length).toBeGreaterThan(1000); // anti-vacuity: the split found the body
+    expect(procedure).not.toMatch(/`ctxr [a-z]/);
+  });
+
+  it('says when to critique, poll, or answer directly', () => {
+    expect(skill()).toContain('## 1. Critique, poll, or just answer?');
+    expect(skill()).toContain('**Answer directly**');
+  });
+
+  it('has the agent synthesize on letters before it opens the manifest, and never run the plan', () => {
+    const s = skill();
+    expect(s).toContain('before you open `manifest.json`');
+    expect(s).toContain('**Evidence-backed dissent.**');
+    expect(s).toContain('**Vetoes.**');
+    expect(s).toContain('shares your model family');
+    expect(s).toContain('never executes a step of the plan it critiqued');
+    // the hand-off is the last instruction of the critique procedure: nothing after it tells the agent to act on the plan
+    expect(s.indexOf('never executes a step of the plan it critiqued')).toBeGreaterThan(s.indexOf('**Recommendation**'));
+  });
+
+  it('refuses a second debate round, a single-model run, and filling a failed reviewer with another model', () => {
+    const s = skill();
+    expect(s).toContain('Do not add a second round');
+    expect(s).toContain('A single model is not a second opinion');
+    expect(s).toContain('Do not rerun that one reviewer on a different model');
   });
 });
