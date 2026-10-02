@@ -37,7 +37,7 @@ The runner is the enforcing mechanism for the following, each covered by a test 
 - It SHALL invoke each CLI with that tool's read-only or no-tools mode where one exists, and in an empty scratch directory as its working directory in every case.
 - It SHALL bound each critic by a timeout and record a critic that times out, exits non-zero, or returns output lacking the required verdict as failed, with the cause.
 - It SHALL write each critique under a letter assigned in an order independent of the critic roster, record the letter-to-role-and-model mapping in a separate manifest, and record in that manifest the model each CLI reports having run where the CLI reports one.
-- It SHALL mark a critique whose findings cite no step the plan contains as blind and exclude it from the count of valid critiques.
+- It SHALL mark a critique whose findings cite nothing the plan contains — no step it numbers and no text quoted from it — as blind and exclude it from the count of valid critiques, while a critique that approves with no findings SHALL remain valid.
 - It SHALL exit with a distinct status when fewer than two critiques are valid, so a partial result cannot be mistaken for a complete one.
 
 The skill SHALL state when to critique, when to poll, and when to answer directly; SHALL instruct synthesis on the anonymized letters before the manifest is read; SHALL instruct that a dissent backed by cited evidence, and a rejection carrying a critical finding, are surfaced in their own sections rather than outvoted; SHALL disclose that a critic sharing the orchestrating agent's model family is a bias to name; and SHALL end in a hand-off that executes no step of the plan it critiqued. Those instructions are skill-markdown conventions, asserted by a test over the rendered skill, not guarantees the runner can make.
@@ -63,7 +63,7 @@ The skill SHALL state when to critique, when to poll, and when to answer directl
 - **THEN** each of those critiques is recorded as failed naming its cause, and the runner does not substitute another model for either
 
 #### Scenario: A blind critique does not count
-- **WHEN** a stub CLI returns a well-formed verdict whose findings cite no step present in the plan
+- **WHEN** a stub CLI returns a well-formed verdict whose findings cite no step and quote no text present in the plan
 - **THEN** the critique is marked blind in the manifest and excluded from the valid count
 
 #### Scenario: Fewer than two valid critiques is a partial result
