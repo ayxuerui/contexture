@@ -24,12 +24,10 @@ const behavior = JSON.parse(process.env['STUB_' + name.toUpperCase()] || '{"kind
 const isHelp = args.includes('--help');
 let stdin = '';
 if (!isHelp && behavior.kind !== 'hang') { try { stdin = fs.readFileSync(0, 'utf8'); } catch {} }
-let comm = '';
-try { comm = fs.readFileSync('/proc/' + process.ppid + '/comm', 'utf8').trim(); } catch {}
 if (!isHelp) {
   const file = dir + '/' + name + '.json';
   const prior = fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf8')) : [];
-  prior.push({ args, stdin, cwd: process.cwd(), parentComm: comm });
+  prior.push({ args, stdin, cwd: process.cwd(), ppid: process.ppid });
   fs.writeFileSync(file, JSON.stringify(prior));
 }
 if (isHelp) { console.log(behavior.help ?? '--max-turns --tools --model --effort --no-session-persistence --disable-slash-commands --output-format --skip-git-repo-check --sandbox --ephemeral --color --config --print'); process.exit(0); }
@@ -80,7 +78,7 @@ function run(args: string[], behaviors: Record<string, Behavior> = {}, opts: { i
     env[`STUB_${cli.toUpperCase()}`] = JSON.stringify(behaviors[cli] ?? { kind: 'ok', text: critique(ROLE_OF[cli]!) });
   }
   const result = spawnSync('node', [RUNNER, ...args], { env, encoding: 'utf8', input: opts.input ?? '' });
-  return { status: result.status, stdout: result.stdout, stderr: result.stderr };
+  return { status: result.status, stdout: result.stdout, stderr: result.stderr, pid: result.pid };
 }
 
 function planFile(text = PLAN): string {
@@ -89,7 +87,7 @@ function planFile(text = PLAN): string {
   return file;
 }
 
-const calls = (cli: string): { args: string[]; stdin: string; cwd: string; parentComm: string }[] => {
+const calls = (cli: string): { args: string[]; stdin: string; cwd: string; ppid: number }[] => {
   const file = path.join(logDir, `${cli}.json`);
   return existsSync(file) ? JSON.parse(readFileSync(file, 'utf8')) : [];
 };
@@ -119,8 +117,6 @@ describe('critique: isolation and delivery', () => {
     const nasty = '$(touch /tmp/second-opinion-canary) ; `id` "dq" \'sq\' \\ && || > /dev/null *\n';
     const plan = `${PLAN}\n${nasty.repeat(400)}`;
     expect(plan.length).toBeGreaterThan(20_000);
-    const r = run(critiqueArgs(), {}, {});
-    expect(r.status).toBe(0);
     const big = run(['--mode', 'critique', '--plan-file', planFile(plan), '--out', path.join(tmp.root, 'out2')]);
     expect(big.status).toBe(0);
     const claude = calls('claude').at(-1)!;
@@ -129,7 +125,8 @@ describe('critique: isolation and delivery', () => {
     expect(claude.stdin.endsWith(`PLAN:\n${plan}\n`)).toBe(true);
     expect(codex.stdin.endsWith(`PLAN:\n${plan}\n`)).toBe(true);
     expect(agy.args[agy.args.indexOf('-p') + 1]!.endsWith(`PLAN:\n${plan}\n`)).toBe(true);
-    for (const c of [claude, codex, agy]) expect(c.parentComm).toBe('node'); // launched by the runner directly, not through sh
+    // Each CLI's parent is the runner process itself: nothing, least of all a shell, sits between them.
+    for (const c of [claude, codex, agy]) expect(c.ppid).toBe(big.pid);
     expect(existsSync('/tmp/second-opinion-canary')).toBe(false);
   });
 
