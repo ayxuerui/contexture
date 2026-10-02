@@ -292,20 +292,27 @@ The **Preview** area, directly below the published pages, holds the pages your o
 ctxr version           # the installed version, and where it is installed from
 ctxr version --check   # compare it against the latest published release
 ctxr update            # refresh every contexture-owned file to the installed version
+ctxr update --worktree # the same, on a branch of its own, never in this checkout
 ctxr verify --portable # prove the store works from a harness with no harness-specific state
 ```
 
 `ctxr update` re-renders the `AGENTS.md` sections, skill copies, hooks, and adapter outputs — run it after upgrading the CLI, and after editing your house conventions.
 
+`ctxr update --worktree` does that work in a worktree it creates for itself, off the freshly fetched default branch, on a branch named for the running release (`<branch_prefix>ctxr-update-<version>`). It never writes the checkout you ran it from, and it commits nothing — pushing the branch and opening the pull request are yours to do. When nothing is due it removes the worktree and branch again and says the store is already up to date; when the branch already exists, locally or on the remote, it does nothing at all. Both are what make it safe to run unattended, on every container start for example: the same release always names the same branch, and a run with nothing to do leaves nothing behind. The branch carries your session prefix, so `ctxr session list` shows it and the lifecycle skill submits and reclaims it like any other session.
+
 ### Upgrading the CLI
 
 `ctxr session start` and `ctxr update` check whether a newer release has been published and say so, once per session and once per update. The notice goes to stderr and appears as an `info` finding in `--json` output; it never changes either command's exit code, and a registry that is slow, unreachable, or behind a proxy simply produces no advice rather than a failure. `ctxr doctor` and `ctxr init` never make the request at all — a commit must not depend on the network, and `init` stays offline.
 
-The `ctxr-upgrade` skill performs the upgrade: it reads the live answer, refuses to instruct a global install when the executable it finds is a linked working copy, asks before changing anything, and re-renders the store *after* the package upgrade rather than before. By hand, that is `npm install -g ctxr-cli@latest` followed by `ctxr update`, in that order.
+The `ctxr-upgrade` skill performs the upgrade: it reads the live answer, refuses to instruct a global install when the executable it finds is a linked working copy — or a global install you cannot write to, such as one a container image ships, which `ctxr version` reports as `install_writable: false` and which is upgraded by moving to a newer image — asks before changing anything, and re-renders the store *after* the package upgrade rather than before. By hand, that is `npm install -g ctxr-cli@latest` followed by `ctxr update`, in that order.
 
 To turn the check off, set `update_check.enabled` to `false` in `contexture.yaml`, or set `CONTEXTURE_UPDATE_CHECK=0` for a single invocation. `update_check.ttl_hours` sets how long a resolved answer is reused (a day by default); the cache lives in the store's gitignored `.contexture/cache/`.
 
-`schema_version` in `contexture.yaml` versions *store state* — the config shape and frontmatter conventions — as a monotonic integer independent of the npm package version. contexture ships no migration mechanism, so the number is a gate: a store whose recorded version is not the one your CLI supports is refused rather than half-read, in **either** direction. Newer, because the CLI cannot know that shape; older, because it no longer reads it. A release that changes the store's shape bumps the version and documents the one-time fixup in its release notes.
+`schema_version` in `contexture.yaml` versions *store state* — the config shape and frontmatter conventions — as a monotonic integer independent of the npm package version. It is a gate: a store whose recorded version is not the one your CLI supports is refused rather than half-read, in **either** direction, by every command except one.
+
+That one is `ctxr update`, and only for an *older* store. A release that changes the store's shape ships a migration step for it, and `ctxr update` runs every step between the store's version and the CLI's, in order, before it re-renders anything. The steps rewrite the parsed `contexture.yaml` before the typed configuration ever reads it, so contexture only ever accepts one spelling of a key, and the written file differs from yours only in the keys a step names and the version — your comments, your key order and every value you recorded are carried across untouched. If a step fails, or its result doesn't validate, nothing is written. Every other command refuses an older store and tells you to run `ctxr update`; run it as `ctxr update --worktree` and the migration lands on a branch for review rather than in your checkout.
+
+Two cases stay refused everywhere, `update` included. A store **newer** than the CLI, because the CLI cannot know that shape — the remedy is a newer CLI. And a store older than the oldest version this release has a step for, which it cannot bring forward — that one is a hand edit, following the release notes for each version since.
 
 ### The config records decisions, not values
 

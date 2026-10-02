@@ -1,3 +1,4 @@
+import { access, constants } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -74,4 +75,31 @@ function runningEntrypoint(): string {
 export function resolveInstallLocation(execPath: string): InstallLocation {
   const binPath = runningEntrypoint();
   return { path: binPath, kind: classifyInstallPath(binPath, execPath) };
+}
+
+/**
+ * migrate-stores-on-update (design D5): can the running user upgrade this
+ * global install in place? `npm install -g` writes the package into the global
+ * `node_modules` root the entrypoint resolves under, and its launcher into the
+ * prefix's `bin` — both must be writable, or the install is refused.
+ *
+ * A global install the user cannot write is one something else manages: a
+ * container image, a system package, an administrator. Reporting it lets the
+ * upgrade skill stop before asking the operator to approve an install that
+ * could never succeed. Only meaningful for a `global` classification; callers
+ * do not ask for the other two.
+ */
+export async function isGlobalInstallWritable(binPath: string, execPath: string): Promise<boolean> {
+  const resolved = path.resolve(binPath);
+  const root = globalRootsFor(path.resolve(execPath)).find((candidate) => isUnder(resolved, candidate));
+  if (root === undefined) return false;
+  const targets = [root, path.dirname(path.resolve(execPath))];
+  for (const target of targets) {
+    try {
+      await access(target, constants.W_OK);
+    } catch {
+      return false;
+    }
+  }
+  return true;
 }

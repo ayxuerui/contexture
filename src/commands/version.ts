@@ -3,7 +3,7 @@ import type { RunEnv } from '../core/env.js';
 import type { Finding } from '../core/envelope.js';
 import { ExitCode } from '../core/exit-codes.js';
 import type { InstallKind } from '../core/install-kind.js';
-import { resolveInstallLocation } from '../core/install-kind.js';
+import { isGlobalInstallWritable, resolveInstallLocation } from '../core/install-kind.js';
 import { ownPackageName } from '../core/registry.js';
 import { compareRelease } from '../core/version-check.js';
 import { CLI_VERSION } from '../version.js';
@@ -22,6 +22,12 @@ export interface VersionData {
   version: string;
   install_path: string;
   install_kind: InstallKind;
+  /**
+   * Global installs only: whether the running user can write where a
+   * package-manager upgrade would install. False means something else manages
+   * this executable — an image, a system package — and upgrades it there.
+   */
+  install_writable?: boolean;
   /** Only present with --check. Null when the published version could not be resolved. */
   latest?: string | null;
   release_status?: ReleaseStatus;
@@ -44,6 +50,9 @@ export async function execute(env: RunEnv, flags: VersionFlags = {}): Promise<Co
     version: CLI_VERSION,
     install_path: install.path,
     install_kind: install.kind,
+    ...(install.kind === 'global'
+      ? { install_writable: await isGlobalInstallWritable(install.path, env.execPath) }
+      : {}),
   };
 
   if (!flags.check) {
