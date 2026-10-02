@@ -44,6 +44,8 @@ async function writeCanonicalSkill(root: string): Promise<void> {
   const dir = path.join(root, '.agents/skills/some-skill');
   await mkdir(dir, { recursive: true });
   await writeFile(path.join(dir, 'SKILL.md'), '---\nname: some-skill\n---\nbody\n', 'utf8');
+  await mkdir(path.join(dir, 'personas'), { recursive: true });
+  await writeFile(path.join(dir, 'personas/a.md'), 'persona\n', 'utf8');
 }
 
 describe('bridgeHarnessSkills', () => {
@@ -102,6 +104,8 @@ describe('bridgeHarnessSkills', () => {
       expect(stat.isDirectory()).toBe(true);
       const copied = await readFile(path.join(harnessAbs, 'some-skill/SKILL.md'), 'utf8');
       expect(copied).toContain('name: some-skill');
+      // ship-a-cross-model-second-opinion-skill: supporting files beside SKILL.md ride the same copy.
+      expect(await readFile(path.join(harnessAbs, 'some-skill/personas/a.md'), 'utf8')).toBe('persona\n');
     } finally {
       await tmp.cleanup();
     }
