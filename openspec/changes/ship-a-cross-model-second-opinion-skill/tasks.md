@@ -72,7 +72,7 @@ Parked, not implemented. Implementation is a separate, separately-requested pass
 
 ## 3. The runner
 
-- [ ] 3.1 `templates/skills/ctxr-second-opinion/run.mjs`, Node standard library only. It covers:
+- [x] 3.1 `templates/skills/ctxr-second-opinion/run.mjs`, Node standard library only. It covers:
       - **Flags:** `--preflight`, `--mode critique|poll`, `--plan-file` / `--prompt-file` (or stdin),
         `--only`, `--tier strong|fast`, `--timeout` (default 240 s), `--lens`, `--out`, `--no-wrap`.
       - **Environment overrides** per design.md D6.
@@ -91,9 +91,9 @@ Parked, not implemented. Implementation is a separate, separately-requested pass
         given (2–3 lenses, roster names or inline `Name:description`).
       - **Preflight:** a one-token ping per CLI at the fast tier, plus a check that each flag the runner
         passes appears in that CLI's `--help`.
-- [ ] 3.2 Stub CLIs for tests: small Node scripts named `claude`, `codex` and `agy`, placed first on `PATH`
+- [x] 3.2 Stub CLIs for tests: small Node scripts named `claude`, `codex` and `agy`, placed first on `PATH`
       in a temp directory. Each records its argv, stdin and cwd, and emits a scripted response.
-- [ ] 3.3 Runner tests, one per scenario of *The second-opinion skill is an owned skill over external model
+- [x] 3.3 Runner tests, one per scenario of *The second-opinion skill is an owned skill over external model
       CLIs*:
       - critics isolated from each other;
       - a plan with shell metacharacters over several kilobytes arrives byte-identical, with no shell
@@ -104,7 +104,7 @@ Parked, not implemented. Implementation is a separate, separately-requested pass
       - a partial result gives exit 2;
       - poll and lens prompts are assembled;
       - codex stripping falls back to the raw copy when stripping would lose the verdict.
-- [ ] 3.4 Verify: `npx vitest run test/unit/second-opinion-runner.test.ts --exclude '**/.claude/**'` green.
+- [x] 3.4 Verify: `npx vitest run test/unit/second-opinion-runner.test.ts --exclude '**/.claude/**'` green.
 
 ## 4. Docs and full verification
 
