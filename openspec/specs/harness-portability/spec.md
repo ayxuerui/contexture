@@ -141,15 +141,50 @@ The canonical section SHALL state, on every store regardless of configuration, t
 - **THEN** the boundary statement's text is unchanged and regeneration reports no change
 
 ### Requirement: Root resolution precedence
-Any contexture command SHALL resolve the store root in this order: an explicit `--root` argument; the `CONTEXTURE_STORE_ROOT` environment variable; walking up from the current working directory looking for `contexture.yaml`. If none resolves, the command SHALL exit non-zero naming that no store root was found, and SHALL NOT guess a fallback location.
+Any contexture command SHALL resolve the store root in this order: an explicit `--root` argument; the
+store root found by walking up from the current working directory when that root is a linked git
+worktree of the store named by the `CONTEXTURE_STORE_ROOT` environment variable; the
+`CONTEXTURE_STORE_ROOT` environment variable; walking up from the current working directory looking
+for `contexture.yaml`. If none resolves, the command SHALL exit non-zero naming that no store root
+was found, and SHALL NOT guess a fallback location.
+
+The worktree step SHALL be consulted only when `CONTEXTURE_STORE_ROOT` is set and no `--root`
+argument was given, and SHALL redirect only to a checkout of the very store that variable names. When
+the store root found from the current directory belongs to a different repository than the one the
+variable names, the variable SHALL resolve unchanged. The step SHALL be decided from the filesystem
+without invoking git, and SHALL fall back to resolving the variable whenever it cannot decide.
 
 #### Scenario: Explicit argument overrides an inherited environment variable
 - **WHEN** a command is invoked with `--root /path/a` while `CONTEXTURE_STORE_ROOT=/path/b` is set in the environment
 - **THEN** the command operates against `/path/a`
 
+#### Scenario: An explicit argument overrides the worktree the caller is standing in
+- **WHEN** a command is invoked with `--root <store>` from inside a linked worktree of that same store, with `CONTEXTURE_STORE_ROOT` set
+- **THEN** the command operates against the named root and the worktree step does not redirect it
+
+#### Scenario: A command run from a session worktree operates on that worktree
+- **WHEN** a command is invoked with no `--root` from inside a linked git worktree of the store named by `CONTEXTURE_STORE_ROOT`, and that worktree carries its own `contexture.yaml`
+- **THEN** the command operates against the worktree rather than against the store the variable names
+
+#### Scenario: The environment variable still pins across different stores
+- **WHEN** a command is invoked with no `--root` from inside a store, or a worktree of a store, that is a different repository than the one `CONTEXTURE_STORE_ROOT` names
+- **THEN** the command operates against the store the variable names
+
+#### Scenario: The main working tree does not redirect to itself
+- **WHEN** a command is invoked with no `--root` from inside the main working tree of the store named by `CONTEXTURE_STORE_ROOT`
+- **THEN** the command operates against the store the variable names
+
+#### Scenario: A worktree is recognized without invoking git
+- **WHEN** root resolution decides whether the current directory's store is a linked worktree of the named store
+- **THEN** it reads only the filesystem, invoking no git subprocess, and resolves the environment variable unchanged when the question cannot be decided
+
 #### Scenario: No root resolves
 - **WHEN** a command is invoked with no `--root`, no `CONTEXTURE_STORE_ROOT`, and no `contexture.yaml` found by walking up from the current directory
 - **THEN** the command exits non-zero with a message naming that no store root was found, and performs no store operation
+
+#### Scenario: Store creation is never redirected into an existing worktree
+- **WHEN** `ctxr init` is invoked from inside a linked worktree of the store named by `CONTEXTURE_STORE_ROOT`
+- **THEN** it resolves its root by its own rule — `--root`, then the variable, then the current directory — and the worktree step does not apply
 
 ### Requirement: Exactly one root environment variable and one root flag
 The store root SHALL be addressable by exactly one environment variable and one command-line flag. No alias environment variable or flag name SHALL be introduced for the same purpose.
@@ -305,11 +340,23 @@ The configured skills path SHALL be usable as a harness's native skill directory
 - **THEN** every skill is discoverable there as a complete skill file — the file the harness loads is the file `AGENTS.md` indexes
 
 ### Requirement: Submit and land are owned skills over git and gh
-contexture SHALL ship `ctxr-submit` and `ctxr-land` as contexture-owned skills delivered by init and update. The submit skill SHALL run the re-scan, run the capture skill exactly once, stage named paths, run `ctxr doctor` for store-scope validation, and end in `git push` followed by `gh pr create` — without an intervening confirmation step, because the request to submit is itself the consent for both. The land skill SHALL name its target explicitly (never inferring it from the currently checked-out branch), read the pull request's state and mergeability with `gh pr view` before any side effect, gate the merge behind an explicit confirmation, merge with `gh pr merge`, confirm the forge reports merged before synchronizing, and route conflicting or unknown mergeability to the lifecycle skill's conflict playbook. The lifecycle skill SHALL cover start, re-scan, conflicts, sequencing, and reclaiming worktrees, and SHALL reference both skills without repeating their steps.
+contexture SHALL ship `ctxr-submit` and `ctxr-land` as contexture-owned skills delivered by init and update. The submit skill SHALL state the entry condition that admits it — an explicit operator request to wrap up, or the operator's own closing signal — alongside the anti-triggers that do not admit it, naming an agent's own judgment that its assigned task is finished as the chief one; that stated condition is what makes the absent confirmation below sound rather than assumed. The submit skill SHALL run the re-scan, run the capture skill exactly once, stage named paths, run `ctxr doctor` for store-scope validation, and end in `git push` followed by `gh pr create` — without an intervening confirmation step, because the request to submit is itself the consent for both — and SHALL close by reporting the pull request and naming the target a subsequent land will need. The land skill SHALL name its target explicitly (never inferring it from the currently checked-out branch), read the pull request's state and mergeability with `gh pr view` before any side effect, gate the merge behind an explicit confirmation, merge with `gh pr merge`, confirm the forge reports merged before synchronizing, and route conflicting or unknown mergeability to the lifecycle skill's conflict playbook. The lifecycle skill SHALL cover start, the session's resting state between turns, re-scan, conflicts, sequencing, and reclaiming worktrees; SHALL state that ending a turn with uncommitted work on the session branch is that resting state rather than an obligation to discharge, and that completing a deliverable is not what ends a session; and SHALL reference both skills without repeating their steps.
+
+#### Scenario: The lifecycle frame names the resting state
+- **WHEN** the session-lifecycle skill is rendered for a store
+- **THEN** it carries a section on the state between turns, stating that the worktree persists across exchanges, that ending a turn with uncommitted work on the branch is normal rather than unfinished, and that having completed a deliverable is not the signal that ends the session
+
+#### Scenario: Submit states what admits it
+- **WHEN** the submit skill is rendered for a store
+- **THEN** it carries an entry-condition section, positioned ahead of the procedure's first step, naming the operator request or closing signal that admits it and the anti-triggers that do not — including that having finished the assigned task is not a closing signal and that the agent's own summary is not one either
 
 #### Scenario: Submit ends in git and gh, gated
 - **WHEN** an agent follows the rendered submit skill
 - **THEN** `ctxr doctor` runs before staging, the capture skill is invoked exactly once, and the branch rename is followed directly by `git push` and `gh pr create` with no confirmation step between them — the gate on this path is `ctxr doctor`, which submit may not proceed past, not a confirmation of the push itself
+
+#### Scenario: Submit hands off with a target land can use
+- **WHEN** an agent reaches the end of the rendered submit skill
+- **THEN** it reports the pull request's number and url and names the target that landing it will take, without merging or invoking the land skill itself
 
 #### Scenario: Land checks state before merging and confirms after
 - **WHEN** an agent follows the rendered land skill
@@ -616,3 +663,38 @@ A store wanting a variant SHALL keep it under a name the packaged library does n
 #### Scenario: A store's own kind is untouched
 - **WHEN** a store keeps a template at the templates path under a name the packaged library does not use, and `ctxr update` runs
 - **THEN** that file is byte-identical afterwards, and is neither removed nor reported
+
+### Requirement: Capture is an owned skill over connected sources
+contexture SHALL ship `ctxr-capture` as a contexture-owned skill, delivered by `init` and refreshed by `update` like every other owned skill. The skill SHALL carry the procedure for bringing external material into the configured inbox: locate the material among whatever sources the harness has connected rather than assuming a particular one is present; write the source's record into the inbox; stamp the source type and source id while leaving the two fields ingest assigns unset; run the dedupe check when the material may already be in the store; and end by handing off to the ingest-orchestration skill. The skill SHALL NOT instruct the agent to decide what the store should know, which note to write, or where it belongs — those are the ingest-orchestration and placement skills' procedures, and capture ends before them.
+
+The skill's steps MAY name tools contexture does not provide, on the same footing as the submit and land skills naming `git` and `gh`. contexture SHALL NOT ship a client, credential handling, or an adapter kind for any capture source.
+
+#### Scenario: The capture skill is delivered and refreshed like every owned skill
+- **WHEN** `init` writes a store, and a later `update` runs after the shipped copy has drifted
+- **THEN** a full copy of the capture skill sits at the configured skills path in the skill layout marked as managed, and update rewrites the drifted copy to the installed version
+
+#### Scenario: Capture ends at the handoff, not at a note
+- **WHEN** the rendered capture skill's final step is read
+- **THEN** it hands off to the ingest-orchestration skill, and no step of it instructs creating, expanding, merging, or restructuring a note
+
+### Requirement: The capture skill names no particular source
+The rendered capture skill SHALL express its steps without naming any capture service, server, or source-type value. Where the procedure needs a source type it SHALL direct the agent to the source system's own name, and where it needs a source id it SHALL specify a form composed from that source type and the source system's own stable identifier, so the same procedure holds for any harness and any connected source. The enforcing mechanism is a check over the rendered skill set, on the same footing as the checks that keep a shipped taxonomy profile's layer names out of the rendered skills.
+
+#### Scenario: A source-type literal does not reach the shipped text
+- **WHEN** the owned skill set is rendered for a store
+- **THEN** the capture skill names no capture service and no literal source-type value, and the check over the rendered set passes
+
+#### Scenario: A store's own source types remain the vocabulary
+- **WHEN** an agent follows the rendered capture skill against a connected source
+- **THEN** the source type it records is the source system's own name, not one contexture supplied
+
+### Requirement: The capture skill distinguishes the record from a summary of it
+The rendered capture skill SHALL state that a capture is the source's record, written as the source supplied it, and that a summary the source itself produced is retained as that source's own derivation in a section distinct from the record rather than in place of it. Because material reaching the agent through a connected source passes through the agent before it is written, this SHALL be stated in the skill; the mechanism that enforces it is the ingest precondition a store declares (per `context-ingest`), not the instruction alone.
+
+#### Scenario: The skill states the distinction
+- **WHEN** the rendered capture skill is read
+- **THEN** it names the record as what the capture must carry, and names a source-supplied summary as a derivation retained alongside the record rather than as a substitute for it
+
+#### Scenario: The instruction is backed by a check, not trusted on its own
+- **WHEN** a store declares a required capture section for a source type and a capture of that type carries only a summary
+- **THEN** ingest refuses it (per `context-ingest`), so the outcome does not depend on the skill having been followed

@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { readdirSync, readFileSync } from 'node:fs';
 import { mkdir, readdir, readFile, rm } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -17,6 +18,30 @@ import { packagedTemplate } from './templates.js';
  */
 function skillTemplate(slug: string): string {
   return packagedTemplate('skills', slug);
+}
+
+/**
+ * ship-a-cross-model-second-opinion-skill D1: an owned skill may carry
+ * packaged files beside its SKILL.md — a runner script, prompt fragments —
+ * authored under `templates/skills/<slug>/`, next to the body template
+ * `templates/skills/<slug>.md`. Read verbatim (they are code and prompt
+ * text, not store-rendered prose, so no `__TOKEN__` substitution) and in
+ * sorted order: init stages exactly the paths this yields and a test pins
+ * that argument vector, so directory order must not depend on the machine.
+ */
+function skillSupportingFiles(slug: string): Map<string, string> {
+  const root = fileURLToPath(new URL(`../../templates/skills/${slug}`, import.meta.url));
+  const files = new Map<string, string>();
+  const walk = (sub: string): void => {
+    const entries = readdirSync(path.join(root, sub), { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name));
+    for (const entry of entries) {
+      const rel = sub ? `${sub}/${entry.name}` : entry.name;
+      if (entry.isDirectory()) walk(rel);
+      else files.set(rel, readFileSync(path.join(root, rel), 'utf8'));
+    }
+  };
+  walk('');
+  return files;
 }
 
 /**
@@ -47,14 +72,18 @@ export interface Skill {
   /** One line for skill-discovery metadata and the AGENTS.md index. */
   description: string;
   content: string;
+  /** Packaged files beside SKILL.md, as relative-path -> content. Empty for a skill that is one file. */
+  supportingFiles: ReadonlyMap<string, string>;
 }
 
-interface SkillSeed {
+export interface SkillSeed {
   file: string;
   name: string;
   description: string;
   /** The markdown body below the H1, one entry per line, rendered against the store's config. */
   body: (config: StoreConfig) => string[];
+  /** Packaged files beside SKILL.md, verbatim. Absent for a skill that is one file. */
+  supportingFiles?: () => ReadonlyMap<string, string>;
 }
 
 export const MANAGED_SKILL_HEADER =
@@ -317,11 +346,16 @@ export const SKILLS: readonly SkillSeed[] = [
 
 /** The owned skills, rendered against one store's configuration — what `syncShippedSkills` writes. */
 export function renderSkills(config: StoreConfig): Skill[] {
-  return SKILLS.map((seed) => ({
+  return renderSkillSeeds(SKILLS, config);
+}
+
+function renderSkillSeeds(seeds: readonly SkillSeed[], config: StoreConfig): Skill[] {
+  return seeds.map((seed) => ({
     file: seed.file,
     name: seed.name,
     description: seed.description,
     content: skillDocument(seed, config),
+    supportingFiles: seed.supportingFiles?.() ?? new Map<string, string>(),
   }));
 }
 
@@ -336,7 +370,11 @@ export function scanSkills(root: string, config: StoreConfig): Promise<ScannedDo
 }
 
 export function skillPaths(config: StoreConfig): string[] {
-  return SKILLS.map((p) => path.join(config.harness.skills_path, p.file, SKILL_FILE_NAME).split(path.sep).join('/'));
+  return renderSkills(config).flatMap((skill) =>
+    [SKILL_FILE_NAME, ...skill.supportingFiles.keys()].map((rel) =>
+      path.join(config.harness.skills_path, skill.file, rel).split(path.sep).join('/'),
+    ),
+  );
 }
 
 /**
@@ -345,31 +383,50 @@ export function skillPaths(config: StoreConfig): string[] {
  * an up-to-date copy is not touched). Managed copies the installed version
  * no longer ships (recognised by the managed header) are removed, so a
  * renamed slug never leaves an orphan behind. Only files bearing the header
- * are ever removed; operator skills are untouched. Returns every path it
- * wrote or removed.
+ * are ever removed; operator skills are untouched.
+ *
+ * ship-a-cross-model-second-opinion-skill: a skill whose SKILL.md already
+ * carried the managed header belongs to contexture as a whole, so its
+ * directory is also made to match the package — a file the installed
+ * version does not ship is removed, whether an earlier version left it or
+ * an operator added it, and named in the result. The header is read BEFORE
+ * SKILL.md is rewritten: a directory that arrives without one is never
+ * pruned. Returns every path it wrote or removed.
  */
 export async function syncShippedSkills(root: string, config: StoreConfig): Promise<string[]> {
+  return syncSkillSeeds(root, config, SKILLS);
+}
+
+export async function syncSkillSeeds(root: string, config: StoreConfig, seeds: readonly SkillSeed[]): Promise<string[]> {
   const changed: string[] = [];
-  for (const skill of renderSkills(config)) {
-    const relativePath = path
-      .join(config.harness.skills_path, skill.file, SKILL_FILE_NAME)
-      .split(path.sep)
-      .join('/');
-    const absolutePath = path.join(root, relativePath);
-    let existing: string | undefined;
-    try {
-      existing = await readFile(absolutePath, 'utf8');
-    } catch {
-      existing = undefined;
-    }
-    if (existing !== skill.content) {
+  const posix = (...parts: string[]): string => path.join(...parts).split(path.sep).join('/');
+
+  for (const skill of renderSkillSeeds(seeds, config)) {
+    const skillRelDir = posix(config.harness.skills_path, skill.file);
+    const skillAbsDir = path.join(root, skillRelDir);
+    const existing = await readIfExists(path.join(skillAbsDir, SKILL_FILE_NAME));
+    const wasManaged = existing?.includes(MANAGED_SKILL_HEADER) === true;
+
+    const wanted = new Map<string, string>([[SKILL_FILE_NAME, skill.content], ...skill.supportingFiles]);
+    for (const [rel, content] of wanted) {
+      const absolutePath = path.join(skillAbsDir, rel);
+      if ((await readIfExists(absolutePath)) === content) continue;
       await mkdir(path.dirname(absolutePath), { recursive: true });
-      await writeFileAtomic(absolutePath, skill.content);
-      changed.push(relativePath);
+      await writeFileAtomic(absolutePath, content);
+      changed.push(`${skillRelDir}/${rel}`);
+    }
+
+    if (wasManaged) {
+      for (const rel of await listFilesUnder(skillAbsDir)) {
+        if (wanted.has(rel)) continue;
+        await rm(path.join(skillAbsDir, rel), { force: true });
+        changed.push(`${skillRelDir}/${rel}`);
+      }
+      await removeEmptyDirs(skillAbsDir);
     }
   }
 
-  const shippedSlugs = new Set(SKILLS.map((p) => p.file));
+  const shippedSlugs = new Set(seeds.map((p) => p.file));
   const skillsDir = path.join(root, config.harness.skills_path);
   let entries: { name: string; isDirectory(): boolean }[] = [];
   try {
@@ -388,9 +445,31 @@ export async function syncShippedSkills(root: string, config: StoreConfig): Prom
     }
     if (!content.includes(MANAGED_SKILL_HEADER)) continue; // operator-authored: never touched
     await rm(path.join(skillsDir, entry.name), { recursive: true, force: true });
-    changed.push(path.join(config.harness.skills_path, entry.name, SKILL_FILE_NAME).split(path.sep).join('/'));
+    changed.push(posix(config.harness.skills_path, entry.name, SKILL_FILE_NAME));
   }
   return changed;
+}
+
+/** Every file under `dir`, as sorted posix paths relative to it. */
+async function listFilesUnder(dir: string, sub = ''): Promise<string[]> {
+  const out: string[] = [];
+  const entries = (await readdir(path.join(dir, sub), { withFileTypes: true })).sort((a, b) => a.name.localeCompare(b.name));
+  for (const entry of entries) {
+    const rel = sub ? `${sub}/${entry.name}` : entry.name;
+    if (entry.isDirectory()) out.push(...(await listFilesUnder(dir, rel)));
+    else out.push(rel);
+  }
+  return out;
+}
+
+/** Removes directories left empty under `dir` (never `dir` itself). */
+async function removeEmptyDirs(dir: string): Promise<void> {
+  for (const entry of await readdir(dir, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue;
+    const child = path.join(dir, entry.name);
+    await removeEmptyDirs(child);
+    if ((await readdir(child)).length === 0) await rm(child, { recursive: true, force: true });
+  }
 }
 
 /**

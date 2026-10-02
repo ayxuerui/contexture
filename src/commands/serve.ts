@@ -3,6 +3,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from 'node:ht
 import path from 'node:path';
 import { buildLinkResolver } from '../core/browse/link-resolver.js';
 import { renderIndexBody, renderNav } from '../core/browse/nav.js';
+import { PREVIEW_ROUTE_PREFIX, PUBLISH_ROUTE_PREFIX } from '../core/browse/page-url.js';
 import { resolveNavState, resolveTheme } from '../core/browse/preferences.js';
 import { titleFor } from '../core/catalog/model.js';
 import { escapeHtml, renderNoteBody } from '../core/browse/render.js';
@@ -163,8 +164,8 @@ async function handleRequest(store: Store, stderr: NodeJS.WritableStream, req: I
     return;
   }
 
-  if (pathname.startsWith('/publish/')) {
-    const file = table.publishFiles.get(pathname.slice('/publish/'.length));
+  if (pathname.startsWith(PUBLISH_ROUTE_PREFIX)) {
+    const file = table.publishFiles.get(pathname.slice(PUBLISH_ROUTE_PREFIX.length));
     if (!file) {
       send(res, method, 404, 'text/plain; charset=utf-8', 'not found\n');
       return;
@@ -182,8 +183,8 @@ async function handleRequest(store: Store, stderr: NodeJS.WritableStream, req: I
    * worktree's map by construction, so the miss IS the traversal guard, exactly
    * as it is for `/publish/`.
    */
-  if (pathname.startsWith('/preview/')) {
-    const rest = pathname.slice('/preview/'.length);
+  if (pathname.startsWith(PREVIEW_ROUTE_PREFIX)) {
+    const rest = pathname.slice(PREVIEW_ROUTE_PREFIX.length);
     const separator = rest.indexOf('/');
     const preview = separator === -1 ? undefined : table.previews.get(rest.slice(0, separator));
     const file = preview?.files.get(rest.slice(separator + 1));

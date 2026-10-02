@@ -9,7 +9,7 @@ import type { Store } from '../../src/core/store.js';
 import { makeTmpDir } from '../helpers/tmp-store.js';
 
 import { SHIPPED_DEFAULTS } from '../../src/config/defaults.js';
-function makeConfig(): StoreConfig {
+function makeConfig(overrides: Partial<StoreConfig> = {}): StoreConfig {
   return {
     schema_version: 1,
     taxonomy: { profile: 'para', layers: [] },
@@ -27,6 +27,7 @@ function makeConfig(): StoreConfig {
     organize: { archive_destination: 'archive/', rollup_stale_days: 7 },
     harness: { skills_path: 'skills/', guidance_path: 'guidance/', convention_max_bytes: 32768 },
     adapters: [],
+    ...overrides,
   };
 }
 
@@ -56,7 +57,18 @@ describe('publish check', () => {
 
       const outcome = await executeCheck(store, { path: htmlPath });
       expect(outcome.exitCode).toBe(ExitCode.Ok);
-      expect(outcome.data).toEqual({ path: 'publish/ctx-a/good/index.html', passed: true, failures: [] });
+      expect(outcome.data).toEqual({
+        path: 'publish/ctx-a/good/index.html',
+        passed: true,
+        failures: [],
+        served_at: {
+          area: 'publish',
+          route: '/publish/ctx-a/good/index.html',
+          url: null,
+          worktree: null,
+          after_landing: null,
+        },
+      });
     } finally {
       await tmp.cleanup();
     }
@@ -266,4 +278,81 @@ describe('publish check', () => {
       await tmp.cleanup();
     }
   });
+
+  /**
+   * publish-names-where-the-page-is-served: the address is reported on both
+   * exit paths, because a page whose checks failed is exactly the one somebody
+   * needs to open — and reported for no file that no route serves.
+   */
+  it('names the previewable address of a page checked from inside a session worktree', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const config = makeConfig();
+      const worktreeRoot = path.join(tmp.root, config.session.worktrees_path, 'session-20260920-180253-d97aa6');
+      await mkdir(worktreeRoot, { recursive: true });
+      const store: Store = { root: worktreeRoot, config };
+      const htmlPath = await writePage(worktreeRoot, 'ctx-a/good', GOOD_HTML);
+
+      const outcome = await executeCheck(store, { path: htmlPath });
+      expect(outcome.exitCode).toBe(ExitCode.Ok);
+      expect(outcome.data?.served_at).toEqual({
+        area: 'preview',
+        route: '/preview/session-20260920-180253-d97aa6/ctx-a/good/index.html',
+        url: null,
+        worktree: 'session-20260920-180253-d97aa6',
+        after_landing: { route: '/publish/ctx-a/good/index.html', url: null },
+      });
+      expect(outcome.humanSummary).toContain('all checks passed. Preview at /preview/session-20260920-180253-d97aa6/ctx-a/good/index.html');
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('names the address on the failing path too', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const store: Store = { root: tmp.root, config: makeConfig() };
+      const htmlPath = await writePage(tmp.root, 'ctx-a/bad', GOOD_HTML.replace('<title>Good Page</title>', '<title></title>'));
+
+      const outcome = await executeCheck(store, { path: htmlPath });
+      expect(outcome.exitCode).toBe(ExitCode.CheckFailed);
+      expect(outcome.data?.served_at?.route).toBe('/publish/ctx-a/bad/index.html');
+      expect(outcome.humanSummary).toContain('Served at /publish/ctx-a/bad/index.html.');
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('names no address for a file outside the configured publish path', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const store: Store = { root: tmp.root, config: makeConfig() };
+      const dir = path.join(tmp.root, 'elsewhere');
+      await mkdir(dir, { recursive: true });
+      const htmlPath = path.join(dir, 'index.html');
+      await writeFile(htmlPath, GOOD_HTML);
+      await writeFile(path.join(dir, 'README.md'), '');
+
+      const outcome = await executeCheck(store, { path: htmlPath });
+      expect(outcome.data?.served_at).toBeNull();
+      expect(outcome.humanSummary).not.toContain('Served at');
+      expect(outcome.humanSummary).not.toContain('Preview at');
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('names an absolute address when the store declares a base URL', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const store: Store = { root: tmp.root, config: makeConfig({ serve: { base_url: 'https://ctx-a.example.test' } }) };
+      const htmlPath = await writePage(tmp.root, 'ctx-a/good', GOOD_HTML);
+
+      const outcome = await executeCheck(store, { path: htmlPath });
+      expect(outcome.data?.served_at?.url).toBe('https://ctx-a.example.test/publish/ctx-a/good/index.html');
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
 });

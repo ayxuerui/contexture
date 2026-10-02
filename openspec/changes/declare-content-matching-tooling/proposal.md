@@ -54,11 +54,14 @@ fact.
 
 ## Impact
 
-Affected code: a new optional `contexture.yaml` key under `retrieval` (`src/config/schema.ts`,
-`src/config/defaults.ts`), schema-optional with no default so a config predating it still parses — the
-`publish.path` precedent, not the required-field pattern that forced a migration for
-`harness.skills_path`. Read by nothing in `src/` at runtime, which is the point; `templates/agents/retrieval-leg-routing.md`
-should surface it in the generated routing section so an agent sees it where it already looks.
+Affected code: a new optional `contexture.yaml` key under `retrieval` (`src/config/schema.ts`, plus the
+rationale comment in `src/config/defaults.ts` naming what is deliberately absent from `SHIPPED_DEFAULTS`),
+declared `.optional()` with no shipped default so a config predating it still parses — the
+`ingest.required_capture_sections` and `serve.base_url` precedent, not `publish.path`, which does carry a
+default (design.md D3). Not a required field either: contexture ships no migration, so a required key would
+simply refuse every store written before it. Read by nothing in `src/` at runtime, which is the point;
+`templates/agents/retrieval-leg-routing.md` should surface it in the generated routing section so an agent
+sees it where it already looks.
 
-Affected stores: additive and optional. A store that declares nothing behaves exactly as today, and no
-migration or schema version bump is needed.
+Affected stores: additive and optional. A store that declares nothing behaves exactly as today, parses and
+renders byte-unchanged, and needs no `schema_version` bump.

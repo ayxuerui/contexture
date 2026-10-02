@@ -1,4 +1,4 @@
-import { readFile, readdir } from 'node:fs/promises';
+import { mkdir, readFile, readdir } from 'node:fs/promises';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { execute as executeNew } from '../../src/commands/publish-new.js';
@@ -9,7 +9,7 @@ import type { Store } from '../../src/core/store.js';
 import { makeTmpDir } from '../helpers/tmp-store.js';
 
 import { SHIPPED_DEFAULTS } from '../../src/config/defaults.js';
-function makeConfig(): StoreConfig {
+function makeConfig(overrides: Partial<StoreConfig> = {}): StoreConfig {
   return {
     schema_version: 1,
     taxonomy: { profile: 'para', layers: [] },
@@ -27,6 +27,7 @@ function makeConfig(): StoreConfig {
     organize: { archive_destination: 'archive/', rollup_stale_days: 7 },
     harness: { skills_path: 'skills/', guidance_path: 'guidance/', convention_max_bytes: 32768 },
     adapters: [],
+    ...overrides,
   };
 }
 
@@ -37,7 +38,17 @@ describe('publish new', () => {
       const store: Store = { root: tmp.root, config: makeConfig() };
       const outcome = await executeNew(store, { slug: 'some-slug' });
       expect(outcome.exitCode).toBe(ExitCode.Ok);
-      expect(outcome.data).toEqual({ slug: 'some-slug', path: 'publish/some-slug' });
+      expect(outcome.data).toEqual({
+        slug: 'some-slug',
+        path: 'publish/some-slug',
+        served_at: {
+          area: 'publish',
+          route: '/publish/some-slug/index.html',
+          url: null,
+          worktree: null,
+          after_landing: null,
+        },
+      });
 
       const html = await readFile(path.join(tmp.root, 'publish/some-slug/index.html'), 'utf8');
       expect(html).toContain('<meta name="viewport"');
@@ -75,7 +86,17 @@ describe('publish new', () => {
       const store: Store = { root: tmp.root, config: makeConfig() };
       const outcome = await executeNew(store, { slug: 'folder-a/folder-b/nested-page' });
       expect(outcome.exitCode).toBe(ExitCode.Ok);
-      expect(outcome.data).toEqual({ slug: 'folder-a/folder-b/nested-page', path: 'publish/folder-a/folder-b/nested-page' });
+      expect(outcome.data).toEqual({
+        slug: 'folder-a/folder-b/nested-page',
+        path: 'publish/folder-a/folder-b/nested-page',
+        served_at: {
+          area: 'publish',
+          route: '/publish/folder-a/folder-b/nested-page/index.html',
+          url: null,
+          worktree: null,
+          after_landing: null,
+        },
+      });
 
       const html = await readFile(path.join(tmp.root, 'publish/folder-a/folder-b/nested-page/index.html'), 'utf8');
       expect(html).toContain('<title>nested-page</title>');
@@ -150,4 +171,46 @@ describe('publish new', () => {
       await tmp.cleanup();
     }
   });
+
+  /**
+   * publish-names-where-the-page-is-served: the page is born in a session
+   * worktree, which is where the published-pages route does NOT yet answer for
+   * it. Reporting the previewable address and its successor is the whole fix.
+   */
+  it('names the previewable address, and the address after landing, from a session worktree', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const config = makeConfig();
+      const worktreeRoot = path.join(tmp.root, config.session.worktrees_path, 'session-20260920-180253-d97aa6');
+      await mkdir(worktreeRoot, { recursive: true });
+      const store: Store = { root: worktreeRoot, config };
+      const outcome = await executeNew(store, { slug: 'folder-a/example-page' });
+
+      expect(outcome.data?.served_at).toEqual({
+        area: 'preview',
+        route: '/preview/session-20260920-180253-d97aa6/folder-a/example-page/index.html',
+        url: null,
+        worktree: 'session-20260920-180253-d97aa6',
+        after_landing: { route: '/publish/folder-a/example-page/index.html', url: null },
+      });
+      expect(outcome.humanSummary).toContain('Preview at /preview/session-20260920-180253-d97aa6/folder-a/example-page/index.html');
+      expect(outcome.humanSummary).toContain('(at /publish/folder-a/example-page/index.html once it lands)');
+      expect(outcome.humanSummary.split('\n')).toHaveLength(1);
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('names an absolute URL when the store declares a base URL, and a route alone when it does not', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const store: Store = { root: tmp.root, config: makeConfig({ serve: { base_url: 'https://ctx-a.example.test/ctx-a/' } }) };
+      const outcome = await executeNew(store, { slug: 'folder-a/example-page' });
+      expect(outcome.data?.served_at?.url).toBe('https://ctx-a.example.test/ctx-a/publish/folder-a/example-page/index.html');
+      expect(outcome.humanSummary).toContain('Served at https://ctx-a.example.test/ctx-a/publish/folder-a/example-page/index.html.');
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
 });

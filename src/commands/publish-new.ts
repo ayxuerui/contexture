@@ -1,6 +1,8 @@
 import { existsSync } from 'node:fs';
 import { mkdir } from 'node:fs/promises';
 import path from 'node:path';
+import { pageServedAt, type ServedAt, servedAtSentence } from '../core/browse/page-url.js';
+import { PUBLISH_INDEX_FILE } from '../core/browse/routes.js';
 import type { CommandOutcome, CommandRequires } from '../core/command.js';
 import { PublishInvalidSlugError, PublishReservedSlugError, PublishSlugExistsError } from '../core/errors.js';
 import { ExitCode } from '../core/exit-codes.js';
@@ -16,6 +18,13 @@ export interface PublishNewFlags {
 export interface PublishNewData {
   slug: string;
   path: string;
+  /**
+   * Where the browsing surface answers for the page just scaffolded — never
+   * null here, because the path was built from the configured publish path by
+   * construction. Typed nullable so one parser reads this field on both
+   * publish commands.
+   */
+  served_at: ServedAt | null;
 }
 
 /** publish spec: reserved for frozen snapshots — a living page's own name must never collide with this shape. */
@@ -126,14 +135,16 @@ export async function execute(store: Store, flags: PublishNewFlags): Promise<Com
 
   const dateCreated = new Date().toISOString().slice(0, 10);
   await mkdir(absolutePath, { recursive: true });
-  await writeFileAtomic(path.join(absolutePath, 'index.html'), pageSkeleton(pageName, dateCreated));
+  await writeFileAtomic(path.join(absolutePath, PUBLISH_INDEX_FILE), pageSkeleton(pageName, dateCreated));
   await writeFileAtomic(path.join(absolutePath, 'README.md'), readmeSkeleton(pageName, dateCreated));
+
+  const servedAt = pageServedAt(store, `${relativePath}/${PUBLISH_INDEX_FILE}`);
 
   return {
     exitCode: ExitCode.Ok,
-    data: { slug: flags.slug, path: relativePath },
+    data: { slug: flags.slug, path: relativePath, served_at: servedAt },
     findings: [],
-    humanSummary: `Created "${relativePath}".`,
+    humanSummary: `Created "${relativePath}".${servedAtSentence(servedAt)}`,
     storeRoot: store.root,
     schemaVersion: store.config.schema_version,
   };
