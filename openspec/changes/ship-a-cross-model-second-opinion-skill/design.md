@@ -138,6 +138,10 @@ letters first and reads the manifest last.
   model family is hidden, and model family is where the orchestrator's self-preference operates.
 - The mapping is revealed in the final report, so nothing is lost to the reader. The cost is one file read.
 
+Poll mode is the exception, and deliberately: its files are named by model (`poll-claude.md`), because what
+the reader is judging there is whether the models agree, and a lens grid's columns are models. There is no
+orchestrator-versus-reviewer judgment to protect, since nothing is being graded.
+
 **D5 — A stricter output contract, validated, with blind-seat detection.**
 
 The contract has four sections, in order:
@@ -155,8 +159,9 @@ The prompt carries codex-plugin-cc's adversarial wording:
 
 The runner validates each critique:
 - **Missing verdict.** The critique is recorded as failed.
-- **Blind.** No finding cites a step number the plan actually has. The critique is marked blind and not
-  counted. This check was built from real `agy` evasions, where the model returned a plausible review of a
+- **Blind.** No finding's evidence resolves to anything in the plan: a step id the plan numbers (`S3`), a
+  verbatim quotation of at least twelve characters, or a `path:line` whose path appears in the plan. The
+  critique is marked blind and not counted. This check was built from real `agy` evasions, where the model returned a plausible review of a
   plan it had not read.
 
 *The case against the step-citation rule:*
@@ -176,6 +181,9 @@ to its cheaper model, for trivial polls. The overrides are:
 - `CTXR_SECOND_OPINION_CLAUDE_EFFORT`
 - `CTXR_SECOND_OPINION_CODEX_EFFORT`
 - `CTXR_SECOND_OPINION_AGY_MODEL`
+
+The `fast` tier's agy default is `Gemini 3.8 Flash (High)`, the newest Flash `agy models` lists; `strong`
+stays on `Gemini 3.1 Pro (High)`, the only Pro it lists.
 
 The `CTXR_` prefix is right here and not `CONTEXTURE_`. These variables name a skill (`ctxr-<name>`), not
 a store-resident concept.
@@ -226,9 +234,14 @@ parts pkm itself documented.
 
 | Critic | Containment |
 |---|---|
-| `claude` | `-p --max-turns 1 --tools ""`, no tools at all |
+| `claude` | `-p --max-turns 1 --tools "" --no-session-persistence --disable-slash-commands --output-format json`, no tools at all; the JSON also reports the model that actually ran |
 | `codex` | `exec --sandbox read-only --ephemeral --skip-git-repo-check -`, read-only sandbox, prompt on stdin, no persisted session |
-| `agy` | `-p <prompt-argv> --sandbox --disable-slash-commands`, with no true read-only mode (pkm verified it writing outside `/tmp` and fetching a URL under `--sandbox`) |
+| `agy` | `-p <prompt-argv> --sandbox --disable-slash-commands`, with no true read-only mode |
+
+agy 1.1.26 does now offer `--mode plan`, and it was tried: asked headlessly to create a file, it said it had
+written an implementation plan for approval and then wrote the file anyway, in its working directory
+(verified 2026-09-29). pkm had earlier seen it write outside `/tmp` and fetch a URL under `--sandbox`. So
+neither flag is treated as containment, and `--mode plan` is not passed.
 
 All three run with an empty scratch directory as their working directory, so an `agy` critic that does
 reach for tools finds no repository to modify by relative path. The spec says "read-only or no-tools mode
