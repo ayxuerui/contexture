@@ -32,6 +32,7 @@ import {
   SHIPPED_DEFAULTS,
 } from '../config/defaults.js';
 import { configPathFor, readConfig } from '../config/load.js';
+import { MIGRATION_STEPS } from '../config/migrations.js';
 import { renderStoreConfig } from '../config/render.js';
 import {
   SUPPORTED_SCHEMA_VERSION,
@@ -239,7 +240,7 @@ async function runInitCore(env: RunEnv, flags: InitFlags): Promise<RunInitResult
 
   // --- Idempotent path: already initialized -----------------------------
   if (existsSync(configPath)) {
-    const config = await readConfig(root); // validates + gates schema_version
+    const config = await readConfig(root, env.migrationSteps ?? MIGRATION_STEPS); // validates + gates schema_version
     // Reconciling an existing store is exactly `ctxr update`'s job — one shared implementation.
     const { findings: reconcileFindings } = await reconcileStore(env, root, config);
     return {

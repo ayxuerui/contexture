@@ -725,3 +725,32 @@ describe('note templates in the rendered skills', () => {
     expect(placement?.content).toContain('README.md');
   });
 });
+
+/**
+ * migrate-stores-on-update, harness-portability: "An install the user cannot write stops the
+ * skill before any install". A container image ships the CLI root-owned while the agent runs
+ * unprivileged, so `npm install -g` there is refused — the skill must stop before it spends the
+ * operator's approval on an install that could never succeed.
+ */
+describe('ctxr-upgrade stops on an install the user cannot write', () => {
+  const upgrade = rendered()['ctxr-upgrade'] ?? '';
+
+  it('branches on install_writable for a global install', () => {
+    expect(upgrade).toContain('`global` with `install_writable: true` — proceed to step 3.');
+    expect(upgrade).toContain('`global` with `install_writable: false`');
+  });
+
+  it('stops before the operator is asked, and names a newer image as the remedy', () => {
+    const notWritable = upgrade.indexOf('`install_writable: false`');
+    const gate = upgrade.indexOf('Gate on the operator.');
+    const install = upgrade.indexOf('npm install -g ctxr-cli@latest');
+    expect(notWritable).toBeGreaterThan(-1);
+    expect(notWritable).toBeLessThan(gate);
+    expect(notWritable).toBeLessThan(install);
+    const branch = upgrade.slice(notWritable, upgrade.indexOf('\n   - `linked`', notWritable));
+    expect(branch).toContain('Report `install_path` and stop.');
+    expect(branch).toContain('newer');
+    expect(branch).toContain('image');
+    expect(branch).not.toContain('npm install');
+  });
+});

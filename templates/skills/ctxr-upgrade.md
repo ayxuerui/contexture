@@ -7,13 +7,19 @@ step 3 gates on the operator rather than proceeding from the fact that a newer r
 
 1. Read the live answer — never act on a notice from earlier in the conversation, which may be
    minutes stale: `ctxr version --check --json`. The envelope's `data` carries `version` (installed),
-   `latest` (published), `release_status`, `install_path`, and `install_kind`. Exit code `0` means
+   `latest` (published), `release_status`, `install_path`, `install_kind`, and — for a global
+   install — `install_writable`. Exit code `0` means
    already current: say so and stop. A non-zero exit with `release_status` of `undetermined` means the
    published version could not be resolved — report the reason the finding names, and stop; do not
    guess whether an upgrade is due.
 
 2. Check `install_kind` before proposing anything.
-   - `global` — proceed to step 3.
+   - `global` with `install_writable: true` — proceed to step 3.
+   - `global` with `install_writable: false` — this executable is managed by whatever installed it,
+     and you cannot write where a package-manager upgrade would go: the install would be refused.
+     Report `install_path` and stop. If it shipped in a container image, the upgrade is a newer
+     image — merge the image's version bump, then pull it and recreate the container — and not
+     something to run from here.
    - `linked` — this executable resolves to a working copy at `install_path`, not a package
      installation. A global install would upgrade a different `ctxr` than the one running. Report the
      path and stop.
