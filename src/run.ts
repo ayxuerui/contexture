@@ -33,7 +33,7 @@ import type { RunEnv } from './core/env.js';
 import { ContextureError } from './core/errors.js';
 import { ExitCode } from './core/exit-codes.js';
 import { createReporter } from './core/reporter.js';
-import { openStore } from './core/store.js';
+import { openStore, openStoreMigrating } from './core/store.js';
 import * as updateCommand from './commands/update.js';
 import * as verifyCommand from './commands/verify.js';
 import * as versionCommand from './commands/version.js';
@@ -627,11 +627,15 @@ export async function run(argv: readonly string[], env: RunEnv): Promise<ExitCod
   program
     .command('update')
     .description('bring every contexture-owned file in the store up to the installed version (docs, skills, hooks, adapter outputs)')
-    .action(async (_cmdOpts: object, cmd: Command) => {
+    .option('--worktree', 'work in a new worktree on a branch named for this release, never in this checkout; commits nothing')
+    .action(async (cmdOpts: { worktree?: boolean }, cmd: Command) => {
       const { runEnv, jsonMode, root } = deriveRunEnv(env, cmd);
       result = await runCommand('update', runEnv, jsonMode, async () => {
-        const store = await openStore(runEnv, { root });
-        return updateCommand.execute(runEnv, store);
+        // The one command allowed past the schema gate on an older store (migrate-stores-on-update).
+        const store = await openStoreMigrating(runEnv, { root });
+        return cmdOpts.worktree
+          ? updateCommand.executeInWorktree(runEnv, store)
+          : updateCommand.execute(runEnv, store);
       });
     });
 

@@ -7,15 +7,18 @@ import { SHIPPED_DEFAULTS } from './defaults.js';
  * note frontmatter conventions) — a monotonic integer independent of the npm
  * package version — not "what this CLI release happens to be."
  *
- * retire-store-migrations: contexture ships no migration mechanism, so this
- * number is a gate rather than a starting point. `readConfig` refuses any
- * store whose recorded version is not exactly this one, in either direction:
- * a newer store because this release cannot know its shape, an older one
- * because this release no longer reads that shape and offers nothing that
- * would bring it forward. A release that changes the store's shape bumps this
- * and documents the one-time fixup in its release notes.
+ * It is a gate. `readConfig` refuses any store whose recorded version is not
+ * exactly this one, in either direction — with one exception since
+ * migrate-stores-on-update: `ctxr update` carries an OLDER store forward
+ * through the migration ladder in ./migrations.ts, provided it is at or above
+ * the ladder's floor. A newer store is refused everywhere.
  *
- * It stayed at 10 through that retirement on purpose: nothing about a
+ * RAISING THIS NUMBER: add the step from the previous version to
+ * MIGRATION_STEPS in the same change, with a byte-exact fixture test of its
+ * own. test/unit/config-migrations.test.ts fails until the step exists; the
+ * fixture is the convention that keeps a step's output reviewable.
+ *
+ * It stayed at 10 through retire-store-migrations on purpose: nothing about a
  * conforming store's shape changed. What was dropped were superseded INPUT
  * spellings that no store at 10 has ever written, since `renderStoreConfig`
  * only ever emitted the current names.

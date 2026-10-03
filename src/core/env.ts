@@ -1,3 +1,4 @@
+import type { MigrationStep } from '../config/migrations.js';
 import type { Prompter } from '../prompt/prompter.js';
 import type { GitRunner } from './git/exec.js';
 import { createExecFileGitRunner } from './git/exec.js';
@@ -31,6 +32,12 @@ export interface RunEnv {
   /** The release registry. The only network-capable port; see core/registry.ts. */
   registry: RegistryClient;
   now(): Date;
+  /**
+   * The schema migration ladder. Absent in production — `realEnv()` never sets
+   * it, so every command measures against the shipped ladder. Tests set it to
+   * exercise a migration before any real step exists (migrate-stores-on-update).
+   */
+  migrationSteps?: readonly MigrationStep[];
 }
 
 /**

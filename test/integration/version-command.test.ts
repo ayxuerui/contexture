@@ -34,12 +34,15 @@ describe('cli-contract: the CLI reports its own version', () => {
     expect(result.stderr).toBe('');
     const envelope = JSON.parse(result.stdout) as {
       command: string;
-      data: { version: string; install_path: string; install_kind: string };
+      data: { version: string; install_path: string; install_kind: string; install_writable?: boolean };
     };
     expect(envelope.command).toBe('version');
     expect(envelope.data.version).toBe(CLI_VERSION);
     expect(envelope.data.install_path).toMatch(/bin\.js$/);
     expect(['global', 'linked', 'undetermined']).toContain(envelope.data.install_kind);
+    // migrate-stores-on-update: writability is reported for a global install, and only for one.
+    if (envelope.data.install_kind === 'global') expect(typeof envelope.data.install_writable).toBe('boolean');
+    else expect(envelope.data.install_writable).toBeUndefined();
   });
 
   it('the flag and the command agree, and neither is a usage error', async () => {
