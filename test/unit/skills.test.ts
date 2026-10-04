@@ -13,6 +13,8 @@ import {
   SKILLS,
   renderSkills,
   retiredLayers,
+  shippedSkillFiles,
+  type SkillSeed,
   syncShippedSkills,
   terminatingLayers,
 } from '../../src/core/skills.js';
@@ -752,5 +754,60 @@ describe('ctxr-upgrade stops on an install the user cannot write', () => {
     expect(branch).toContain('newer');
     expect(branch).toContain('image');
     expect(branch).not.toContain('npm install');
+  });
+});
+
+/**
+ * exempt-shipped-skill-files-from-the-diff-ceiling: the map of what the
+ * installed version ships, per path under the skills path.
+ */
+describe('shippedSkillFiles', () => {
+  const withVendored = (vendored: string[]): StoreConfig => ({ ...makeConfig(), skills: { vendored } });
+
+  it('lists every path skillPaths names, mapped to the bytes renderSkills produces', async () => {
+    const config = makeConfig();
+    const shipped = await shippedSkillFiles(config);
+    expect([...shipped.keys()].sort()).toEqual(skillPaths(config).sort());
+    for (const skill of renderSkills(config)) {
+      expect(shipped.get(`skills/${skill.file}/SKILL.md`)).toBe(skill.content);
+      for (const [rel, content] of skill.supportingFiles) expect(shipped.get(`skills/${skill.file}/${rel}`)).toBe(content);
+    }
+  });
+
+  it('maps a skill\'s supporting files beside its SKILL.md', async () => {
+    const seed: SkillSeed = {
+      file: 'ctxr-fixture',
+      name: 'Fixture',
+      description: 'A fixture skill that carries supporting files.',
+      body: () => ['Body.'],
+      supportingFiles: () => new Map([['run.mjs', 'export {};\n'], ['personas/a.md', 'persona\n']]),
+    };
+    const shipped = await shippedSkillFiles(makeConfig(), [seed]);
+    expect([...shipped.keys()].sort()).toEqual(['skills/ctxr-fixture/SKILL.md', 'skills/ctxr-fixture/personas/a.md', 'skills/ctxr-fixture/run.mjs']);
+    expect(shipped.get('skills/ctxr-fixture/run.mjs')).toBe('export {};\n');
+  });
+
+  it('adds the packaged files of a declared vendored skill, and nothing for an undeclared one', async () => {
+    const declared = await shippedSkillFiles(withVendored(['eli5']));
+    expect([...declared.keys()].filter((k) => k.startsWith('skills/eli5/')).sort()).toEqual(['skills/eli5/LICENSE.txt', 'skills/eli5/SKILL.md']);
+    const undeclared = await shippedSkillFiles(withVendored([]));
+    expect([...undeclared.keys()].some((k) => k.startsWith('skills/eli5/'))).toBe(false);
+  });
+
+  it('leaves out the per-store provenance record, which no packaged file can match', async () => {
+    const shipped = await shippedSkillFiles(withVendored([...DEFAULT_VENDORED_SKILLS]));
+    expect([...shipped.keys()].some((k) => k.endsWith('.ctxr-vendored.json') || k.endsWith('provenance.json'))).toBe(false);
+  });
+
+  it('ignores a declared vendored name the package does not carry', async () => {
+    const shipped = await shippedSkillFiles(withVendored(['no-such-skill']));
+    expect([...shipped.keys()].some((k) => k.includes('no-such-skill'))).toBe(false);
+  });
+
+  it('follows the configured skills path', async () => {
+    const config = { ...makeConfig(), harness: { ...makeConfig().harness, skills_path: '.agents/skills/' } };
+    const shipped = await shippedSkillFiles(config);
+    expect(shipped.has('.agents/skills/ctxr-mission/SKILL.md')).toBe(true);
+    expect([...shipped.keys()].every((k) => k.startsWith('.agents/skills/'))).toBe(true);
   });
 });

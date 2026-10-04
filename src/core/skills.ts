@@ -450,6 +450,39 @@ export async function syncSkillSeeds(root: string, config: StoreConfig, seeds: r
   return changed;
 }
 
+/**
+ * exempt-shipped-skill-files-from-the-diff-ceiling: every path under the
+ * configured skills path, mapped to the exact content the installed version
+ * writes there — each owned skill's SKILL.md, its supporting files, and the
+ * packaged files of each vendored skill the store declares. This is what
+ * `init` and `update` put on disk, so a staged file whose content equals the
+ * entry for its path is contexture's own write and not an edit.
+ *
+ * Vendored provenance records are absent on purpose: each is generated per
+ * store (it carries the installed CLI version), so no packaged file can match
+ * it, and it stays in the diff count. A declared vendored name the package does
+ * not carry is left out here; reporting it is `syncVendoredSkills`' job.
+ * Paths are store-relative and posix, the spelling `skillPaths` and git use.
+ */
+export async function shippedSkillFiles(config: StoreConfig, seeds: readonly SkillSeed[] = SKILLS): Promise<Map<string, string>> {
+  const shipped = new Map<string, string>();
+  const at = (...parts: string[]): string => path.join(config.harness.skills_path, ...parts).split(path.sep).join('/');
+
+  for (const skill of renderSkillSeeds(seeds, config)) {
+    shipped.set(at(skill.file, SKILL_FILE_NAME), skill.content);
+    for (const [rel, content] of skill.supportingFiles) shipped.set(at(skill.file, rel), content);
+  }
+  for (const name of config.skills.vendored) {
+    try {
+      const { files } = await readVendoredPayload(name);
+      for (const [rel, content] of files) shipped.set(at(name, rel), content);
+    } catch {
+      // not a packaged vendored skill: nothing is shipped for it
+    }
+  }
+  return shipped;
+}
+
 /** Every file under `dir`, as sorted posix paths relative to it. */
 async function listFilesUnder(dir: string, sub = ''): Promise<string[]> {
   const out: string[] = [];
