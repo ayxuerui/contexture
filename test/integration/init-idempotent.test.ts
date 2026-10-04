@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process';
-import { readFile, stat } from 'node:fs/promises';
+import { readFile, rm, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import { describe, expect, it } from 'vitest';
@@ -42,4 +42,33 @@ describe('init idempotency', () => {
       await tmp.cleanup();
     }
   });
+
+  // init-generates-harness-adapter-output: init on an existing store runs the
+  // same reconcile as `ctxr update`, adapter outputs included.
+  it('re-running init restores a missing entry file without rewriting config or committing', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const env = hermeticGitEnv();
+      expect((await runCli(['init', '--harness', 'claude-code'], { cwd: tmp.root, env })).exitCode).toBe(0);
+      const configPath = path.join(tmp.root, 'contexture.yaml');
+      const entryPath = path.join(tmp.root, 'CLAUDE.md');
+      const configBefore = await readFile(configPath, 'utf8');
+      await rm(entryPath);
+
+      expect((await runCli(['init'], { cwd: tmp.root, env })).exitCode).toBe(0);
+      expect(await readFile(entryPath, 'utf8')).toContain('@AGENTS.md');
+      expect(await readFile(configPath, 'utf8')).toBe(configBefore);
+      const { stdout: log } = await execFileAsync('git', ['log', '--oneline'], { cwd: tmp.root, env });
+      expect(log.trim().split('\n')).toHaveLength(1);
+
+      // And a further run writes nothing.
+      const mtimeBefore = (await stat(entryPath)).mtimeMs;
+      await new Promise((resolve) => setTimeout(resolve, 1100));
+      expect((await runCli(['init'], { cwd: tmp.root, env })).exitCode).toBe(0);
+      expect((await stat(entryPath)).mtimeMs).toBe(mtimeBefore);
+    } finally {
+      await tmp.cleanup();
+    }
+  });
 });
+

@@ -54,6 +54,7 @@ import { seedHouseConventionsFile } from '../core/convention-doc.js';
 import { syncNoteTemplates } from '../core/note-templates.js';
 import { syncShippedSkills, syncVendoredSkills } from '../core/skills.js';
 import { bridgeHarnessSkills } from '../core/harness/bridge.js';
+import { generateAdapterOutputs } from '../core/adapter-outputs.js';
 import { reconcileStore, WORKTREES_GITIGNORE_FENCE } from '../core/reconcile.js';
 import type { Finding } from '../core/envelope.js';
 import { isInteractive, type RunEnv } from '../core/env.js';
@@ -357,6 +358,15 @@ async function runInitCore(env: RunEnv, flags: InitFlags): Promise<RunInitResult
   const { changed: templateFilesCreated, findings: templateFindings } = await syncNoteTemplates(root, config, CLI_VERSION);
   findings.push(...templateFindings);
   await buildAgentsConventionsSection(root, config);
+  // init-generates-harness-adapter-output: the harnesses just selected get
+  // their entry files now, in the bootstrap commit, rather than waiting for a
+  // first `ctxr update`. After the last AGENTS.md writer, as in the reconcile.
+  // Only what the generator wrote is staged: an adapter that contributes
+  // nothing (claude-code's permission config) reports unchanged, so no empty
+  // file is created and `git add` is never handed a path that doesn't exist.
+  const adapterFilesCreated = (await generateAdapterOutputs({ root, config }))
+    .filter((f) => f.changed)
+    .map((f) => f.path);
 
   const guidanceFilesCreated = [
     ...(houseConventionsSeeded.created ? [path.join(config.harness.guidance_path, DEFAULT_HOUSE_CONVENTIONS_FILE_NAME)] : []),
@@ -404,6 +414,7 @@ async function runInitCore(env: RunEnv, flags: InitFlags): Promise<RunInitResult
     ...templateFilesCreated,
     ...bridgedPaths,
     ...guidanceFilesCreated,
+    ...adapterFilesCreated,
     ...hookFiles,
   ]);
 
@@ -422,6 +433,7 @@ async function runInitCore(env: RunEnv, flags: InitFlags): Promise<RunInitResult
         ...vendoredSkillFilesCreated,
         ...bridgedPaths,
         ...guidanceFilesCreated,
+        ...adapterFilesCreated,
         ...hookFiles,
       ],
       unchanged: [],

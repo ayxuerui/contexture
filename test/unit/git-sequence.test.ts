@@ -81,6 +81,7 @@ describe('init git call sequence', () => {
           '.claude/skills',
           '.contexture/guidance/house-conventions.md',
           '.contexture/guidance/mission.md',
+          'CLAUDE.md',
           '.githooks/pre-commit',
           '.githooks/pre-push',
         ],

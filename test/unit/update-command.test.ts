@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -32,15 +33,27 @@ describe('ctxr update', () => {
     const tmp = await makeTmpDir();
     try {
       const { store, env } = await freshStore(tmp.root);
-      // init does not run the adapters, so the first update legitimately writes their outputs…
-      // `.claude/settings.json` is absent from this list since retire-the-write-gate: the
-      // claude-code permission config is cleanup-only and emits nothing for a fresh store.
-      const first = await update(env, store);
-      expect(first.data?.changed?.sort()).toEqual(['CLAUDE.md']);
-      // …and only then is the store current.
+      // init-generates-harness-adapter-output: a freshly initialized store is
+      // already current, adapter outputs included, so the first update is a no-op.
       const outcome = await update(env, store);
       expect(outcome.exitCode).toBe(ExitCode.Ok);
       expect(outcome.data?.changed).toEqual([]);
+      expect(existsSync(path.join(tmp.root, 'CLAUDE.md'))).toBe(true);
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('reports nothing changed after an init that selected no harness, and writes no entry file', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const env = makeFakeEnv({ cwd: tmp.root, env: GIT_IDENTITY });
+      await init(env, { root: tmp.root, profile: 'para', harness: 'none' });
+      const store: Store = { root: tmp.root, config: await readConfig(tmp.root) };
+      const outcome = await update(env, store);
+      expect(outcome.exitCode).toBe(ExitCode.Ok);
+      expect(outcome.data?.changed).toEqual([]);
+      expect(existsSync(path.join(tmp.root, 'CLAUDE.md'))).toBe(false);
     } finally {
       await tmp.cleanup();
     }

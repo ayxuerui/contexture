@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { hermeticGitEnv } from '../helpers/git-env.js';
@@ -50,12 +50,13 @@ describe('adapters (real CLI)', () => {
     try {
       const env = hermeticGitEnv();
       await runCli(['init'], { cwd: tmp.root, env });
-      // Generate harness state in the main tree, but never commit it — a
-      // session worktree only ever carries tracked, committed content.
-      await runCli(['adapters', 'generate'], { cwd: tmp.root, env });
 
       const start = JSON.parse((await runCli(['session', 'start', '--json'], { cwd: tmp.root, env })).stdout);
       const worktree: string = start.data.worktree;
+      // init commits CLAUDE.md (init-generates-harness-adapter-output), so the
+      // worktree carries it. Remove it: what this proves is that verify passes
+      // with no harness entry file present, not that one is never committed.
+      await rm(path.join(worktree, 'CLAUDE.md'));
 
       const { existsSync } = await import('node:fs');
       expect(existsSync(path.join(worktree, 'CLAUDE.md'))).toBe(false);

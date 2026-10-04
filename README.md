@@ -27,15 +27,12 @@ Running an agent harness in a container? [contexture-images](https://github.com/
 ```sh
 mkdir my-store && cd my-store
 ctxr init
-ctxr adapters generate   # writes the harness entry file (CLAUDE.md) and its permission config
 ```
 
 `ctxr init` asks two questions, then creates the git repository (if there isn't one), scaffolds the store, and commits it:
 
 - **Which taxonomy profile?** `para` (Projects / Areas / Resources / Archives — the default), `zettelkasten` (no layers at all; structure emerges from links), or `diataxis` (Tutorials / How-to / Reference / Explanation). Or bring your own layer list with `--taxonomy <file.yaml>`.
-- **Which agent harnesses?** `claude-code` (default — its adapter generates `CLAUDE.md` plus a `.claude/settings.json` wiring up the write-gate hook) and/or `hermes-agent` (reads `AGENTS.md` directly, so it needs no entry file at all). `--harness none` opts out.
-
-Harness adapter output is the one part `init` doesn't write itself, which is why `ctxr adapters generate` is a separate line above; `ctxr update` regenerates it from then on.
+- **Which agent harnesses?** `claude-code` (default — its adapter generates `CLAUDE.md`, a one-line import of `AGENTS.md`) and/or `hermes-agent` (reads `AGENTS.md` directly, so it needs no entry file at all). `--harness none` opts out.
 
 Non-interactively, pass them as flags — nothing ever blocks on a prompt:
 
@@ -47,15 +44,13 @@ ctxr init --profile para --harness claude-code
 
 ## What a store looks like on disk
 
-After `ctxr init --profile para`, plus `ctxr adapters generate`:
+After `ctxr init --profile para`:
 
 ```
 contexture.yaml               single source of truth — what this store chose; the rest takes shipped defaults
 AGENTS.md                     generated entry document — six managed sections
 CLAUDE.md                     harness entry file; a one-line managed import of AGENTS.md
 .claude/
-  settings.json               PreToolUse hook wiring for the write gate
-  hooks/                      the write-gate shim
   skills/ -> ../.agents/skills   a bridge, so Claude Code auto-discovers the canonical skills
 .agents/skills/               THE canonical skills location, read natively by most harnesses
   ctxr-*/SKILL.md               15 contexture-owned skills (refreshed by `ctxr update`)
@@ -134,13 +129,11 @@ flowchart LR
 
   S --> C --> K --> P --> U --> R --> L
 
-  G1["write-gate hook"]
   G2["pre-commit · pre-push"]
-  C -.- G1
   U -.- G2
 
   classDef gate fill:#fbfbfb,stroke:#bbb,stroke-dasharray:4 3,color:#666
-  class G1,G2 gate
+  class G2 gate
 ```
 
 
@@ -186,7 +179,7 @@ Each item is validated and applied independently, so one bad path refuses that i
 
 They're ordinary `git` and `gh`. The CLI owns only what git cannot do — creating the worktree, applying validated note writes, running the health gates — and the sequencing, the confirmation gates, and the judgment live in the skills, where you can read and change them. That's why `ctxr session` has exactly three subcommands: `start`, `capture`, and `list`.
 
-Three mechanical backstops hold the line underneath all of it: the **pre-commit** hook runs `doctor --staged`; the **pre-push** hook refuses a push to the default branch (`CONTEXTURE_ALLOW_DEFAULT_BRANCH_PUSH=1` is the emergency override, for emergencies); and for Claude Code the **write-gate** PreToolUse hook denies any edit under the store root made outside the active session worktree.
+Two mechanical backstops hold the line underneath all of it: the **pre-commit** hook runs `doctor --staged`, and the **pre-push** hook refuses a push to the default branch (`CONTEXTURE_ALLOW_DEFAULT_BRANCH_PUSH=1` is the emergency override, for emergencies). Both are version-controlled git hooks, so they hold whichever harness, or human, does the writing.
 
 ## The knowledge loop
 
@@ -343,7 +336,7 @@ To pin a value against a future default change, declare it. Nothing rewrites wha
 | `rollup gather \| write \| stale` | Entity synthesis: enumerate, write, find what's out of date |
 | `publish gather \| new \| check` | Resolve a subject, scaffold a page, run the structural gates |
 | `session start \| capture \| list` | Session worktrees, and applying an approved capture proposal |
-| `adapters generate \| write-gate` | Regenerate harness outputs; the write-gate hook target |
+| `adapters generate` | Regenerate harness outputs (`ctxr update` does this too) |
 | `serve` | Read the store in a browser |
 | `update` | Bring contexture-owned files up to the installed version |
 | `version [--check]` | Report the installed version; `--check` compares it against the latest published release |
