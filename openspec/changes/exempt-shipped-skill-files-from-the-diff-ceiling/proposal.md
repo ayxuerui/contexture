@@ -59,8 +59,9 @@ is a ceiling that the product's own growth will keep hitting, not a one-off.
 
 Affected code: `staged.diff_size_ceiling` in `src/core/checks/write-lifecycle-checks.ts`, plus a function in
 `src/core/skills.ts` that answers "what bytes does this version ship for this path under the skills path", built
-on `renderSkills` and the vendored payload reader that already live there. Tests: the ceiling check gains its
-first direct tests (today none exist), and the integration suite that runs `ctxr init` is the end-to-end proof.
+on `renderSkills` and the vendored payload reader that already live there. Tests: the ceiling check's existing two tests in
+`write-lifecycle-checks.test.ts` gain one per new scenario, and the integration suite that runs `ctxr init` is the
+end-to-end proof.
 
 Affected stores: a store gains headroom and loses nothing. A commit that passed before passes now. A commit
 that was refused for size is accepted only where the lines left out are contexture's own shipped bytes. No
