@@ -282,9 +282,9 @@ const OrganizeSchema = z
 
 /**
  * harness-portability spec: the portable skill pack and the guidance
- * documents (a shipped baseline convention file, the operator's own
- * convention files, and the mission document) AGENTS.md's generated
- * sections read from and inline.
+ * documents (the operator's own convention files and the mission document)
+ * AGENTS.md's generated sections read from and inline. The shipped baseline
+ * is rendered into AGENTS.md directly, never read from this directory.
  *
  * `skills_path` and `guidance_path` are the only spellings. Their pre-rename
  * names `procedures_path` and `conventions_path` were accepted here as inputs
