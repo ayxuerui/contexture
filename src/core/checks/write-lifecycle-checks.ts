@@ -5,6 +5,7 @@ import { parseNoteText } from '../notes/parse.js';
 import { scanForSecrets } from '../security/secrets.js';
 import { validateFenceIntegrity } from '../fs/fenced-region.js';
 import { sanctionedPath } from '../write-lifecycle/path-gate.js';
+import { shippedSkillFiles } from '../skills.js';
 import { defineCheck } from './types.js';
 import type { Finding } from '../envelope.js';
 
@@ -152,6 +153,14 @@ export const stagedPathAllowlistCheck = defineCheck({
   },
 });
 
+/**
+ * exempt-shipped-skill-files-from-the-diff-ceiling: the ceiling bounds what an
+ * agent can stage unreviewed, and contexture's own writes are not that — a fresh
+ * `init` stages every owned and vendored skill in one commit. A staged file is
+ * left out of the count when its staged content is byte-identical to what the
+ * installed version ships for its path. Identity, not location: a file that
+ * differs by one byte, one that is not shipped, and every deletion count in full.
+ */
 export const stagedDiffSizeCeilingCheck = defineCheck({
   id: 'staged.diff_size_ceiling',
   title: 'Total staged diff size is under the configured ceiling',
@@ -159,20 +168,25 @@ export const stagedDiffSizeCeilingCheck = defineCheck({
   capability: 'write-lifecycle',
   scopes: ['staged'],
   async run(ctx) {
-    const total = (ctx.staged ?? []).reduce(
-      (sum, file) => sum + (file.addedLines ?? 0) + (file.removedLines ?? 0),
-      0,
-    );
+    const shipped = await shippedSkillFiles(ctx.config);
+    let total = 0;
+    let leftOut = 0;
+    for (const file of ctx.staged ?? []) {
+      const lines = (file.addedLines ?? 0) + (file.removedLines ?? 0);
+      if (file.status !== 'D' && file.content !== undefined && shipped.get(file.path) === file.content) leftOut += lines;
+      else total += lines;
+    }
     const ceiling = ctx.config.write_lifecycle.diff_size_ceiling_lines;
     if (total > ceiling) {
+      const note = leftOut > 0 ? ` (${leftOut} more changed lines are skill files identical to what this version ships, and are not counted)` : '';
       return {
         status: 'fail',
         findings: [
           {
             code: 'staged.diff_size_ceiling.exceeded',
             severity: 'error',
-            message: `Staged changes total ${total} changed lines, exceeding the configured ceiling of ${ceiling}.`,
-            details: { total, ceiling },
+            message: `Staged changes total ${total} changed lines, exceeding the configured ceiling of ${ceiling}${note}.`,
+            details: { total, ceiling, left_out: leftOut },
           },
         ],
       };
