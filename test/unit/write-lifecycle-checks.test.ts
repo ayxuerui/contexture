@@ -290,7 +290,9 @@ describe('stagedDiffSizeCeilingCheck leaves out files identical to what this ver
 
   it('follows the configured skills path', async () => {
     const moved = { harness: { skills_path: '.agents/skills/', guidance_path: 'guidance/', convention_max_bytes: 32768 } };
-    const atMoved = shippedFile({ path: `.agents/skills/${owned.file}/SKILL.md` });
+    // A skill body may name the skills path, so what ships to a moved path is rendered against that path.
+    const renderedThere = renderSkills({ ...config, ...moved }).find((s) => s.file === owned.file)!.content;
+    const atMoved = shippedFile({ path: `.agents/skills/${owned.file}/SKILL.md`, content: renderedThere, addedLines: lineCount(renderedThere) });
     expect((await run([atMoved], moved)).status).toBe('pass');
     expect((await run([atMoved])).status).toBe('fail'); // the default path is not where it ships to
   });
