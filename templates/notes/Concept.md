@@ -1,7 +1,8 @@
 ---
 date_created: "{{date}}"
 title: "{{title}}"
-tags: []
+tags:
+  - Concept
 ---
 # {{title}}
 

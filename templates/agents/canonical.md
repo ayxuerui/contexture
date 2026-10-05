@@ -14,6 +14,8 @@ The worktree step is why a command run inside a session worktree operates on tha
 
 A new note starts from a template under `__TEMPLATES_PATH__`, not from a blank file and not by copying whatever sibling happens to be nearby. Substitute `{{title}}` and `{{date}}` as you write it — no command expands them, and a note that lands with one still in it is reported by `ctxr lint`. A template is never a note: nothing under that path is catalogued, graphed, or retrieved. Add your own kinds there alongside the shipped ones; contexture only ever rewrites the ones it delivered.
 
+Every shipped template except the base, `Note`, stamps the kind it is for into the note's `tags`, so your own search can find every note of a kind. contexture never reads, checks, or selects by that field. A kind you cut from the base should stamp its own name the same way, and any further tags are this store's own.
+
 ### Write path
 
 Every write to this store happens inside a session worktree, never directly on the default branch: `ctxr session start` creates one, and the work stays there for as long as the session runs. When the operator asks to wrap up, `ctxr-submit` validates with `ctxr doctor`, commits, pushes, and opens (or reports how to open) a pull request — that request is what triggers it, not having finished a piece of work. Do not edit files in the store root directly.

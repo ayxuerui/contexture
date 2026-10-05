@@ -1,15 +1,15 @@
 ## 1. Templates
 
-- [ ] 1.1 `templates/notes/Concept.md`: replace `tags: []` with a block sequence naming `Concept`, spelled like the other kinds (`tags:` then `  - Concept`). Leave `templates/notes/Note.md` as `tags: []`.
-- [ ] 1.2 `test/unit/note-templates.test.ts`: add a test that the base's field is the empty list and every other packaged template's field is a block sequence naming exactly its own template name. Keep the existing spelling test.
+- [x] 1.1 `templates/notes/Concept.md`: replace `tags: []` with a block sequence naming `Concept`, spelled like the other kinds (`tags:` then `  - Concept`). Leave `templates/notes/Note.md` as `tags: []`.
+- [x] 1.2 `test/unit/note-templates.test.ts`: add a test that the base's field is the empty list and every other packaged template's field is a block sequence naming exactly its own template name. Keep the existing spelling test.
 
 ## 2. Entry document
 
-- [ ] 2.1 `templates/agents/canonical.md`, "Note templates": add that each shipped template other than the base stamps the kind it is for into the note's `tags`, that contexture never reads, validates, or selects by that field (it is there for the store's own search), that a kind cut from the base should stamp its own name the same way, and that further tags are the store's. No tier words; check with `grep -n -i -w -E 'personal|private|public|shared|internal|team|confidential' templates/agents/canonical.md`.
-- [ ] 2.2 `test/unit/agents-doc.test.ts`: update the canonical-section golden, and assert the section says contexture never reads the field.
+- [x] 2.1 `templates/agents/canonical.md`, "Note templates": add that each shipped template other than the base stamps the kind it is for into the note's `tags`, that contexture never reads, validates, or selects by that field (it is there for the store's own search), that a kind cut from the base should stamp its own name the same way, and that further tags are the store's. No tier words; check with `grep -n -i -w -E 'personal|private|public|shared|internal|team|confidential' templates/agents/canonical.md`.
+- [x] 2.2 `test/unit/agents-doc.test.ts`: update the canonical-section golden, and assert the section says contexture never reads the field.
 
 ## 3. Verification
 
-- [ ] 3.1 `npm run typecheck`, `npm run build`, and `npx vitest run` pass.
-- [ ] 3.2 On a scratch store initialized before the change: `ctxr update` reports `.contexture/templates/Concept.md` and `AGENTS.md` changed, the installed Concept template names its kind, and a second update reports nothing changed.
-- [ ] 3.3 `openspec validate every-template-stamps-its-kind --strict` passes.
+- [x] 3.1 `npm run typecheck`, `npm run build`, and `npx vitest run` pass.
+- [x] 3.2 On a scratch store initialized before the change: `ctxr update` reports `.contexture/templates/Concept.md` and `AGENTS.md` changed, the installed Concept template names its kind, and a second update reports nothing changed.
+- [x] 3.3 `openspec validate every-template-stamps-its-kind --strict` passes.
