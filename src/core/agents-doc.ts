@@ -69,7 +69,9 @@ function collapseNestedPrefixes(prefixes: readonly string[]): string[] {
 export function renderLegRoutingSection(config: StoreConfig): string[] {
   const exclusions = collapseNestedPrefixes(excludedPrefixesFor(config));
   return substituteBlock(
-    agentsTemplate('retrieval-leg-routing').replaceAll('__GRAPH_DOCUMENT_PATH__', GRAPH_DOCUMENT_RELATIVE_PATH),
+    agentsTemplate('retrieval-leg-routing')
+      .replaceAll('__GRAPH_DOCUMENT_PATH__', GRAPH_DOCUMENT_RELATIVE_PATH)
+      .replaceAll('__CAPTURE_ROOT__', config.ingest.capture_root),
     '__EXCLUSION_PATHS__',
     [exclusions.map((prefix) => `\`${prefix}\``).join(', ')],
   ).split('\n');
