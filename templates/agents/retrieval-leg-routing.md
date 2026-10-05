@@ -36,5 +36,11 @@ __EXCLUSION_PATHS__
 
 Feed anything it finds back in as `--seed` to pick the pass up again from there.
 
+Those exclusions are for finding knowledge. Captures under `__CAPTURE_ROOT__` are left out because they
+are provenance, not notes, so a search scoped this way never finds one. When the question is whether
+the store already holds some material — a document, a meeting, a thread — search `__CAPTURE_ROOT__`
+directly, by content and by the `capture_file` a capture names. Finding nothing in the notes is not
+evidence that it was never captured.
+
 There is no `ctxr search` command. Nothing here takes a free-text query, and no result carries a
 relevance score. Ranked or semantic search is deferred to a future version — do not look for one.

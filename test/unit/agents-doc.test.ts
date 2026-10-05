@@ -86,6 +86,17 @@ describe('renderLegRoutingSection', () => {
   });
 });
 
+describe('renderLegRoutingSection: finding a capture', () => {
+  it('points the "is this already captured" question at the configured capture root', () => {
+    const lines = renderLegRoutingSection(
+      makeConfig({ ingest: { inbox_path: 'incoming/new/', capture_root: 'incoming/', tracking_params: [] } }),
+    ).join('\n');
+    expect(lines).toMatch(/already holds some material[^]*search `incoming\/`\s+directly/);
+    expect(lines).toContain('`capture_file`');
+    expect(lines).not.toContain('__CAPTURE_ROOT__');
+  });
+});
+
 describe('buildAgentsLegRoutingSection', () => {
   it('writes a fenced section into AGENTS.md at the store root', async () => {
     const tmp = await makeTmpDir();
@@ -521,6 +532,12 @@ describe('exact rendered output', () => {
       "`.contexture/`, `.worktrees/`, `catalog/`, `guidance/`, `identity/`, `publish/`, `skills/`",
       "",
       "Feed anything it finds back in as `--seed` to pick the pass up again from there.",
+      "",
+      "Those exclusions are for finding knowledge. Captures under `raw/` are left out because they",
+      "are provenance, not notes, so a search scoped this way never finds one. When the question is whether",
+      "the store already holds some material — a document, a meeting, a thread — search `raw/`",
+      "directly, by content and by the `capture_file` a capture names. Finding nothing in the notes is not",
+      "evidence that it was never captured.",
       "",
       "There is no `ctxr search` command. Nothing here takes a free-text query, and no result carries a",
       "relevance score. Ranked or semantic search is deferred to a future version — do not look for one.",

@@ -47,7 +47,9 @@ markdown, not at the bytes.
 ## 4. Check before you write it into the inbox
 
 If the material may already be in the store, run `ctxr source check <path> --source-id <id>` and read
-the verdict before going further. Re-capturing something the store already holds is how one source ends
+the verdict before going further. That check compares material you already hold; before fetching
+anything, search `__CAPTURE_ROOT__` for it by content and by `capture_file`. The retrieval pass leaves
+that directory out, so a search scoped by it will never find a capture. Re-capturing something the store already holds is how one source ends
 up cited twice under two identities.
 
 Then write the file into `__INBOX_PATH__`. Nothing else — no note, no edit to an existing note, no

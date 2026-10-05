@@ -191,7 +191,11 @@ const CAPTURE: SkillSeed = {
   name: 'Capture',
   description:
     'Bring material from outside the store into the inbox as a faithful record carrying its source identity, then hand off to ingest.',
-  body: (config) => skillTemplate('ctxr-capture').replaceAll('__INBOX_PATH__', config.ingest.inbox_path).split('\n'),
+  body: (config) =>
+    skillTemplate('ctxr-capture')
+      .replaceAll('__INBOX_PATH__', config.ingest.inbox_path)
+      .replaceAll('__CAPTURE_ROOT__', config.ingest.capture_root)
+      .split('\n'),
 };
 
 const INGEST_ORCHESTRATION: SkillSeed = {

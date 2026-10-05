@@ -125,6 +125,16 @@ describe('SKILLS', () => {
   });
 });
 
+describe('ctxr-capture: looking for an existing capture', () => {
+  it('sends the search to the configured capture root, which retrieval leaves out', () => {
+    const capture = rendered(makeConfig({ ingest: { inbox_path: 'incoming/new/', capture_root: 'incoming/', tracking_params: [] } }))[
+      'ctxr-capture'
+    ];
+    expect(capture).toMatch(/before fetching\s+anything, search `incoming\/` for it by content and by `capture_file`/);
+    expect(capture).not.toContain('__CAPTURE_ROOT__');
+  });
+});
+
 describe('owned-skills-expansion: each skill carries its load-bearing rule (task 2.1)', () => {
   const skills = rendered();
 
