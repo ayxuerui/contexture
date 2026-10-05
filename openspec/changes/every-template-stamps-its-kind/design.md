@@ -7,10 +7,10 @@
 **Goals:**
 
 - One stated rule for which templates stamp a kind, so no template's field looks accidental.
-- The entry document tells the agent what the field is for and that contexture never reads it.
+- The entry document tells the agent to keep the field and search by it, and that no command filters by it.
 - No disruption to stores that rely on the field.
 
-**Non-Goals:** see the proposal. In short: nothing reads, validates, or selects by the field.
+**Non-Goals:** see the proposal. In short: no `ctxr` command reads, validates, or selects by the field.
 
 ## Decisions
 
@@ -23,7 +23,7 @@
 1. **The decay evidence is about something else.** The tags #92 shows rotting are a store's own vocabulary. The seeded kinds are written once, at the moment the kind is certain, and a note rarely changes kind afterwards. They are the accurate part of the field.
 2. **It is the store's own search working.** Kind is the one natural question no computed leg answers. With the kind stamped, it is a single content match; leg 3 is the design's answer for exactly this kind of question, and the field is what gives it something to match.
 3. **Removing it moves the cost downstream.** pkm requires the field on every note. Without the seed its agents must remember to add it, and the expected result is more untagged notes, which is the failure #92 describes.
-4. **The access-axes comparison does not hold.** Those fields claimed contexture would enforce something (visibility, disclosure) and it did not. This field claims nothing about contexture's behavior; once the entry document says contexture never reads it, every shipped artifact describes contexture accurately.
+4. **The access-axes comparison does not hold.** Those fields claimed contexture would enforce something (visibility, disclosure) and it did not. This field claims nothing about contexture's behavior; once the entry document says no `ctxr` command filters by it, every shipped artifact describes contexture accurately.
 
 *What would flip it:* seeded kinds observed going stale in a real store (for example, notes whose stamped kind is wrong for what they became), or a decision that contexture never authors frontmatter beyond the schema's required keys.
 
@@ -49,8 +49,12 @@ The field stays present on the base so a store cutting a kind from it has the sl
 
 The six templates are refreshed unconditionally by `ctxr update` (harness-portability, "A shipped note template is refreshed unconditionally"), and the canonical `AGENTS.md` section is re-rendered on every update. So a store picks up both on its next update, and a second update writes nothing. Notes already written are untouched.
 
+### D6 — Say who doesn't read the field, and who does
+
+The first wording in the entry document was "contexture never reads, checks, or selects by that field". In `AGENTS.md` the reader is the agent, and that sentence reads as "this field does not matter", which invites the agent to drop it. The opposite is intended: the agent is the field's one reader. So the entry document names the CLI (`ctxr`) as what does not act on it, and tells the agent to keep the field and search by it. The requirement and its scenario use "`ctxr` command" for the same reason, instead of "contexture component".
+
 ## Risks / Trade-offs
 
-- [The field is still contexture-authored and unvalidated, so a store could misuse it] → The entry document says plainly that contexture never reads it and the store owns any further tags. That is the whole extent of contexture's claim.
+- [The field is still contexture-authored and unvalidated, so a store could misuse it] → The entry document says plainly that no `ctxr` command filters by it and the store owns any further tags. That is the whole extent of contexture's claim.
 - [Concept notes written before this change have no kind tag, so "every Concept note" misses them] → Accepted. contexture does not rewrite note frontmatter; a store that wants them tagged can do it in one pass with its own tools.
 - [An older CLI's `update` restores the old Concept template] → The same exposure as any template change; the release-propagation chain handles it.

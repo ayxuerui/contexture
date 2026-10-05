@@ -13,7 +13,7 @@ What is missing is the rule and the statement, not the field.
 ## What Changes
 
 - **Concept** stamps its kind like the other entity and work templates. **Note**, the base a store copies to cut its own kinds, keeps the field present and empty, because the base is for no kind in particular. That is the rule: every packaged template other than the base names its own kind; the base carries the field empty.
-- **The generated `AGENTS.md`**, in its "Note templates" subsection, says what the field is: it records the kind a note was started from; contexture never reads, validates, or selects by it; it is there so the store's own search can find every note of a kind. A kind the store cuts from the base should stamp its own name the same way, and any further tags the store's conventions call for are the store's.
+- **The generated `AGENTS.md`**, in its "Note templates" subsection, tells the agent what the field is for: keep it when starting a note, and use it to find every note of a kind with its own search, since no `ctxr` command filters by it. A kind the store cuts from the base should stamp its own name the same way, and any further tags the store's conventions call for are the store's.
 - **harness-portability**'s library requirement states the rule, without naming the key (the field is the store's, so no spec depends on its name).
 
 ## Capabilities

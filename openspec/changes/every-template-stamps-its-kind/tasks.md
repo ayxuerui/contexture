@@ -5,8 +5,8 @@
 
 ## 2. Entry document
 
-- [x] 2.1 `templates/agents/canonical.md`, "Note templates": add that each shipped template other than the base stamps the kind it is for into the note's `tags`, that contexture never reads, validates, or selects by that field (it is there for the store's own search), that a kind cut from the base should stamp its own name the same way, and that further tags are the store's. No tier words; check with `grep -n -i -w -E 'personal|private|public|shared|internal|team|confidential' templates/agents/canonical.md`.
-- [x] 2.2 `test/unit/agents-doc.test.ts`: update the canonical-section golden, and assert the section says contexture never reads the field.
+- [x] 2.1 `templates/agents/canonical.md`, "Note templates": add that each shipped template other than the base stamps the kind it is for into the note's `tags`, that the agent should keep it and use it to find notes of a kind with its own search because no `ctxr` command filters by it, that a kind cut from the base should stamp its own name the same way, and that further tags are the store's. No tier words; check with `grep -n -i -w -E 'personal|private|public|shared|internal|team|confidential' templates/agents/canonical.md`.
+- [x] 2.2 `test/unit/agents-doc.test.ts`: update the canonical-section golden, and assert the section tells the agent to keep the field and search by it, and that no command filters by it.
 
 ## 3. Verification
 
