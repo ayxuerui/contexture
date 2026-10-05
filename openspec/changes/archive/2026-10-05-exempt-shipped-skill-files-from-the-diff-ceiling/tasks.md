@@ -41,5 +41,5 @@
       `npx vitest run test/integration --exclude '**/.claude/**'`, both green.
 - [x] 4.3 `openspec validate exempt-shipped-skill-files-from-the-diff-ceiling --strict` and
       `openspec validate --specs` clean.
-- [ ] 4.4 Mark the ceiling Risk resolved in `ship-a-cross-model-second-opinion-skill`'s design.md and
+- [x] 4.4 Mark the ceiling Risk resolved in `ship-a-cross-model-second-opinion-skill`'s design.md and
       unblock its tasks 4.3 to 4.6, if that change is not yet archived.
