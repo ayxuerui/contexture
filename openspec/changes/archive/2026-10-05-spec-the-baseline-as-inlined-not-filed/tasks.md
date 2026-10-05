@@ -17,10 +17,10 @@
 ## 2. Validate and sync the spec
 
 - [x] 2.1 `openspec validate spec-the-baseline-as-inlined-not-filed --strict` passes.
-- [ ] 2.2 After archive (or `openspec-sync-specs`), `grep -n "delivered into the guidance directory"
+- [x] 2.2 After archive (or `openspec-sync-specs`), `grep -n "delivered into the guidance directory"
       openspec/specs/harness-portability/spec.md` prints nothing, and `grep -n "rendered into the entry
       document, not delivered as a file" openspec/specs/harness-portability/spec.md` prints one line.
-- [ ] 2.3 `grep -rn "SHALL carry a contexture-owned baseline convention file\|baseline-conventions.md"
+- [x] 2.3 `grep -rn "SHALL carry a contexture-owned baseline convention file\|baseline-conventions.md"
       openspec/specs/` prints nothing, and `openspec validate --specs --strict` passes.
 
 ## 3. Correct the prose that still describes a baseline file
