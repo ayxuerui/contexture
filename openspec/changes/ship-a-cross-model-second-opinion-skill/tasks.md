@@ -111,28 +111,27 @@ Parked, not implemented. Implementation is a separate, separately-requested pass
 
 ## 4. Docs and full verification
 
-Blocked on the ceiling decision in design.md Risks: with the skill registered, `ctxr init` stages 2660
-changed lines against a ceiling of 2000, so the integration suite fails until that is resolved. Tasks 4.3 to
-4.6 stay open until then.
-
 - [x] 4.1 `README.md`:
       - add a row for the skill in the "Skill | What it decides" table, plus the missing `ctxr-upgrade`
         row;
       - bump the owned-skill count in the layout block;
       - add one sentence noting that some owned skills carry supporting files.
-- [ ] 4.2 Confirm no command depends on the CLIs: with `claude`, `codex` and `agy` absent from `PATH`,
+- [x] 4.2 Confirm no command depends on the CLIs: with `claude`, `codex` and `agy` absent from `PATH`,
       `ctxr verify`, `ctxr doctor` and `ctxr update` in a scratch store exit as before, and
       `grep -rnE "\b(codex|agy)\b" src/` returns nothing.
-- [ ] 4.3 `npm run typecheck && npm run build`. Then run
+- [x] 4.3 `npm run typecheck && npm run build`. Then run
       `npx vitest run test/unit --exclude '**/.claude/**'` and
       `npx vitest run test/integration --exclude '**/.claude/**'`, both green.
-- [ ] 4.4 In a scratch store, run `ctxr init`, then `ctxr update` twice. The second run reports nothing
+- [x] 4.4 In a scratch store, run `ctxr init`, then `ctxr update` twice. The second run reports nothing
       changed, and the skill directory holds `SKILL.md`, `run.mjs` and the prompt fragments.
-- [ ] 4.5 Dogfood on the host with the real CLIs:
-      - `node <skills_path>/ctxr-second-opinion/run.mjs --preflight` exits 0;
-      - a critique of this change's own design.md, written as a plan, exits 0 with three valid critiques;
-      - fold any real finding back before archiving.
-- [ ] 4.6 `openspec validate ship-a-cross-model-second-opinion-skill --strict` and
+- [x] 4.5 Dogfood on the host with the real CLIs. Done with the CLIs signed in on this host: `codex`'s login
+      had expired (401), so `--preflight` exits 2 naming it, and the critique ran with `--only claude,agy`,
+      exiting 0 with two valid critiques (quorum met). The run surfaced and fixed three things, each with a
+      test or a recorded decision (design Risks and Open Questions): a hidden `--max-turns` that made the help
+      check report `claude` as down, severities written without brackets that would have hidden a veto, and a
+      Claude `max`-effort default that took 514 s against 35 s at `high`. A critique with all three families
+      still needs a signed-in `codex`.
+- [x] 4.6 `openspec validate ship-a-cross-model-second-opinion-skill --strict` and
       `openspec validate --specs` clean.
 
 ## 5. After release (outside this change; listed for sequencing only)

@@ -82,8 +82,11 @@ nothing in the plan, so it was written without reading it; it does not count. **
 two valid critiques: say so at the top of your answer and do not call anything a consensus.
 
 Add `--tier fast` to drop each family to a cheaper model, for a plan that is small and easy to redo. The
-default tier is right for anything the operator will act on. A default critique takes one to three minutes
-and costs roughly thirty to eighty cents.
+default tier is right for anything the operator will act on. A default critique usually takes under a minute
+and costs a few tens of cents. Claude's highest effort setting (`CTXR_SECOND_OPINION_CLAUDE_EFFORT=max`) is
+a deliberate deep pass, not a default: on the same short plan it took over eight minutes where the default
+took half a minute, and it is the one setting that can reach the runner's ten-minute limit. Start such a run
+in the background and tell the operator it is under way.
 
 ## 4. Synthesize on the letters first
 
@@ -165,7 +168,7 @@ include your own family, say so.
 - Do not poll from inside a critique to settle a quick doubt. If you want a gut check mid-critique, answer it
   yourself.
 - Model names change faster than releases. When a default is stale, set
-  `CTXR_SECOND_OPINION_CLAUDE_MODEL`, `CTXR_SECOND_OPINION_CODEX_EFFORT` or `CTXR_SECOND_OPINION_AGY_MODEL`
-  in the environment for the run. Nothing about the lineup lives in the store's configuration.
+  `CTXR_SECOND_OPINION_CLAUDE_MODEL`, `CTXR_SECOND_OPINION_CLAUDE_EFFORT`, `CTXR_SECOND_OPINION_CODEX_EFFORT`
+  or `CTXR_SECOND_OPINION_AGY_MODEL` in the environment for the run. Nothing about the lineup lives in the store's configuration.
 - The scratch files under the output directory hold each reviewer's raw output and are safe to delete when the
   operator has the synthesis. They can contain the plan, so do not commit them.
