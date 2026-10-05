@@ -37,7 +37,9 @@ const env = (name, fallback) => process.env[`CTXR_SECOND_OPINION_${name}`] || fa
 function tiers() {
   return {
     strong: {
-      claude: { model: env('CLAUDE_MODEL', 'opus'), effort: env('CLAUDE_EFFORT', 'max') },
+      // `high`, not `max`: the same two-and-a-half-thousand-character plan took Claude 35 s at `high` and 514 s at
+      // `max` (and once timed out at 280 s), with a valid critique both times. `max` stays one variable away.
+      claude: { model: env('CLAUDE_MODEL', 'opus'), effort: env('CLAUDE_EFFORT', 'high') },
       codex: { effort: env('CODEX_EFFORT', 'xhigh') },
       agy: { model: env('AGY_MODEL', 'Gemini 3.1 Pro (High)') },
     },
@@ -49,9 +51,13 @@ function tiers() {
   };
 }
 
-/** The flags this runner passes, so preflight can confirm each CLI still accepts them. */
+/**
+ * The flags this runner passes, so preflight can confirm each CLI's --help still lists them. Only flags
+ * the help text documents belong here: `claude` still accepts a hidden --max-turns, but with `--tools ""`
+ * there is no tool turn to bound, so it is not passed at all.
+ */
 const FLAGS_USED = {
-  claude: { helpArgs: ['--help'], flags: ['--max-turns', '--tools', '--model', '--effort', '--no-session-persistence', '--disable-slash-commands', '--output-format'] },
+  claude: { helpArgs: ['--help'], flags: ['--tools', '--model', '--effort', '--no-session-persistence', '--disable-slash-commands', '--output-format'] },
   codex: { helpArgs: ['exec', '--help'], flags: ['--skip-git-repo-check', '--sandbox', '--ephemeral', '--color', '--config'] },
   agy: { helpArgs: ['--help'], flags: ['--print', '--sandbox', '--disable-slash-commands', '--model'] },
 };
@@ -59,7 +65,7 @@ const FLAGS_USED = {
 class UsageError extends Error {}
 
 function parseArgs(argv) {
-  const opts = { mode: 'critique', tier: 'strong', timeout: 240, only: null, lens: null, out: null, planFile: null, promptFile: null, preflight: false, noWrap: false, seed: null };
+  const opts = { mode: 'critique', tier: 'strong', timeout: 600, only: null, lens: null, out: null, planFile: null, promptFile: null, preflight: false, noWrap: false, seed: null };
   const takesValue = new Set(['--mode', '--tier', '--timeout', '--only', '--lens', '--out', '--plan-file', '--prompt-file', '--seed']);
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -146,7 +152,7 @@ const firstLines = (text, n) => text.trim().split('\n').slice(0, n).join(' | ').
 function buildInvocation(cli, prompt, tier) {
   const t = tiers()[tier][cli];
   if (cli === 'claude') {
-    const args = ['-p', '--max-turns', '1', '--tools', '', '--model', t.model, '--no-session-persistence', '--disable-slash-commands', '--output-format', 'json'];
+    const args = ['-p', '--tools', '', '--model', t.model, '--no-session-persistence', '--disable-slash-commands', '--output-format', 'json'];
     if (t.effort) args.push('--effort', t.effort);
     return { cmd: 'claude', args, stdin: prompt };
   }
@@ -209,7 +215,8 @@ export function parseCritique(text) {
   const findings = [];
   const blocks = text.split(/^### F\d+\b/m).slice(1);
   for (const block of blocks) {
-    const head = /^\s*\[(critical|major|minor)\]\s*(?:confidence\s*=\s*([01](?:\.\d+)?))?/i.exec(block);
+    // Brackets around the severity are what the contract asks for, and models drop them: accept both.
+    const head = /^\s*\[?(critical|major|minor)\]?\s*(?:confidence\s*[=:]\s*([01](?:\.\d+)?))?/i.exec(block);
     const evidence = /^Evidence:\s*(.+)$/im.exec(block)?.[1] ?? '';
     findings.push({
       severity: head?.[1]?.toLowerCase() ?? null,

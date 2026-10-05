@@ -30,7 +30,7 @@ if (!isHelp) {
   prior.push({ args, stdin, cwd: process.cwd(), ppid: process.ppid });
   fs.writeFileSync(file, JSON.stringify(prior));
 }
-if (isHelp) { console.log(behavior.help ?? '--max-turns --tools --model --effort --no-session-persistence --disable-slash-commands --output-format --skip-git-repo-check --sandbox --ephemeral --color --config --print'); process.exit(0); }
+if (isHelp) { console.log(behavior.help ?? '--tools --model --effort --no-session-persistence --disable-slash-commands --output-format --skip-git-repo-check --sandbox --ephemeral --color --config --print'); process.exit(0); }
 if (behavior.kind === 'exit') { console.error(behavior.stderr ?? 'boom'); process.exit(behavior.code ?? 1); }
 if (behavior.kind === 'hang') { setInterval(() => {}, 1000); return; }
 const text = behavior.text;
@@ -71,13 +71,13 @@ afterEach(async () => {
 
 type Behavior = Record<string, unknown>;
 
-function run(args: string[], behaviors: Record<string, Behavior> = {}, opts: { input?: string } = {}) {
+function run(args: string[], behaviors: Record<string, Behavior> = {}, opts: { input?: string; env?: Record<string, string> } = {}) {
   // HOME points at the temp dir so the runner's ~/.local/bin PATH fallback can never reach a real CLI.
   const env: NodeJS.ProcessEnv = { ...process.env, HOME: tmp.root, PATH: `${binDir}${path.delimiter}${process.env.PATH ?? ''}`, STUB_DIR: logDir };
   for (const cli of ['claude', 'codex', 'agy']) {
     env[`STUB_${cli.toUpperCase()}`] = JSON.stringify(behaviors[cli] ?? { kind: 'ok', text: critique(ROLE_OF[cli]!) });
   }
-  const result = spawnSync('node', [RUNNER, ...args], { env, encoding: 'utf8', input: opts.input ?? '' });
+  const result = spawnSync('node', [RUNNER, ...args], { env: { ...env, ...opts.env }, encoding: 'utf8', input: opts.input ?? '' });
   return { status: result.status, stdout: result.stdout, stderr: result.stderr, pid: result.pid };
 }
 
@@ -147,9 +147,28 @@ describe('critique: isolation and delivery', () => {
       expect(c.cwd).not.toBe(process.cwd());
       expect(c.cwd).toMatch(/ctxr-second-opinion-/);
     }
-    expect(claude.args).toEqual(expect.arrayContaining(['--tools', '', '--max-turns', '1', '--no-session-persistence']));
+    expect(claude.args).toEqual(expect.arrayContaining(['--tools', '', '--no-session-persistence']));
+    expect(claude.args).not.toContain('--max-turns'); // hidden from --help, and moot with no tools
     expect(codex.args).toEqual(expect.arrayContaining(['--sandbox', 'read-only', '--ephemeral', '--skip-git-repo-check']));
     expect(agy.args).toEqual(expect.arrayContaining(['--sandbox', '--disable-slash-commands']));
+  });
+});
+
+describe('critique: model and effort defaults', () => {
+  it('asks claude for high effort by default, and max only when the environment says so', () => {
+    run(critiqueArgs());
+    const dflt = calls('claude')[0]!.args;
+    expect(dflt[dflt.indexOf('--effort') + 1]).toBe('high');
+    run(['--mode', 'critique', '--plan-file', planFile(), '--out', path.join(tmp.root, 'deep')], {}, { env: { CTXR_SECOND_OPINION_CLAUDE_EFFORT: 'max' } });
+    const deep = calls('claude')[1]!.args;
+    expect(deep[deep.indexOf('--effort') + 1]).toBe('max');
+  });
+
+  it('passes no effort to claude at the fast tier, and the cheaper model', () => {
+    run(critiqueArgs(['--tier', 'fast']));
+    const args = calls('claude')[0]!.args;
+    expect(args).not.toContain('--effort');
+    expect(args[args.indexOf('--model') + 1]).toBe('haiku');
   });
 });
 
@@ -254,6 +273,14 @@ describe('critique: failure, blindness, quorum', () => {
     run(critiqueArgs(), { codex: { kind: 'ok', text: critique('skeptic', 'S2', 'REJECT', 'critical') } });
     const codex = manifest().critiques.find((c: { cli: string }) => c.cli === 'codex');
     expect(codex).toMatchObject({ status: 'valid', verdict: 'REJECT', veto: true });
+  });
+
+  it('reads a finding whose severity has no brackets, so a critical rejection still counts as a veto', () => {
+    // Seen from a real critic: `### F1 critical confidence=0.9`, not `### F1 [critical] confidence=0.9`.
+    const unbracketed = critique('skeptic', 'S2', 'REJECT', 'critical').replace('[critical] confidence=0.7', 'critical confidence=0.9');
+    expect(unbracketed).toContain('### F1 critical confidence=0.9');
+    run(critiqueArgs(), { codex: { kind: 'ok', text: unbracketed } });
+    expect(manifest().critiques.find((c: { cli: string }) => c.cli === 'codex')).toMatchObject({ status: 'valid', verdict: 'REJECT', veto: true });
   });
 
   it('exits with the partial-result status when fewer than two critiques are valid', () => {

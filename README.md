@@ -58,7 +58,7 @@ CLAUDE.md                     harness entry file; a one-line managed import of A
   hooks/                      the write-gate shim
   skills/ -> ../.agents/skills   a bridge, so Claude Code auto-discovers the canonical skills
 .agents/skills/               THE canonical skills location, read natively by most harnesses
-  ctxr-*/SKILL.md               15 contexture-owned skills (refreshed by `ctxr update`)
+  ctxr-*/SKILL.md               16 contexture-owned skills (refreshed by `ctxr update`)
   frontend-design/, eli5/       vendored third-party skills, with licenses and provenance
 .contexture/guidance/
   house-conventions.md        your store's own rules — inlined into AGENTS.md verbatim
@@ -97,7 +97,7 @@ Two distinctions make the rest of this readable:
 
 **`AGENTS.md`**, with six managed sections: *Store fundamentals* (root resolution, the frontmatter schema, the write path), *Mission*, *Retrieval: which leg to use*, *Capturing and ingesting*, *Placing a new note* (rendered from your actual taxonomy layers), and *Store conventions*.
 
-**The skills**, installed as full copies at `.agents/skills/ctxr-<name>/SKILL.md`. That path is the cross-harness canonical location; a harness that reads its own branded directory instead gets that directory bridged to it (`.claude/skills/` is a symlink), so skill auto-discovery works with no wrapper and no second copy. A harness without auto-discovery reaches the same file by path from `AGENTS.md`. They're contexture-owned — refreshed by `ctxr update`, never hand-edited — and they're written against *your* store's configured taxonomy, so no shipped profile's layer names leak into them. Your own skills live alongside, untouched by sync.
+**The skills**, installed as full copies at `.agents/skills/ctxr-<name>/SKILL.md`. That path is the cross-harness canonical location; a harness that reads its own branded directory instead gets that directory bridged to it (`.claude/skills/` is a symlink), so skill auto-discovery works with no wrapper and no second copy. A harness without auto-discovery reaches the same file by path from `AGENTS.md`. They're contexture-owned — refreshed by `ctxr update`, never hand-edited — and they're written against *your* store's configured taxonomy, so no shipped profile's layer names leak into them. Your own skills live alongside, untouched by sync. An owned skill may carry files beside its `SKILL.md` — `ctxr-second-opinion` ships the script that runs its reviewers — and update keeps that whole directory matching the package.
 
 | Skill | What it decides |
 | --- | --- |
@@ -115,6 +115,8 @@ Two distinctions make the rest of this readable:
 | `ctxr-submit` | Everything up to and including opening the pull request |
 | `ctxr-land` | Merging after review, and reclaiming the worktree |
 | `ctxr-session-capture` | What a finished session produced that is worth keeping |
+| `ctxr-upgrade` | Whether to upgrade the installed CLI now, and asking before it does |
+| `ctxr-second-opinion` | Whether a plan or a taste call needs three different model families, and how to weigh what they say |
 
 Your house rules go in `.contexture/guidance/house-conventions.md`. It's inlined into `AGENTS.md`'s *Store conventions* section in full, so it loads for every harness at the start of every session — there's no separate file an agent has to remember to open.
 
