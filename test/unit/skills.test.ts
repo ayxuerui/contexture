@@ -403,7 +403,12 @@ describe('owned-skills-expansion: each skill carries its load-bearing rule (task
     // and the step that verifies the page has to send somebody to open it --
     // that is the half no mechanical check can answer. Wrap-tolerant.
     expect(s).toMatch(/each end by naming the address `ctxr serve` answers for\s+this page/);
-    expect(s).toMatch(/Open it and look at the page before you hand it on/);
+    expect(s).toMatch(/Look at the page before you hand it on/);
+    // #120: the address may be unreachable from where the agent runs, so the
+    // skill names the local way to look, and the honest hand-off when it can't.
+    expect(s).toMatch(/start `ctxr serve` in the background, open the address it\s+prints followed by the page's route/);
+    expect(s).toMatch(/has not been checked\s+visually/);
+    expect(s).toMatch(/Never report a page as ready on the\s+strength of `ctxr publish check` alone/);
     // The address is time-bounded, and the successor travels with it.
     expect(s).toMatch(/stops answering the moment the worktree is reclaimed/);
     expect(s).toMatch(/Report the address you actually opened/);
