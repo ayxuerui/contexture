@@ -84,4 +84,57 @@ describe('non-interactive init', () => {
       await tmp.cleanup();
     }
   });
+
+  // init-generates-harness-adapter-output: the selected harnesses are wired in
+  // the bootstrap commit, not left for a first `ctxr update`.
+  it('--harness claude-code puts CLAUDE.md in the initial commit and creates no permission config', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const env = hermeticGitEnv();
+      const result = await runCli(['init', '--harness', 'claude-code', '--json'], { cwd: tmp.root, env });
+      expect(result.exitCode).toBe(0);
+      const created: string[] = JSON.parse(result.stdout).data.created;
+
+      expect(await readFile(path.join(tmp.root, 'CLAUDE.md'), 'utf8')).toContain('@AGENTS.md');
+      expect(created).toContain('CLAUDE.md');
+      const { stdout: tracked } = await execFileAsync('git', ['ls-files'], { cwd: tmp.root, env });
+      expect(tracked.split('\n')).toContain('CLAUDE.md');
+
+      // The claude-code permission config is cleanup-only: nothing to create.
+      expect(existsSync(path.join(tmp.root, '.claude/settings.json'))).toBe(false);
+      expect(created).not.toContain('.claude/settings.json');
+      expect(tracked).not.toContain('.claude/settings.json');
+
+      const { stdout: status } = await execFileAsync('git', ['status', '--porcelain'], { cwd: tmp.root, env });
+      expect(status).toBe('');
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('--harness hermes-agent bridges its skills and writes no entry file', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const env = hermeticGitEnv();
+      const result = await runCli(['init', '--harness', 'hermes-agent'], { cwd: tmp.root, env });
+      expect(result.exitCode).toBe(0);
+      expect(existsSync(path.join(tmp.root, 'CLAUDE.md'))).toBe(false);
+      expect(existsSync(path.join(tmp.root, '.hermes/skills'))).toBe(true);
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('--harness none writes no entry file and no harness directory', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const env = hermeticGitEnv();
+      const result = await runCli(['init', '--harness', 'none'], { cwd: tmp.root, env });
+      expect(result.exitCode).toBe(0);
+      expect(existsSync(path.join(tmp.root, 'CLAUDE.md'))).toBe(false);
+      expect(existsSync(path.join(tmp.root, '.claude'))).toBe(false);
+    } finally {
+      await tmp.cleanup();
+    }
+  });
 });

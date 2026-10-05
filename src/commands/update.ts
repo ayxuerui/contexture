@@ -13,7 +13,6 @@ import { worktreePathFor } from '../core/session.js';
 import type { MigratingStore, Store } from '../core/store.js';
 import { updateAdvisory } from '../core/version-check.js';
 import { CLI_VERSION } from '../version.js';
-import { generateAdapterOutputs } from './adapters-generate.js';
 
 export const requires: CommandRequires = { store: 'required' };
 
@@ -57,12 +56,10 @@ export async function execute(
   }
 
   const { changed, findings } = await reconcileStore(env, store.root, store.config);
-  const adapterFiles = await generateAdapterOutputs(env.git, store);
   const all = [
     ...new Set([
       ...(migrated ? [CONFIG_FILE_NAME] : []),
       ...changed,
-      ...adapterFiles.filter((f) => f.changed).map((f) => f.path),
     ]),
   ];
 

@@ -24,10 +24,10 @@ async function git(cwd: string, env: Record<string, string | undefined>, ...args
 }
 
 /**
- * A store with a bare remote, fully current and pushed: `init`, one `update`
- * (init does not run the adapters, so the first update legitimately writes
- * their outputs), then a commit pushed to origin. Commits skip the hook — this
- * is setup, and the hook's own behavior is tested elsewhere.
+ * A store with a bare remote, fully current and pushed: `init` (whose
+ * bootstrap commit already carries the adapter outputs), then a push to
+ * origin. Commits elsewhere skip the hook — this is setup, and the hook's own
+ * behavior is tested elsewhere.
  */
 async function pushedStore(): Promise<{ root: string; remote: string; env: Record<string, string | undefined>; cleanup: () => Promise<void> }> {
   const tmp = await makeTmpDir();
@@ -37,8 +37,6 @@ async function pushedStore(): Promise<{ root: string; remote: string; env: Recor
   await execFileAsync('mkdir', ['-p', root]);
   await git(tmp.root, env, 'init', '--bare', remote);
   await runCli(['init'], { cwd: root, env });
-  await runCli(['update'], { cwd: root, env });
-  await commitAll(root, env, 'initial store');
   const branch = (await git(root, env, 'symbolic-ref', '--short', 'HEAD')).trim();
   await git(root, env, 'remote', 'add', 'origin', remote);
   await git(root, env, 'push', '-q', '--no-verify', 'origin', branch);
