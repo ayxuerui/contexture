@@ -110,6 +110,11 @@ previewable address stops answering the moment the worktree is reclaimed — the
 Report the address you actually opened, and say which of the two it is, so nobody is handed a link
 that is about to change.
 
+Both addresses are full URLs when the store declares `serve.base_url` in `contexture.yaml`, and bare
+routes such as `/preview/…` when it does not. A bare route is not a link anyone else can open. Do not
+guess a host to put in front of it: hand on the route as it is, and tell the operator that declaring
+`serve.base_url` would make every address a command reports a link.
+
 ## 7. It's a page, not a note
 
 The published-pages location is excluded from retrieval by default — a page never becomes a source for
