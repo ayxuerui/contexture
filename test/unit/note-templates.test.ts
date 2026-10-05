@@ -142,6 +142,26 @@ describe('the packaged note-template library', () => {
     }
   });
 
+  // every-template-stamps-its-kind: one rule for the kind field, so no
+  // template's value looks accidental. The base is for no kind in particular.
+  it('stamps every template but the base with exactly its own kind; the base carries the field empty', () => {
+    for (const name of NAMES) {
+      const lines = packaged(name).split('\n');
+      const at = lines.findIndex((l) => l.startsWith('tags:'));
+      const values: string[] = [];
+      for (const line of lines.slice(at + 1)) {
+        if (!line.startsWith('  - ')) break;
+        values.push(line.slice(4));
+      }
+      if (name === BASE) {
+        expect(lines[at], name).toBe('tags: []');
+      } else {
+        expect(lines[at], name).toBe('tags:');
+        expect(values, name).toEqual([name]);
+      }
+    }
+  });
+
   it('declares no `type` key — the store tags a note, it does not type it', () => {
     for (const name of NAMES) {
       expect(packaged(name).split('\n'), name).not.toContain('type:');
