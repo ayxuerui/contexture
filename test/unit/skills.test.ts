@@ -13,6 +13,8 @@ import {
   SKILLS,
   renderSkills,
   retiredLayers,
+  shippedSkillFiles,
+  type SkillSeed,
   syncShippedSkills,
   terminatingLayers,
 } from '../../src/core/skills.js';
@@ -72,7 +74,7 @@ const CAPTURE_SERVICE_NAMES = ['granola', 'otter', 'circleback', 'fathom', 'fire
 const TIER_WORDS = ['personal', 'private', 'public', 'shared', 'internal', 'team', 'confidential'];
 
 describe('SKILLS', () => {
-  it('names the fifteen owned skills, in index order', () => {
+  it('names the sixteen owned skills, in index order', () => {
     expect(SKILLS.map((p) => p.file)).toEqual([
       'ctxr-capture',
       'ctxr-ingest-orchestration',
@@ -89,6 +91,7 @@ describe('SKILLS', () => {
       'ctxr-derived-artifacts',
       'ctxr-organize-audit',
       'ctxr-publish',
+      'ctxr-second-opinion',
     ]);
   });
 
@@ -502,7 +505,7 @@ describe('syncShippedSkills', () => {
     try {
       const written = await syncShippedSkills(tmp.root, makeConfig());
       expect(written.sort()).toEqual(skillPaths(makeConfig()).sort());
-      expect(written).toHaveLength(15);
+      expect(written).toHaveLength(skillPaths(makeConfig()).length);
       const placement = await readFile(path.join(tmp.root, 'skills/ctxr-placement/SKILL.md'), 'utf8');
       expect(placement).toContain('name: ctxr-placement');
       expect(placement).toContain('description:');
@@ -635,7 +638,9 @@ describe('graph-context-document: skills read the vocabulary and the graph docum
  */
 const SRC_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../src');
 const EXECUTABLES = ['ctxr', 'git', 'gh', 'npm', 'npx', 'node', 'rg', 'grep', 'jq', 'sed', 'awk'];
-const TOKEN = new RegExp(String.raw`\b(${EXECUTABLES.join('|')})\b|(--[a-z][a-z0-9-]*)`, 'g');
+// An executable is a whole word: not the tail of a path (`skills/ctxr-x/run.mjs`) and not the head of a
+// hyphenated name (`ctxr-land`), which name a skill directory or a skill, never the command being run.
+const TOKEN = new RegExp(String.raw`(?<![\w/.-])(${EXECUTABLES.join('|')})(?![\w/.-])|(--[a-z][a-z0-9-]*)`, 'g');
 
 /** Every long option `src/run.ts` registers — commander is wired in that one file and nowhere else. */
 function registeredOptions(): Set<string> {
@@ -688,6 +693,9 @@ describe('clear-access-axis-residue: an owned skill names only affordances the C
     }
     expect(ctxrFlagsIn('Run `git push --force-with-lease` after `ctxr doctor`.')).toEqual([]);
     expect(ctxrFlagsIn('Run `ctxr catalog check --stale`.')).toEqual(['--stale']);
+    // A skill's own directory is not the executable: its runner's flags belong to `node`.
+    expect(ctxrFlagsIn('Run `node skills/ctxr-second-opinion/run.mjs --preflight`.')).toEqual([]);
+    expect(ctxrFlagsIn('Hand off to `ctxr-land` and then run `git push --force-with-lease`.')).toEqual([]);
   });
 });
 
@@ -752,5 +760,115 @@ describe('ctxr-upgrade stops on an install the user cannot write', () => {
     expect(branch).toContain('newer');
     expect(branch).toContain('image');
     expect(branch).not.toContain('npm install');
+  });
+});
+
+/**
+ * exempt-shipped-skill-files-from-the-diff-ceiling: the map of what the
+ * installed version ships, per path under the skills path.
+ */
+describe('shippedSkillFiles', () => {
+  const withVendored = (vendored: string[]): StoreConfig => ({ ...makeConfig(), skills: { vendored } });
+
+  it('lists every path skillPaths names, mapped to the bytes renderSkills produces', async () => {
+    const config = makeConfig();
+    const shipped = await shippedSkillFiles(config);
+    expect([...shipped.keys()].sort()).toEqual(skillPaths(config).sort());
+    for (const skill of renderSkills(config)) {
+      expect(shipped.get(`skills/${skill.file}/SKILL.md`)).toBe(skill.content);
+      for (const [rel, content] of skill.supportingFiles) expect(shipped.get(`skills/${skill.file}/${rel}`)).toBe(content);
+    }
+  });
+
+  it('maps a skill\'s supporting files beside its SKILL.md', async () => {
+    const seed: SkillSeed = {
+      file: 'ctxr-fixture',
+      name: 'Fixture',
+      description: 'A fixture skill that carries supporting files.',
+      body: () => ['Body.'],
+      supportingFiles: () => new Map([['run.mjs', 'export {};\n'], ['personas/a.md', 'persona\n']]),
+    };
+    const shipped = await shippedSkillFiles(makeConfig(), [seed]);
+    expect([...shipped.keys()].sort()).toEqual(['skills/ctxr-fixture/SKILL.md', 'skills/ctxr-fixture/personas/a.md', 'skills/ctxr-fixture/run.mjs']);
+    expect(shipped.get('skills/ctxr-fixture/run.mjs')).toBe('export {};\n');
+  });
+
+  it('adds the packaged files of a declared vendored skill, and nothing for an undeclared one', async () => {
+    const declared = await shippedSkillFiles(withVendored(['eli5']));
+    expect([...declared.keys()].filter((k) => k.startsWith('skills/eli5/')).sort()).toEqual(['skills/eli5/LICENSE.txt', 'skills/eli5/SKILL.md']);
+    const undeclared = await shippedSkillFiles(withVendored([]));
+    expect([...undeclared.keys()].some((k) => k.startsWith('skills/eli5/'))).toBe(false);
+  });
+
+  it('leaves out the per-store provenance record, which no packaged file can match', async () => {
+    const shipped = await shippedSkillFiles(withVendored([...DEFAULT_VENDORED_SKILLS]));
+    expect([...shipped.keys()].some((k) => k.endsWith('.ctxr-vendored.json') || k.endsWith('provenance.json'))).toBe(false);
+  });
+
+  it('ignores a declared vendored name the package does not carry', async () => {
+    const shipped = await shippedSkillFiles(withVendored(['no-such-skill']));
+    expect([...shipped.keys()].some((k) => k.includes('no-such-skill'))).toBe(false);
+  });
+
+  it('follows the configured skills path', async () => {
+    const config = { ...makeConfig(), harness: { ...makeConfig().harness, skills_path: '.agents/skills/' } };
+    const shipped = await shippedSkillFiles(config);
+    expect(shipped.has('.agents/skills/ctxr-mission/SKILL.md')).toBe(true);
+    expect([...shipped.keys()].every((k) => k.startsWith('.agents/skills/'))).toBe(true);
+  });
+});
+
+/**
+ * ship-a-cross-model-second-opinion-skill: the conventions the runner cannot
+ * enforce (synthesis order, bias disclosure, hand-off without executing) are
+ * asserted against the rendered text, which is all they can be.
+ */
+describe('the second-opinion skill', () => {
+  // Prose wraps mid-phrase; assertions read it with whitespace collapsed.
+  const skill = () => rendered()['ctxr-second-opinion']!.replace(/[ \t]*\n(?!\n)[ \t]*/g, ' ');
+
+  it('ships its runner and prompt fragments beside SKILL.md, and points at them through the configured skills path', () => {
+    const owned = renderSkills(makeConfig()).find((s) => s.file === 'ctxr-second-opinion')!;
+    expect([...owned.supportingFiles.keys()]).toEqual([
+      'critic-contract.md',
+      'lenses.md',
+      'personas/architect.md',
+      'personas/pragmatist.md',
+      'personas/skeptic.md',
+      'run.mjs',
+    ]);
+    expect(skill()).toContain('node skills/ctxr-second-opinion/run.mjs --preflight');
+    const moved = renderSkills({ ...makeConfig(), harness: { ...makeConfig().harness, skills_path: 'agent/skills/' } }).find((s) => s.file === 'ctxr-second-opinion')!;
+    expect(moved.content).toContain('node agent/skills/ctxr-second-opinion/run.mjs --preflight');
+  });
+
+  it('names no ctxr command, because none exists to drive', () => {
+    // The managed header above the H1 names `ctxr init`; the procedure below it drives no ctxr command at all.
+    const procedure = rendered()['ctxr-second-opinion']!.split('\n# Second opinion\n')[1]!;
+    expect(procedure.length).toBeGreaterThan(1000); // anti-vacuity: the split found the body
+    expect(procedure).not.toMatch(/`ctxr [a-z]/);
+  });
+
+  it('says when to critique, poll, or answer directly', () => {
+    expect(skill()).toContain('## 1. Critique, poll, or just answer?');
+    expect(skill()).toContain('**Answer directly**');
+  });
+
+  it('has the agent synthesize on letters before it opens the manifest, and never run the plan', () => {
+    const s = skill();
+    expect(s).toContain('before you open `manifest.json`');
+    expect(s).toContain('**Evidence-backed dissent.**');
+    expect(s).toContain('**Vetoes.**');
+    expect(s).toContain('shares your model family');
+    expect(s).toContain('never executes a step of the plan it critiqued');
+    // the hand-off is the last instruction of the critique procedure: nothing after it tells the agent to act on the plan
+    expect(s.indexOf('never executes a step of the plan it critiqued')).toBeGreaterThan(s.indexOf('**Recommendation**'));
+  });
+
+  it('refuses a second debate round, a single-model run, and filling a failed reviewer with another model', () => {
+    const s = skill();
+    expect(s).toContain('Do not add a second round');
+    expect(s).toContain('A single model is not a second opinion');
+    expect(s).toContain('Do not rerun that one reviewer on a different model');
   });
 });

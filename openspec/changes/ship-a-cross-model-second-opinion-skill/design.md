@@ -182,6 +182,15 @@ to its cheaper model, for trivial polls. The overrides are:
 - `CTXR_SECOND_OPINION_CODEX_EFFORT`
 - `CTXR_SECOND_OPINION_AGY_MODEL`
 
+The `strong` tier asks Claude for `high` effort and not the maximum. Measured on one plan (2.8 KB) with
+`claude-opus-5-5`: 35 s at `high`, 514 s at `max`, and a run at `max` that was still silent at 280 s, with a
+valid critique each time one arrived. pkm's default was `max`, taken on the premise that deeper thinking is
+the point of a second opinion. The measurement says the extra eight minutes buy nothing visible on a short
+plan, and a critique nobody waits for is not read. `max` is one environment variable away
+(`CTXR_SECOND_OPINION_CLAUDE_EFFORT=max`), and the runner's default timeout is 600 s so that a deliberate `max`
+run can finish. *Flip condition:* evidence that `high` critiques miss what `max` finds on plans where it
+matters. One sample each is not that evidence; a paired comparison over several plans would be.
+
 The `fast` tier's agy default is `Gemini 3.8 Flash (High)`, the newest Flash `agy models` lists; `strong`
 stays on `Gemini 3.1 Pro (High)`, the only Pro it lists.
 
@@ -234,7 +243,7 @@ parts pkm itself documented.
 
 | Critic | Containment |
 |---|---|
-| `claude` | `-p --max-turns 1 --tools "" --no-session-persistence --disable-slash-commands --output-format json`, no tools at all; the JSON also reports the model that actually ran |
+| `claude` | `-p --tools "" --no-session-persistence --disable-slash-commands --output-format json`, no tools at all; the JSON also reports the model that actually ran |
 | `codex` | `exec --sandbox read-only --ephemeral --skip-git-repo-check -`, read-only sandbox, prompt on stdin, no persisted session |
 | `agy` | `-p <prompt-argv> --sandbox --disable-slash-commands`, with no true read-only mode |
 
@@ -295,15 +304,36 @@ per the skill-naming contract a `ctxr-<group>` name would falsely assert one. Th
 - **`agy` executes something embedded in a plan.**
   → It runs in an empty working directory, the prompt frames plan text as data, and the skill tells the
   agent to drop `agy` for untrusted plan text. The residual risk is stated in D9, not hidden.
-- **Cost surprise.** Strong tier with maximum reasoning is roughly $0.30–$0.80 and 1–3 minutes per critique.
-  → The runner prints the plan's size and the tier before dispatch. The skill states the cost bands and
-  when to use `fast`.
+- **Cost and latency surprise.** The first design estimated one to three minutes per critique; measured, a
+  default critique is under a minute but Claude at `max` took 514 s. → The default effort is `high` (D6), the
+  runner prints the plan's size and the tier before dispatch, and the skill states the real figures, tells the
+  agent to background a `max` run, and says when to use `fast`.
+- **Directory pruning was challenged by the dogfood run, twice.** Both the pragmatist and the architect
+  objected to deleting files ctxr never shipped. The architect's alternative: record the paths each owned skill
+  ships (per skill, or one store-level file) and delete only recorded paths a release drops, listing unrecorded
+  files without deleting. → Not taken in this change: it needs a per-store state file that nothing else in
+  contexture keeps, the mirror rule matches how the managed `SKILL.md` is already treated, and the first release
+  prunes only what an operator added by hand, each path named in update's report. *Flip condition:* an operator
+  reporting a lost file, or a second skill with supporting files whose layout churns across releases.
 - **An older CLI prunes the new skill** after a store is refreshed by this release.
   → This is the known release-propagation hazard for any added skill, handled by the release sequence, not
   by this change.
 - **The orchestrator still grades a Claude critic.**
   → Anonymization (D4) reduces self-preference. The skill tells the agent to name the shared model family
   whenever the Claude critic's finding drives the recommendation.
+
+- **A fresh `ctxr init` stages more than the diff ceiling allows (found while applying; resolved).** Init
+  stages the whole store in one commit, and the staged-diff ceiling (default 2000) refused it: 2660 changed
+  lines with this skill registered, 783 of them the skill, on a baseline that was already about 1880.
+  → Resolved by `exempt-shipped-skill-files-from-the-diff-ceiling` (#126, #130): the ceiling no longer counts
+  a skill file whose staged content is byte-identical to what the installed version ships. Measured with this
+  skill registered: 523 lines counted, 2143 left out, and an agent-sized edit under the skills path is still
+  refused.
+- **The real CLIs surfaced two runner gaps the stubs could not (found by running them).** `claude` still accepts
+  a `--max-turns` it hides from `--help`, so the preflight's help check reported a healthy `claude` as down; the
+  flag is moot with `--tools ""` and is no longer passed. And a critic that writes `### F1 critical` without
+  the brackets the contract asks for parsed with no severity, which would hide a veto; brackets are now optional.
+  → Both fixed, each with a test.
 
 ## Migration Plan
 
@@ -317,6 +347,13 @@ Rollback is a release that drops the seed. Update then removes the directory, as
 skill.
 
 ## Open Questions
+
+- **Should a bare `APPROVE` have to cite the plan?** A dogfood critique (architect, confidence 0.6) pointed out
+  that an `APPROVE` with no findings is the one critique that counts toward the quorum with no evidence at
+  all, so two bare approvals alone meet it. Requiring the one-sentence reasoning to name a step or quote the
+  plan would close that, at the price of a sound `APPROVE` that cites nothing being treated as blind. It
+  changes a specified scenario ("an APPROVE with no findings remains valid"), so it is left for a decision and
+  not made here.
 
 - Should `--preflight` cache a successful result for the session to save 5–20 s per invocation? This can be
   added to the runner without spec change once real usage shows whether repeated invocations are common.

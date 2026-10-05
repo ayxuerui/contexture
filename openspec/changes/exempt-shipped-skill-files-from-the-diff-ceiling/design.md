@@ -8,7 +8,8 @@ content test cheap. `renderSkills(config)` produces every owned skill's bytes an
 files; the vendored payload reader in `src/core/skills.ts` produces the vendored ones. Both are what `init` and
 `update` write.
 
-The ceiling has no direct tests today: the only references are fixtures that set the number.
+The ceiling has two direct tests today, in `test/unit/write-lifecycle-checks.test.ts`: it passes under the
+ceiling, and fails over it naming both numbers.
 
 ## Goals / Non-Goals
 
