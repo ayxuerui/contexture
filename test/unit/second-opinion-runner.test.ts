@@ -155,20 +155,47 @@ describe('critique: isolation and delivery', () => {
 });
 
 describe('critique: model and effort defaults', () => {
-  it('asks claude for high effort by default, and max only when the environment says so', () => {
+  const effortOf = (args: string[]) => args[args.indexOf('--effort') + 1];
+  const codexEffort = (args: string[]) => args.find((a) => a.startsWith('model_reasoning_effort='));
+
+  it('lets claude apply its own recommended default: no --effort unless the environment asks for one', () => {
     run(critiqueArgs());
-    const dflt = calls('claude')[0]!.args;
-    expect(dflt[dflt.indexOf('--effort') + 1]).toBe('high');
+    expect(calls('claude')[0]!.args).not.toContain('--effort');
     run(['--mode', 'critique', '--plan-file', planFile(), '--out', path.join(tmp.root, 'deep')], {}, { env: { CTXR_SECOND_OPINION_CLAUDE_EFFORT: 'max' } });
-    const deep = calls('claude')[1]!.args;
-    expect(deep[deep.indexOf('--effort') + 1]).toBe('max');
+    expect(effortOf(calls('claude')[1]!.args)).toBe('max');
   });
 
-  it('passes no effort to claude at the fast tier, and the cheaper model', () => {
+  it('passes codex its catalog default, medium, explicitly, because leaving it off can resolve to no reasoning', () => {
+    run(critiqueArgs());
+    expect(codexEffort(calls('codex')[0]!.args)).toBe('model_reasoning_effort=medium');
+    run(['--mode', 'critique', '--plan-file', planFile(), '--out', path.join(tmp.root, 'deep')], {}, { env: { CTXR_SECOND_OPINION_CODEX_EFFORT: 'xhigh' } });
+    expect(codexEffort(calls('codex')[1]!.args)).toBe('model_reasoning_effort=xhigh');
+  });
+
+  it('keeps gemini\'s effort in the model name, High by default', () => {
+    run(critiqueArgs());
+    const args = calls('agy')[0]!.args;
+    expect(args[args.indexOf('--model') + 1]).toBe('Gemini 3.1 Pro (High)');
+  });
+
+  it('at the fast tier: haiku with no effort, codex at low, and a flash model', () => {
     run(critiqueArgs(['--tier', 'fast']));
-    const args = calls('claude')[0]!.args;
-    expect(args).not.toContain('--effort');
-    expect(args[args.indexOf('--model') + 1]).toBe('haiku');
+    const claude = calls('claude')[0]!.args;
+    expect(claude).not.toContain('--effort');
+    expect(claude[claude.indexOf('--model') + 1]).toBe('haiku');
+    expect(codexEffort(calls('codex')[0]!.args)).toBe('model_reasoning_effort=low');
+    const agy = calls('agy')[0]!.args;
+    expect(agy[agy.indexOf('--model') + 1]).toBe('Gemini 3.8 Flash (High)');
+  });
+
+  it('does not require --effort in claude\'s help, since it is only passed on request', () => {
+    const noEffort = '--tools --model --no-session-persistence --disable-slash-commands --output-format --skip-git-repo-check --sandbox --ephemeral --color --config --print';
+    const r = run(['--preflight'], {
+      claude: { kind: 'ok', text: 'PONG', help: noEffort },
+      codex: { kind: 'ok', text: 'PONG' },
+      agy: { kind: 'ok', text: 'PONG' },
+    });
+    expect(r.status).toBe(0);
   });
 });
 
@@ -330,6 +357,38 @@ describe('poll', () => {
     expect(prompt).toContain('- minimalist — restraint, clarity, simplicity');
     expect(prompt).toContain('- Plainspoken — blunt and substance first');
     expect(prompt).toContain('PICK:');
+  });
+
+  it('accepts commas inside an inline lens description, and still counts lenses', () => {
+    const q = path.join(tmp.root, 'q.txt');
+    writeFileSync(q, 'Pick a name.');
+    const behaviors = { claude: { kind: 'ok', text: 'x' }, codex: { kind: 'ok', text: 'x' }, agy: { kind: 'ok', text: 'x' } };
+    const r = run(['--mode', 'poll', '--prompt-file', q, '--out', outDir, '--lens', 'minimalist,Plainspoken:blunt, substance first, distrusts slogans'], behaviors);
+    expect(r.status).toBe(0);
+    const prompt = calls('codex')[0]!.stdin;
+    expect(prompt).toContain('- minimalist — restraint, clarity, simplicity');
+    expect(prompt).toContain('- Plainspoken — blunt, substance first, distrusts slogans');
+    expect((prompt.match(/^- /gm) ?? []).length).toBe(2); // two lenses, not four fragments
+  });
+
+  it('starts a new lens at a roster name or a Name: prefix, wherever the commas fall', () => {
+    const q = path.join(tmp.root, 'q.txt');
+    writeFileSync(q, 'Pick a name.');
+    const behaviors = { claude: { kind: 'ok', text: 'x' }, codex: { kind: 'ok', text: 'x' }, agy: { kind: 'ok', text: 'x' } };
+    run(['--mode', 'poll', '--prompt-file', q, '--out', outDir, '--lens', 'Plain:a, b, minimalist, Blunt:c, d'], behaviors);
+    const prompt = calls('claude')[0]!.stdin;
+    expect(prompt).toContain('- Plain — a, b');
+    expect(prompt).toContain('- minimalist — restraint');
+    expect(prompt).toContain('- Blunt — c, d');
+    expect((prompt.match(/^- /gm) ?? []).length).toBe(3);
+  });
+
+  it('refuses a description with no lens name before it, instead of guessing', () => {
+    const q = path.join(tmp.root, 'q.txt');
+    writeFileSync(q, 'Pick a name.');
+    const r = run(['--mode', 'poll', '--prompt-file', q, '--out', outDir, '--lens', 'blunt, substance first,minimalist']);
+    expect(r.status).toBe(1);
+    expect(r.stderr).toMatch(/unknown lens "blunt, substance first"/);
   });
 
   it('refuses one lens, four lenses, and an unknown lens name', () => {
