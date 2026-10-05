@@ -212,6 +212,13 @@ describe('renderCanonicalSection', () => {
     expect(lines).not.toMatch(/skill index/i);
   });
 
+  it('tells the agent to keep the kind field and search by it, since no command filters by it', () => {
+    const lines = renderCanonicalSection(makeConfig()).join('\n');
+    expect(lines).toMatch(/stamps the kind it is for into the note's `tags`/);
+    expect(lines).toMatch(/Keep it when you start a note: it is how you find every note of a kind/);
+    expect(lines).toMatch(/no `ctxr` command filters by it/);
+  });
+
   it('states the harness/store identity boundary for every config fixture used in this file', () => {
     for (const config of [
       makeConfig(),
@@ -636,6 +643,8 @@ describe('exact rendered output', () => {
       "### Note templates",
       "",
       "A new note starts from a template under `.contexture/templates/`, not from a blank file and not by copying whatever sibling happens to be nearby. Substitute `{{title}}` and `{{date}}` as you write it — no command expands them, and a note that lands with one still in it is reported by `ctxr lint`. A template is never a note: nothing under that path is catalogued, graphed, or retrieved. Add your own kinds there alongside the shipped ones; contexture only ever rewrites the ones it delivered.",
+      "",
+      "Every shipped template except the base, `Note`, stamps the kind it is for into the note's `tags`. Keep it when you start a note: it is how you find every note of a kind, with your own search, since no `ctxr` command filters by it. A kind you cut from the base should stamp its own name the same way, and any further tags are this store's own.",
       "",
       "### Write path",
       "",
