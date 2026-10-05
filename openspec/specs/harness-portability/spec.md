@@ -564,6 +564,8 @@ A packaged template's content SHALL be fixed markdown, identical for every store
 
 The library SHALL cover, at minimum: a base carrying the frontmatter and top-level heading every note in the store shares — the file a store copies to cut its own kinds — and, built on that base, a template for a synthesized idea carrying the store's relation sections, one for work with a stated end state, and templates for the recurring entities a knowledge store accumulates, at minimum a person and an organization. No command SHALL require a template to exist in order to run.
 
+Every packaged template other than the base SHALL carry, in its frontmatter, a field naming the kind of note it is for, spelled with the template's own name. The base SHALL carry the same field empty, since a note started from it is of no particular kind and the base is the file a store copies to cut its own. No `ctxr` command SHALL read, validate, or select by that field: it records the kind a note was started from so that the agent's own content matching can find every note of a kind, and any further values in it are the store's. The generated entry document SHALL tell the agent, in the same place it names the configured templates path, to keep the field when starting a note and to use it to find notes by kind, and that no command filters by it.
+
 #### Scenario: A store predating the configuration keys gets the defaults
 - **WHEN** a `contexture.yaml` written before these keys existed is read
 - **THEN** it resolves to the shipped path and the shipped installed list, with nothing for the store to run
@@ -587,6 +589,14 @@ The library SHALL cover, at minimum: a base carrying the frontmatter and top-lev
 #### Scenario: No command depends on a template
 - **WHEN** every file is removed from a store's templates path and any contexture command runs
 - **THEN** the command behaves exactly as it did before, and no check fails for the absence
+
+#### Scenario: Every template but the base names its kind
+- **WHEN** a freshly initialized store's installed templates are read
+- **THEN** the base's kind field is empty, and every other template's kind field names exactly that template
+
+#### Scenario: No command acts on the kind field
+- **WHEN** a note's kind field is edited, emptied, or removed and any `ctxr` command runs
+- **THEN** no finding names the field, and the note's membership and order in every retrieval result, its catalog section, and its graph edges are the same as before the edit
 
 ### Requirement: Installed note templates are refreshed by update
 `ctxr init` SHALL write the declared templates to the configured path, and `ctxr update` SHALL bring each one to the installed version. Both SHALL be byte-stable when nothing has changed, and both SHALL leave every other file at that path — the store's own note kinds — untouched.
