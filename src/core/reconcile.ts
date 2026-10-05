@@ -100,9 +100,9 @@ export async function reconcileStore(env: RunEnv, root: string, config: StoreCon
   // this run's content, not a stale one.
   changed.push(...(await bridgeHarnessSkills(root, config)).map((r) => r.path));
 
-  // Same reason, same ordering constraint as skills: the shipped baseline
-  // convention file must be current on disk BEFORE buildAgentsConventionsSection
-  // scans the guidance directory and inlines it (compose-store-guidance-documents).
+  // A managed baseline copy an earlier version wrote must be gone BEFORE
+  // buildAgentsConventionsSection scans the guidance directory, or the
+  // baseline would be inlined twice: once rendered, once scanned.
   note(
     path.join(config.harness.guidance_path, DEFAULT_BASELINE_CONVENTIONS_FILE_NAME).split(path.sep).join('/'),
     (await removeManagedBaselineFile(root, config)).changed,

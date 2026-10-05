@@ -145,10 +145,9 @@ function reservedGuidanceFileNames(config: StoreConfig): Set<string> {
 }
 
 /**
- * Every convention doc currently at the configured guidance path —
- * contexture's own shipped baseline (see `templates/conventions/baseline-conventions.md`,
- * synced by `syncBaselineConventions` in `convention-doc.ts`) alongside
- * whatever the operator has added — minus the mission document.
+ * Every convention doc the operator has put at the configured guidance path,
+ * minus the mission document. The shipped baseline is not among them: it is
+ * rendered into AGENTS.md by `renderBaselineConventions` in `convention-doc.ts`.
  */
 export async function scanConventions(root: string, config: StoreConfig): Promise<ScannedDoc[]> {
   const docs = await scanDocsDir(root, config.harness.guidance_path);

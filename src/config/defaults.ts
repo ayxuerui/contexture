@@ -32,19 +32,22 @@ export const DEFAULT_SKILLS_PATH = '.agents/skills/';
 export const DEFAULT_VENDORED_SKILLS = ['frontend-design', 'eli5'] as const;
 
 /**
- * harness-portability spec: the guidance directory holding contexture's
- * shipped baseline convention file, the operator's own convention files
- * (inlined into AGENTS.md's "Store conventions" section — see
- * agents-doc.ts, from inline-conventions-and-mission), and (per
- * context-organize) the mission document.
+ * harness-portability spec: the guidance directory holding the operator's
+ * own convention files (inlined into AGENTS.md's "Store conventions" section
+ * after the shipped baseline, which is rendered there and never filed here —
+ * see agents-doc.ts) and (per context-organize) the mission document.
  */
 export const DEFAULT_GUIDANCE_PATH = '.contexture/guidance/';
 
-/** The shipped, contexture-owned baseline conventions — never hand-edited; refreshed by `ctxr update` like a skill copy. */
+/**
+ * Where earlier versions wrote the shipped baseline as a file in the guidance
+ * directory. It is now rendered straight into AGENTS.md; `removeManagedBaselineFile`
+ * deletes a copy left at this name when it still carries the managed-owner header.
+ */
 export const DEFAULT_BASELINE_CONVENTIONS_FILE_NAME = 'baseline-conventions.md';
 
 /**
- * The baseline file's pre-rename name. `syncBaselineConventions` removes it
+ * The baseline file's pre-rename name. `removeManagedBaselineFile` removes it
  * when it still carries the managed-owner header, so the rename leaves no
  * orphan — the guidance directory is scanned wholesale, so an orphan would
  * be inlined into AGENTS.md a second time rather than merely sitting unused.
