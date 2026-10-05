@@ -12,4 +12,6 @@ drop one: a collapsed pair adds cost and no breadth.
 - **brand-strategist** — long-term positioning, category ownership, how it ages.
 
 A store may add its own lens inline as `Name:description`, for example
-`"Plainspoken:blunt, substance first, distrusts slogans"`.
+`"Plainspoken:blunt, substance first, distrusts slogans"`. The description may contain commas. A comma starts
+the next lens only when the text after it is exactly a lens name above or begins `Name:`, so keep colons out
+of a description.

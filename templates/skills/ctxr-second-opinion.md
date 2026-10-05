@@ -82,11 +82,17 @@ nothing in the plan, so it was written without reading it; it does not count. **
 two valid critiques: say so at the top of your answer and do not call anything a consensus.
 
 Add `--tier fast` to drop each family to a cheaper model, for a plan that is small and easy to redo. The
-default tier is right for anything the operator will act on. A default critique usually takes under a minute
-and costs a few tens of cents. Claude's highest effort setting (`CTXR_SECOND_OPINION_CLAUDE_EFFORT=max`) is
-a deliberate deep pass, not a default: on the same short plan it took over eight minutes where the default
-took half a minute, and it is the one setting that can reach the runner's ten-minute limit. Start such a run
-in the background and tell the operator it is under way.
+default tier is right for anything the operator will act on.
+
+Each reviewer runs at its provider's own recommended default effort, not one this skill chose. Claude gets no
+effort setting, so Claude Code applies its default for the model. Codex gets `medium`, the default its model
+catalog declares; the runner passes it explicitly because Codex left to itself, with no setting pinned, can
+resolve to no reasoning at all. Gemini's effort is part of its model name, and `High` is its default. Measured on a
+short plan, a default critique took about 40 seconds in all, 30 to 37 seconds per reviewer, and costs a few tens
+of cents. A deeper pass is a choice: set `CTXR_SECOND_OPINION_CLAUDE_EFFORT=max` and Claude alone took over
+eight minutes on the same plan, close enough to the runner's ten-minute limit that you should start such a run
+in the background and tell the operator it is under way. A machine that pins its own Codex effort in its
+configuration is overridden by `medium`; set `CTXR_SECOND_OPINION_CODEX_EFFORT` to use another.
 
 ## 4. Synthesize on the letters first
 
@@ -150,7 +156,9 @@ This mode names its files by model, because what you are reading is whether the 
 To get breadth as well as model diversity, add `--lens` with two or three taste lenses. Each model then
 answers as every lens in one response, giving a lens-by-model grid. The built-in lenses are minimalist,
 marketer, contrarian, end-user and brand-strategist. A store's own lens goes in as `Name:description`, for
-example `--lens "minimalist,Plainspoken:blunt and substance first"`. Choose lenses that pull in different
+example `--lens "minimalist,Plainspoken:blunt, substance first, distrusts slogans"`. A description may contain
+commas: a comma starts the next lens only when what follows is a built-in lens name or begins `Name:`. So a
+description must not contain a colon. Choose lenses that pull in different
 directions; if two would obviously agree, drop one.
 
 Read a lens grid on both axes. Down a column (one lens across the three models) agreement means that
