@@ -117,6 +117,33 @@ describe('lint command', () => {
     }
   });
 
+  /**
+   * harden-the-required-capture-section D4: lint calls the same function, so the
+   * observation follows the stricter meaning of "a section" with no new code.
+   */
+  it('reports inbox material whose declared heading is empty or only inside a code fence', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const config = makeConfig();
+      const store: Store = {
+        root: tmp.root,
+        config: { ...config, ingest: { ...config.ingest, required_capture_sections: { 'ctx-a': 'Transcript' } } },
+      };
+      await writeNote(tmp.root, 'raw/inbox/empty.md', '---\nsource_type: ctx-a\n---\n\n## Summary\n\ntext\n\n## Transcript\n');
+      await writeNote(tmp.root, 'raw/inbox/fenced.md', '---\nsource_type: ctx-a\n---\n\n```\n## Transcript\nexample\n```\n');
+      await writeNote(tmp.root, 'raw/inbox/real.md', '---\nsource_type: ctx-a\n---\n\n## Transcript\n\nWhat was said.\n');
+
+      const env = makeFakeEnv({ cwd: tmp.root });
+      const outcome = await execute(env, store);
+
+      expect(outcome.exitCode).toBe(ExitCode.Ok);
+      const finding = outcome.data?.checks.find((c) => c.id === 'ingest.missing_required_capture_section');
+      expect(finding?.findings?.map((f) => f.subject).sort()).toEqual(['raw/inbox/empty.md', 'raw/inbox/fenced.md']);
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
   it('skips the required-section check entirely when the store declares none', async () => {
     const tmp = await makeTmpDir();
     try {

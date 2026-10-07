@@ -32,9 +32,10 @@ statement "only its presence is" is reworded, not dropped: what is decidable is 
 something.
 
 *Definition used:* a section is the declared heading plus the lines up to the next heading of the same or a
-shallower level, or the end of the file. It holds content if at least one of those lines is non-blank and is not
-itself a heading. Lines inside a fenced code block count as content once the heading is real, since a transcript
-pasted in a block is still a transcript. Heading *detection* ignores fenced lines; content *counting* does not.
+shallower level, or the end of the file. It holds content if at least one of those lines is non-blank and is neither a
+heading nor a fence's own opening or closing line. Lines inside a fenced code block count as content once the
+heading is real, since a transcript pasted in a block is still a transcript. An empty code block does not, or a
+bare pair of fences would satisfy the guard. Heading *detection* ignores fenced lines; content *counting* does not.
 
 *Flip condition:* a source whose real record is legitimately only sub-headings with text under them. Sub-headings
 with text count (their text lines are non-blank non-heading lines inside the section), so this should not arise.

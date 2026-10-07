@@ -250,6 +250,26 @@ export class MissingRequiredCaptureSectionError extends ContextureError {
   }
 }
 
+/**
+ * context-ingest spec (harden-the-required-capture-section D2): the capture
+ * already says what kind of source it came from, and the invocation says
+ * something else. Ingest used to stamp the invocation's value over the
+ * capture's own and say nothing, which also meant a store's declared required
+ * section was looked up under whatever a caller typed. `CheckFailed`, like the
+ * missing-section refusal: the command was called correctly and the material
+ * contradicts itself.
+ */
+export class CaptureSourceTypeMismatchError extends ContextureError {
+  constructor(capturePath: string, capturesOwn: string, invoked: string) {
+    super(ExitCode.CheckFailed, {
+      code: 'ingest.source_type_mismatch',
+      severity: 'error',
+      message: `"${capturePath}" says it came from a "${capturesOwn}" source but was ingested as "${invoked}"; make the capture and the --source-type agree, then ingest again.`,
+      subject: capturePath,
+    });
+  }
+}
+
 export class NoteNotTrackedError extends ContextureError {
   constructor(notePath: string) {
     super(ExitCode.Usage, {
