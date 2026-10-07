@@ -4,7 +4,13 @@ import path from 'node:path';
 import type { CommandOutcome, CommandRequires } from '../core/command.js';
 import { buildCatalog } from '../core/catalog/build.js';
 import type { RunEnv } from '../core/env.js';
-import { AlreadyIngestedError, CaptureDestinationExistsError, MissingRequiredCaptureSectionError, NoteNotFoundError } from '../core/errors.js';
+import {
+  AlreadyIngestedError,
+  CaptureDestinationExistsError,
+  CaptureSourceTypeMismatchError,
+  MissingRequiredCaptureSectionError,
+  NoteNotFoundError,
+} from '../core/errors.js';
 import { ExitCode } from '../core/exit-codes.js';
 import { isUnderPrefix } from '../core/fs/prefix.js';
 import { writeFileAtomic } from '../core/fs/atomic.js';
@@ -106,6 +112,18 @@ export async function execute(env: RunEnv, store: Store, flags: IngestFlags): Pr
   const capture = await readOrThrow(store, capturePath);
   if (hasAssignedIdentity(capture)) {
     throw new AlreadyIngestedError(capturePath);
+  }
+  /**
+   * The type a store's declaration is looked up under must be the type the
+   * capture is recorded under (harden-the-required-capture-section D2). A
+   * capture that already names its source and is ingested as a different one
+   * is refused rather than having one silently replace the other, before
+   * anything is read further, stamped, or moved. A capture that names none
+   * takes the invocation's; one that agrees is unremarkable.
+   */
+  const capturesOwnType = capture.frontmatter?.[SOURCE_TYPE_FIELD];
+  if (typeof capturesOwnType === 'string' && capturesOwnType.trim() !== '' && capturesOwnType !== flags.sourceType) {
+    throw new CaptureSourceTypeMismatchError(capturePath, capturesOwnType, flags.sourceType);
   }
   /**
    * Before anything is written. A capture missing the section its store
