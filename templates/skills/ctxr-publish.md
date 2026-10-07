@@ -99,9 +99,17 @@ before reporting the page as ready. It answers only what's derivable from the fi
 in step 1, the form and reader choices in step 5, and factual accuracy stay judgment calls, not checker output.
 
 `ctxr publish new` and `ctxr publish check` each end by naming the address `ctxr serve` answers for
-this page. Open it and look at the page before you hand it on. Whether the form works, whether the
-prose reads, whether it renders at all is exactly what the checks above cannot answer, and it is
-cheapest to fix while the page is still yours.
+this page. Look at the page before you hand it on. Whether the form works, whether the prose reads,
+whether it renders at all is exactly what the checks above cannot answer, and it is cheapest to fix
+while the page is still yours.
+
+That address may be served from another host, or behind an access proxy, where you cannot reach it.
+You do not need it: from this machine, start `ctxr serve` in the background, open the address it
+prints followed by the page's route in your browser tool, and stop the server when you are done. A
+page still in a session worktree is served there under its previewable route, the same as anywhere
+else. If you have no way to see a rendered page, say in your hand-off that it has not been checked
+visually, so whoever reviews it knows they are the first to look. Never report a page as ready on the
+strength of `ctxr publish check` alone.
 
 A page written in a session worktree is previewable rather than published, because the
 published-pages address reads the store's own checkout and the page has not reached it yet. That
@@ -109,6 +117,11 @@ previewable address stops answering the moment the worktree is reclaimed — the
 `ctxr-land` — and the page is then at the published-pages address the command named beside it.
 Report the address you actually opened, and say which of the two it is, so nobody is handed a link
 that is about to change.
+
+Both addresses are full URLs when the store declares `serve.base_url` in `contexture.yaml`, and bare
+routes such as `/preview/…` when it does not. A bare route is not a link anyone else can open. Do not
+guess a host to put in front of it: hand on the route as it is, and tell the operator that declaring
+`serve.base_url` would make every address a command reports a link.
 
 ## 7. It's a page, not a note
 

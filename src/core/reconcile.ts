@@ -2,6 +2,7 @@ import path from 'node:path';
 import { DEFAULT_BASELINE_CONVENTIONS_FILE_NAME } from '../config/defaults.js';
 import type { StoreConfig } from '../config/schema.js';
 import { CLI_VERSION } from '../version.js';
+import { generateAdapterOutputs } from './adapter-outputs.js';
 import type { RunEnv } from './env.js';
 import {
   agentsMdPath,
@@ -56,7 +57,8 @@ export interface ReconcileResult {
 /**
  * Brings every contexture-OWNED file in a store to the installed package's
  * version: the managed .gitignore blocks, every generated AGENTS.md
- * section, the contexture-owned skill copies, and the git hooks. Operator
+ * section, the contexture-owned skill copies, every declared harness's
+ * adapter outputs, and the git hooks. Operator
  * content is never rewritten. Shared by `ctxr init` (reconciling an
  * existing store) and `ctxr update` (after upgrading contexture).
  * Byte-stable: a second run with nothing changed writes nothing.
@@ -98,9 +100,9 @@ export async function reconcileStore(env: RunEnv, root: string, config: StoreCon
   // this run's content, not a stale one.
   changed.push(...(await bridgeHarnessSkills(root, config)).map((r) => r.path));
 
-  // Same reason, same ordering constraint as skills: the shipped baseline
-  // convention file must be current on disk BEFORE buildAgentsConventionsSection
-  // scans the guidance directory and inlines it (compose-store-guidance-documents).
+  // A managed baseline copy an earlier version wrote must be gone BEFORE
+  // buildAgentsConventionsSection scans the guidance directory, or the
+  // baseline would be inlined twice: once rendered, once scanned.
   note(
     path.join(config.harness.guidance_path, DEFAULT_BASELINE_CONVENTIONS_FILE_NAME).split(path.sep).join('/'),
     (await removeManagedBaselineFile(root, config)).changed,
@@ -125,6 +127,11 @@ export async function reconcileStore(env: RunEnv, root: string, config: StoreCon
   // A no-op when the fences aren't all contiguous — see `reorderFencedRegions`.
   if ((await reorderFencedRegionsInFile(agentsMdPath(root), AGENTS_MD_SECTION_ORDER)).changed) agentsChanged = true;
   note('AGENTS.md', agentsChanged);
+
+  // init-generates-harness-adapter-output: inside the shared reconcile, not
+  // beside it, so `ctxr init` on an existing store cannot miss it again the
+  // way it did when only `ctxr update` called the generator.
+  for (const file of await generateAdapterOutputs({ root, config })) note(file.path, file.changed);
 
   const { changed: hookFiles } = await installHooks(root, config.git.default_branch);
   changed.push(...hookFiles);

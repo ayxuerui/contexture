@@ -22,8 +22,9 @@ that has been improved is no longer evidence of anything.
 Where the source supplies a summary of its own, keep it, clearly marked as the source's derivation, in
 its own section beside the record rather than instead of it. A summary is what a service concluded; the
 record is what happened. A store may require, per source type, the section its captures must carry — if
-it does, a capture missing that section is refused at ingest, so check the store's configuration before
-deciding a summary is enough.
+it does, a capture missing that section is refused at ingest, and so is one whose heading has nothing under
+it or appears only inside a code block, so check the store's configuration before deciding a summary is
+enough.
 
 One capture per item. Two meetings in one file cannot be cited separately, deduplicated separately, or
 retracted separately.
@@ -33,7 +34,9 @@ retracted separately.
 In the capture's frontmatter:
 
 - `source_type` — the source system's own name, lowercased. Use the same value the store already uses
-  for that system; a second spelling silently defeats deduplication.
+  for that system; a second spelling silently defeats deduplication. Name the same value on
+  `ctxr ingest --source-type`: a capture that says one source type and is ingested as another is refused,
+  and a store's required section is looked up under the type the capture is recorded under.
 - `source_id` — that source type, then a slash, then the identifier the source system itself uses for
   this item. Prefer an opaque, stable id over a title or a date, which get edited.
 
@@ -47,7 +50,9 @@ markdown, not at the bytes.
 ## 4. Check before you write it into the inbox
 
 If the material may already be in the store, run `ctxr source check <path> --source-id <id>` and read
-the verdict before going further. Re-capturing something the store already holds is how one source ends
+the verdict before going further. That check compares material you already hold; before fetching
+anything, search `__CAPTURE_ROOT__` for it by content and by `capture_file`. The retrieval pass leaves
+that directory out, so a search scoped by it will never find a capture. Re-capturing something the store already holds is how one source ends
 up cited twice under two identities.
 
 Then write the file into `__INBOX_PATH__`. Nothing else — no note, no edit to an existing note, no

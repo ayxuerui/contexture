@@ -114,7 +114,7 @@ Names that live inside a store or in the operator's environment rather than on t
 - **THEN** its configuration file, home directory, markers, and environment variables are read under their existing names, and no migration is reported as pending
 
 ### Requirement: The CLI reports its own version and how it was installed
-The CLI SHALL report the version of the running executable both as a dedicated command and as a version flag, and both SHALL emit the same version through the standard output envelope on stdout — not as diagnostic narration on stderr, so that a caller can read the version by capturing stdout alone. The report SHALL also name the filesystem location the running executable resolves to, and SHALL classify that location as a global installation, a linked working copy, or undetermined, so that a caller can tell whether a package-manager upgrade instruction applies before offering one. Reporting the version SHALL NOT require a store.
+The CLI SHALL report the version of the running executable both as a dedicated command and as a version flag, and both SHALL emit the same version through the standard output envelope on stdout — not as diagnostic narration on stderr, so that a caller can read the version by capturing stdout alone. The report SHALL also name the filesystem location the running executable resolves to, and SHALL classify that location as a global installation, a linked working copy, or undetermined, so that a caller can tell whether a package-manager upgrade instruction applies before offering one. For a global installation, the report SHALL additionally state whether the user running the command can write to the location a package-manager upgrade would install into, so that a caller can tell an installation it may upgrade from one managed by whatever placed it there — a container image, a system package, an administrator. Reporting the version SHALL NOT require a store.
 
 #### Scenario: The version is readable from stdout alone
 - **WHEN** the version command is invoked, with and without `--json`
@@ -131,6 +131,10 @@ The CLI SHALL report the version of the running executable both as a dedicated c
 #### Scenario: A linked working copy is distinguished from a global install
 - **WHEN** the running executable resolves into a working copy rather than a global installation
 - **THEN** the report classifies the install as a linked working copy, so a caller can decline to instruct a package-manager upgrade
+
+#### Scenario: A global install the user cannot write is distinguished
+- **WHEN** the running executable resolves into a global installation whose install location the running user cannot write to
+- **THEN** the report classifies the install as global and states that it is not writable by the running user, and the exit code is the success code — so a caller can decline to instruct a package-manager upgrade that would fail
 
 ### Requirement: An advisory about a newer release never changes the outcome of the command carrying it
 The session-start command and the store-update command SHALL consult the release registry and, when a newer release than the installed one is published, SHALL report it as an informational finding in the envelope and as a human notice on stderr. The advisory SHALL NOT alter the command's exit code, its status, its data, or its stdout, and SHALL NOT prevent the command from completing its own work. When the check cannot be completed — the registry is unreachable, times out, answers with an error, answers unparseably, or the cache cannot be read or written — the command SHALL record a distinct informational finding stating that the check could not be completed, and SHALL otherwise behave exactly as if no check had been attempted. This path fails open, to completing the command with no advisory; a release check is never a reason for a session to fail.

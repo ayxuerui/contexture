@@ -7,7 +7,8 @@ all the same — a capture is the provenance behind a note, not scratch space.
 To capture something new, write the material into `__INBOX_PATH__` — no CLI command wraps this, but
 `ctxr-capture` carries the procedure: what counts as the record rather than a summary of it, how to
 identify it, and where capture stops. The material may already carry these two fields, since whatever
-fetched it usually knows them:
+fetched it usually knows them. If it carries `source_type`, name the same value on
+`ctxr ingest --source-type`; a disagreement is refused:
 
 - `source_type`
 - `source_id`

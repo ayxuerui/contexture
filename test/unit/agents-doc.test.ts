@@ -86,6 +86,17 @@ describe('renderLegRoutingSection', () => {
   });
 });
 
+describe('renderLegRoutingSection: finding a capture', () => {
+  it('points the "is this already captured" question at the configured capture root', () => {
+    const lines = renderLegRoutingSection(
+      makeConfig({ ingest: { inbox_path: 'incoming/new/', capture_root: 'incoming/', tracking_params: [] } }),
+    ).join('\n');
+    expect(lines).toMatch(/already holds some material[^]*search `incoming\/`\s+directly/);
+    expect(lines).toContain('`capture_file`');
+    expect(lines).not.toContain('__CAPTURE_ROOT__');
+  });
+});
+
 describe('buildAgentsLegRoutingSection', () => {
   it('writes a fenced section into AGENTS.md at the store root', async () => {
     const tmp = await makeTmpDir();
@@ -201,6 +212,13 @@ describe('renderCanonicalSection', () => {
     expect(lines).not.toMatch(/skill index/i);
   });
 
+  it('tells the agent to keep the kind field and search by it, since no command filters by it', () => {
+    const lines = renderCanonicalSection(makeConfig()).join('\n');
+    expect(lines).toMatch(/stamps the kind it is for into the note's `tags`/);
+    expect(lines).toMatch(/Keep it when you start a note: it is how you find every note of a kind/);
+    expect(lines).toMatch(/no `ctxr` command filters by it/);
+  });
+
   it('states the harness/store identity boundary for every config fixture used in this file', () => {
     for (const config of [
       makeConfig(),
@@ -208,7 +226,9 @@ describe('renderCanonicalSection', () => {
       makeConfig({ ingest: { inbox_path: 'incoming/', capture_root: 'incoming/', tracking_params: [] } }),
     ]) {
       const lines = renderCanonicalSection(config).join('\n');
-      expect(lines).toMatch(/identity.*persona.*(durable )?cross-session memory/is);
+      expect(lines).toMatch(/identity.*persona.*conversational recall/is);
+      expect(lines).toMatch(/subject-matter knowledge belongs here/i); // the store's share, stated
+      expect(lines).not.toMatch(/cross-session memory/i);
       expect(lines).toMatch(/harness/i);
       expect(lines).not.toMatch(/identity\//); // no identity file or path of its own
     }
@@ -520,6 +540,12 @@ describe('exact rendered output', () => {
       "",
       "Feed anything it finds back in as `--seed` to pick the pass up again from there.",
       "",
+      "Those exclusions are for finding knowledge. Captures under `raw/` are left out because they",
+      "are provenance, not notes, so a search scoped this way never finds one. When the question is whether",
+      "the store already holds some material — a document, a meeting, a thread — search `raw/`",
+      "directly, by content and by the `capture_file` a capture names. Finding nothing in the notes is not",
+      "evidence that it was never captured.",
+      "",
       "There is no `ctxr search` command. Nothing here takes a free-text query, and no result carries a",
       "relevance score. Ranked or semantic search is deferred to a future version — do not look for one.",
     ]);
@@ -536,7 +562,8 @@ describe('exact rendered output', () => {
       "To capture something new, write the material into `raw/inbox/` \u2014 no CLI command wraps this, but",
       "`ctxr-capture` carries the procedure: what counts as the record rather than a summary of it, how to",
       "identify it, and where capture stops. The material may already carry these two fields, since whatever",
-      "fetched it usually knows them:",
+      "fetched it usually knows them. If it carries `source_type`, name the same value on",
+      "`ctxr ingest --source-type`; a disagreement is refused:",
       "",
       "- `source_type`",
       "- `source_id`",
@@ -618,13 +645,15 @@ describe('exact rendered output', () => {
       "",
       "A new note starts from a template under `.contexture/templates/`, not from a blank file and not by copying whatever sibling happens to be nearby. Substitute `{{title}}` and `{{date}}` as you write it — no command expands them, and a note that lands with one still in it is reported by `ctxr lint`. A template is never a note: nothing under that path is catalogued, graphed, or retrieved. Add your own kinds there alongside the shipped ones; contexture only ever rewrites the ones it delivered.",
       "",
+      "Every shipped template except the base, `Note`, stamps the kind it is for into the note's `tags`. Keep it when you start a note: it is how you find every note of a kind, with your own search, since no `ctxr` command filters by it. A kind you cut from the base should stamp its own name the same way, and any further tags are this store's own.",
+      "",
       "### Write path",
       "",
       "Every write to this store happens inside a session worktree, never directly on the default branch: `ctxr session start` creates one, and the work stays there for as long as the session runs. When the operator asks to wrap up, `ctxr-submit` validates with `ctxr doctor`, commits, pushes, and opens (or reports how to open) a pull request — that request is what triggers it, not having finished a piece of work. Do not edit files in the store root directly.",
       "",
-      "### Identity and memory",
+      "### Identity and recall",
       "",
-      "Identity, persona, and durable cross-session memory for the agent working this store belong to its harness, not to this store — the store holds knowledge and skills, documented as portable markdown under `skills/`, never a persona or memory file of its own.",
+      "Identity, persona, and the agent's conversational recall — what it remembers of the user and of itself from one session to the next — belong to its harness, not to this store. Subject-matter knowledge belongs here, including anything worth finding again in a later session: the store holds knowledge and skills, documented as portable markdown under `skills/`, and never a persona or recall file of its own.",
     ]);
   });
 

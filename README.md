@@ -27,15 +27,12 @@ Running an agent harness in a container? [contexture-images](https://github.com/
 ```sh
 mkdir my-store && cd my-store
 ctxr init
-ctxr adapters generate   # writes the harness entry file (CLAUDE.md) and its permission config
 ```
 
 `ctxr init` asks two questions, then creates the git repository (if there isn't one), scaffolds the store, and commits it:
 
 - **Which taxonomy profile?** `para` (Projects / Areas / Resources / Archives — the default), `zettelkasten` (no layers at all; structure emerges from links), or `diataxis` (Tutorials / How-to / Reference / Explanation). Or bring your own layer list with `--taxonomy <file.yaml>`.
-- **Which agent harnesses?** `claude-code` (default — its adapter generates `CLAUDE.md` plus a `.claude/settings.json` wiring up the write-gate hook) and/or `hermes-agent` (reads `AGENTS.md` directly, so it needs no entry file at all). `--harness none` opts out.
-
-Harness adapter output is the one part `init` doesn't write itself, which is why `ctxr adapters generate` is a separate line above; `ctxr update` regenerates it from then on.
+- **Which agent harnesses?** `claude-code` (default — its adapter generates `CLAUDE.md`, a one-line import of `AGENTS.md`) and/or `hermes-agent` (reads `AGENTS.md` directly, so it needs no entry file at all). `--harness none` opts out.
 
 Non-interactively, pass them as flags — nothing ever blocks on a prompt:
 
@@ -47,18 +44,16 @@ ctxr init --profile para --harness claude-code
 
 ## What a store looks like on disk
 
-After `ctxr init --profile para`, plus `ctxr adapters generate`:
+After `ctxr init --profile para`:
 
 ```
 contexture.yaml               single source of truth — what this store chose; the rest takes shipped defaults
 AGENTS.md                     generated entry document — six managed sections
 CLAUDE.md                     harness entry file; a one-line managed import of AGENTS.md
 .claude/
-  settings.json               PreToolUse hook wiring for the write gate
-  hooks/                      the write-gate shim
   skills/ -> ../.agents/skills   a bridge, so Claude Code auto-discovers the canonical skills
 .agents/skills/               THE canonical skills location, read natively by most harnesses
-  ctxr-*/SKILL.md               15 contexture-owned skills (refreshed by `ctxr update`)
+  ctxr-*/SKILL.md               16 contexture-owned skills (refreshed by `ctxr update`)
   frontend-design/, eli5/       vendored third-party skills, with licenses and provenance
 .contexture/guidance/
   house-conventions.md        your store's own rules — inlined into AGENTS.md verbatim
@@ -97,7 +92,7 @@ Two distinctions make the rest of this readable:
 
 **`AGENTS.md`**, with six managed sections: *Store fundamentals* (root resolution, the frontmatter schema, the write path), *Mission*, *Retrieval: which leg to use*, *Capturing and ingesting*, *Placing a new note* (rendered from your actual taxonomy layers), and *Store conventions*.
 
-**The skills**, installed as full copies at `.agents/skills/ctxr-<name>/SKILL.md`. That path is the cross-harness canonical location; a harness that reads its own branded directory instead gets that directory bridged to it (`.claude/skills/` is a symlink), so skill auto-discovery works with no wrapper and no second copy. A harness without auto-discovery reaches the same file by path from `AGENTS.md`. They're contexture-owned — refreshed by `ctxr update`, never hand-edited — and they're written against *your* store's configured taxonomy, so no shipped profile's layer names leak into them. Your own skills live alongside, untouched by sync.
+**The skills**, installed as full copies at `.agents/skills/ctxr-<name>/SKILL.md`. That path is the cross-harness canonical location; a harness that reads its own branded directory instead gets that directory bridged to it (`.claude/skills/` is a symlink), so skill auto-discovery works with no wrapper and no second copy. A harness without auto-discovery reaches the same file by path from `AGENTS.md`. They're contexture-owned — refreshed by `ctxr update`, never hand-edited — and they're written against *your* store's configured taxonomy, so no shipped profile's layer names leak into them. Your own skills live alongside, untouched by sync. An owned skill may carry files beside its `SKILL.md` — `ctxr-second-opinion` ships the script that runs its reviewers — and update keeps that whole directory matching the package.
 
 | Skill | What it decides |
 | --- | --- |
@@ -115,6 +110,8 @@ Two distinctions make the rest of this readable:
 | `ctxr-submit` | Everything up to and including opening the pull request |
 | `ctxr-land` | Merging after review, and reclaiming the worktree |
 | `ctxr-session-capture` | What a finished session produced that is worth keeping |
+| `ctxr-upgrade` | Whether to upgrade the installed CLI now, and asking before it does |
+| `ctxr-second-opinion` | Whether a plan or a taste call needs three different model families, and how to weigh what they say |
 
 Your house rules go in `.contexture/guidance/house-conventions.md`. It's inlined into `AGENTS.md`'s *Store conventions* section in full, so it loads for every harness at the start of every session — there's no separate file an agent has to remember to open.
 
@@ -134,13 +131,11 @@ flowchart LR
 
   S --> C --> K --> P --> U --> R --> L
 
-  G1["write-gate hook"]
   G2["pre-commit · pre-push"]
-  C -.- G1
   U -.- G2
 
   classDef gate fill:#fbfbfb,stroke:#bbb,stroke-dasharray:4 3,color:#666
-  class G1,G2 gate
+  class G2 gate
 ```
 
 
@@ -186,7 +181,7 @@ Each item is validated and applied independently, so one bad path refuses that i
 
 They're ordinary `git` and `gh`. The CLI owns only what git cannot do — creating the worktree, applying validated note writes, running the health gates — and the sequencing, the confirmation gates, and the judgment live in the skills, where you can read and change them. That's why `ctxr session` has exactly three subcommands: `start`, `capture`, and `list`.
 
-Three mechanical backstops hold the line underneath all of it: the **pre-commit** hook runs `doctor --staged`; the **pre-push** hook refuses a push to the default branch (`CONTEXTURE_ALLOW_DEFAULT_BRANCH_PUSH=1` is the emergency override, for emergencies); and for Claude Code the **write-gate** PreToolUse hook denies any edit under the store root made outside the active session worktree.
+Two mechanical backstops hold the line underneath all of it: the **pre-commit** hook runs `doctor --staged`, and the **pre-push** hook refuses a push to the default branch (`CONTEXTURE_ALLOW_DEFAULT_BRANCH_PUSH=1` is the emergency override, for emergencies). Both are version-controlled git hooks, so they hold whichever harness, or human, does the writing.
 
 ## The knowledge loop
 
@@ -292,20 +287,27 @@ The **Preview** area, directly below the published pages, holds the pages your o
 ctxr version           # the installed version, and where it is installed from
 ctxr version --check   # compare it against the latest published release
 ctxr update            # refresh every contexture-owned file to the installed version
+ctxr update --worktree # the same, on a branch of its own, never in this checkout
 ctxr verify --portable # prove the store works from a harness with no harness-specific state
 ```
 
 `ctxr update` re-renders the `AGENTS.md` sections, skill copies, hooks, and adapter outputs — run it after upgrading the CLI, and after editing your house conventions.
 
+`ctxr update --worktree` does that work in a worktree it creates for itself, off the freshly fetched default branch, on a branch named for the running release (`<branch_prefix>ctxr-update-<version>`). It never writes the checkout you ran it from, and it commits nothing — pushing the branch and opening the pull request are yours to do. When nothing is due it removes the worktree and branch again and says the store is already up to date; when the branch already exists, locally or on the remote, it does nothing at all. Both are what make it safe to run unattended, on every container start for example: the same release always names the same branch, and a run with nothing to do leaves nothing behind. The branch carries your session prefix, so `ctxr session list` shows it and the lifecycle skill submits and reclaims it like any other session.
+
 ### Upgrading the CLI
 
 `ctxr session start` and `ctxr update` check whether a newer release has been published and say so, once per session and once per update. The notice goes to stderr and appears as an `info` finding in `--json` output; it never changes either command's exit code, and a registry that is slow, unreachable, or behind a proxy simply produces no advice rather than a failure. `ctxr doctor` and `ctxr init` never make the request at all — a commit must not depend on the network, and `init` stays offline.
 
-The `ctxr-upgrade` skill performs the upgrade: it reads the live answer, refuses to instruct a global install when the executable it finds is a linked working copy, asks before changing anything, and re-renders the store *after* the package upgrade rather than before. By hand, that is `npm install -g ctxr-cli@latest` followed by `ctxr update`, in that order.
+The `ctxr-upgrade` skill performs the upgrade: it reads the live answer, refuses to instruct a global install when the executable it finds is a linked working copy — or a global install you cannot write to, such as one a container image ships, which `ctxr version` reports as `install_writable: false` and which is upgraded by moving to a newer image — asks before changing anything, and re-renders the store *after* the package upgrade rather than before. By hand, that is `npm install -g ctxr-cli@latest` followed by `ctxr update`, in that order.
 
 To turn the check off, set `update_check.enabled` to `false` in `contexture.yaml`, or set `CONTEXTURE_UPDATE_CHECK=0` for a single invocation. `update_check.ttl_hours` sets how long a resolved answer is reused (a day by default); the cache lives in the store's gitignored `.contexture/cache/`.
 
-`schema_version` in `contexture.yaml` versions *store state* — the config shape and frontmatter conventions — as a monotonic integer independent of the npm package version. contexture ships no migration mechanism, so the number is a gate: a store whose recorded version is not the one your CLI supports is refused rather than half-read, in **either** direction. Newer, because the CLI cannot know that shape; older, because it no longer reads it. A release that changes the store's shape bumps the version and documents the one-time fixup in its release notes.
+`schema_version` in `contexture.yaml` versions *store state* — the config shape and frontmatter conventions — as a monotonic integer independent of the npm package version. It is a gate: a store whose recorded version is not the one your CLI supports is refused rather than half-read, in **either** direction, by every command except one.
+
+That one is `ctxr update`, and only for an *older* store. A release that changes the store's shape ships a migration step for it, and `ctxr update` runs every step between the store's version and the CLI's, in order, before it re-renders anything. The steps rewrite the parsed `contexture.yaml` before the typed configuration ever reads it, so contexture only ever accepts one spelling of a key, and the written file differs from yours only in the keys a step names and the version — your comments, your key order and every value you recorded are carried across untouched. If a step fails, or its result doesn't validate, nothing is written. Every other command refuses an older store and tells you to run `ctxr update`; run it as `ctxr update --worktree` and the migration lands on a branch for review rather than in your checkout.
+
+Two cases stay refused everywhere, `update` included. A store **newer** than the CLI, because the CLI cannot know that shape — the remedy is a newer CLI. And a store older than the oldest version this release has a step for, which it cannot bring forward — that one is a hand edit, following the release notes for each version since.
 
 ### The config records decisions, not values
 
@@ -336,7 +338,7 @@ To pin a value against a future default change, declare it. Nothing rewrites wha
 | `rollup gather \| write \| stale` | Entity synthesis: enumerate, write, find what's out of date |
 | `publish gather \| new \| check` | Resolve a subject, scaffold a page, run the structural gates |
 | `session start \| capture \| list` | Session worktrees, and applying an approved capture proposal |
-| `adapters generate \| write-gate` | Regenerate harness outputs; the write-gate hook target |
+| `adapters generate` | Regenerate harness outputs (`ctxr update` does this too) |
 | `serve` | Read the store in a browser |
 | `update` | Bring contexture-owned files up to the installed version |
 | `version [--check]` | Report the installed version; `--check` compares it against the latest published release |

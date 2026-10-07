@@ -21,21 +21,6 @@ A store MAY carry operator-authored convention documents as markdown files at a 
 - **WHEN** the entry document is regenerated against unchanged convention files
 - **THEN** the conventions section is byte-identical and regeneration reports no change
 
-### Requirement: A shipped baseline convention is delivered into the guidance directory and refreshed by update
-A store SHALL carry a contexture-owned baseline convention file at a fixed filename under the configured guidance directory, rendered from the store's own configuration (the configured relation vocabulary, archiving, git and session rules, directory-scoped convention discovery) — never a shipped profile's or one deployment's names. `init` SHALL write it; the update command SHALL rewrite it to match a fresh render whenever the template or the store's configuration changed, and SHALL leave every other file in the guidance directory (including the operator's own) untouched. Both SHALL be byte-stable when nothing has changed. The file SHALL be discoverable by the same mechanism that scans and inlines every other convention document into the generated entry document, requiring no composition step of its own.
-
-#### Scenario: A fresh init delivers the baseline convention
-- **WHEN** `contexture init` runs
-- **THEN** the configured guidance path contains the baseline convention file, and it is inlined into the generated entry document's conventions section alongside any other file present
-
-#### Scenario: A configuration change refreshes the baseline convention on update
-- **WHEN** a store's configuration changes in a way that affects the baseline convention's rendered content (for example, a new relation name) and the update command runs
-- **THEN** the baseline convention file is rewritten to reflect the change, and the entry document's conventions section reflects it after regeneration
-
-#### Scenario: A second update with nothing changed is a no-op
-- **WHEN** the update command runs twice in a row with no configuration or template change between runs
-- **THEN** the second run reports no change to the baseline convention file
-
 ### Requirement: An operator convention file is seeded with prompts only
 `init` SHALL seed one operator-authored convention file in the guidance directory, containing heading prompts for content specific to the store (placement distinctions, content style, tag vocabulary, store context) and no invented content. Once the file exists, it SHALL never be rewritten by `init` or the update command.
 
@@ -55,7 +40,7 @@ The entry document's inlined conventions section SHALL have a configured maximum
 - **THEN** the check measures the section against the shipped default budget
 
 ### Requirement: Contexture-owned skills are copied into the store and refreshed by update
-The shipped skills SHALL be contexture-owned: their canonical content ships with the tool, and a store SHALL carry a full copy of each at the configured skills path in the skill layout (`<slug>/SKILL.md`), marked as managed. `init` SHALL write them; a dedicated update command SHALL bring every contexture-owned file in a store — generated entry-document sections, managed ignore blocks, hooks, skill copies, and adapter outputs — to the installed tool version without touching operator-authored content. Both SHALL be byte-stable when nothing has changed.
+The shipped skills SHALL be contexture-owned: their canonical content ships with the tool, and a store SHALL carry a full copy of each at the configured skills path in the skill layout: a directory `<slug>/` holding `SKILL.md`, marked as managed, and any supporting files the skill ships beside it (governed by the requirement *Owned skills may carry supporting files*). `init` SHALL write them, together with every other contexture-owned file the update command brings current, including each declared harness's adapter outputs; a dedicated update command SHALL bring every contexture-owned file in a store — generated entry-document sections, managed ignore blocks, hooks, skill copies, and adapter outputs — to the installed tool version without touching operator-authored content. Both SHALL be byte-stable when nothing has changed.
 
 #### Scenario: Update refreshes a drifted copy and leaves operator content alone
 - **WHEN** a contexture-owned skill copy differs from the installed version and an operator-authored skill sits alongside it, and the update command runs
@@ -70,7 +55,7 @@ Every context store SHALL carry an `AGENTS.md` file at its root that is the cano
 
 #### Scenario: Reading only `AGENTS.md` is sufficient
 - **WHEN** an agent with no harness-specific context reads `AGENTS.md` at a store's root
-- **THEN** it finds the root-resolution rule, the frontmatter schema pointer, the write-path rule, a statement that agent identity and durable cross-session memory belong to its harness rather than to this store, the store's current mission when one is configured, and the store's full operating conventions, without needing to read any other file
+- **THEN** it finds the root-resolution rule, the frontmatter schema pointer, the write-path rule, a statement that agent identity, persona, and the agent's conversational recall of the user and of itself belong to its harness while subject-matter knowledge belongs to this store, the store's current mission when one is configured, and the store's full operating conventions, without needing to read any other file
 
 #### Scenario: The canonical section names the mission document when configured
 - **WHEN** a store's `contexture.yaml` declares `organize.mission_path` and the entry document is regenerated
@@ -130,11 +115,11 @@ The entry document's contexture-managed sections SHALL render, on a freshly init
 - **THEN** the existing order is left unchanged, and `ctxr lint` reports the interruption as an observation
 
 ### Requirement: The canonical section states the harness/store identity boundary
-The canonical section SHALL state, on every store regardless of configuration, that agent identity, persona, and durable cross-session memory are the harness's responsibility, not the store's — the store holds knowledge and skills. This statement SHALL reference paths (the skills path) rather than inlining any identity content, and SHALL NOT introduce a configuration key, command, or adapter kind for identity.
+The canonical section SHALL state, on every store regardless of configuration, that agent identity, persona, and the agent's conversational recall — what it remembers of the user and of itself across sessions — are the harness's responsibility, not the store's, and that subject-matter knowledge, including knowledge worth retrieving in a later session, is the store's — the store holds knowledge and skills. This statement SHALL reference paths (the skills path) rather than inlining any identity content, and SHALL NOT introduce a configuration key, command, or adapter kind for identity.
 
 #### Scenario: The boundary statement is present on every store
 - **WHEN** the entry document is generated for a store, regardless of what its `contexture.yaml` declares
-- **THEN** the canonical section states that identity and durable cross-session memory belong to the harness, not the store, and names no identity file or path of its own
+- **THEN** the canonical section states that identity, persona, and the agent's conversational recall belong to the harness, not the store, states that subject-matter knowledge belongs to the store, and names no identity file or path of its own
 
 #### Scenario: A second generation is byte-stable
 - **WHEN** the entry document is regenerated against unchanged configuration
@@ -318,7 +303,7 @@ contexture SHALL ship, as contexture-owned skills delivered by init and update, 
 - **THEN** every owned skill above is present at the configured skills path with the managed header, and a second update reports nothing changed
 
 ### Requirement: An owned skill names only affordances the CLI provides
-Every contexture-owned skill SHALL instruct its steps using only commands and options the CLI registers. A long option named alongside a contexture command in a rendered owned skill SHALL resolve against the option table that command registers, and a skill naming an option no command accepts SHALL fail a check rather than ship. The enforcing mechanism is a test over the rendered skill set that resolves each such option against the CLI's own registration, so a skill cannot outlive the affordance it documents.
+Every contexture command and option a contexture-owned skill instructs SHALL be one the CLI registers. A long option named alongside a contexture command in a rendered owned skill SHALL resolve against the option table that command registers, and a skill naming an option no command accepts SHALL fail a check rather than ship. A skill MAY also instruct tools other than contexture — `git`, `gh`, `node`, or a model CLI a skill's own runner drives — and those tools' options are outside what this check resolves. The enforcing mechanism is a test over the rendered skill set that resolves each such option against the CLI's own registration, so a skill cannot outlive the affordance it documents.
 
 #### Scenario: A skill naming a removed option fails the check
 - **WHEN** an owned skill instructs a step by naming a contexture command together with a long option that command does not register
@@ -480,6 +465,8 @@ For each harness the operator declares whose adapter declares a skills directory
 ### Requirement: The operator declares which harnesses a store targets, at setup
 `ctxr init` SHALL accept a non-interactive option naming the harnesses to configure, and SHALL prompt for them when run interactively without one, recording the selection in the store's configuration as declared adapters. Selecting none SHALL be permitted and SHALL leave the store with the canonical skills directory and no bridged harness. Contexture SHALL NOT infer the selection from what is installed on the machine.
 
+`ctxr init` SHALL generate the outputs of every declared harness adapter in the same run that records the selection, and SHALL commit every output it writes with the initial store scaffold, so a harness pointed at a freshly initialized store loads the store's entry document without any further command. A file the adapter generates nothing for SHALL NOT be created. Running `ctxr init` against an already-initialized store SHALL bring the declared adapters' outputs current exactly as the update command does.
+
 #### Scenario: Harnesses are named non-interactively
 - **WHEN** `ctxr init` runs with the harness option naming two harnesses
 - **THEN** both are recorded as declared adapters in the generated configuration and both are bridged, with no prompt shown
@@ -490,7 +477,23 @@ For each harness the operator declares whose adapter declares a skills directory
 
 #### Scenario: Selecting no harness is valid
 - **WHEN** `ctxr init` runs selecting no harness
-- **THEN** skills are written to the canonical skills directory, no harness directory is created, and the command exits successfully
+- **THEN** skills are written to the canonical skills directory, no harness directory is created, no harness entry file is written, and the command exits successfully
+
+#### Scenario: A harness that declares an entry file gets it in the initial commit
+- **WHEN** `ctxr init` runs non-interactively on an empty directory selecting a harness whose adapter declares an entry file
+- **THEN** that entry file exists at the store root containing the managed import of `AGENTS.md`, it is tracked in the commit `init` creates, it is listed among the files `init` reports as created, and the working tree is clean afterwards
+
+#### Scenario: A harness that reads the entry document directly gets no entry file
+- **WHEN** `ctxr init` runs selecting only a harness whose adapter declares no entry file
+- **THEN** no harness entry file is written, its skills directory is still bridged, and the command exits successfully
+
+#### Scenario: Nothing is created for an adapter that contributes nothing
+- **WHEN** `ctxr init` runs selecting a harness whose adapter emits no permission config for a store that has none
+- **THEN** no permission config file is created, and none is named among the created files or in the initial commit
+
+#### Scenario: Re-running init restores a missing entry file
+- **WHEN** an initialized store declares a harness whose adapter declares an entry file, that file is absent, and `ctxr init` runs against the store again
+- **THEN** the entry file is written with the managed import of `AGENTS.md`, no configuration is rewritten, no commit is created, and a further `ctxr init` changes nothing
 
 ### Requirement: A broken bridge is detected and repaired
 When a declared harness's skills directory exists but neither resolves to the canonical directory nor contains the current skills — including the case where a checkout has materialized a symlink as a regular file — `ctxr doctor` SHALL report it as a broken bridge naming the harness, and `ctxr update` SHALL repair it by re-establishing the bridge, preferring a symlink and falling back to copying.
@@ -504,7 +507,7 @@ When a declared harness's skills directory exists but neither resolves to the ca
 - **THEN** `ctxr update` re-points it at the configured skills path and reports the repair
 
 ### Requirement: Upgrading the CLI is an owned skill that asks before it acts
-contexture SHALL ship `ctxr-upgrade` as a contexture-owned skill delivered by init and refreshed by update, like every other owned skill. The rendered skill SHALL take the installed and published versions from the CLI's own release check rather than from an advisory that may have gone stale; SHALL stop, reporting what it found, when the CLI reports the running executable as a linked working copy rather than a global installation, instead of instructing a package-manager install that would not affect the executable in use; SHALL gate the install behind an explicit operator approval, because upgrading the executable changes every store on the machine and not only the one at hand; SHALL order the package upgrade before the store re-render, so the re-render is performed by the upgraded executable rather than by the one being replaced; and SHALL instruct that the re-render happen from a session worktree, since it writes contexture-owned files and is subject to the same write path as any other change.
+contexture SHALL ship `ctxr-upgrade` as a contexture-owned skill delivered by init and refreshed by update, like every other owned skill. The rendered skill SHALL take the installed and published versions from the CLI's own release check rather than from an advisory that may have gone stale; SHALL stop, reporting what it found, when the CLI reports the running executable as a linked working copy rather than a global installation, instead of instructing a package-manager install that would not affect the executable in use; SHALL likewise stop when the CLI reports a global installation that the running user cannot write to, stating that the executable is managed by whatever installed it and is upgraded there — for a container image, by moving to a newer image — instead of instructing a package-manager install that would be refused; SHALL gate the install behind an explicit operator approval, because upgrading the executable changes every store on the machine and not only the one at hand; SHALL order the package upgrade before the store re-render, so the re-render is performed by the upgraded executable rather than by the one being replaced; and SHALL instruct that the re-render happen from a session worktree, since it writes contexture-owned files and is subject to the same write path as any other change.
 
 The skill drives the package manager rather than a contexture command, in the same way the submit and land skills drive `git` and `gh`: there is no contexture command that upgrades the CLI, and the store-update command re-renders a store rather than replacing an executable.
 
@@ -513,12 +516,16 @@ The skill drives the package manager rather than a contexture command, in the sa
 - **THEN** the skill stops and reports the install it found, and instructs no package-manager install
 
 #### Scenario: The upgrade is gated, and ordered before the re-render
-- **WHEN** an agent follows the rendered upgrade skill against a global installation with a newer release published
+- **WHEN** an agent follows the rendered upgrade skill against a global installation the running user can write to, with a newer release published
 - **THEN** the operator's approval is obtained before any install runs, the package upgrade precedes the store re-render, and the re-render step follows a confirmation that the upgraded executable is the one now on the path
 
 #### Scenario: Update delivers the skill to an existing store
 - **WHEN** a store initialized before this change runs the update command
 - **THEN** the upgrade skill is present at the configured skills path carrying the managed header, discoverable exactly as every other owned skill is
+
+#### Scenario: An install the user cannot write stops the skill before any install
+- **WHEN** an agent follows the rendered upgrade skill and the CLI reports a global installation that the running user cannot write to
+- **THEN** the skill stops, reports the install location and that it is managed by whatever installed it, names moving to a newer image as the remedy when the executable shipped in one, and instructs no package-manager install
 
 ### Requirement: The lifecycle skill offers the upgrade without blocking the session
 The rendered session-lifecycle skill's start step SHALL, when the session-start command reports that a newer release is published, instruct the agent to name the installed and published versions to the operator and to offer the upgrade skill. It SHALL NOT instruct the agent to upgrade unasked, and SHALL NOT make the session's continuation conditional on the operator's answer: a deferred or declined upgrade continues the session unchanged. When the start command reports no newer release, or reports that the check could not be completed, the start step SHALL proceed without raising either as a problem.
@@ -557,6 +564,8 @@ A packaged template's content SHALL be fixed markdown, identical for every store
 
 The library SHALL cover, at minimum: a base carrying the frontmatter and top-level heading every note in the store shares — the file a store copies to cut its own kinds — and, built on that base, a template for a synthesized idea carrying the store's relation sections, one for work with a stated end state, and templates for the recurring entities a knowledge store accumulates, at minimum a person and an organization. No command SHALL require a template to exist in order to run.
 
+Every packaged template other than the base SHALL carry, in its frontmatter, a field naming the kind of note it is for, spelled with the template's own name. The base SHALL carry the same field empty, since a note started from it is of no particular kind and the base is the file a store copies to cut its own. No `ctxr` command SHALL read, validate, or select by that field: it records the kind a note was started from so that the agent's own content matching can find every note of a kind, and any further values in it are the store's. The generated entry document SHALL tell the agent, in the same place it names the configured templates path, to keep the field when starting a note and to use it to find notes by kind, and that no command filters by it.
+
 #### Scenario: A store predating the configuration keys gets the defaults
 - **WHEN** a `contexture.yaml` written before these keys existed is read
 - **THEN** it resolves to the shipped path and the shipped installed list, with nothing for the store to run
@@ -580,6 +589,14 @@ The library SHALL cover, at minimum: a base carrying the frontmatter and top-lev
 #### Scenario: No command depends on a template
 - **WHEN** every file is removed from a store's templates path and any contexture command runs
 - **THEN** the command behaves exactly as it did before, and no check fails for the absence
+
+#### Scenario: Every template but the base names its kind
+- **WHEN** a freshly initialized store's installed templates are read
+- **THEN** the base's kind field is empty, and every other template's kind field names exactly that template
+
+#### Scenario: No command acts on the kind field
+- **WHEN** a note's kind field is edited, emptied, or removed and any `ctxr` command runs
+- **THEN** no finding names the field, and the note's membership and order in every retrieval result, its catalog section, and its graph edges are the same as before the edit
 
 ### Requirement: Installed note templates are refreshed by update
 `ctxr init` SHALL write the declared templates to the configured path, and `ctxr update` SHALL bring each one to the installed version. Both SHALL be byte-stable when nothing has changed, and both SHALL leave every other file at that path — the store's own note kinds — untouched.
@@ -698,3 +715,127 @@ The rendered capture skill SHALL state that a capture is the source's record, wr
 #### Scenario: The instruction is backed by a check, not trusted on its own
 - **WHEN** a store declares a required capture section for a source type and a capture of that type carries only a summary
 - **THEN** ingest refuses it (per `context-ingest`), so the outcome does not depend on the skill having been followed
+
+### Requirement: Owned skills may carry supporting files
+A contexture-owned skill SHALL be able to ship packaged files beside its `SKILL.md`, inside the same skill directory at the configured skills path. `ctxr init` and `ctxr update` SHALL write each supporting file byte-identical to the packaged copy, and SHALL write nothing when every file already matches. An owned skill directory — one whose `SKILL.md` carries the managed header — SHALL belong to contexture as a whole, exactly as the managed `SKILL.md` already does: `ctxr update` SHALL make its contents match the installed version's package, removing any file in it the package does not ship and naming each removed path in its report. Supporting files carry no marker of their own; the managed header on `SKILL.md` is what makes the directory contexture's, and a directory without it SHALL never be touched. When the whole skill stops being shipped, its directory SHALL be removed with every file in it, as the managed skill copy is today. The enforcing mechanism is the skill sync that init and update both run, exercised by a test that writes a supporting file, drops it from the package, and asserts its removal.
+
+#### Scenario: Init delivers a skill's supporting files
+- **WHEN** `ctxr init` runs against a fresh store and the installed version ships an owned skill with supporting files
+- **THEN** that skill's directory at the configured skills path contains its `SKILL.md` with the managed header and each supporting file byte-identical to the packaged copy
+
+#### Scenario: Update removes a supporting file the package dropped
+- **WHEN** a store carries an owned skill's supporting file from an earlier version, the installed version no longer ships that file, and `ctxr update` runs
+- **THEN** the file is removed, every file the installed version still ships is present and current, and the command reports the change
+
+#### Scenario: A file the package does not ship is removed and named
+- **WHEN** an owned skill's directory contains a file the installed version does not ship, whether left by an earlier version or added by hand, and `ctxr update` runs
+- **THEN** the file is removed and the command's report names its path
+
+#### Scenario: A directory without the managed header is never touched
+- **WHEN** an operator-authored skill directory whose `SKILL.md` carries no managed header holds files of any name and `ctxr update` runs
+- **THEN** every file in it is byte-identical afterwards and none is reported
+
+#### Scenario: A current skill with supporting files makes update a no-op
+- **WHEN** `ctxr update` runs twice in a row against a store whose owned skills and their supporting files already match the installed version
+- **THEN** the second run writes no bytes and reports nothing changed
+
+#### Scenario: A copy-bridged harness receives the supporting files
+- **WHEN** a store declares a harness whose skills directory is bridged by copy rather than symlink
+- **THEN** that harness's copy of the skill directory contains the same supporting files as the canonical one
+
+### Requirement: The second-opinion skill is an owned skill over external model CLIs
+contexture SHALL ship `ctxr-second-opinion` as a contexture-owned skill delivered by init and update, carrying its runner as a supporting file that is invoked with `node` and depends on nothing outside the Node standard library. The skill SHALL offer two modes: *critique*, in which a written plan is sent to three critic roles — structure and coherence, failure modes and trust boundaries, and simplicity and cost — each backed by a different model family's command-line tool; and *poll*, in which one question is sent to the same model families, optionally asking each to answer through two or three named taste lenses. No `ctxr` command SHALL invoke a model CLI, and no command's behavior SHALL depend on the skill or on those CLIs being present; `ctxr verify` SHALL NOT report them, because the skill is not on the write path.
+
+The runner is the enforcing mechanism for the following, each covered by a test that runs it against stub CLIs on the executable search path:
+
+- It SHALL run the critics concurrently, each in its own process and each given only the plan and its own role — never another critic's output.
+- It SHALL pass prompt content to each CLI on standard input or as a single argument vector element, never through a shell.
+- It SHALL invoke each CLI with that tool's read-only or no-tools mode where one exists, and in an empty scratch directory as its working directory in every case.
+- It SHALL bound each critic by a timeout and record a critic that times out, exits non-zero, or returns output lacking the required verdict as failed, with the cause.
+- It SHALL write each critique under a letter assigned in an order independent of the critic roster, record the letter-to-role-and-model mapping in a separate manifest, and record in that manifest the model each CLI reports having run where the CLI reports one.
+- It SHALL mark a critique whose findings cite nothing the plan contains — no step it numbers and no text quoted from it — as blind and exclude it from the count of valid critiques, while a critique that approves with no findings SHALL remain valid.
+- It SHALL exit with a distinct status when fewer than two critiques are valid, so a partial result cannot be mistaken for a complete one.
+
+The skill SHALL state when to critique, when to poll, and when to answer directly; SHALL instruct synthesis on the anonymized letters before the manifest is read; SHALL instruct that a dissent backed by cited evidence, and a rejection carrying a critical finding, are surfaced in their own sections rather than outvoted; SHALL disclose that a critic sharing the orchestrating agent's model family is a bias to name; and SHALL end in a hand-off that executes no step of the plan it critiqued. Those instructions are skill-markdown conventions, asserted by a test over the rendered skill, not guarantees the runner can make.
+
+#### Scenario: Update delivers the skill with its runner
+- **WHEN** a store initialized before this change runs `ctxr update`
+- **THEN** the skill is present at the configured skills path with the managed header, its runner and prompt fragments beside it, and a second update reports nothing changed
+
+#### Scenario: Critics never see each other
+- **WHEN** the runner executes a critique against stub CLIs that record the input they receive
+- **THEN** each stub received the plan and exactly one role's instructions, and none received text produced by another critic
+
+#### Scenario: No shell stands between the plan and a critic
+- **WHEN** the runner executes a critique of a plan containing shell metacharacters, quotes, and a multi-kilobyte body
+- **THEN** each stub CLI receives the plan byte-identical, and no shell process is spawned
+
+#### Scenario: Results are anonymized
+- **WHEN** the runner completes a critique
+- **THEN** the critique files are named by letter, contain no role or model name placed there by the runner, and the letter-to-role-and-model mapping appears only in the manifest
+
+#### Scenario: A failed critic is reported, not hidden
+- **WHEN** one stub CLI exits non-zero and another exceeds the timeout
+- **THEN** each of those critiques is recorded as failed naming its cause, and the runner does not substitute another model for either
+
+#### Scenario: A blind critique does not count
+- **WHEN** a stub CLI returns a well-formed verdict whose findings cite no step and quote no text present in the plan
+- **THEN** the critique is marked blind in the manifest and excluded from the valid count
+
+#### Scenario: Fewer than two valid critiques is a partial result
+- **WHEN** only one of three critiques is valid
+- **THEN** the runner exits with the partial-result status, distinct from both success and a usage error
+
+#### Scenario: The rendered skill hands off without executing
+- **WHEN** the skill is rendered for a store
+- **THEN** it instructs synthesizing on letters before reading the manifest, carries sections for evidence-backed dissent and for critical rejections, names the orchestrator's model-family bias, and ends by presenting the synthesis without executing any step of the critiqued plan
+
+#### Scenario: No command depends on the model CLIs
+- **WHEN** none of the model CLIs is on the executable search path and `ctxr verify`, `ctxr doctor`, and `ctxr update` run
+- **THEN** each behaves exactly as it does when the CLIs are present, and none names them
+
+### Requirement: The shipped baseline convention is rendered into the entry document, not delivered as a file
+The generated "Store conventions" section of `AGENTS.md` SHALL open with contexture's shipped baseline convention, rendered at generation time from the shipped template and the store's own configuration (for example, its configured archive destination, default branch, and session worktrees path) — never a shipped profile's or one deployment's names — and placed ahead of every operator convention document. Its provenance line SHALL name contexture as its source rather than a path. The baseline SHALL NOT be written as a file under the configured guidance directory.
+
+`init` and the update command SHALL render the baseline from the current template and configuration, so a change to either is reflected in `AGENTS.md` by the next update, and both SHALL be byte-stable when neither has changed. `ctxr doctor` SHALL attribute a conventions-section drift caused only by the baseline to the baseline by name, rather than to the guidance directory or to an operator file.
+
+Neither command SHALL write, rewrite, or remove an operator file in the guidance directory. The single exception is a baseline copy an earlier version wrote there: when a file at a filename an earlier version used for the baseline still carries contexture's managed-owner marker, the update command SHALL remove it, so an upgraded store does not inline the baseline twice. A file at such a name without the marker SHALL be left untouched and inlined as an ordinary operator convention document.
+
+#### Scenario: A fresh init inlines the baseline and writes no file
+- **WHEN** `ctxr init` runs
+- **THEN** the configured guidance directory contains no baseline convention file, and the `AGENTS.md` conventions section opens with the baseline exactly once, with a provenance line naming contexture rather than a path
+
+#### Scenario: The baseline precedes the operator's conventions
+- **WHEN** the configured guidance directory holds operator convention documents and the entry document is regenerated
+- **THEN** the conventions section carries the baseline block first, followed by a block for each operator document
+
+#### Scenario: A configuration change refreshes the baseline on update
+- **WHEN** a store's configuration changes a value the baseline renders (for example, its configured default branch) and the update command runs
+- **THEN** the baseline block in the `AGENTS.md` conventions section reflects the new value, and no file under the configured guidance directory is written
+
+#### Scenario: A second update with nothing changed is a no-op
+- **WHEN** the update command runs twice in a row with no configuration or template change between runs
+- **THEN** the second run reports no change to `AGENTS.md` and none under the configured guidance directory
+
+#### Scenario: Doctor names the baseline when only the baseline has drifted
+- **WHEN** a store's configuration changes a value the baseline renders, `AGENTS.md` is not regenerated, and `ctxr doctor` runs
+- **THEN** it fails, naming the shipped baseline as the drifted source rather than the guidance directory or any operator document
+
+#### Scenario: An upgrade removes a managed baseline copy
+- **WHEN** the configured guidance directory holds a baseline copy written by an earlier version and carrying contexture's managed-owner marker, and the update command runs
+- **THEN** the copy is removed, the baseline is inlined exactly once, and the removed copy's body is not inlined
+
+#### Scenario: An operator file at the old baseline name is kept
+- **WHEN** the configured guidance directory holds an operator-authored file at a filename an earlier version used for the baseline, without contexture's managed-owner marker, and the update command runs
+- **THEN** the file is byte-identical afterward and is inlined as an operator convention document after the baseline
+
+### Requirement: A freshly initialized store is already current
+A store produced by `ctxr init` SHALL already hold every contexture-owned file at the installed tool version, so the update command run immediately afterwards, with the same tool version, SHALL report nothing changed. This SHALL hold whichever taxonomy and harness selection `init` was given. It is enforced by an automated test that initializes a store and then runs the update command against it. A contexture-owned file that `init` omits, or writes differently from the update command, fails that test.
+
+#### Scenario: Update after init is a no-op
+- **WHEN** `ctxr init` runs non-interactively on an empty directory selecting a harness whose adapter declares an entry file, and the update command runs immediately afterwards
+- **THEN** the update command reports nothing changed, and the working tree is still clean
+
+#### Scenario: Update after a no-harness init is a no-op
+- **WHEN** `ctxr init` runs selecting no harness, and the update command runs immediately afterwards
+- **THEN** the update command reports nothing changed, and no harness entry file exists

@@ -42,8 +42,9 @@ self-contradicting document nobody reads. Propose one only when all four hold:
 - It is a rule for future work, not a fact about past work.
 - It applied more than once, or the user stated it as a correction.
 - It is store-wide. A rule about one folder belongs in that folder's `README.md`, not here.
-- It is not already in the shipped baseline — read that file first. Restating contexture's own
-  behavior as a house rule is the most likely way to get this wrong.
+- It is not already in the shipped baseline, the first block of `AGENTS.md`'s "Store conventions"
+  section — read it first. Restating contexture's own behavior as a house rule is the most likely way
+  to get this wrong.
 
 Propose REMOVALS on the same bar: a convention the session contradicted, or that no longer matches how
 work actually goes, is worse than none — it teaches the next agent something false. The inlined section

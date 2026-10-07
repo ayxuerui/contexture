@@ -6,7 +6,12 @@ import { execute as executeIngest } from '../../src/commands/ingest.js';
 import { execute as executeSourceCheck } from '../../src/commands/source-check.js';
 import { execute as executeSourceHash } from '../../src/commands/source-hash.js';
 import type { StoreConfig } from '../../src/config/schema.js';
-import { AlreadyIngestedError, MissingRequiredCaptureSectionError, NoteNotFoundError } from '../../src/core/errors.js';
+import {
+  AlreadyIngestedError,
+  CaptureSourceTypeMismatchError,
+  MissingRequiredCaptureSectionError,
+  NoteNotFoundError,
+} from '../../src/core/errors.js';
 import { ExitCode } from '../../src/core/exit-codes.js';
 import type { Store } from '../../src/core/store.js';
 import { makeFakeEnv } from '../helpers/fake-env.js';
@@ -262,6 +267,147 @@ describe('ingest command', () => {
         const outcome = await executeIngest(env, store, { path: CAPTURE, into: NOTE, sourceType: 'ctx-a', sourceId: 'src-1' });
         expect(outcome.exitCode).toBe(ExitCode.Ok);
         expect(outcome.data?.capture).toBe(RETAINED);
+      } finally {
+        await tmp.cleanup();
+      }
+    });
+
+    /** Refused whole: still in the inbox, unstamped, and uncited. */
+    async function expectUntouched(root: string): Promise<void> {
+      expect(existsSync(path.join(root, RETAINED))).toBe(false);
+      const capture = await readFile(path.join(root, CAPTURE), 'utf8');
+      expect(capture).not.toContain('source_hash');
+      expect(capture).not.toContain('ingested:');
+      expect(await readFile(path.join(root, NOTE), 'utf8')).not.toContain('sources:');
+    }
+
+    // harden-the-required-capture-section D1: a section must have something under it.
+    it('refuses a declared heading with nothing under it, and writes nothing', async () => {
+      const tmp = await makeTmpDir();
+      try {
+        const store = await setUpStore(tmp.root);
+        store.config = configRequiring('Transcript');
+        await writeNote(tmp.root, CAPTURE, '# Captured\n\n## Summary\n\nDerived.\n\n## Transcript\n');
+        const env = makeFakeEnv({ cwd: tmp.root });
+
+        await expect(
+          executeIngest(env, store, { path: CAPTURE, into: NOTE, sourceType: 'ctx-a', sourceId: 'src-1' }),
+        ).rejects.toBeInstanceOf(MissingRequiredCaptureSectionError);
+        await expectUntouched(tmp.root);
+      } finally {
+        await tmp.cleanup();
+      }
+    });
+
+    it('refuses a declared heading that appears only inside a fenced code block', async () => {
+      const tmp = await makeTmpDir();
+      try {
+        const store = await setUpStore(tmp.root);
+        store.config = configRequiring('Transcript');
+        await writeNote(tmp.root, CAPTURE, '# Captured\n\n```\n## Transcript\nexample markup\n```\n');
+        const env = makeFakeEnv({ cwd: tmp.root });
+
+        await expect(
+          executeIngest(env, store, { path: CAPTURE, into: NOTE, sourceType: 'ctx-a', sourceId: 'src-1' }),
+        ).rejects.toBeInstanceOf(MissingRequiredCaptureSectionError);
+        await expectUntouched(tmp.root);
+      } finally {
+        await tmp.cleanup();
+      }
+    });
+
+    // harden-the-required-capture-section D2: the type a declaration is looked up under is the type recorded.
+    it('refuses a capture whose own source type disagrees with the invocation, naming both, writing nothing', async () => {
+      const tmp = await makeTmpDir();
+      try {
+        const store = await setUpStore(tmp.root);
+        store.config = configRequiring('Transcript');
+        await writeNote(tmp.root, CAPTURE, '---\nsource_type: ctx-a\n---\n# Captured\n\n## Summary\n\nDerived only.\n');
+        const env = makeFakeEnv({ cwd: tmp.root });
+
+        await executeIngest(env, store, { path: CAPTURE, into: NOTE, sourceType: 'ctx-b', sourceId: 'src-1' }).then(
+          () => expect.unreachable('ingest should have refused the capture'),
+          (err: unknown) => {
+            expect(err).toBeInstanceOf(CaptureSourceTypeMismatchError);
+            expect((err as { exitCode: number }).exitCode).toBe(ExitCode.CheckFailed);
+            expect((err as Error).message).toContain('"ctx-a"');
+            expect((err as Error).message).toContain('"ctx-b"');
+          },
+        );
+        await expectUntouched(tmp.root);
+        expect(await readFile(path.join(tmp.root, CAPTURE), 'utf8')).toContain('source_type: ctx-a'); // not overwritten
+      } finally {
+        await tmp.cleanup();
+      }
+    });
+
+    it('refuses a disagreement before it looks for the section, so the type is what gets named', async () => {
+      const tmp = await makeTmpDir();
+      try {
+        const store = await setUpStore(tmp.root);
+        store.config = configRequiring('Transcript');
+        await writeNote(tmp.root, CAPTURE, '---\nsource_type: ctx-a\n---\n# Captured\n'); // also missing its section
+        const env = makeFakeEnv({ cwd: tmp.root });
+
+        await expect(
+          executeIngest(env, store, { path: CAPTURE, into: NOTE, sourceType: 'ctx-b', sourceId: 'src-1' }),
+        ).rejects.toBeInstanceOf(CaptureSourceTypeMismatchError);
+      } finally {
+        await tmp.cleanup();
+      }
+    });
+
+    it('refuses a disagreement even when the store declares no section at all', async () => {
+      const tmp = await makeTmpDir();
+      try {
+        const store = await setUpStore(tmp.root);
+        await writeNote(tmp.root, CAPTURE, '---\nsource_type: ctx-a\n---\n# Captured\n');
+        const env = makeFakeEnv({ cwd: tmp.root });
+
+        await expect(
+          executeIngest(env, store, { path: CAPTURE, into: NOTE, sourceType: 'ctx-b', sourceId: 'src-1' }),
+        ).rejects.toBeInstanceOf(CaptureSourceTypeMismatchError);
+        await expectUntouched(tmp.root);
+      } finally {
+        await tmp.cleanup();
+      }
+    });
+
+    it('checks a capture whose own type agrees with the invocation under that type', async () => {
+      const tmp = await makeTmpDir();
+      try {
+        const store = await setUpStore(tmp.root);
+        store.config = configRequiring('Transcript');
+        await writeNote(tmp.root, CAPTURE, '---\nsource_type: ctx-a\n---\n# Captured\n\n## Summary\n\nDerived only.\n');
+        const env = makeFakeEnv({ cwd: tmp.root });
+
+        await expect(
+          executeIngest(env, store, { path: CAPTURE, into: NOTE, sourceType: 'ctx-a', sourceId: 'src-1' }),
+        ).rejects.toBeInstanceOf(MissingRequiredCaptureSectionError);
+
+        await writeNote(tmp.root, CAPTURE, '---\nsource_type: ctx-a\n---\n# Captured\n\n## Transcript\n\nWhat was said.\n');
+        const outcome = await executeIngest(env, store, { path: CAPTURE, into: NOTE, sourceType: 'ctx-a', sourceId: 'src-1' });
+        expect(outcome.exitCode).toBe(ExitCode.Ok);
+      } finally {
+        await tmp.cleanup();
+      }
+    });
+
+    it('takes the invocation\'s source type for a capture that names none, and requires its section', async () => {
+      const tmp = await makeTmpDir();
+      try {
+        const store = await setUpStore(tmp.root);
+        store.config = configRequiring('Transcript');
+        const env = makeFakeEnv({ cwd: tmp.root });
+        // CAPTURE from setUpStore carries no source_type and no Transcript.
+        await expect(
+          executeIngest(env, store, { path: CAPTURE, into: NOTE, sourceType: 'ctx-a', sourceId: 'src-1' }),
+        ).rejects.toBeInstanceOf(MissingRequiredCaptureSectionError);
+
+        await writeNote(tmp.root, CAPTURE, '# Captured\n\n## Transcript\n\nWhat was said.\n');
+        const outcome = await executeIngest(env, store, { path: CAPTURE, into: NOTE, sourceType: 'ctx-a', sourceId: 'src-1' });
+        expect(outcome.exitCode).toBe(ExitCode.Ok);
+        expect(await readFile(path.join(tmp.root, RETAINED), 'utf8')).toContain('source_type: ctx-a');
       } finally {
         await tmp.cleanup();
       }

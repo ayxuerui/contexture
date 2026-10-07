@@ -75,17 +75,44 @@ export class SchemaVersionNewerError extends ContextureError {
   }
 }
 
+/**
+ * migrate-stores-on-update: one error for every older store, so the code a
+ * caller matches on stays `config.schema_version.behind` whichever way the
+ * remedy points. What varies is the remedy, carried in the message and in
+ * `details.remedy`:
+ *
+ *   - `update`  the store is at or above the migration floor, so `ctxr update`
+ *               carries it forward. Raised by every command except update.
+ *   - `by_hand` the store is below the floor; nothing in this release can
+ *               bring it forward. Raised by every command, update included.
+ */
 export class SchemaVersionBehindError extends ContextureError {
-  constructor(storeVersion: number, supportedVersion: number) {
+  constructor(storeVersion: number, supportedVersion: number, floor: number) {
+    const withinFloor = storeVersion >= floor;
     super(ExitCode.Usage, {
       code: 'config.schema_version.behind',
       severity: 'error',
       message:
         `This store's schema_version (${storeVersion}) is older than the ` +
         `version this contexture release supports (${supportedVersion}). ` +
-        'contexture ships no migration: bring the store forward by hand, ' +
-        "following the fixup in the release notes for the version that raised it.",
-      details: { storeVersion, supportedVersion },
+        (withinFloor
+          ? 'Run `ctxr update` to bring it forward, or `ctxr update --worktree` to do it on a branch of its own.'
+          : `This release can only bring forward a store recorded at ${floor} or later, so it cannot ` +
+            'migrate this one: bring the store forward by hand, following the fixup in the release notes ' +
+            'for each version that raised it.'),
+      details: { storeVersion, supportedVersion, floor, remedy: withinFloor ? 'update' : 'by_hand' },
+    });
+  }
+}
+
+/** A schema migration step failed, or its result did not validate; nothing was written. */
+export class SchemaMigrationFailedError extends ContextureError {
+  constructor(configPath: string, detail: string) {
+    super(ExitCode.Usage, {
+      code: 'config.schema_version.migration_failed',
+      severity: 'error',
+      message: `Could not migrate "${configPath}", and it was left unchanged: ${detail}`,
+      subject: configPath,
     });
   }
 }
@@ -218,6 +245,26 @@ export class MissingRequiredCaptureSectionError extends ContextureError {
       code: 'ingest.missing_required_capture_section',
       severity: 'error',
       message: `"${capturePath}" carries no "${section}" section, which this store requires of every "${sourceType}" capture before it can stand as provenance.`,
+      subject: capturePath,
+    });
+  }
+}
+
+/**
+ * context-ingest spec (harden-the-required-capture-section D2): the capture
+ * already says what kind of source it came from, and the invocation says
+ * something else. Ingest used to stamp the invocation's value over the
+ * capture's own and say nothing, which also meant a store's declared required
+ * section was looked up under whatever a caller typed. `CheckFailed`, like the
+ * missing-section refusal: the command was called correctly and the material
+ * contradicts itself.
+ */
+export class CaptureSourceTypeMismatchError extends ContextureError {
+  constructor(capturePath: string, capturesOwn: string, invoked: string) {
+    super(ExitCode.CheckFailed, {
+      code: 'ingest.source_type_mismatch',
+      severity: 'error',
+      message: `"${capturePath}" says it came from a "${capturesOwn}" source but was ingested as "${invoked}"; make the capture and the --source-type agree, then ingest again.`,
       subject: capturePath,
     });
   }

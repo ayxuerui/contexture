@@ -30,7 +30,7 @@ if (!isHelp) {
   prior.push({ args, stdin, cwd: process.cwd(), ppid: process.ppid });
   fs.writeFileSync(file, JSON.stringify(prior));
 }
-if (isHelp) { console.log(behavior.help ?? '--max-turns --tools --model --effort --no-session-persistence --disable-slash-commands --output-format --skip-git-repo-check --sandbox --ephemeral --color --config --print'); process.exit(0); }
+if (isHelp) { console.log(behavior.help ?? '--tools --model --effort --no-session-persistence --disable-slash-commands --output-format --skip-git-repo-check --sandbox --ephemeral --color --config --print'); process.exit(0); }
 if (behavior.kind === 'exit') { console.error(behavior.stderr ?? 'boom'); process.exit(behavior.code ?? 1); }
 if (behavior.kind === 'hang') { setInterval(() => {}, 1000); return; }
 const text = behavior.text;
@@ -71,13 +71,13 @@ afterEach(async () => {
 
 type Behavior = Record<string, unknown>;
 
-function run(args: string[], behaviors: Record<string, Behavior> = {}, opts: { input?: string } = {}) {
+function run(args: string[], behaviors: Record<string, Behavior> = {}, opts: { input?: string; env?: Record<string, string> } = {}) {
   // HOME points at the temp dir so the runner's ~/.local/bin PATH fallback can never reach a real CLI.
   const env: NodeJS.ProcessEnv = { ...process.env, HOME: tmp.root, PATH: `${binDir}${path.delimiter}${process.env.PATH ?? ''}`, STUB_DIR: logDir };
   for (const cli of ['claude', 'codex', 'agy']) {
     env[`STUB_${cli.toUpperCase()}`] = JSON.stringify(behaviors[cli] ?? { kind: 'ok', text: critique(ROLE_OF[cli]!) });
   }
-  const result = spawnSync('node', [RUNNER, ...args], { env, encoding: 'utf8', input: opts.input ?? '' });
+  const result = spawnSync('node', [RUNNER, ...args], { env: { ...env, ...opts.env }, encoding: 'utf8', input: opts.input ?? '' });
   return { status: result.status, stdout: result.stdout, stderr: result.stderr, pid: result.pid };
 }
 
@@ -147,9 +147,55 @@ describe('critique: isolation and delivery', () => {
       expect(c.cwd).not.toBe(process.cwd());
       expect(c.cwd).toMatch(/ctxr-second-opinion-/);
     }
-    expect(claude.args).toEqual(expect.arrayContaining(['--tools', '', '--max-turns', '1', '--no-session-persistence']));
+    expect(claude.args).toEqual(expect.arrayContaining(['--tools', '', '--no-session-persistence']));
+    expect(claude.args).not.toContain('--max-turns'); // hidden from --help, and moot with no tools
     expect(codex.args).toEqual(expect.arrayContaining(['--sandbox', 'read-only', '--ephemeral', '--skip-git-repo-check']));
     expect(agy.args).toEqual(expect.arrayContaining(['--sandbox', '--disable-slash-commands']));
+  });
+});
+
+describe('critique: model and effort defaults', () => {
+  const effortOf = (args: string[]) => args[args.indexOf('--effort') + 1];
+  const codexEffort = (args: string[]) => args.find((a) => a.startsWith('model_reasoning_effort='));
+
+  it('lets claude apply its own recommended default: no --effort unless the environment asks for one', () => {
+    run(critiqueArgs());
+    expect(calls('claude')[0]!.args).not.toContain('--effort');
+    run(['--mode', 'critique', '--plan-file', planFile(), '--out', path.join(tmp.root, 'deep')], {}, { env: { CTXR_SECOND_OPINION_CLAUDE_EFFORT: 'max' } });
+    expect(effortOf(calls('claude')[1]!.args)).toBe('max');
+  });
+
+  it('passes codex its catalog default, medium, explicitly, because leaving it off can resolve to no reasoning', () => {
+    run(critiqueArgs());
+    expect(codexEffort(calls('codex')[0]!.args)).toBe('model_reasoning_effort=medium');
+    run(['--mode', 'critique', '--plan-file', planFile(), '--out', path.join(tmp.root, 'deep')], {}, { env: { CTXR_SECOND_OPINION_CODEX_EFFORT: 'xhigh' } });
+    expect(codexEffort(calls('codex')[1]!.args)).toBe('model_reasoning_effort=xhigh');
+  });
+
+  it('keeps gemini\'s effort in the model name, High by default', () => {
+    run(critiqueArgs());
+    const args = calls('agy')[0]!.args;
+    expect(args[args.indexOf('--model') + 1]).toBe('Gemini 3.1 Pro (High)');
+  });
+
+  it('at the fast tier: haiku with no effort, codex at low, and a flash model', () => {
+    run(critiqueArgs(['--tier', 'fast']));
+    const claude = calls('claude')[0]!.args;
+    expect(claude).not.toContain('--effort');
+    expect(claude[claude.indexOf('--model') + 1]).toBe('haiku');
+    expect(codexEffort(calls('codex')[0]!.args)).toBe('model_reasoning_effort=low');
+    const agy = calls('agy')[0]!.args;
+    expect(agy[agy.indexOf('--model') + 1]).toBe('Gemini 3.8 Flash (High)');
+  });
+
+  it('does not require --effort in claude\'s help, since it is only passed on request', () => {
+    const noEffort = '--tools --model --no-session-persistence --disable-slash-commands --output-format --skip-git-repo-check --sandbox --ephemeral --color --config --print';
+    const r = run(['--preflight'], {
+      claude: { kind: 'ok', text: 'PONG', help: noEffort },
+      codex: { kind: 'ok', text: 'PONG' },
+      agy: { kind: 'ok', text: 'PONG' },
+    });
+    expect(r.status).toBe(0);
   });
 });
 
@@ -256,6 +302,14 @@ describe('critique: failure, blindness, quorum', () => {
     expect(codex).toMatchObject({ status: 'valid', verdict: 'REJECT', veto: true });
   });
 
+  it('reads a finding whose severity has no brackets, so a critical rejection still counts as a veto', () => {
+    // Seen from a real critic: `### F1 critical confidence=0.9`, not `### F1 [critical] confidence=0.9`.
+    const unbracketed = critique('skeptic', 'S2', 'REJECT', 'critical').replace('[critical] confidence=0.7', 'critical confidence=0.9');
+    expect(unbracketed).toContain('### F1 critical confidence=0.9');
+    run(critiqueArgs(), { codex: { kind: 'ok', text: unbracketed } });
+    expect(manifest().critiques.find((c: { cli: string }) => c.cli === 'codex')).toMatchObject({ status: 'valid', verdict: 'REJECT', veto: true });
+  });
+
   it('exits with the partial-result status when fewer than two critiques are valid', () => {
     const r = run(critiqueArgs(), { codex: { kind: 'exit', code: 1 }, agy: { kind: 'exit', code: 1 } });
     expect(r.status).toBe(2);
@@ -303,6 +357,38 @@ describe('poll', () => {
     expect(prompt).toContain('- minimalist — restraint, clarity, simplicity');
     expect(prompt).toContain('- Plainspoken — blunt and substance first');
     expect(prompt).toContain('PICK:');
+  });
+
+  it('accepts commas inside an inline lens description, and still counts lenses', () => {
+    const q = path.join(tmp.root, 'q.txt');
+    writeFileSync(q, 'Pick a name.');
+    const behaviors = { claude: { kind: 'ok', text: 'x' }, codex: { kind: 'ok', text: 'x' }, agy: { kind: 'ok', text: 'x' } };
+    const r = run(['--mode', 'poll', '--prompt-file', q, '--out', outDir, '--lens', 'minimalist,Plainspoken:blunt, substance first, distrusts slogans'], behaviors);
+    expect(r.status).toBe(0);
+    const prompt = calls('codex')[0]!.stdin;
+    expect(prompt).toContain('- minimalist — restraint, clarity, simplicity');
+    expect(prompt).toContain('- Plainspoken — blunt, substance first, distrusts slogans');
+    expect((prompt.match(/^- /gm) ?? []).length).toBe(2); // two lenses, not four fragments
+  });
+
+  it('starts a new lens at a roster name or a Name: prefix, wherever the commas fall', () => {
+    const q = path.join(tmp.root, 'q.txt');
+    writeFileSync(q, 'Pick a name.');
+    const behaviors = { claude: { kind: 'ok', text: 'x' }, codex: { kind: 'ok', text: 'x' }, agy: { kind: 'ok', text: 'x' } };
+    run(['--mode', 'poll', '--prompt-file', q, '--out', outDir, '--lens', 'Plain:a, b, minimalist, Blunt:c, d'], behaviors);
+    const prompt = calls('claude')[0]!.stdin;
+    expect(prompt).toContain('- Plain — a, b');
+    expect(prompt).toContain('- minimalist — restraint');
+    expect(prompt).toContain('- Blunt — c, d');
+    expect((prompt.match(/^- /gm) ?? []).length).toBe(3);
+  });
+
+  it('refuses a description with no lens name before it, instead of guessing', () => {
+    const q = path.join(tmp.root, 'q.txt');
+    writeFileSync(q, 'Pick a name.');
+    const r = run(['--mode', 'poll', '--prompt-file', q, '--out', outDir, '--lens', 'blunt, substance first,minimalist']);
+    expect(r.status).toBe(1);
+    expect(r.stderr).toMatch(/unknown lens "blunt, substance first"/);
   });
 
   it('refuses one lens, four lenses, and an unknown lens name', () => {

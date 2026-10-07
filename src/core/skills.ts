@@ -191,7 +191,11 @@ const CAPTURE: SkillSeed = {
   name: 'Capture',
   description:
     'Bring material from outside the store into the inbox as a faithful record carrying its source identity, then hand off to ingest.',
-  body: (config) => skillTemplate('ctxr-capture').replaceAll('__INBOX_PATH__', config.ingest.inbox_path).split('\n'),
+  body: (config) =>
+    skillTemplate('ctxr-capture')
+      .replaceAll('__INBOX_PATH__', config.ingest.inbox_path)
+      .replaceAll('__CAPTURE_ROOT__', config.ingest.capture_root)
+      .split('\n'),
 };
 
 const INGEST_ORCHESTRATION: SkillSeed = {
@@ -326,6 +330,22 @@ const PUBLISH: SkillSeed = {
   body: () => skillTemplate('ctxr-publish').split('\n'),
 };
 
+/**
+ * ship-a-cross-model-second-opinion-skill: the first owned skill that ships
+ * more than its SKILL.md. The runner and its prompt fragments live under
+ * `templates/skills/ctxr-second-opinion/`, and the body names where the
+ * store's skills path put them. Named for the judgment, not a command: there
+ * is no `ctxr second-opinion`, and the skill drives no ctxr command at all.
+ */
+const SECOND_OPINION: SkillSeed = {
+  file: 'ctxr-second-opinion',
+  name: 'Second opinion',
+  description:
+    'Get an independent critique of a plan, or a poll on a taste call, from three different model families run in parallel, and synthesize their answers without running the plan.',
+  body: (config) => skillTemplate('ctxr-second-opinion').replaceAll('__SKILLS_PATH__', config.harness.skills_path.replace(/\/+$/, '')).split('\n'),
+  supportingFiles: () => skillSupportingFiles('ctxr-second-opinion'),
+};
+
 export const SKILLS: readonly SkillSeed[] = [
   CAPTURE,
   INGEST_ORCHESTRATION,
@@ -342,6 +362,7 @@ export const SKILLS: readonly SkillSeed[] = [
   DERIVED_ARTIFACTS,
   ORGANIZE_AUDIT,
   PUBLISH,
+  SECOND_OPINION,
 ];
 
 /** The owned skills, rendered against one store's configuration — what `syncShippedSkills` writes. */
@@ -448,6 +469,39 @@ export async function syncSkillSeeds(root: string, config: StoreConfig, seeds: r
     changed.push(posix(config.harness.skills_path, entry.name, SKILL_FILE_NAME));
   }
   return changed;
+}
+
+/**
+ * exempt-shipped-skill-files-from-the-diff-ceiling: every path under the
+ * configured skills path, mapped to the exact content the installed version
+ * writes there — each owned skill's SKILL.md, its supporting files, and the
+ * packaged files of each vendored skill the store declares. This is what
+ * `init` and `update` put on disk, so a staged file whose content equals the
+ * entry for its path is contexture's own write and not an edit.
+ *
+ * Vendored provenance records are absent on purpose: each is generated per
+ * store (it carries the installed CLI version), so no packaged file can match
+ * it, and it stays in the diff count. A declared vendored name the package does
+ * not carry is left out here; reporting it is `syncVendoredSkills`' job.
+ * Paths are store-relative and posix, the spelling `skillPaths` and git use.
+ */
+export async function shippedSkillFiles(config: StoreConfig, seeds: readonly SkillSeed[] = SKILLS): Promise<Map<string, string>> {
+  const shipped = new Map<string, string>();
+  const at = (...parts: string[]): string => path.join(config.harness.skills_path, ...parts).split(path.sep).join('/');
+
+  for (const skill of renderSkillSeeds(seeds, config)) {
+    shipped.set(at(skill.file, SKILL_FILE_NAME), skill.content);
+    for (const [rel, content] of skill.supportingFiles) shipped.set(at(skill.file, rel), content);
+  }
+  for (const name of config.skills.vendored) {
+    try {
+      const { files } = await readVendoredPayload(name);
+      for (const [rel, content] of files) shipped.set(at(name, rel), content);
+    } catch {
+      // not a packaged vendored skill: nothing is shipped for it
+    }
+  }
+  return shipped;
 }
 
 /** Every file under `dir`, as sorted posix paths relative to it. */

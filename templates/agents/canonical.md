@@ -14,11 +14,13 @@ The worktree step is why a command run inside a session worktree operates on tha
 
 A new note starts from a template under `__TEMPLATES_PATH__`, not from a blank file and not by copying whatever sibling happens to be nearby. Substitute `{{title}}` and `{{date}}` as you write it — no command expands them, and a note that lands with one still in it is reported by `ctxr lint`. A template is never a note: nothing under that path is catalogued, graphed, or retrieved. Add your own kinds there alongside the shipped ones; contexture only ever rewrites the ones it delivered.
 
+Every shipped template except the base, `Note`, stamps the kind it is for into the note's `tags`. Keep it when you start a note: it is how you find every note of a kind, with your own search, since no `ctxr` command filters by it. A kind you cut from the base should stamp its own name the same way, and any further tags are this store's own.
+
 ### Write path
 
 Every write to this store happens inside a session worktree, never directly on the default branch: `ctxr session start` creates one, and the work stays there for as long as the session runs. When the operator asks to wrap up, `ctxr-submit` validates with `ctxr doctor`, commits, pushes, and opens (or reports how to open) a pull request — that request is what triggers it, not having finished a piece of work. Do not edit files in the store root directly.
 
-### Identity and memory
+### Identity and recall
 
-Identity, persona, and durable cross-session memory for the agent working this store belong to its harness, not to this store — the store holds knowledge and skills, documented as portable markdown under `__SKILLS_PATH__`, never a persona or memory file of its own.
+Identity, persona, and the agent's conversational recall — what it remembers of the user and of itself from one session to the next — belong to its harness, not to this store. Subject-matter knowledge belongs here, including anything worth finding again in a later session: the store holds knowledge and skills, documented as portable markdown under `__SKILLS_PATH__`, and never a persona or recall file of its own.
 __MISSION_POINTER__

@@ -33,25 +33,43 @@ const MAX_ARGV_BYTES = 120_000;
 
 const env = (name, fallback) => process.env[`CTXR_SECOND_OPINION_${name}`] || fallback;
 
-/** Model choice lives here, in one table. Override by environment, never by editing a store. */
+/**
+ * Model choice lives here, in one table. Override by environment, never by editing a store.
+ *
+ * Effort is each provider's own recommended default, not one this runner picked:
+ *  - claude: no --effort at all, so Claude Code applies its own default for the model.
+ *  - codex: `medium`, the default its model catalog declares (`default_reasoning_level`). It is passed
+ *    explicitly because the flag cannot simply be left off: with no pin in config.toml, codex resolves to
+ *    `reasoning effort: none` on a ChatGPT login (seen 2026-10-05), which is no review at all. `low` at the
+ *    `fast` tier. A machine that pins its own effort in config.toml is overridden by this; set
+ *    CTXR_SECOND_OPINION_CODEX_EFFORT to use another.
+ *  - agy: the effort is part of the model name; `(High)` is Gemini's default thinking level.
+ * For scale: on one short plan Claude took 35 s at `high` and 514 s at `max`, so a deeper pass is a choice
+ * (CTXR_SECOND_OPINION_CLAUDE_EFFORT=max), not something to leave on by default.
+ */
 function tiers() {
   return {
     strong: {
-      claude: { model: env('CLAUDE_MODEL', 'opus'), effort: env('CLAUDE_EFFORT', 'max') },
-      codex: { effort: env('CODEX_EFFORT', 'xhigh') },
+      claude: { model: env('CLAUDE_MODEL', 'opus'), effort: env('CLAUDE_EFFORT', null) },
+      codex: { effort: env('CODEX_EFFORT', 'medium') },
       agy: { model: env('AGY_MODEL', 'Gemini 3.1 Pro (High)') },
     },
     fast: {
-      claude: { model: env('CLAUDE_MODEL', 'haiku'), effort: null },
-      codex: { effort: env('CODEX_EFFORT', 'medium') },
+      claude: { model: env('CLAUDE_MODEL', 'haiku'), effort: env('CLAUDE_EFFORT', null) },
+      codex: { effort: env('CODEX_EFFORT', 'low') },
       agy: { model: env('AGY_MODEL', 'Gemini 3.8 Flash (High)') },
     },
   };
 }
 
-/** The flags this runner passes, so preflight can confirm each CLI still accepts them. */
+/**
+ * The flags this runner passes, so preflight can confirm each CLI's --help still lists them. Only flags
+ * the help text documents belong here: `claude` still accepts a hidden --max-turns, but with `--tools ""`
+ * there is no tool turn to bound, so it is not passed at all. --effort is not listed because it is only
+ * passed when the environment asks for one.
+ */
 const FLAGS_USED = {
-  claude: { helpArgs: ['--help'], flags: ['--max-turns', '--tools', '--model', '--effort', '--no-session-persistence', '--disable-slash-commands', '--output-format'] },
+  claude: { helpArgs: ['--help'], flags: ['--tools', '--model', '--no-session-persistence', '--disable-slash-commands', '--output-format'] },
   codex: { helpArgs: ['exec', '--help'], flags: ['--skip-git-repo-check', '--sandbox', '--ephemeral', '--color', '--config'] },
   agy: { helpArgs: ['--help'], flags: ['--print', '--sandbox', '--disable-slash-commands', '--model'] },
 };
@@ -59,7 +77,7 @@ const FLAGS_USED = {
 class UsageError extends Error {}
 
 function parseArgs(argv) {
-  const opts = { mode: 'critique', tier: 'strong', timeout: 240, only: null, lens: null, out: null, planFile: null, promptFile: null, preflight: false, noWrap: false, seed: null };
+  const opts = { mode: 'critique', tier: 'strong', timeout: 600, only: null, lens: null, out: null, planFile: null, promptFile: null, preflight: false, noWrap: false, seed: null };
   const takesValue = new Set(['--mode', '--tier', '--timeout', '--only', '--lens', '--out', '--plan-file', '--prompt-file', '--seed']);
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -146,7 +164,7 @@ const firstLines = (text, n) => text.trim().split('\n').slice(0, n).join(' | ').
 function buildInvocation(cli, prompt, tier) {
   const t = tiers()[tier][cli];
   if (cli === 'claude') {
-    const args = ['-p', '--max-turns', '1', '--tools', '', '--model', t.model, '--no-session-persistence', '--disable-slash-commands', '--output-format', 'json'];
+    const args = ['-p', '--tools', '', '--model', t.model, '--no-session-persistence', '--disable-slash-commands', '--output-format', 'json'];
     if (t.effort) args.push('--effort', t.effort);
     return { cmd: 'claude', args, stdin: prompt };
   }
@@ -209,7 +227,8 @@ export function parseCritique(text) {
   const findings = [];
   const blocks = text.split(/^### F\d+\b/m).slice(1);
   for (const block of blocks) {
-    const head = /^\s*\[(critical|major|minor)\]\s*(?:confidence\s*=\s*([01](?:\.\d+)?))?/i.exec(block);
+    // Brackets around the severity are what the contract asks for, and models drop them: accept both.
+    const head = /^\s*\[?(critical|major|minor)\]?\s*(?:confidence\s*[=:]\s*([01](?:\.\d+)?))?/i.exec(block);
     const evidence = /^Evidence:\s*(.+)$/im.exec(block)?.[1] ?? '';
     findings.push({
       severity: head?.[1]?.toLowerCase() ?? null,
@@ -260,13 +279,28 @@ function loadLensRoster() {
   return roster;
 }
 
+/**
+ * Splits `--lens` into one string per lens. Lenses are comma-separated, but an inline description may itself
+ * contain commas: a fragment starts a NEW lens only when it is exactly a roster name or begins `Name:`;
+ * any other fragment continues the lens before it. So `minimalist,House taste:blunt, anti-slogan` is two
+ * lenses, and a description must not contain a colon (that would read as the start of another lens).
+ */
+export function splitLenses(spec, roster) {
+  const lenses = [];
+  for (const fragment of spec.split(',').map((f) => f.trim()).filter(Boolean)) {
+    const startsLens = roster.has(fragment.toLowerCase()) || /^[^:,]{1,40}:/.test(fragment);
+    if (startsLens || lenses.length === 0) lenses.push(fragment);
+    else lenses[lenses.length - 1] += `, ${fragment}`;
+  }
+  return lenses;
+}
+
 function lensBlock(spec) {
   const roster = loadLensRoster();
-  const specs = spec.split(',').map((s) => s.trim()).filter(Boolean);
   const described = [];
-  for (const s of specs) {
+  for (const s of splitLenses(spec, roster)) {
     if (roster.has(s.toLowerCase())) described.push(`- ${s.toLowerCase()} — ${roster.get(s.toLowerCase())}`);
-    else if (s.includes(':')) {
+    else if (/^[^:,]{1,40}:/.test(s)) {
       const [name, ...rest] = s.split(':');
       described.push(`- ${name.trim()} — ${rest.join(':').trim()}`);
     } else throw new UsageError(`unknown lens "${s}" (known: ${[...roster.keys()].join(', ')}; or pass "Name:description")`);
