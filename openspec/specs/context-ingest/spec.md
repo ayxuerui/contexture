@@ -135,7 +135,9 @@ A store SHALL be able to declare, in its configuration, which section a capture 
 
 The mapping SHALL be undeclared by default, and a source type with no entry SHALL be unconstrained — a store that declares nothing ingests exactly as it does today. The section SHALL be matched against the markdown the capture presents: the capture file itself, or for material that is not markdown, the sidecar that names it.
 
-This is a precondition on ingest, not a judgement about content. Whether the named section is complete, accurate, or faithful to the source is outside what any check can decide; only its presence is.
+This is a precondition on ingest, not a judgement about content. Whether the named section is complete, accurate, or faithful to the source is outside what any check can decide. What the capture's bytes do decide is that the section exists and has something under it, so a section counts only when it holds at least one non-blank line that is neither a heading nor a code fence's own opening or closing line; a heading with nothing under it, or one that appears only inside a fenced code block, is not a section. The text inside a fenced code block still counts as content once the heading is real, and a code block with nothing inside it does not.
+
+The source type a declaration is looked up under SHALL be the one the capture is recorded under. A capture that already carries a source type and is ingested with a different one named on the invocation SHALL be refused, exiting with the check exit code, naming both types and performing no write, rather than having one silently replace the other. A capture carrying no source type takes the one named on the invocation, and a capture whose own type agrees with the invocation's is checked under it.
 
 #### Scenario: A capture missing its declared section is refused, and nothing is written
 - **WHEN** a store declares a required section for a source type and `ctxr ingest` is run against a capture of that type that does not contain it
@@ -156,3 +158,23 @@ This is a precondition on ingest, not a judgement about content. Whether the nam
 #### Scenario: Material that is not markdown is checked against its sidecar
 - **WHEN** a capture that is not markdown travels with a sidecar naming it, its source type carries a declaration, and `ctxr ingest` is run against it
 - **THEN** the required section is looked for in the sidecar, and the binary capture's own bytes are not searched
+
+#### Scenario: A heading with nothing under it is not a section
+- **WHEN** a store declares a required section for a source type and `ctxr ingest` is run against a capture of that type whose declared heading is present but has no text under it before the next heading of the same or a shallower level, or the end of the file
+- **THEN** the capture is refused as lacking the section, and nothing is written
+
+#### Scenario: A heading inside a fenced code block is not a section
+- **WHEN** the declared heading appears in the capture only on a line inside a fenced code block
+- **THEN** the capture is refused as lacking the section, and a real heading elsewhere in the same capture would still satisfy it
+
+#### Scenario: A capture whose own source type disagrees with the invocation is refused
+- **WHEN** a capture already carries one source type and `ctxr ingest` is run against it with a different source type named on the invocation
+- **THEN** the command exits with the check exit code naming both types, the capture remains in the inbox with no identity stamped, and the destination note and derived artifacts are unchanged
+
+#### Scenario: A capture whose own source type agrees with the invocation is checked under it
+- **WHEN** a capture carries the same source type the invocation names, and the store declares a required section for that type
+- **THEN** the declared section is required exactly as if only one of the two had named the type
+
+#### Scenario: A capture carrying no source type takes the invocation's
+- **WHEN** a capture carries no source type and the invocation names one for which the store declares a required section
+- **THEN** the declared section is required of that capture under the invocation's type
