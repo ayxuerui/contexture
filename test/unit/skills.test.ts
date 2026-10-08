@@ -285,7 +285,7 @@ describe('owned-skills-expansion: each skill carries its load-bearing rule (task
   });
 
   it('submit: puts the changed pages\' addresses in the pull request body, taken from the report and omitted when none changed (list-page-urls-in-submit-pr)', () => {
-    const s = skills['ctxr-submit'];
+    const s = skills['ctxr-submit']!;
     const step = s.slice(s.indexOf('8. Before opening'), s.indexOf('9. Verify'));
     expect(step).toContain('ctxr publish urls --since');
     expect(step.indexOf('ctxr publish urls')).toBeLessThan(step.indexOf('gh pr create'));
