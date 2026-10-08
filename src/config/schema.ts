@@ -153,6 +153,13 @@ const ServeSchema = z.object({
       message: 'must be an absolute http(s) base URL with no query or fragment, e.g. "https://ctx.example.com" or "https://example.com/ctx/"',
     })
     .optional(),
+  /**
+   * list-page-urls-in-submit-pr (D5): whether a session worktree's preview
+   * address is worth reporting. Opt-in with no shipped default — whether a
+   * reviewer's server can see a session's worktree is a fact about the
+   * deployment, unknowable to the tool. Absent means `local`.
+   */
+  previews: z.enum(['local', 'none']).optional(),
 });
 
 /**

@@ -284,6 +284,17 @@ describe('owned-skills-expansion: each skill carries its load-bearing rule (task
     expect(s).toContain("pull request's number");
   });
 
+  it('submit: puts the changed pages\' addresses in the pull request body, taken from the report and omitted when none changed (list-page-urls-in-submit-pr)', () => {
+    const s = skills['ctxr-submit'];
+    const step = s.slice(s.indexOf('8. Before opening'), s.indexOf('9. Verify'));
+    expect(step).toContain('ctxr publish urls --since');
+    expect(step.indexOf('ctxr publish urls')).toBeLessThan(step.indexOf('gh pr create'));
+    expect(step).toContain('**Pages**');
+    expect(step).toMatch(/never rebuilt by hand/);
+    expect(step).toMatch(/server can see this\s+session's worktree/);
+    expect(step).toMatch(/lists no page, add no section/);
+  });
+
   it('land: reads pull-request state before any side effect, merges with gh, confirms after, syncs by fast-forward, and routes conflicts to the lifecycle skill (session-keeps-only-what-git-cannot-do)', () => {
     const s = skills['ctxr-land'];
     expect(s).not.toContain('ctxr session land'); // no such command exists anymore
