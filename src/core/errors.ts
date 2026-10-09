@@ -486,6 +486,21 @@ export class PublishSelectorConflictError extends ContextureError {
   }
 }
 
+/** publish spec: `ctxr publish urls` names its change set exactly once. */
+export class PublishChangeSetRequiredError extends ContextureError {
+  constructor(given: readonly string[]) {
+    super(ExitCode.Usage, {
+      code: 'publish.change_set_required',
+      severity: 'error',
+      message:
+        given.length === 0
+          ? '"ctxr publish urls" requires exactly one of --staged or --since <ref>.'
+          : `"ctxr publish urls" accepts exactly one change set; given: ${given.join(', ')}.`,
+      details: { given },
+    });
+  }
+}
+
 /**
  * publish spec: a living page's own name must not collide with the reserved
  * dated-snapshot naming pattern. `pageName` is the slug's final segment —

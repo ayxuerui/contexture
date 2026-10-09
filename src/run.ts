@@ -14,6 +14,7 @@ import * as graphQueryCommand from './commands/graph-query.js';
 import * as initCommand from './commands/init.js';
 import * as publishGatherCommand from './commands/publish-gather.js';
 import * as publishCheckCommand from './commands/publish-check.js';
+import * as publishUrlsCommand from './commands/publish-urls.js';
 import * as publishNewCommand from './commands/publish-new.js';
 import * as sessionCaptureCommand from './commands/session-capture.js';
 import * as sessionListCommand from './commands/session-list.js';
@@ -584,6 +585,19 @@ export async function run(argv: readonly string[], env: RunEnv): Promise<ExitCod
       result = await runCommand('publish.check', runEnv, jsonMode, async () => {
         const store = await openStore(runEnv, { root });
         return publishCheckCommand.execute(store, { path: pagePath });
+      });
+    });
+
+  publishCommand
+    .command('urls')
+    .description('the addresses of every page a change set adds, modifies, moves or removes — the staged changes (--staged) or everything since a ref (--since) — for a pull request body to carry')
+    .option('--staged', 'the staged changes')
+    .option('--since <ref>', 'the changes since this ref, as a pull request against it would show')
+    .action(async (cmdOpts: { staged?: boolean; since?: string }, cmd: Command) => {
+      const { runEnv, jsonMode, root } = deriveRunEnv(env, cmd);
+      result = await runCommand('publish.urls', runEnv, jsonMode, async () => {
+        const store = await openStore(runEnv, { root });
+        return publishUrlsCommand.execute(store, { staged: cmdOpts.staged === true, since: cmdOpts.since });
       });
     });
 

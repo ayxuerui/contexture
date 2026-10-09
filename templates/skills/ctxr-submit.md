@@ -42,7 +42,15 @@ and which worktree holds it, then stop. The work is safe on the branch and the n
 7. Name the branch: if it still carries a generated name, `git branch -m "<name>"` before pushing — never
    let a generated name reach the forge. A name given at `ctxr session start` does not settle this: it
    named a worktree when the work began, and what ships is decided here.
-8. Run: `git push -u origin "<branch>"`, then `gh pr create --base __DEFAULT_BRANCH__ --title "<title>" --body
+8. Before opening the pull request, run `ctxr publish urls --since origin/__DEFAULT_BRANCH__ --json`. When it
+   lists any page, the body gets a **Pages** section: a table with one row per page giving its status, its
+   preview address, and its published address — copied from the report, never rebuilt by hand. Mark a moved
+   page's old address as one that stops working, and a removed page's the same. Under the table state the
+   condition once: a preview resolves only while this pull request is open and the server can see this
+   session's worktree, and the published address resolves once the served checkout takes the landed commit.
+   When the report carries no preview, leave that column out; when it says no base URL is declared, say the
+   addresses are bare routes. When it lists no page, add no section.
+   Then run: `git push -u origin "<branch>"`, then `gh pr create --base __DEFAULT_BRANCH__ --title "<title>" --body
    "<why / what changed / verification / follow-ups>"`. Do not stop to confirm first — the request to
    submit is the consent for both, and `ctxr doctor` in step 5 is the gate on this path. If `gh` has no
    reachable GitHub remote for this repository, `git push` still succeeds on its own — report the pushed

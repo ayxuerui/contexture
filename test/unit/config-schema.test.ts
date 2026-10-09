@@ -333,6 +333,19 @@ describe('readConfig', () => {
     }
   });
 
+  it('reads serve.previews, leaving it undeclared when omitted, and refuses other values', async () => {
+    for (const [value, ok] of [['none', true], ['local', true], ['maybe', false]] as const) {
+      const tmp = await makeTmpDir();
+      try {
+        await writeFile(path.join(tmp.root, CONFIG_FILE_NAME), `${minimalConfig()}serve: { previews: ${value} }\n`);
+        if (ok) expect((await readConfig(tmp.root)).serve?.previews).toBe(value);
+        else await expect(readConfig(tmp.root)).rejects.toThrow(InvalidConfigError);
+      } finally {
+        await tmp.cleanup();
+      }
+    }
+  });
+
   it('refuses a base URL that is not an absolute http(s) base', async () => {
     for (const value of ['ctx-a.example.test', 'ftp://ctx-a.example.test', 'https://ctx-a.example.test/?a=b', 'https://ctx-a.example.test/#top']) {
       const tmp = await makeTmpDir();

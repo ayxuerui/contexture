@@ -51,7 +51,8 @@ says something.
 When `gather` reports that an existing page belongs at the reported path too, it is because this
 subject is acquiring a second page, and a subject's pages collect under one folder naming it. Move
 that page there before you scaffold the new one, and tell the operator its URL changed — somebody
-may already be holding that link. `gather` moves nothing itself, and it names which signal counted
+may already be holding that link. `ctxr publish urls` reports the old address beside the new one, and
+`ctxr-submit` carries both into the pull request. `gather` moves nothing itself, and it names which signal counted
 the page as this subject's; read that before you move anything, because the signal is a reading of
 the page's README and can be wrong. Lead a page's source notes with the note it is a representation
 of — that lead link is what says whose page this is, and everything after it is a citation.
