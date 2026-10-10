@@ -59,6 +59,10 @@ applies in spirit, and an alias list is something every later reader has to reco
 
 ### D2. Measure and report the read limit; do not reshape `AGENTS.md` to fit it
 
+> **Superseded in review.** The exploration that followed reversed this. The companion change
+> `lean-composed-entry-document` reshapes `AGENTS.md` into a routed composition held under the smallest declared
+> limit. The argument below is kept as the record of the side that lost.
+
 **The opposing case, at full strength:** the inlined entry document has outgrown the harnesses that read it. Two of
 the four declared harnesses now drop up to half of it, silently and on every turn. A lint finding tells the
 operator, but the agent still runs blind until someone trims conventions they wrote on purpose. The structural fix is
@@ -104,26 +108,13 @@ visible and document the operator's settings (README).
 **What would flip it:** a harness that reads a project-scoped permission file it treats as untrusted until the
 operator approves it. The grant would then stay the operator's, and the store would only propose it.
 
-### D5. The size finding is a lint observation, not a doctor failure
+### D5. This change declares the limits; `lean-composed-entry-document` checks them
 
-**The opposing case:** the conventions budget is a `doctor` invariant precisely because silent truncation is
-unacceptable, and a harness-specific limit is the same failure arriving sooner. A lint finding is easy to ignore.
+An earlier draft added a lint-only observation here. It moved to the companion change, which turns it into a `doctor`
+invariant against the smallest declared limit and adds a target size. That change also gives operators a way to get
+under the limit (on-demand guidance), so the check and the remedy arrive together. See that change's design.md D3.
 
-**Why it loses:** the conventions budget measures something the store fully controls, against a number the store
-sets. This check measures the store against a harness *and its operator's local configuration*, which the store
-cannot observe. A Codex operator who raised `project_doc_max_bytes` has fixed the problem whether or not they
-recorded the override. Under the store-integrity spec's split, a condition the store cannot judge to be broken is an
-observation. A doctor failure would also gate CI and automation on a condition unrelated to the commit being checked.
-The likeliest response would then be to undeclare the harness, which loses the very visibility this check exists for.
-The override (adapters delta) is how an operator who has raised the limit tells the store so.
-
-### D6. Report the section the cut lands in
-
-A byte count alone does not tell an operator what their agent is missing. The finding names the first generated
-`contexture:<region>` section containing the byte at the limit. Region boundaries are already fenced in `AGENTS.md`,
-so this needs no new markers. When the cut lands outside any fence, the finding names the nearest preceding fence.
-
-### D7. No sandbox-refusal guidance in the shipped skills (dropped during review)
+### D6. No sandbox-refusal guidance in the shipped skills (dropped during review)
 
 Codex's `workspace-write` sandbox keeps `.git` read-only, even inside a session worktree and even with `.git` added
 to `writable_roots`. Headless `codex exec` runs with approvals off, so it fails at the first `git add`. An earlier

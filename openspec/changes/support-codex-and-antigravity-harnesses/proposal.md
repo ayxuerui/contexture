@@ -28,9 +28,8 @@ repository (codex-cli 0.154.0, agy 1.3.2) showed what actually breaks:
   `codex` and 24,000 bytes for `antigravity`. A store MAY override that number in its own adapter declaration, for
   example an operator who has raised Codex's `project_doc_max_bytes` on their own machine. The new key is optional
   and has no shipped default.
-- New lint observation: when `AGENTS.md` is larger than a declared harness's effective read limit, `ctxr lint`
-  names that harness, the document's size, the limit, and the first generated section the cut falls inside. It never
-  fails a run.
+- The per-harness read limits are what the companion change `lean-composed-entry-document` checks `AGENTS.md`
+  against (a `doctor` failure there). This change declares the limits; it does not check them.
 - Fix `skills_path_is_harness_branded` so that an adapter whose declared skills directory *is* the cross-harness
   canonical location is never reported.
 - The README documents both harnesses, including the operator-side Codex setting (`project_doc_max_bytes`) that the store
@@ -49,7 +48,7 @@ repository (codex-cli 0.154.0, agy 1.3.2) showed what actually breaks:
 - **Sandbox-refusal guidance in the lifecycle skills.** Headless `codex exec` (approvals off) fails at the first
   `git add` because its sandbox keeps `.git` read-only. Interactive Codex asks the operator to approve each git step
   outside the sandbox, which is how these harnesses are run. With no unattended runs, nothing fails, so this is
-  dropped (design.md D7).
+  dropped (design.md D6).
 - **A `GEMINI.md` or other wrapper entry file for Antigravity.** Antigravity loads `AGENTS.md` and `GEMINI.md` side by
   side, so a wrapper would load the store's fundamentals twice for nothing.
 - **Harness container images for Codex or Antigravity.** Both CLIs already ship inside the existing harness image as
@@ -67,8 +66,8 @@ repository (codex-cli 0.154.0, agy 1.3.2) showed what actually breaks:
 ### Modified Capabilities
 - `adapters`: a harness-generation adapter may declare its harness's entry-document read limit, and a store may
   override it.
-- `harness-portability`: Codex and Antigravity become selectable harnesses. The entry document is checked against
-  each declared harness's read limit. The branded-path observation stops reporting the canonical location.
+- `harness-portability`: Codex and Antigravity become selectable harnesses, and the branded-path observation stops
+  reporting the canonical location.
 
 ## Impact
 
@@ -77,6 +76,6 @@ repository (codex-cli 0.154.0, agy 1.3.2) showed what actually breaks:
 - `src/config/schema.ts`: `AdapterDeclarationSchema` gains optional `entry_document_max_bytes`, with no shipped
   default.
 - `src/commands/init.ts` and `src/run.ts`: the selectable list and the derived `--harness` help.
-- `src/core/checks/harness-portability-checks.ts`: one new observation check, plus the branded-path fix.
+- `src/core/checks/harness-portability-checks.ts`: the branded-path fix.
 - README: the harness list and a section on Codex and Antigravity.
 - No migration. Existing stores keep their declared adapters, and a store gains a new adapter only by declaring it.

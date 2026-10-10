@@ -24,13 +24,12 @@
 ## 4. Checks
 
 - [ ] 4.1 In `src/core/checks/harness-portability-checks.ts`, change `skillsPathIsHarnessBrandedCheck` to skip an adapter whose declared `skillsDir` equals `DEFAULT_SKILLS_PATH`, and update its doc comment to match the modified requirement.
-- [ ] 4.2 Add an `observation` check, `harness_portability.entry_document_read_limit`. For each configured harness-generation adapter with an effective limit, compare `Buffer.byteLength` of `AGENTS.md` against that limit. When the document is over, emit one `info` finding per harness with `subject` set to the adapter id and `details: { size, limit, section }`, where `section` is the `contexture:<region>` fence containing the byte at the limit, or the nearest preceding one (design.md D6). When `AGENTS.md` is absent, skip the check with a reason that names `ctxr update`. Register it wherever the other harness-portability checks are registered.
-- [ ] 4.3 Extend `test/unit/harness-portability-checks.test.ts` with one test for each scenario in the harness-portability delta's "entry document is checked" requirement, plus the new branded-path scenario. Assert `ctxr doctor` still passes on an over-limit fixture.
-- [ ] 4.4 Run `npx vitest run test/unit/harness-portability-checks.test.ts test/unit/lint-command.test.ts` and confirm it exits 0.
+- [ ] 4.2 Extend `test/unit/harness-portability-checks.test.ts` with the new branded-path scenario.
+- [ ] 4.3 Run `npx vitest run test/unit/harness-portability-checks.test.ts test/unit/lint-command.test.ts` and confirm it exits 0.
 
 ## 5. Documentation and end-to-end
 
 - [ ] 5.1 README: extend the "Which agent harnesses?" bullet and the layout notes. Add a short "Codex and Antigravity" section covering three things: both read `AGENTS.md` and `.agents/skills/` natively; their read limits, with the version each was measured on and the operator-level `project_doc_max_bytes` remedy for Codex (and the fact that a repo `.codex/config.toml` is not honored for it); and that interactive Codex asks for approval at each git step because its sandbox keeps `.git` read-only. Name the nested-`AGENTS.md` interaction from design.md Risks.
-- [ ] 5.2 Run an end-to-end check against a scratch store built with `npm run build && node dist/bin.js init --harness codex,antigravity --profile para` (in a temp directory, with `CONTEXTURE_BIN` set to the worktree's `dist/bin.js`). Pad its house conventions past 24,000 bytes, then run `node dist/bin.js update` and `node dist/bin.js lint --json`. The lint output must report `antigravity` and not `codex`, and `node dist/bin.js doctor` must exit 0.
+- [ ] 5.2 Run an end-to-end check: `npm run build && node dist/bin.js init --harness codex,antigravity --profile para` in a temp directory (with `CONTEXTURE_BIN` set to the worktree's `dist/bin.js`). Confirm there is no `CLAUDE.md` and no bridged skills directory, and that `node dist/bin.js doctor` exits 0.
 - [ ] 5.3 Run `npm run typecheck && npm test` and confirm both exit 0.
 - [ ] 5.4 Run `openspec validate support-codex-and-antigravity-harnesses --strict` and confirm it exits 0.

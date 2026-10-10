@@ -19,29 +19,6 @@ contexture SHALL ship a built-in harness-generation adapter for Codex, identifie
 - **WHEN** an operator reads the help for `ctxr init`
 - **THEN** the harness option's description names every harness the interactive prompt offers, including `codex` and `antigravity`
 
-### Requirement: The entry document is checked against each declared harness's read limit
-`ctxr lint` SHALL report, for each declared harness that has an effective entry-document read limit, when the store's `AGENTS.md` is larger than that limit, naming the harness, the document's size in bytes, the limit, and the first generated section of `AGENTS.md` that the limit falls inside — the section from which that harness stops reading. This SHALL be an observation and SHALL NOT fail a run: the store's content is valid, and the limit is a property of the harness and of how its operator has configured it, which the store cannot observe. Nothing SHALL be reported for a harness whose limit the document fits within, or for a harness with no effective limit.
-
-#### Scenario: An entry document past a harness's limit is reported
-- **WHEN** a store declares `antigravity`, sets no override, and its `AGENTS.md` is 30,000 bytes with the 24,000th byte falling inside the "Store conventions" section
-- **THEN** `ctxr lint` reports `antigravity`, a size of 30,000 bytes, a limit of 24,000, and the "Store conventions" section, and `ctxr doctor` still passes
-
-#### Scenario: Each harness is judged against its own limit
-- **WHEN** a store declares both `codex` and `antigravity` and its `AGENTS.md` is 28,000 bytes
-- **THEN** `ctxr lint` reports `antigravity` and does not report `codex`
-
-#### Scenario: An operator who raised a harness's limit records it and is not reported
-- **WHEN** a store's declaration for `codex` overrides its entry-document read limit to 65,536 bytes and `AGENTS.md` is 50,000 bytes
-- **THEN** nothing is reported for `codex`
-
-#### Scenario: A harness that reads the whole document is never reported
-- **WHEN** a store declares only `claude-code` and its `AGENTS.md` is 100,000 bytes
-- **THEN** `ctxr lint` reports nothing about the entry document's size
-
-#### Scenario: A store with no generated entry document is skipped
-- **WHEN** a store declares `codex` and its `AGENTS.md` has not been generated
-- **THEN** the check reports nothing and is recorded as skipped, naming `ctxr update` as the way to generate it
-
 ## MODIFIED Requirements
 
 ### Requirement: A skills path sitting on a harness's own branded directory is reported
