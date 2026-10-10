@@ -11,6 +11,7 @@ import {
   DEFAULT_CATALOG_PATH,
   DEFAULT_CATALOG_SECTION_MAX_BYTES,
   DEFAULT_CONVENTION_MAX_BYTES,
+  DEFAULT_ENTRY_DOCUMENT_TARGET_BYTES,
   DEFAULT_DERIVED_PATHS,
   DEFAULT_DIFF_SIZE_CEILING_LINES,
   DEFAULT_EXCLUDE_PATHS,
@@ -176,7 +177,12 @@ async function resolveTaxonomy(env: RunEnv, flags: InitFlags): Promise<ResolvedT
 const SELECTABLE_HARNESSES: readonly { id: string; name: string; description: string }[] = [
   { id: 'claude-code', name: 'Claude Code', description: 'Generates CLAUDE.md importing AGENTS.md.' },
   { id: 'hermes-agent', name: 'Hermes', description: 'Reads AGENTS.md directly — no entry file generated.' },
+  { id: 'codex', name: 'Codex', description: 'Reads AGENTS.md and .agents/skills/ directly; stops reading AGENTS.md at 32,768 bytes.' },
+  { id: 'antigravity', name: 'Antigravity', description: 'Reads AGENTS.md and .agents/skills/ directly; stops reading AGENTS.md at 24,000 bytes.' },
 ];
+
+/** The ids `--harness` accepts, in prompt order — `src/run.ts` builds the option's help from this, so the two cannot list different harnesses. */
+export const SELECTABLE_HARNESS_IDS: readonly string[] = SELECTABLE_HARNESSES.map((h) => h.id);
 
 const DEFAULT_HARNESS_IDS: readonly string[] = ['claude-code'];
 
@@ -324,7 +330,12 @@ async function runInitCore(env: RunEnv, flags: InitFlags): Promise<RunInitResult
     update_check: SHIPPED_DEFAULTS.update_check,
     ingest: { inbox_path: DEFAULT_INBOX_PATH, capture_root: DEFAULT_CAPTURE_ROOT, tracking_params: [...DEFAULT_TRACKING_PARAMS] },
     organize: { archive_destination: archiveDestination, rollup_stale_days: DEFAULT_ROLLUP_STALE_DAYS, mission_path: DEFAULT_MISSION_PATH },
-    harness: { skills_path: DEFAULT_SKILLS_PATH, guidance_path: DEFAULT_GUIDANCE_PATH, convention_max_bytes: DEFAULT_CONVENTION_MAX_BYTES },
+    harness: {
+      skills_path: DEFAULT_SKILLS_PATH,
+      guidance_path: DEFAULT_GUIDANCE_PATH,
+      convention_max_bytes: DEFAULT_CONVENTION_MAX_BYTES,
+      entry_document_target_bytes: DEFAULT_ENTRY_DOCUMENT_TARGET_BYTES,
+    },
     adapters: resolvedAdapters,
   };
   // Round-trips through the schema internally; throws before any byte is written if it doesn't.

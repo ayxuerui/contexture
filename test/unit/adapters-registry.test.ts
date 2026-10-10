@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { configuredAdapters, resolveAdapter } from '../../src/adapters/registry.js';
-import type { Adapter } from '../../src/adapters/types.js';
+import type { Adapter, HarnessGenerationAdapter } from '../../src/adapters/types.js';
+import { effectiveEntryDocumentMaxBytes } from '../../src/core/harness/bridge.js';
 import type { AdapterDeclaration, StoreConfig } from '../../src/config/schema.js';
 import { AdapterNotFoundError, AdapterVersionMismatchError } from '../../src/core/errors.js';
 
@@ -61,6 +62,35 @@ describe('resolveAdapter', () => {
     expect(resolveAdapter({ id: 'fixture-harness', kind: 'harness-generation' }, fixtureRegistry).id).toBe(
       'fixture-harness',
     );
+  });
+});
+
+describe('support-codex-and-antigravity-harnesses: the built-in skills-only adapters', () => {
+  it('resolves codex and antigravity, each reading the canonical skills directory with no entry file', () => {
+    for (const [id, limit] of [['codex', 32_768], ['antigravity', 24_000]] as const) {
+      const found = resolveAdapter({ id, kind: 'harness-generation' }) as HarnessGenerationAdapter;
+      expect(found.interfaceVersion).toBe(2);
+      expect(found.skillsDir).toBe('.agents/skills/');
+      expect(found.entryFileName).toBeUndefined();
+      expect(found.render).toBeUndefined();
+      expect(found.permissionConfig).toBeUndefined();
+      expect(found.entryDocumentMaxBytes).toBe(limit);
+    }
+  });
+
+  it('declares no read limit for a harness that reads the whole entry document', () => {
+    const claude = resolveAdapter({ id: 'claude-code', kind: 'harness-generation' }) as HarnessGenerationAdapter;
+    expect(claude.entryDocumentMaxBytes).toBeUndefined();
+  });
+});
+
+describe('effectiveEntryDocumentMaxBytes', () => {
+  it("uses the adapter's limit unless the store overrides it", () => {
+    const plain = makeConfig([{ id: 'codex', kind: 'harness-generation' }]);
+    expect(effectiveEntryDocumentMaxBytes(plain, 'codex', 32_768)).toBe(32_768);
+    const raised = makeConfig([{ id: 'codex', kind: 'harness-generation', entry_document_max_bytes: 65_536 }]);
+    expect(effectiveEntryDocumentMaxBytes(raised, 'codex', 32_768)).toBe(65_536);
+    expect(effectiveEntryDocumentMaxBytes(plain, 'claude-code', undefined)).toBeUndefined();
   });
 });
 

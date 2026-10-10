@@ -32,7 +32,10 @@ ctxr init
 `ctxr init` asks two questions, then creates the git repository (if there isn't one), scaffolds the store, and commits it:
 
 - **Which taxonomy profile?** `para` (Projects / Areas / Resources / Archives — the default), `zettelkasten` (no layers at all; structure emerges from links), or `diataxis` (Tutorials / How-to / Reference / Explanation). Or bring your own layer list with `--taxonomy <file.yaml>`.
-- **Which agent harnesses?** `claude-code` (default — its adapter generates `CLAUDE.md`, a one-line import of `AGENTS.md`) and/or `hermes-agent` (reads `AGENTS.md` directly, so it needs no entry file at all). `--harness none` opts out.
+- **Which agent harnesses?** Any of:
+  - `claude-code` (the default). Its adapter generates `CLAUDE.md`, a one-line import of `AGENTS.md`.
+  - `hermes-agent`, `codex`, and `antigravity`. These read `AGENTS.md` directly, so they need no entry file at all. Codex and Antigravity also read `.agents/skills/` natively. See [Codex and Antigravity](#codex-and-antigravity).
+  - `--harness none` opts out.
 
 Non-interactively, pass them as flags — nothing ever blocks on a prompt:
 
@@ -48,7 +51,7 @@ After `ctxr init --profile para`:
 
 ```
 contexture.yaml               single source of truth — what this store chose; the rest takes shipped defaults
-AGENTS.md                     generated entry document — six managed sections
+AGENTS.md                     generated entry document — managed sections, held to a size budget
 CLAUDE.md                     harness entry file; a one-line managed import of AGENTS.md
 .claude/
   skills/ -> ../.agents/skills   a bridge, so Claude Code auto-discovers the canonical skills
@@ -57,6 +60,7 @@ CLAUDE.md                     harness entry file; a one-line managed import of A
   frontend-design/, eli5/       vendored third-party skills, with licenses and provenance
 .contexture/guidance/
   house-conventions.md        your store's own rules — inlined into AGENTS.md verbatim
+  <topic>.md                  rules for one task — declare `read_when`, and AGENTS.md routes to them
   mission.md                  the standing "what's active right now" document
 .contexture/templates/
   Note.md                     the base every note shares — copy it to cut your own kind
@@ -90,7 +94,16 @@ Two distinctions make the rest of this readable:
 
 `ctxr init` writes two things an agent reads, both generated from your store's own config — never from a hardcoded layout:
 
-**`AGENTS.md`**, with six managed sections: *Store fundamentals* (root resolution, the frontmatter schema, the write path), *Mission*, *Retrieval: which leg to use*, *Capturing and ingesting*, *Placing a new note* (rendered from your actual taxonomy layers), and *Store conventions*.
+**`AGENTS.md`**, with these managed sections:
+- *Store fundamentals*: root resolution, the frontmatter schema, the write path.
+- *Mission*.
+- *Retrieval*.
+- *Capturing and ingesting*.
+- *Placing a new note*, rendered from your actual taxonomy layers.
+- *Store conventions*.
+- *Read when*, when any guidance loads on demand.
+
+Every harness loads this file on every turn, so it is kept short. contexture's own share is held under a ceiling by a test, and procedure a skill already carries lives in that skill.
 
 **The skills**, installed as full copies at `.agents/skills/ctxr-<name>/SKILL.md`. That path is the cross-harness canonical location; a harness that reads its own branded directory instead gets that directory bridged to it (`.claude/skills/` is a symlink), so skill auto-discovery works with no wrapper and no second copy. A harness without auto-discovery reaches the same file by path from `AGENTS.md`. They're contexture-owned — refreshed by `ctxr update`, never hand-edited — and they're written against *your* store's configured taxonomy, so no shipped profile's layer names leak into them. Your own skills live alongside, untouched by sync. An owned skill may carry files beside its `SKILL.md` — `ctxr-second-opinion` ships the script that runs its reviewers — and update keeps that whole directory matching the package.
 
@@ -113,7 +126,40 @@ Two distinctions make the rest of this readable:
 | `ctxr-upgrade` | Whether to upgrade the installed CLI now, and asking before it does |
 | `ctxr-second-opinion` | Whether a plan or a taste call needs three different model families, and how to weigh what they say |
 
-Your house rules go in `.contexture/guidance/house-conventions.md`. It's inlined into `AGENTS.md`'s *Store conventions* section in full, so it loads for every harness at the start of every session — there's no separate file an agent has to remember to open.
+Your house rules go in `.contexture/guidance/`.
+
+**A file there is inlined into `AGENTS.md`'s *Store conventions* section in full**, so it loads for every harness at the start of every session. That's right for the rules that hold on every turn.
+
+**A rule that matters only for one task belongs in its own file, with a trigger in its frontmatter:**
+
+```markdown
+---
+title: Research style
+read_when: Before a research pass or recording evidence
+---
+```
+
+That file is not inlined. `AGENTS.md`'s *Read when* section lists it as one line: its trigger and its path.
+
+**Size limits:**
+- `ctxr lint` reports when `AGENTS.md` grows past `harness.entry_document_target_bytes`, which is 20 KiB by default.
+- `ctxr doctor` fails when it grows past what a declared harness actually reads.
+
+## Codex and Antigravity
+
+Both read `AGENTS.md` at the store root and discover skills under `.agents/skills/` natively. A store targeting them needs no entry file and no bridged directory. Two things differ from Claude Code.
+
+**They stop reading `AGENTS.md` at a fixed size, silently.**
+
+| Harness | Stops reading at | Measured on | Can it be raised? |
+|---|---:|---|---|
+| Codex | 32,768 bytes | codex-cli 0.154.0 | Yes: set `project_doc_max_bytes` in your own `~/.codex/config.toml`. A repo-level `.codex/config.toml` is not honored for it. Record the raised value in the store as `adapters[].entry_document_max_bytes`. |
+| Antigravity | about 24,000 bytes | agy 1.3.2 | No. |
+
+- **Codex's limit covers every `AGENTS.md` it loads, combined**, from the repo root down to your working directory, so nested ones spend the same budget.
+- **`ctxr doctor` fails when `AGENTS.md` exceeds a declared harness's limit.** The finding names the section the cut falls in. The remedy is to move task-specific guidance behind `read_when`, or trim the mission.
+
+**Codex's sandbox keeps `.git` read-only.** Interactive Codex asks you to approve each git step of `ctxr-submit` outside its sandbox: `git add`, `git commit`, `git push`, `gh`. That includes session worktrees, whose git data lives in the main repository's `.git/worktrees/`.
 
 ## A session, end to end
 

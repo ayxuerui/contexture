@@ -125,6 +125,29 @@ describe('non-interactive init', () => {
     }
   });
 
+  it('--harness codex,antigravity records both, writes no entry file, bridges nothing, and doctor is clean', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const env = hermeticGitEnv();
+      const result = await runCli(['init', '--harness', 'codex,antigravity'], { cwd: tmp.root, env });
+      expect(result.exitCode).toBe(0);
+      const config = parseYaml(await readFile(path.join(tmp.root, 'contexture.yaml'), 'utf8')) as { adapters: { id: string }[] };
+      expect(config.adapters.map((a) => a.id)).toEqual(['codex', 'antigravity']);
+      expect(existsSync(path.join(tmp.root, 'CLAUDE.md'))).toBe(false);
+      expect(existsSync(path.join(tmp.root, '.claude'))).toBe(false);
+      expect(existsSync(path.join(tmp.root, '.agents/skills/ctxr-capture/SKILL.md'))).toBe(true);
+      const doctor = await runCli(['doctor'], { cwd: tmp.root, env });
+      expect(doctor.exitCode).toBe(0);
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('init --help names every selectable harness', async () => {
+    const result = await runCli(['init', '--help'], { cwd: process.cwd() });
+    for (const id of ['claude-code', 'hermes-agent', 'codex', 'antigravity']) expect(result.stdout + result.stderr).toContain(id);
+  });
+
   it('--harness none writes no entry file and no harness directory', async () => {
     const tmp = await makeTmpDir();
     try {

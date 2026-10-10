@@ -5,15 +5,19 @@ import type { StoreConfig } from '../../src/config/schema.js';
 import {
   AGENTS_MD_CANONICAL_FENCE,
   AGENTS_MD_CAPTURE_FENCE,
+  AGENTS_MD_GUIDANCE_INDEX_FENCE,
   AGENTS_MD_LEG_ROUTING_FENCE,
   AGENTS_MD_MISSION_FENCE,
   agentsMdPath,
   buildAgentsCanonicalSection,
   buildAgentsCaptureSection,
+  buildAgentsConventionsSection,
+  buildAgentsGuidanceIndexSection,
   buildAgentsLegRoutingSection,
   buildAgentsMissionSection,
   checkAgentsMdDrift,
   renderCanonicalSection,
+  renderGuidanceIndexSection,
   renderMissionSection,
   renderPlacementSection,
   renderCaptureSection,
@@ -214,8 +218,8 @@ describe('renderCanonicalSection', () => {
 
   it('tells the agent to keep the kind field and search by it, since no command filters by it', () => {
     const lines = renderCanonicalSection(makeConfig()).join('\n');
-    expect(lines).toMatch(/stamps the kind it is for into the note's `tags`/);
-    expect(lines).toMatch(/Keep it when you start a note: it is how you find every note of a kind/);
+    expect(lines).toMatch(/Keep the kind the template stamps into `tags`/);
+    expect(lines).toMatch(/it is how your own search finds every note of a kind/);
     expect(lines).toMatch(/no `ctxr` command filters by it/);
   });
 
@@ -502,52 +506,15 @@ describe('reorderFencedRegionsInFile (via reconcileStore section order)', () => 
 describe('exact rendered output', () => {
   it('renders the leg-routing section', () => {
     expect(renderLegRoutingSection(makeConfig())).toEqual([
-      "## Retrieval: one pass, three steps",
+      "## Retrieval",
       "",
-      "Retrieval is a single pass — **enter**, **expand**, **widen** — not three tools to choose between.",
-      "contexture builds and maintains the first two ahead of time; the third is yours.",
+      "Find before you write. contexture builds and maintains the catalog and the wikilink graph; consult them before your own search.",
       "",
-      "**1. Enter.** Name where to start, positionally or relationally:",
+      "1. **Enter and expand** with `ctxr context gather`. It takes entry selectors — `--section <id>`, `--under <prefix>`, `--seed <path>`, `--entity <name>` — walks the graph out from them (`--hops`, `--type <relation>`), and returns each note with its catalog gloss and hop distance, so you open only what the glosses justify. Start an open conceptual question from a catalog section (`ctxr catalog show --section <id>`).",
+      "2. **Structure** — paths, hubs, orphans, clusters, bridges — comes from `ctxr graph query`; read the graph document at `.contexture/cache/graph.md` for cluster context before writing.",
+      "3. **Widen** with your own content matching (e.g. ripgrep) for a literal string or identifier, excluding `.contexture/`, `.worktrees/`, `catalog/`, `guidance/`, `identity/`, `publish/`, `skills/`, and feed a hit back in as `--seed`. Captures under `raw/` are excluded because they are provenance, not notes: to learn whether the store already holds some material, search `raw/` directly, by content and by the `capture_file` a capture names.",
       "",
-      "- `--section <id>` — every note a catalog section lists (`ctxr catalog show --section <id>` reads one directly)",
-      "- `--under <prefix>` — every retrievable note under a path prefix",
-      "- `--seed <path>` — a note you already hold, including one your own search just found",
-      "- `--entity <name>` — every note linking to a concept",
-      "",
-      "**2. Expand.** `ctxr context gather` takes those selectors and walks the wikilink graph out from them,",
-      "returning each reachable note with its catalog gloss, its hop distance, and labels saying why it is",
-      "there — so you can triage the set without opening a single file, then read only what the glosses",
-      "justify:",
-      "",
-      "```",
-      "ctxr context gather --section <id> --hops 1",
-      "ctxr context gather --seed <path> --hops 2 --type <relation>",
-      "```",
-      "",
-      "Results are ordered: live material before demoted (archived) material, nearer hops before farther,",
-      "then by how the note was reached, then by path. `no_gloss` on a result means the catalog has no",
-      "description for that note yet — the pass found it structurally, not by what it says.",
-      "",
-      "For structure on its own — shortest path, hubs, orphans, clusters, bridges — query the graph directly",
-      "with `ctxr graph query ...`, and read the graph document at `.contexture/cache/graph.md` (rebuilt by",
-      "`ctxr graph build`) for cluster context before writing.",
-      "",
-      "**3. Widen.** For a literal or entity question the first two steps do not answer — a specific string,",
-      "an exact identifier, a phrase — use your own content-matching tool (e.g. grep/ripgrep) against the",
-      "store, scoped to exclude:",
-      "",
-      "`.contexture/`, `.worktrees/`, `catalog/`, `guidance/`, `identity/`, `publish/`, `skills/`",
-      "",
-      "Feed anything it finds back in as `--seed` to pick the pass up again from there.",
-      "",
-      "Those exclusions are for finding knowledge. Captures under `raw/` are left out because they",
-      "are provenance, not notes, so a search scoped this way never finds one. When the question is whether",
-      "the store already holds some material — a document, a meeting, a thread — search `raw/`",
-      "directly, by content and by the `capture_file` a capture names. Finding nothing in the notes is not",
-      "evidence that it was never captured.",
-      "",
-      "There is no `ctxr search` command. Nothing here takes a free-text query, and no result carries a",
-      "relevance score. Ranked or semantic search is deferred to a future version — do not look for one.",
+      "There is no `ctxr search` command: nothing takes a free-text query, and no result carries a relevance score.",
     ]);
   });
 
@@ -555,43 +522,7 @@ describe('exact rendered output', () => {
     expect(renderCaptureSection(makeConfig())).toEqual([
       "## Capturing and ingesting new material",
       "",
-      "Captures live under `raw/`, which is excluded from retrieval: nothing in it is a note, and",
-      "nothing in it is returned by a search, listed in the catalog, or drawn in the graph. It is tracked in git",
-      "all the same \u2014 a capture is the provenance behind a note, not scratch space.",
-      "",
-      "To capture something new, write the material into `raw/inbox/` \u2014 no CLI command wraps this, but",
-      "`ctxr-capture` carries the procedure: what counts as the record rather than a summary of it, how to",
-      "identify it, and where capture stops. The material may already carry these two fields, since whatever",
-      "fetched it usually knows them. If it carries `source_type`, name the same value on",
-      "`ctxr ingest --source-type`; a disagreement is refused:",
-      "",
-      "- `source_type`",
-      "- `source_id`",
-      "",
-      "It MUST NOT carry either of these; contexture assigns them once, at ingest, and never before:",
-      "",
-      "- `source_hash`",
-      "- `ingested`",
-      "",
-      "Before ingesting, run `ctxr source check <path> --source-id <id>` to get one of five verdicts: `new`,",
-      "`already_ingested`, `drift` (same identity, the source's content moved), `alternate_source_match`, or",
-      "`multiple_matches` \u2014 the last one means stop and resolve the ambiguity yourself rather than guessing which",
-      "existing record it is.",
-      "",
-      "Then write, or extend, the note this material informed. Ingest does not create it: deciding what the store",
-      "should know is the work, and \"a new note\" is only one of the answers.",
-      "",
-      "```",
-      "ctxr ingest <path> --into <note> --source-type <type> --source-id <id>",
-      "```",
-      "",
-      "That stamps the four fields onto the capture, moves it out of the inbox into `raw/` under the",
-      "month it was ingested, and records its path in the note's `sources` list. The note itself carries no source",
-      "identity \u2014 it is free to be rewritten, merged, or restructured without ever invalidating the frozen hash.",
-      "A note may cite as many captures as it was built from.",
-      "",
-      "Material that is not markdown cannot carry frontmatter, so it travels with a markdown sidecar beside it",
-      "naming the file in `capture_file`. The hash is taken over that file's bytes, and the two move together.",
+      "Capture new material as a file in `raw/inbox/`. Everything under `raw/` is tracked in git as provenance but excluded from retrieval — nothing there is a note. A capture may carry `source_type` and `source_id`; it must never carry `source_hash` or `ingested`, which `ctxr ingest` assigns once. `ctxr-capture` carries the capture procedure and `ctxr-ingest-orchestration` the dedupe check and the ingest; the note a capture informs carries no source identity of its own.",
     ]);
   });
 
@@ -633,9 +564,7 @@ describe('exact rendered output', () => {
       "",
       "### Root resolution",
       "",
-      "Every contexture command resolves the store root in this order: an explicit `--root <path>` flag; the store found by walking up from the current directory when it is a linked git worktree of the store named by `CONTEXTURE_STORE_ROOT`; the `CONTEXTURE_STORE_ROOT` environment variable; walking up from the current directory looking for `contexture.yaml`. No other flag or environment variable selects the root.",
-      "",
-      "The worktree step is why a command run inside a session worktree operates on that worktree rather than on the canonical clone, even with `CONTEXTURE_STORE_ROOT` exported: the variable names which *store*, and a worktree raises which *checkout* of it. Standing in a different store still resolves the variable, unchanged. To target the canonical clone from inside a worktree, name it: `--root \"$CONTEXTURE_STORE_ROOT\"`.",
+      "Every contexture command resolves the store root in this order: an explicit `--root <path>` flag; the store found by walking up from the current directory when it is a linked git worktree of the store named by `CONTEXTURE_STORE_ROOT`; the `CONTEXTURE_STORE_ROOT` environment variable; walking up from the current directory looking for `contexture.yaml`. No other flag or environment variable selects the root. Inside a session worktree, commands therefore act on that worktree; to target the canonical clone from there, pass `--root \"$CONTEXTURE_STORE_ROOT\"`.",
       "",
       "### Frontmatter schema",
       "",
@@ -643,13 +572,11 @@ describe('exact rendered output', () => {
       "",
       "### Note templates",
       "",
-      "A new note starts from a template under `.contexture/templates/`, not from a blank file and not by copying whatever sibling happens to be nearby. Substitute `{{title}}` and `{{date}}` as you write it — no command expands them, and a note that lands with one still in it is reported by `ctxr lint`. A template is never a note: nothing under that path is catalogued, graphed, or retrieved. Add your own kinds there alongside the shipped ones; contexture only ever rewrites the ones it delivered.",
-      "",
-      "Every shipped template except the base, `Note`, stamps the kind it is for into the note's `tags`. Keep it when you start a note: it is how you find every note of a kind, with your own search, since no `ctxr` command filters by it. A kind you cut from the base should stamp its own name the same way, and any further tags are this store's own.",
+      "Start a new note from a template under `.contexture/templates/`, never a blank file or a copied sibling, and substitute `{{title}}` and `{{date}}` yourself — `ctxr lint` reports one left in. Keep the kind the template stamps into `tags`: it is how your own search finds every note of a kind, since no `ctxr` command filters by it.",
       "",
       "### Write path",
       "",
-      "Every write to this store happens inside a session worktree, never directly on the default branch: `ctxr session start` creates one, and the work stays there for as long as the session runs. When the operator asks to wrap up, `ctxr-submit` validates with `ctxr doctor`, commits, pushes, and opens (or reports how to open) a pull request — that request is what triggers it, not having finished a piece of work. Do not edit files in the store root directly.",
+      "Every write happens inside a session worktree (`ctxr session start`), never on the default branch, and lands through a reviewed pull request that `ctxr-submit` opens when the operator asks to wrap up. Do not edit files in the store root directly.",
       "",
       "### Identity and recall",
       "",
@@ -675,5 +602,103 @@ describe('exact rendered output', () => {
       "",
       "_Source: MISSION.md_",
     ]);
+  });
+});
+
+describe('lean-composed-entry-document: a guidance document may load on demand', () => {
+  async function guidance(root: string, files: Record<string, string>): Promise<void> {
+    const { mkdir } = await import('node:fs/promises');
+    await mkdir(path.join(root, 'guidance'), { recursive: true });
+    for (const [name, body] of Object.entries(files)) await writeFile(path.join(root, 'guidance', name), body);
+  }
+
+  it('indexes an on-demand document by trigger, title, and path, and never inlines it', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      await guidance(tmp.root, {
+        'research.md': '---\ntitle: Research style\nread_when: Before a research pass\n---\nSECRET-BODY\n',
+        'rules.md': '---\ntitle: Rules\n---\nEvery-turn rule.\n',
+      });
+      const config = makeConfig();
+      await buildAgentsConventionsSection(tmp.root, config);
+      await buildAgentsGuidanceIndexSection(tmp.root, config);
+      const content = await readFile(agentsMdPath(tmp.root), 'utf8');
+      expect(content).toContain('- Before a research pass → [Research style](guidance/research.md)');
+      expect(content).not.toContain('SECRET-BODY');
+      expect(content).toContain('Every-turn rule.');
+      const index = content.slice(content.indexOf(AGENTS_MD_GUIDANCE_INDEX_FENCE.start));
+      expect(index).not.toContain('Rules');
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('collapses a multi-line trigger to one line', () => {
+    const rows = renderGuidanceIndexSection([
+      { path: 'g/a.md', title: 'A', description: null, readWhen: 'Before x and y', body: '' },
+    ]);
+    expect(rows).toContain('- Before x and y → [A](g/a.md)');
+  });
+
+  it('refreshes the index when a trigger changes, then is byte-stable', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      await guidance(tmp.root, { 'a.md': '---\ntitle: A\nread_when: Before one\n---\nx\n' });
+      const config = makeConfig();
+      await buildAgentsGuidanceIndexSection(tmp.root, config);
+      await guidance(tmp.root, { 'a.md': '---\ntitle: A\nread_when: Before two\n---\nx\n' });
+      expect((await buildAgentsGuidanceIndexSection(tmp.root, config)).changed).toBe(true);
+      expect(await readFile(agentsMdPath(tmp.root), 'utf8')).toContain('- Before two → [A](guidance/a.md)');
+      expect((await buildAgentsGuidanceIndexSection(tmp.root, config)).changed).toBe(false);
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('writes no index section when nothing is on demand, and removes one that is no longer needed', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const config = makeConfig();
+      await guidance(tmp.root, { 'a.md': '---\ntitle: A\n---\nx\n' });
+      await buildAgentsGuidanceIndexSection(tmp.root, config);
+      expect(await readFile(agentsMdPath(tmp.root), 'utf8').catch(() => '')).not.toContain(AGENTS_MD_GUIDANCE_INDEX_FENCE.start);
+
+      await guidance(tmp.root, { 'a.md': '---\ntitle: A\nread_when: Before x\n---\nx\n' });
+      await buildAgentsGuidanceIndexSection(tmp.root, config);
+      expect(await readFile(agentsMdPath(tmp.root), 'utf8')).toContain(AGENTS_MD_GUIDANCE_INDEX_FENCE.start);
+      await guidance(tmp.root, { 'a.md': '---\ntitle: A\n---\nx\n' });
+      expect((await buildAgentsGuidanceIndexSection(tmp.root, config)).changed).toBe(true);
+      expect(await readFile(agentsMdPath(tmp.root), 'utf8')).not.toContain(AGENTS_MD_GUIDANCE_INDEX_FENCE.start);
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('reports drift naming an on-demand document whose trigger changed without regeneration', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const config = makeConfig();
+      await guidance(tmp.root, { 'a.md': '---\ntitle: A\nread_when: Before one\n---\nx\n' });
+      await buildAgentsConventionsSection(tmp.root, config);
+      await buildAgentsGuidanceIndexSection(tmp.root, config);
+      expect((await checkAgentsMdDrift(tmp.root, config)).driftedConventions).toEqual([]);
+      await guidance(tmp.root, { 'a.md': '---\ntitle: A\nread_when: Before two\n---\nx\n' });
+      expect((await checkAgentsMdDrift(tmp.root, config)).driftedConventions).toEqual(['guidance/a.md']);
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('reports drift naming a document switched to on demand whose body is still inlined', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const config = makeConfig();
+      await guidance(tmp.root, { 'a.md': '---\ntitle: A\n---\nx\n', 'b.md': '---\ntitle: B\n---\ny\n' });
+      await buildAgentsConventionsSection(tmp.root, config);
+      await guidance(tmp.root, { 'a.md': '---\ntitle: A\nread_when: Before x\n---\nx\n' });
+      expect((await checkAgentsMdDrift(tmp.root, config)).driftedConventions).toContain('guidance/a.md');
+    } finally {
+      await tmp.cleanup();
+    }
   });
 });

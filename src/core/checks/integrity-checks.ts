@@ -6,10 +6,12 @@ import { CONFIG_FILE_NAME } from '../root.js';
 import { StoreConfigSchema } from '../../config/schema.js';
 import {
   AGENTS_MD_CONVENTIONS_FENCE,
+  AGENTS_MD_GUIDANCE_INDEX_FENCE,
   AGENTS_MD_MISSION_FENCE,
   agentsMdPath,
   checkAgentsMdDrift,
   renderConventionsSection,
+  renderGuidanceIndexSection,
   renderMissionSection,
 } from '../agents-doc.js';
 import { checkCatalogStale } from '../catalog/build.js';
@@ -419,6 +421,18 @@ export const stagedAgentsMdInlinedContentCurrentCheck = defineCheck({
     const stagedConventionsRegion = readFencedRegion(agentsMdStaged.content, AGENTS_MD_CONVENTIONS_FENCE).join('\n');
 
     const findings: Finding[] = [];
+    // lean-composed-entry-document: an on-demand document's row is derived
+    // content too — staging a changed trigger or title without the matching
+    // AGENTS.md regeneration leaves the router stale.
+    const freshIndex = renderGuidanceIndexSection(effectiveConventions).join('\n');
+    const stagedIndexRegion = readFencedRegion(agentsMdStaged.content, AGENTS_MD_GUIDANCE_INDEX_FENCE).join('\n');
+    if (freshIndex !== stagedIndexRegion) {
+      findings.push({
+        code: 'staged.agents_md_inlined_content_current.guidance_index_mismatch',
+        severity: 'error',
+        message: "The staged AGENTS.md's guidance index does not reflect the staged guidance documents — run `ctxr update` and re-stage AGENTS.md.",
+      });
+    }
     if (freshConventions !== stagedConventionsRegion) {
       findings.push({
         code: 'staged.agents_md_inlined_content_current.conventions_mismatch',

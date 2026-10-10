@@ -525,4 +525,18 @@ describe('adapters', () => {
       await tmp.cleanup();
     }
   });
+
+  it('accepts a positive entry_document_max_bytes override and refuses zero', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const ok = `${minimalConfig()}adapters: [{ id: codex, kind: harness-generation, entry_document_max_bytes: 65536 }]\n`;
+      await writeFile(path.join(tmp.root, CONFIG_FILE_NAME), ok);
+      expect((await readConfig(tmp.root)).adapters[0]?.entry_document_max_bytes).toBe(65536);
+      const bad = `${minimalConfig()}adapters: [{ id: codex, kind: harness-generation, entry_document_max_bytes: 0 }]\n`;
+      await writeFile(path.join(tmp.root, CONFIG_FILE_NAME), bad);
+      await expect(readConfig(tmp.root)).rejects.toBeInstanceOf(InvalidConfigError);
+    } finally {
+      await tmp.cleanup();
+    }
+  });
 });

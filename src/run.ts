@@ -207,7 +207,7 @@ export async function run(argv: readonly string[], env: RunEnv): Promise<ExitCod
     .description('create a new context store, or reconcile an existing one')
     .option('--profile <id>', 'shipped taxonomy profile id (para, zettelkasten, diataxis)')
     .option('--taxonomy <path>', 'path to a custom taxonomy definition file')
-    .option('--harness <ids>', 'comma-separated harness-generation adapters to target (claude-code, hermes-agent), or "none"')
+    .option('--harness <ids>', `comma-separated harness-generation adapters to target (${initCommand.SELECTABLE_HARNESS_IDS.join(', ')}), or "none"`)
     .action(async (cmdOpts: { profile?: string; taxonomy?: string; harness?: string }, cmd: Command) => {
       const { runEnv, jsonMode, root } = deriveRunEnv(env, cmd);
       result = await runCommand('init', runEnv, jsonMode, () =>
