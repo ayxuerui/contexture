@@ -147,6 +147,17 @@ export function effectiveSkillsDir(config: StoreConfig, adapterId: string, adapt
 }
 
 /**
+ * The effective entry-document read limit for a configured harness-generation
+ * adapter: a store's own override (`adapters[].entry_document_max_bytes`)
+ * takes precedence over the adapter's declaration; `undefined` means the
+ * harness reads the whole document.
+ */
+export function effectiveEntryDocumentMaxBytes(config: StoreConfig, adapterId: string, adapterDefault: number | undefined): number | undefined {
+  const declaration = config.adapters.find((d) => d.kind === 'harness-generation' && d.id === adapterId);
+  return declaration?.entry_document_max_bytes ?? adapterDefault;
+}
+
+/**
  * Bridges every declared harness-generation adapter's skills directory to
  * the store's configured (canonical) skills path — never derived by
  * inspecting the host machine, always from configuration. An adapter whose

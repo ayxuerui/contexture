@@ -68,13 +68,11 @@ function collapseNestedPrefixes(prefixes: readonly string[]): string[] {
 
 export function renderLegRoutingSection(config: StoreConfig): string[] {
   const exclusions = collapseNestedPrefixes(excludedPrefixesFor(config));
-  return substituteBlock(
-    agentsTemplate('retrieval-leg-routing')
-      .replaceAll('__GRAPH_DOCUMENT_PATH__', GRAPH_DOCUMENT_RELATIVE_PATH)
-      .replaceAll('__CAPTURE_ROOT__', config.ingest.capture_root),
-    '__EXCLUSION_PATHS__',
-    [exclusions.map((prefix) => `\`${prefix}\``).join(', ')],
-  ).split('\n');
+  return agentsTemplate('retrieval-leg-routing')
+    .replaceAll('__GRAPH_DOCUMENT_PATH__', GRAPH_DOCUMENT_RELATIVE_PATH)
+    .replaceAll('__CAPTURE_ROOT__', config.ingest.capture_root)
+    .replaceAll('__EXCLUSION_PATHS__', exclusions.map((prefix) => `\`${prefix}\``).join(', '))
+    .split('\n');
 }
 
 /** Idempotently reconciles AGENTS.md's leg-routing section from current config — called at init and on re-init. */
@@ -256,27 +254,60 @@ export function renderBaselineBlock(config: StoreConfig): string[] {
   return [`### ${doc.title}`, '', ...inlineDocBody(doc, 2), '', `_Source: ${BASELINE_SOURCE_LABEL}_`];
 }
 
-function conventionsBody(config: StoreConfig, conventions: readonly ScannedDoc[]): string[] {
-  const intro =
-    conventions.length === 0
-      ? [
-          "contexture's shipped baseline, inlined in full. This store has added none of its own yet —",
-          'operator-authored conventions (content style, field semantics, house rules) belong as markdown',
-          `files under \`${config.harness.guidance_path}\`, each inlined here alongside the baseline.`,
-        ]
-      : ["contexture's shipped baseline and this store's own conventions, inlined in full:"];
-  const blocks = [renderBaselineBlock(config), ...conventions.map(renderConventionBlock)];
-  const bodies = blocks.flatMap((block, i) => (i === blocks.length - 1 ? block : [...block, '']));
-  return [...intro, '', ...bodies];
+/**
+ * lean-composed-entry-document: a guidance document that declares `read_when`
+ * loads on demand — it is listed in the guidance index, never inlined here.
+ */
+export function inlinedConventions(conventions: readonly ScannedDoc[]): ScannedDoc[] {
+  return conventions.filter((doc) => doc.readWhen === null);
 }
 
+export function onDemandGuidance(conventions: readonly ScannedDoc[]): ScannedDoc[] {
+  return conventions.filter((doc) => doc.readWhen !== null);
+}
+
+function conventionsBody(config: StoreConfig, conventions: readonly ScannedDoc[]): string[] {
+  const blocks = [renderBaselineBlock(config), ...inlinedConventions(conventions).map(renderConventionBlock)];
+  return blocks.flatMap((block, i) => (i === blocks.length - 1 ? block : [...block, '']));
+}
+
+/** `conventions` is every scanned guidance document; the on-demand ones are filtered out here, not by the caller. */
 export function renderConventionsSection(config: StoreConfig, conventions: readonly ScannedDoc[]): string[] {
-  return substituteBlock(agentsTemplate('conventions'), '__CONVENTION_BODY__', conventionsBody(config, conventions)).split('\n');
+  return substituteBlock(
+    agentsTemplate('conventions').replaceAll('__GUIDANCE_PATH__', config.harness.guidance_path),
+    '__CONVENTION_BODY__',
+    conventionsBody(config, conventions),
+  ).split('\n');
 }
 
 export async function buildAgentsConventionsSection(root: string, config: StoreConfig): Promise<{ changed: boolean }> {
   const conventions = await scanConventions(root, config);
   return upsertFencedRegionInFile(agentsMdPath(root), AGENTS_MD_CONVENTIONS_FENCE, renderConventionsSection(config, conventions));
+}
+
+/**
+ * lean-composed-entry-document: the router. One row per on-demand guidance
+ * document — its trigger, its title, its path — so an agent learns that the
+ * document exists and when it matters without paying for its body on every
+ * turn. Absent entirely when no document is on demand (the mission
+ * section's pattern), never an empty fence pair.
+ */
+export const AGENTS_MD_GUIDANCE_INDEX_FENCE = htmlCommentFence('guidance-index');
+
+export function renderGuidanceIndexRow(doc: ScannedDoc): string {
+  return `- ${doc.readWhen} → [${doc.title}](${doc.path})`;
+}
+
+export function renderGuidanceIndexSection(conventions: readonly ScannedDoc[]): string[] {
+  const rows = onDemandGuidance(conventions).map(renderGuidanceIndexRow);
+  if (rows.length === 0) return [];
+  return substituteBlock(agentsTemplate('guidance-index'), '__GUIDANCE_ROWS__', rows).split('\n');
+}
+
+export async function buildAgentsGuidanceIndexSection(root: string, config: StoreConfig): Promise<{ changed: boolean }> {
+  const body = renderGuidanceIndexSection(await scanConventions(root, config));
+  if (body.length === 0) return removeFencedRegionFromFile(agentsMdPath(root), AGENTS_MD_GUIDANCE_INDEX_FENCE);
+  return upsertFencedRegionInFile(agentsMdPath(root), AGENTS_MD_GUIDANCE_INDEX_FENCE, body);
 }
 
 /**
@@ -294,6 +325,7 @@ export const AGENTS_MD_SECTION_ORDER = [
   AGENTS_MD_CAPTURE_FENCE,
   AGENTS_MD_PLACEMENT_FENCE,
   AGENTS_MD_CONVENTIONS_FENCE,
+  AGENTS_MD_GUIDANCE_INDEX_FENCE,
 ];
 
 export interface AgentsMdDrift {
@@ -325,17 +357,34 @@ export async function checkAgentsMdDrift(root: string, config: StoreConfig): Pro
     if (!conventionsRegion.includes(renderBaselineBlock(config).join('\n'))) {
       driftedConventions.push(BASELINE_SOURCE_LABEL);
     }
-    if (conventions.length === 0) {
+    if (inlinedConventions(conventions).length === 0) {
       if (driftedConventions.length === 0) driftedConventions.push(config.harness.guidance_path);
     } else {
-      for (const doc of conventions) {
+      for (const doc of inlinedConventions(conventions)) {
         if (!conventionsRegion.includes(renderConventionBlock(doc).join('\n'))) driftedConventions.push(doc.path);
+      }
+      // A document switched to on demand whose body is still inlined.
+      for (const doc of onDemandGuidance(conventions)) {
+        if (conventionsRegion.includes(renderConventionBlock(doc).join('\n'))) driftedConventions.push(doc.path);
       }
       // Every individual block present, yet the whole section still differs
       // (a reordering, an added/removed file, a template change): still real
       // drift, just not attributable to one file — report the whole set.
-      if (driftedConventions.length === 0) driftedConventions.push(...conventions.map((doc) => doc.path));
+      if (driftedConventions.length === 0) driftedConventions.push(...inlinedConventions(conventions).map((doc) => doc.path));
     }
+  }
+
+  // lean-composed-entry-document: an on-demand document drifts when its row
+  // (trigger, title, path) no longer matches — or it moved in or out of the
+  // index — even though none of its body was ever in AGENTS.md.
+  const indexRegion = (await readFencedRegionFromFile(filePath, AGENTS_MD_GUIDANCE_INDEX_FENCE)).join('\n');
+  const freshIndex = renderGuidanceIndexSection(conventions).join('\n');
+  if (freshIndex !== indexRegion) {
+    const before = driftedConventions.length;
+    for (const doc of onDemandGuidance(conventions)) {
+      if (!indexRegion.includes(renderGuidanceIndexRow(doc)) && !driftedConventions.includes(doc.path)) driftedConventions.push(doc.path);
+    }
+    if (driftedConventions.length === before) driftedConventions.push(config.harness.guidance_path);
   }
 
   let driftedMission: string | null = null;
