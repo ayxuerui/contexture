@@ -13,6 +13,7 @@ import {
   DEFAULT_CONVENTION_MAX_BYTES,
   DEFAULT_ENTRY_DOCUMENT_MAX_BYTES,
   DEFAULT_LOG_PATH,
+  DEFAULT_MISSION_MAX_BYTES,
   DEFAULT_SCRATCH_PATH,
   DEFAULT_ENTRY_DOCUMENT_TARGET_BYTES,
   DEFAULT_DERIVED_PATHS,
@@ -337,6 +338,7 @@ async function runInitCore(env: RunEnv, flags: InitFlags): Promise<RunInitResult
       rollup_stale_days: DEFAULT_ROLLUP_STALE_DAYS,
       mission_path: DEFAULT_MISSION_PATH,
       log_path: DEFAULT_LOG_PATH,
+      mission_max_bytes: DEFAULT_MISSION_MAX_BYTES,
     },
     harness: {
       skills_path: DEFAULT_SKILLS_PATH,
