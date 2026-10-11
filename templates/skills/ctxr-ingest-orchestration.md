@@ -36,7 +36,9 @@ to put the file — "create a new note" is one option among several, never the d
      hunt down the now-stale verdict language further down. A corrected body under an uncorrected
      headline is worse than either alone.
    - Source discipline: a field the source does not confirm is "not reported" — never inferred from
-     silence in either direction.
+     silence in either direction. A quantity the store did not verify carries who claimed it, when, and
+     in what setting ("founder-claimed, 2026-09-16, recruiting pitch"): stripped of its setting, a pitch
+     number and a filed number look identical later. Say when a figure is checkable and unchecked.
 5. Write the note the decision calls for — create it, expand it, merge, restructure, or add a section —
    preserving prior content in every case but the deliberate rewrite. A NEW note starts from a template
    under `__TEMPLATES_PATH__`, with `{{title}}` and `{{date}}` substituted as you write (`ctxr-placement`

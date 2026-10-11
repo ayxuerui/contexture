@@ -321,7 +321,11 @@ const ORGANIZE_AUDIT: SkillSeed = {
   file: 'ctxr-organize-audit',
   name: 'Organize audit',
   description: 'Audit store health with ctxr lint (observations) and ctxr doctor (blocking invariants), retire by moving, and classify broken links before fixing them.',
-  body: (config) => skillTemplate('ctxr-organize-audit').replaceAll('__LOG_PATH__', config.organize.log_path ?? DEFAULT_LOG_PATH).split('\n'),
+  body: (config) =>
+    skillTemplate('ctxr-organize-audit')
+      .replaceAll('__LOG_PATH__', config.organize.log_path ?? DEFAULT_LOG_PATH)
+      .replaceAll('__ARCHIVE_DESTINATION__', config.organize.archive_destination)
+      .split('\n'),
 };
 
 const PUBLISH: SkillSeed = {

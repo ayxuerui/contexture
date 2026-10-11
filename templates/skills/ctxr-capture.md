@@ -9,6 +9,10 @@ on disk, a URL the user handed you. Do not assume any particular one is availabl
 one: look at what is there, and if nothing can reach the material, say so and ask rather than
 reconstructing it from memory or from what the user said about it.
 
+Before a research pass on a topic, query the connected meeting and note sources for it first, and capture
+what they hold. Desk research is the expensive move, and nothing else catches primary material that was
+never captured, because every other check runs on what the store already holds.
+
 When a source system returns several items and the request named one, confirm which before writing.
 Capturing the wrong meeting is not recoverable by a later ingest — it is a record of something that did
 not happen.
@@ -32,6 +36,16 @@ capture overwrites.
 
 A file a note links to or displays (a PDF it cites, an image it shows) lives under `__CAPTURE_ROOT__assets/`,
 never in a folder of its own beside the notes.
+
+Several items from one source system covering the same occasion (two recordings of one meeting, a
+transcript and its summary) are one source. Check them against each other by content and named entities —
+string matching misses the same speech transcribed twice — and when they share an event, say so in each
+capture and name which governs. A fact appearing in both is never corroborated by the pair. Where one
+rendering is demonstrably worse, keep it and record its specific errors rather than discarding it.
+
+When a source does not separate speakers, say so in the capture as a caveat on the whole file. Any
+attribution built from it is inference, and a service's own summary attributing positions to named people
+is not the record.
 
 One capture per item. Two meetings in one file cannot be cited separately, deduplicated separately, or
 retracted separately.
