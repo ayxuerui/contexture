@@ -13,6 +13,12 @@ edit inside a fence that the next build erases).
    or hand-add only your entries, matching the committed structure, and say so in the commit message.
 3. Build, then read the result back: reported counts against the source (notes vs catalog entries, graph
    nodes vs notes); your new notes present with non-zero links; nothing else lost.
+   A gloss flagged stale (`ctxr catalog check --stale`, or `ctxr doctor`'s catalog finding) is confirmed by
+   reviewing it, then stripping its `<!-- hash:… -->` marker once, so the next `ctxr catalog build` stamps a fresh
+   one. The marker is frozen on purpose — editing the gloss and rebuilding does not clear the finding, and
+   stripping it without reviewing the gloss confirms nothing. The graph is a per-checkout cache under the cache
+   paths: every clone and worktree starts without one, so build it at the point of use when `ctxr doctor` reports
+   it stale; no schedule keeps it fresh.
 4. Fences: never hand-edit inside a `contexture:<region>` fence — the next build overwrites it. Hand
    edits OUTSIDE a fence (catalog glosses, prose around a generated section) are preserved by every
    build and are the right place for them. A note's own operator-defined fenced region (a ledger, a

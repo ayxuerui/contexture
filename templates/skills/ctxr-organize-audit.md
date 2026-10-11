@@ -1,5 +1,7 @@
 1. Run `ctxr lint` for the full health report — orphan notes, broken links, uningested inbox material,
    catalog gaps. It always exits 0; its findings are observations for judgment, never a block.
+   After a lint pass, append `## [YYYY-MM-DD] lint | <one-line summary>` to `__LOG_PATH__`, with a bullet per
+   finding class you acted on — the log's last `lint` entry is how the next session knows one is due.
 2. Run `ctxr doctor` for the invariants that DO block: catalog coverage, hook health, and more. Address doctor's failures before `ctxr-submit`; it runs the same checks.
 
 ## Placement review

@@ -18,6 +18,13 @@ export interface ScannedDoc {
   path: string;
   title: string;
   description: string | null;
+  /**
+   * lean-composed-entry-document: a guidance document's one-line "when to read
+   * this" trigger, from frontmatter `read_when`. Non-null means the document
+   * loads on demand — indexed in AGENTS.md rather than inlined. Whitespace,
+   * including any newline, is collapsed so an index row stays one line.
+   */
+  readWhen: string | null;
   /** Frontmatter stripped, otherwise verbatim. */
   body: string;
 }
@@ -41,6 +48,8 @@ export function extractDocMetadata(raw: string, relativePath: string): ScannedDo
 
   const fmTitle = frontmatter?.title ?? frontmatter?.name; // SKILL.md files declare `name`
   const fmDescription = frontmatter?.description;
+  const fmReadWhen = frontmatter?.read_when;
+  const readWhen = typeof fmReadWhen === 'string' ? fmReadWhen.replace(/\s+/g, ' ').trim() : '';
   const heading = HEADING_RE.exec(body)?.[1]?.trim();
   // A `<slug>/SKILL.md` file's natural fallback name is its directory, not "SKILL".
   const fallback =
@@ -53,6 +62,7 @@ export function extractDocMetadata(raw: string, relativePath: string): ScannedDo
       (heading && heading.length > 0 ? heading : undefined) ??
       fallback,
     description: typeof fmDescription === 'string' && fmDescription.length > 0 ? fmDescription : null,
+    readWhen: readWhen.length > 0 ? readWhen : null,
     body,
   };
 }

@@ -1,10 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { configuredAdapters, resolveAdapter } from '../../src/adapters/registry.js';
-import type { Adapter } from '../../src/adapters/types.js';
+import type { Adapter, HarnessGenerationAdapter } from '../../src/adapters/types.js';
+import { BUILTIN_ADAPTERS } from '../../src/adapters/builtin/index.js';
 import type { AdapterDeclaration, StoreConfig } from '../../src/config/schema.js';
 import { AdapterNotFoundError, AdapterVersionMismatchError } from '../../src/core/errors.js';
 
-import { SHIPPED_DEFAULTS } from '../../src/config/defaults.js';
+import { DEFAULT_ENTRY_DOCUMENT_MAX_BYTES, SHIPPED_DEFAULTS } from '../../src/config/defaults.js';
 function makeConfig(adapters: AdapterDeclaration[]): StoreConfig {
   return {
     schema_version: 1,
@@ -61,6 +62,34 @@ describe('resolveAdapter', () => {
     expect(resolveAdapter({ id: 'fixture-harness', kind: 'harness-generation' }, fixtureRegistry).id).toBe(
       'fixture-harness',
     );
+  });
+});
+
+describe('support-codex-and-antigravity-harnesses: the built-in skills-only adapters', () => {
+  it('resolves codex and antigravity, each reading the canonical skills directory with no entry file', () => {
+    for (const [id, limit] of [['codex', 32_768], ['antigravity', 24_000]] as const) {
+      const found = resolveAdapter({ id, kind: 'harness-generation' }) as HarnessGenerationAdapter;
+      expect(found.interfaceVersion).toBe(2);
+      expect(found.skillsDir).toBe('.agents/skills/');
+      expect(found.entryFileName).toBeUndefined();
+      expect(found.render).toBeUndefined();
+      expect(found.permissionConfig).toBeUndefined();
+      expect(found.entryDocumentMaxBytes).toBe(limit);
+    }
+  });
+
+  it('declares no read limit for a harness that reads the whole entry document', () => {
+    const claude = resolveAdapter({ id: 'claude-code', kind: 'harness-generation' }) as HarnessGenerationAdapter;
+    expect(claude.entryDocumentMaxBytes).toBeUndefined();
+  });
+});
+
+describe('lean-composed-entry-document: the store-wide limit is derived from the built-in adapters', () => {
+  it('defaults harness.entry_document_max_bytes to the smallest built-in read limit', () => {
+    const limits = BUILTIN_ADAPTERS.map((a) => (a as HarnessGenerationAdapter).entryDocumentMaxBytes).filter((n): n is number => n !== undefined);
+    expect(limits.length).toBeGreaterThan(0);
+    expect(DEFAULT_ENTRY_DOCUMENT_MAX_BYTES).toBe(Math.min(...limits));
+    expect(SHIPPED_DEFAULTS.harness.entry_document_max_bytes).toBe(DEFAULT_ENTRY_DOCUMENT_MAX_BYTES);
   });
 });
 

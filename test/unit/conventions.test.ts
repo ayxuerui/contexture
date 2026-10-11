@@ -9,7 +9,7 @@ import {
   renderConventionsSection,
 } from '../../src/core/agents-doc.js';
 import { extractDocMetadata, inlineDocBody, scanConventions } from '../../src/core/conventions.js';
-import { removeManagedBaselineFile, seedHouseConventionsFile } from '../../src/core/convention-doc.js';
+import { removeManagedBaselineFile, renderBaselineConventions, seedHouseConventionsFile } from '../../src/core/convention-doc.js';
 import { makeTmpDir } from '../helpers/tmp-store.js';
 
 import { SHIPPED_DEFAULTS } from '../../src/config/defaults.js';
@@ -41,6 +41,7 @@ describe('extractDocMetadata', () => {
       path: 'conventions/style.md',
       title: 'House Style',
       description: 'How prose is written here.',
+      readWhen: null,
       body: '# Ignored heading\n',
     });
   });
@@ -110,8 +111,8 @@ describe('scanConventions', () => {
 
       const docs = await scanConventions(tmp.root, makeConfig());
       expect(docs).toEqual([
-        { path: 'guidance/a-rules.md', title: 'Rules', description: null, body: '# Rules\n' },
-        { path: 'guidance/b-style.md', title: 'Style', description: 'Prose rules.', body: 'Body text.\n' },
+        { path: 'guidance/a-rules.md', title: 'Rules', description: null, readWhen: null, body: '# Rules\n' },
+        { path: 'guidance/b-style.md', title: 'Style', description: 'Prose rules.', readWhen: null, body: 'Body text.\n' },
       ]);
     } finally {
       await tmp.cleanup();
@@ -170,7 +171,7 @@ describe('renderConventionsSection', () => {
   it('explains the mechanism and names the configured path when the store has added none of its own', () => {
     const lines = renderConventionsSection(makeConfig(), []).join('\n');
     expect(lines).toContain('`guidance/`');
-    expect(lines).toMatch(/added none of its own yet/i);
+    expect(lines).toMatch(/Operator conventions are markdown files under `guidance\/`; each is inlined here unless/);
     // The baseline is always present, so "empty" now means "no operator files".
     expect(lines).toContain('### Baseline conventions');
   });
@@ -201,13 +202,11 @@ describe('conventions section templates', () => {
     expect(renderConventionsSection(makeConfig(), [])).toEqual([
       "## Store conventions",
       "",
-      "contexture's shipped baseline, inlined in full. This store has added none of its own yet —",
-      "operator-authored conventions (content style, field semantics, house rules) belong as markdown",
-      "files under `guidance/`, each inlined here alongside the baseline.",
+      "The rules that hold on every turn: contexture's baseline, then this store's own. Operator conventions are markdown files under `guidance/`; each is inlined here unless its frontmatter declares `read_when`, in which case it is listed under \"Read when\" instead.",
       "",
       ...renderBaselineBlock(makeConfig()),
       "",
-      "A note that applies to only one agent harness (not every harness reading this store) belongs below that harness's own managed import in its own entry file, never here — every file in this directory is inlined into every harness's entry document equally.",
+      "A note for only one agent harness belongs in that harness's own entry file, below its managed import — never here.",
     ]);
   });
 
@@ -219,7 +218,7 @@ describe('conventions section templates', () => {
     ).toEqual([
       "## Store conventions",
       "",
-      "contexture's shipped baseline and this store's own conventions, inlined in full:",
+      "The rules that hold on every turn: contexture's baseline, then this store's own. Operator conventions are markdown files under `guidance/`; each is inlined here unless its frontmatter declares `read_when`, in which case it is listed under \"Read when\" instead.",
       "",
       ...renderBaselineBlock(makeConfig()),
       "",
@@ -229,7 +228,7 @@ describe('conventions section templates', () => {
       "",
       "_Source: conventions/style.md_",
       "",
-      "A note that applies to only one agent harness (not every harness reading this store) belongs below that harness's own managed import in its own entry file, never here — every file in this directory is inlined into every harness's entry document equally.",
+      "A note for only one agent harness belongs in that harness's own entry file, below its managed import — never here.",
     ]);
   });
 });
@@ -252,7 +251,7 @@ describe('the baseline renders into AGENTS.md instead of a file', () => {
   });
 
   it('puts the baseline ahead of the operator files, and keeps them all', () => {
-    const own = { path: 'guidance/house-conventions.md', title: 'House conventions', description: null, body: 'Ours.\n' };
+    const own = { path: 'guidance/house-conventions.md', title: 'House conventions', description: null, readWhen: null, body: 'Ours.\n' };
     const section = renderConventionsSection(makeConfig(), [own]).join('\n');
     expect(section.indexOf('### Baseline conventions')).toBeLessThan(section.indexOf('### House conventions'));
     expect(section).toContain('Ours.');
@@ -324,5 +323,28 @@ describe('seedHouseConventionsFile', () => {
     } finally {
       await tmp.cleanup();
     }
+  });
+});
+
+describe('standardize-store-operating-guidance: the baseline carries the every-turn rules', () => {
+  it('states outliner, wikilinks, preserve-content, task format, last-4, scratch path, no access control, and the log', () => {
+    const baseline = renderBaselineConventions(makeConfig());
+    expect(baseline).toMatch(/Write in outliner bullets, not prose paragraphs/);
+    expect(baseline).toMatch(/Link liberally with wikilinks/);
+    expect(baseline).toMatch(/Extend what a note says rather than overwrite it/);
+    expect(baseline).toContain('`- [ ] Task (added YYYY-MM-DD, due YYYY-MM-DD)`');
+    expect(baseline).toMatch(/the last four digits only/);
+    expect(baseline).toContain('Scratch and intermediate files go in `/tmp/`');
+    expect(baseline).toMatch(/Notes carry no access control/);
+    expect(baseline).toContain('`log.md` is append-only');
+    expect(baseline).toMatch(/more than seven days old or missing, suggest a lint pass/);
+  });
+
+  it('renders the configured scratch and log paths', () => {
+    const base = makeConfig();
+    const config = { ...base, harness: { ...base.harness, scratch_path: '/var/tmp/ctx/' }, organize: { ...base.organize, log_path: 'journal/log.md' } };
+    const baseline = renderBaselineConventions(config);
+    expect(baseline).toContain('go in `/var/tmp/ctx/`');
+    expect(baseline).toContain('`journal/log.md` is append-only');
   });
 });

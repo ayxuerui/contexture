@@ -1,5 +1,9 @@
+import { readFile } from 'node:fs/promises';
 import { configuredAdapters } from '../../adapters/registry.js';
-import { DEFAULT_SKILLS_PATH } from '../../config/defaults.js';
+import { BUILTIN_ADAPTERS } from '../../adapters/builtin/index.js';
+import type { HarnessGenerationAdapter } from '../../adapters/types.js';
+import { DEFAULT_ENTRY_DOCUMENT_MAX_BYTES, DEFAULT_ENTRY_DOCUMENT_TARGET_BYTES, DEFAULT_SKILLS_PATH } from '../../config/defaults.js';
+import { GENERIC_START_RE } from '../fs/fenced-region.js';
 import { AGENTS_MD_CONVENTIONS_FENCE, agentsMdPath } from '../agents-doc.js';
 import type { Finding } from '../envelope.js';
 import { readFencedRegionFromFile } from '../fs/fenced-region.js';
@@ -70,6 +74,10 @@ export const skillsPathIsHarnessBrandedCheck = defineCheck({
     const findings: Finding[] = [];
     for (const adapter of configuredAdapters(ctx.config, 'harness-generation')) {
       if (adapter.skillsDir !== canonical) continue;
+      // support-codex-and-antigravity-harnesses: an adapter that declares the
+      // cross-harness location itself (codex, antigravity) reads the directory
+      // every other harness is bridged to — that is not a branded path.
+      if (adapter.skillsDir === DEFAULT_SKILLS_PATH) continue;
       findings.push({
         code: 'harness_portability.skills_path_is_harness_branded',
         severity: 'info',
@@ -82,4 +90,131 @@ export const skillsPathIsHarnessBrandedCheck = defineCheck({
   },
 });
 
-export const HARNESS_PORTABILITY_CHECKS = [conventionsSectionSizeCheck, skillsPathIsHarnessBrandedCheck];
+async function readAgentsMd(storeRoot: string): Promise<string | null> {
+  try {
+    return await readFile(agentsMdPath(storeRoot), 'utf8');
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return null;
+    throw err;
+  }
+}
+
+/**
+ * lean-composed-entry-document:
+ * the generated section a byte offset falls inside — the last
+ * `contexture:<region>` fence opened at or before it — so a finding says
+ * what a harness stops reading, not just how much. `null` when the offset
+ * precedes every fence (hand-written preamble).
+ */
+export function sectionAtByte(content: string, offset: number): string | null {
+  let consumed = 0;
+  let current: string | null = null;
+  for (const line of content.split('\n')) {
+    if (consumed > offset) break;
+    const start = GENERIC_START_RE.exec(line);
+    if (start) current = start[1]!;
+    consumed += Buffer.byteLength(line, 'utf8') + 1;
+  }
+  return current;
+}
+
+/** Every built-in harness adapter that declares a read limit — declared by the store or not. */
+export function limitedBuiltinHarnesses(): HarnessGenerationAdapter[] {
+  return BUILTIN_ADAPTERS.filter(
+    (a): a is HarnessGenerationAdapter => a.kind === 'harness-generation' && (a as HarnessGenerationAdapter).entryDocumentMaxBytes !== undefined,
+  ) as HarnessGenerationAdapter[];
+}
+
+/**
+ * lean-composed-entry-document: "The entry document fits every supported
+ * harness." One store-wide limit, defaulting to the smallest built-in read
+ * limit, applied whichever harnesses the store declares (design.md D3). An
+ * invariant, because past a harness's limit content is silently never seen.
+ * Each finding names a built-in harness whose own limit is exceeded. Store
+ * scope only, so an over-limit store can still commit the edits that bring
+ * it back under.
+ */
+export const entryDocumentReadLimitCheck = defineCheck({
+  id: 'harness_portability.entry_document_read_limit',
+  title: 'AGENTS.md fits within its size limit, which by default every supported harness reads in full',
+  severity: 'invariant',
+  capability: 'harness-portability',
+  scopes: ['store'],
+  async run(ctx) {
+    const content = await readAgentsMd(ctx.storeRoot);
+    if (content === null) {
+      return { status: 'skip', skipReason: 'AGENTS.md has not been generated yet — run `ctxr update`', findings: [] };
+    }
+    const size = Buffer.byteLength(content, 'utf8');
+    const limit = ctx.config.harness.entry_document_max_bytes ?? DEFAULT_ENTRY_DOCUMENT_MAX_BYTES;
+    if (size <= limit) return { status: 'pass', findings: [] };
+    const findings: Finding[] = limitedBuiltinHarnesses()
+      .filter((adapter) => size > adapter.entryDocumentMaxBytes!)
+      .map((adapter) => {
+        const harnessLimit = adapter.entryDocumentMaxBytes!;
+        const section = sectionAtByte(content, harnessLimit);
+        return {
+          code: 'harness_portability.entry_document_read_limit_exceeded',
+          severity: 'error' as const,
+          message:
+            `AGENTS.md is ${size} bytes, over this store's ${limit}-byte limit; ${adapter.id} stops reading at ${harnessLimit}, ` +
+            `${section ? `inside the "${section}" section` : 'before the first generated section'}. ` +
+            'Move guidance that is not needed on every turn into a file declaring `read_when`, or trim the mission.',
+          subject: adapter.id,
+          details: { size, limit, harness_limit: harnessLimit, section },
+        };
+      });
+    // A store that set its own limit below every harness's still fails, with no harness to name.
+    if (findings.length === 0) {
+      findings.push({
+        code: 'harness_portability.entry_document_read_limit_exceeded',
+        severity: 'error',
+        message: `AGENTS.md is ${size} bytes, over this store's ${limit}-byte limit (\`harness.entry_document_max_bytes\`).`,
+        details: { size, limit },
+      });
+    }
+    return { status: 'fail', findings };
+  },
+});
+
+/**
+ * lean-composed-entry-document D3: the target is a judgment about per-turn
+ * cost and adherence, not a fact about any harness — an observation, never a
+ * failure.
+ */
+export const entryDocumentTargetSizeCheck = defineCheck({
+  id: 'harness_portability.entry_document_target_size',
+  title: 'AGENTS.md stays within its target size',
+  severity: 'observation',
+  capability: 'harness-portability',
+  scopes: ['store'],
+  async run(ctx) {
+    const content = await readAgentsMd(ctx.storeRoot);
+    if (content === null) {
+      return { status: 'skip', skipReason: 'AGENTS.md has not been generated yet — run `ctxr update`', findings: [] };
+    }
+    const size = Buffer.byteLength(content, 'utf8');
+    const target = ctx.config.harness.entry_document_target_bytes ?? DEFAULT_ENTRY_DOCUMENT_TARGET_BYTES;
+    if (size <= target) return { status: 'pass', findings: [] };
+    return {
+      status: 'fail',
+      findings: [
+        {
+          code: 'harness_portability.entry_document_over_target',
+          severity: 'info',
+          message:
+            `AGENTS.md is ${size} bytes, over its ${target}-byte target. Every byte loads on every turn: ` +
+            'move guidance that matters only for one task into a file declaring `read_when`.',
+          details: { size, target },
+        },
+      ],
+    };
+  },
+});
+
+export const HARNESS_PORTABILITY_CHECKS = [
+  conventionsSectionSizeCheck,
+  skillsPathIsHarnessBrandedCheck,
+  entryDocumentReadLimitCheck,
+  entryDocumentTargetSizeCheck,
+];

@@ -185,6 +185,42 @@ describe('bridgeHarnessSkills', () => {
   });
 });
 
+describe('support-codex-and-antigravity-harnesses: harnesses that read the canonical location', () => {
+  it('creates no bridge for codex or antigravity on a store using the canonical skills path', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      await writeCanonicalSkill(tmp.root);
+      const config = makeConfig({
+        adapters: [
+          { id: 'codex', kind: 'harness-generation' },
+          { id: 'antigravity', kind: 'harness-generation' },
+        ],
+      });
+      expect(await bridgeHarnessSkills(tmp.root, config)).toEqual([]);
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('bridges the canonical location for codex when the store keeps its skills elsewhere', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const dir = path.join(tmp.root, 'skills/some-skill');
+      await mkdir(dir, { recursive: true });
+      await writeFile(path.join(dir, 'SKILL.md'), '---\nname: some-skill\n---\nbody\n', 'utf8');
+      const config = makeConfig({
+        harness: { skills_path: 'skills/', guidance_path: 'guidance/', convention_max_bytes: 32768 },
+        adapters: [{ id: 'codex', kind: 'harness-generation' }],
+      });
+      const results = await bridgeHarnessSkills(tmp.root, config);
+      expect(results).toEqual([{ harness: 'codex', path: '.agents/skills/', mode: 'symlink' }]);
+      expect(await readFile(path.join(tmp.root, '.agents/skills/some-skill/SKILL.md'), 'utf8')).toContain('some-skill');
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+});
+
 describe('isBridgeBroken', () => {
   it('is false for a working symlink bridge and true before one exists', async () => {
     const tmp = await makeTmpDir();

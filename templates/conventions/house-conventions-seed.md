@@ -11,6 +11,16 @@ Each entry states the rule, why it exists, and how to apply it:
   Why: <what goes wrong without it — the observation that earned it>
   Apply: <what to actually do, concretely>
 
+Every rule in this file is inlined into AGENTS.md and loads on every turn of every session. A rule that
+matters only for one task belongs in its own file here, whose frontmatter declares when to read it:
+
+    ---
+    title: Content style
+    read_when: Before writing or restructuring a note's body
+    ---
+
+A file with `read_when` is not inlined; AGENTS.md lists it under "Read when", by its trigger and its path.
+
 The Why is not decoration. Without the observation that earned a rule, no future reader can tell
 whether it still holds or whether a one-off calcified into a convention — so it never gets retired,
 and this file only ever grows. `ctxr-session-capture` proposes additions and removals at the end of a

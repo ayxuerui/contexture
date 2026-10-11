@@ -1,3 +1,4 @@
+import { DEFAULT_LOG_PATH } from '../../config/defaults.js';
 import { readdir } from 'node:fs/promises';
 import path from 'node:path';
 import { configuredAdapters } from '../../adapters/registry.js';
@@ -74,6 +75,8 @@ export function excludedPrefixesFor(config: StoreConfig): string[] {
     // than relying on the default path sitting inside `.contexture/`, so the
     // exclusion follows a store that configures the path elsewhere.
     config.templates.path,
+    // standardize-store-operating-guidance: the store log records what happened, never a note.
+    config.organize.log_path ?? DEFAULT_LOG_PATH,
   ];
 }
 

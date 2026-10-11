@@ -10,6 +10,7 @@ import {
   buildAgentsCanonicalSection,
   buildAgentsCaptureSection,
   buildAgentsConventionsSection,
+  buildAgentsGuidanceIndexSection,
   buildAgentsLegRoutingSection,
   buildAgentsMissionSection,
   buildAgentsPlacementSection,
@@ -116,6 +117,7 @@ export async function reconcileStore(env: RunEnv, root: string, config: StoreCon
     buildAgentsCanonicalSection,
     buildAgentsMissionSection,
     buildAgentsConventionsSection,
+    buildAgentsGuidanceIndexSection,
   ]) {
     if ((await build(root, config)).changed) agentsChanged = true;
   }

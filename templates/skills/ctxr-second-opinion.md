@@ -13,6 +13,11 @@ what it reviews. Weighing the answers is your job, and steps 4 and 5 are how.
 - **Poll** when the question is *which of these is better?* and being wrong costs mild regret: a name, a
   framing, a piece of copy, which of several tools fits. If all three agreeing would settle it, it is a poll.
   If you would still want each reviewer's top objections and a suggested edit, it is a critique.
+A critique is required, not optional, before implementing a change that is architectural, irreversible, or touches
+what may be disclosed and to whom — run it on the written plan before the work, never as a justification after it.
+Its verdict, and the reasoning behind the option chosen, land in the pull request's body: for a structural change
+the pull request and its commit are the decision record, and there is no separate governance step.
+
 - **Answer directly** when there is one right answer, when the operator has already decided and wants
   confirmation, or when the work is read-only investigation.
 

@@ -2,26 +2,36 @@
 title: Baseline conventions
 description: Contexture's shipped conventions, rendered from this store's own configuration.
 ---
-These are the rules that hold regardless of which operation you're doing; a skill states the procedure for one operation.
+## Writing notes
+
+- Write in outliner bullets, not prose paragraphs, unless asked otherwise. Link liberally with wikilinks, and when you create a note, search the store and suggest links to what already exists.
+- Extend what a note says rather than overwrite it, unless a rewrite is asked for.
+- A task is a checkbox with a dated parenthetical: `- [ ] Task (added YYYY-MM-DD, due YYYY-MM-DD)`, `- [~] Task (added YYYY-MM-DD)` while in progress, `- [x] Task (done YYYY-MM-DD)`. Omit a date that does not apply.
+
+## What stays out of the store
+
+- Credentials and full card or account numbers never enter it — the last four digits only.
+- Scratch and intermediate files go in `__SCRATCH_PATH__`, never the store or `$HOME`. Deliverables are not scratch: a page goes under `__PUBLISH_PATH__`, a note into the store.
+- Notes carry no access control — whoever reads the store reads all of it. Place sensitive material deliberately, and say in the note when it must not be quoted onward.
+
+## The store log
+
+`__LOG_PATH__` is append-only: after an ingest, a lint pass, or a structural change, add `## [YYYY-MM-DD] <kind> | <title>` and a few bullets. At session start, if its last `lint` entry is more than seven days old or missing, suggest a lint pass.
 
 ## Links and the relation vocabulary
 
-Wikilinks (`[[Note Name]]`) are the edge substrate the graph is built from. A dangling link — pointing at a note that doesn't yet exist — is a candidate for a new note or a typo, not an error; nothing about it needs fixing before a commit.
+Wikilinks (`[[Note Name]]`) are the edges the graph is built from. A dangling link is a candidate note or a typo, not an error.
 
 __RELATION_VOCABULARY__
 
 ## Archiving
 
-`ctxr archive <path>` retires a note via a single tracked rename into `__ARCHIVE_DESTINATION__`, preserving its git history and its frontmatter unchanged — never a status tag on a note that stays in place. It reports every other note that links to the archived one, so those links can be reviewed; a dangling link left behind is not itself an error (see Links, above).
+Retire a note with `ctxr archive <path>` — one tracked rename into `__ARCHIVE_DESTINATION__`, the note unchanged — never a status tag on a note left in place.
 
 ## Git and sessions
 
-Nothing reaches `__DEFAULT_BRANCH__` un-gated — every write happens inside a session worktree under `__WORKTREES_PATH__`, landed only through a reviewed pull request (see the Write path rule above).
-
-Landing (`ctxr-land`) fast-forwards the store's canonical clone itself once a PR merges — `git fetch origin && git merge --ff-only origin/__DEFAULT_BRANCH__`, run from that clone — as long as it is on `__DEFAULT_BRANCH__` and can fast-forward cleanly from its remote; if it can't (diverged, no remote, or already elsewhere), the skill reports why instead of forcing it, and the clone is never checked out, reset, or discarded to make it fast-forward.
-
-The pre-push hook refuses a direct push to `__DEFAULT_BRANCH__`; `CONTEXTURE_ALLOW_DEFAULT_BRANCH_PUSH=1` is its emergency override — for genuine emergencies, not routine use.
+Nothing reaches `__DEFAULT_BRANCH__` un-gated: work happens in a session worktree under `__WORKTREES_PATH__` and lands through a reviewed pull request (`ctxr-submit`, then `ctxr-land`). The pre-push hook refuses a direct push to `__DEFAULT_BRANCH__`; `CONTEXTURE_ALLOW_DEFAULT_BRANCH_PUSH=1` overrides it, for genuine emergencies only.
 
 ## Directory-scoped conventions
 
-Some folders may carry their own conventions that apply only when working within them — typically as a `README.md` at that folder's root. Read a folder's own `README.md`, if it has one, before making changes inside it; nothing else in this store scans for these automatically.
+A folder may carry its own `README.md`; read it before changing anything inside that folder.

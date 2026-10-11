@@ -71,6 +71,29 @@ export const DEFAULT_MISSION_PATH = `${DEFAULT_GUIDANCE_PATH}${DEFAULT_MISSION_F
 export const DEFAULT_CONVENTION_MAX_BYTES = 32 * 1024;
 
 /**
+ * lean-composed-entry-document D3: AGENTS.md's hard size limit, the same for
+ * every store — the smallest entry-document read limit any built-in harness
+ * adapter declares (Antigravity's), so a store fits Claude Code, Codex, and
+ * Antigravity alike. A number rather than a computation because the
+ * adapters import from this module; a unit test asserts the two agree.
+ */
+export const DEFAULT_ENTRY_DOCUMENT_MAX_BYTES = 24_000;
+
+/** standardize-store-operating-guidance D6: where scratch and intermediate files go, rendered into the baseline. */
+export const DEFAULT_SCRATCH_PATH = '/tmp/';
+
+/** standardize-store-operating-guidance D5: the append-only store log at the store root. */
+export const DEFAULT_LOG_PATH = 'log.md';
+
+/**
+ * lean-composed-entry-document D3: the size AGENTS.md should stay under —
+ * a judgment about per-turn cost and adherence, reported by `ctxr lint`,
+ * set with headroom under the smallest harness read limit (Antigravity's
+ * 24,000 bytes). The hard limit is `DEFAULT_ENTRY_DOCUMENT_MAX_BYTES`.
+ */
+export const DEFAULT_ENTRY_DOCUMENT_TARGET_BYTES = 20 * 1024;
+
+/**
  * context-ingest spec: the capture tier's root. Everything beneath it is
  * material that arrived rather than knowledge someone wrote, so it is
  * excluded from retrieval and never becomes a note — but it IS tracked in
@@ -274,11 +297,14 @@ export const SHIPPED_DEFAULTS = {
     capture_root: DEFAULT_CAPTURE_ROOT,
     tracking_params: DEFAULT_TRACKING_PARAMS,
   },
-  organize: { rollup_stale_days: DEFAULT_ROLLUP_STALE_DAYS },
+  organize: { rollup_stale_days: DEFAULT_ROLLUP_STALE_DAYS, log_path: DEFAULT_LOG_PATH },
   harness: {
     skills_path: DEFAULT_SKILLS_PATH,
     guidance_path: DEFAULT_GUIDANCE_PATH,
     convention_max_bytes: DEFAULT_CONVENTION_MAX_BYTES,
+    scratch_path: DEFAULT_SCRATCH_PATH,
+    entry_document_max_bytes: DEFAULT_ENTRY_DOCUMENT_MAX_BYTES,
+    entry_document_target_bytes: DEFAULT_ENTRY_DOCUMENT_TARGET_BYTES,
   },
   adapters: DEFAULT_ADAPTERS,
   update_check: { enabled: DEFAULT_UPDATE_CHECK_ENABLED, ttl_hours: DEFAULT_UPDATE_CHECK_TTL_HOURS },
