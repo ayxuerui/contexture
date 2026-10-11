@@ -11,3 +11,4 @@
 - [x] 1.6 Run `npm run typecheck && npm test` and confirm both exit 0, including the entry-document ceiling test.
 - [x] 1.7 Run `openspec validate standardize-store-operating-guidance --strict` and confirm it exits 0.
 - [x] 1.11 Source and retirement practice (capture, ingest orchestration, organize audit, baseline title rule), with one test per scenario.
+- [x] 1.12 `ctxr-placement`: a unit with supporting notes gets its own folder, naming the configured cluster depth.

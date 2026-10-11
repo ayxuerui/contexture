@@ -175,6 +175,7 @@ const PLACEMENT: SkillSeed = {
     skillTemplate('ctxr-placement')
       .replace('__LAYER_STEP__', placementLayerStep(config).join('\n'))
       .replaceAll('__TEMPLATES_PATH__', config.templates.path)
+      .replaceAll('__CLUSTER_DEPTH__', String(config.retrieval.graph.cluster_depth))
       .split('\n'),
 };
 

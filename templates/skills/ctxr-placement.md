@@ -31,6 +31,11 @@ clutter — worse than a slightly crowded existing one. Starting small and promo
 starting big and hollow is not. Make the promotion trigger a rule, not a vibe, and write it INTO the
 note: "Promote to its own top-level location the moment this holds 3+ distinct notes or topics."
 
+A unit that will carry supporting notes (a project with its research, an exploration with its evidence)
+gets a folder of its own. The graph clusters notes by their first __CLUSTER_DEPTH__ path segments, so
+grouping such units under one common parent at that depth merges their clusters, and the graph then asserts
+a relationship between them that does not exist.
+
 ## 4. What must never enter the store?
 
 Credentials, full account numbers, and secrets never enter the store — last-4 only. This is a placement
