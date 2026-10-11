@@ -4,6 +4,8 @@ import {
   RELATION_DIRECTEDNESS_NOTE,
   RELATION_VOCABULARY,
   DEFAULT_BASELINE_CONVENTIONS_FILE_NAME,
+  DEFAULT_LOG_PATH,
+  DEFAULT_SCRATCH_PATH,
   DEFAULT_HOUSE_CONVENTIONS_FILE_NAME,
   LEGACY_BASELINE_CONVENTION_FILE_NAME,
 } from '../config/defaults.js';
@@ -48,7 +50,10 @@ export function renderBaselineConventions(config: StoreConfig): string {
   let text = conventionTemplate('baseline-conventions')
     .replaceAll('__ARCHIVE_DESTINATION__', config.organize.archive_destination)
     .replaceAll('__DEFAULT_BRANCH__', config.git.default_branch)
-    .replaceAll('__WORKTREES_PATH__', config.session.worktrees_path);
+    .replaceAll('__WORKTREES_PATH__', config.session.worktrees_path)
+    .replaceAll('__SCRATCH_PATH__', config.harness.scratch_path ?? DEFAULT_SCRATCH_PATH)
+    .replaceAll('__PUBLISH_PATH__', config.publish.path)
+    .replaceAll('__LOG_PATH__', config.organize.log_path ?? DEFAULT_LOG_PATH);
   text = substituteBlock(text, '__RELATION_VOCABULARY__', relationVocabularyLines());
   return `${text}\n`;
 }

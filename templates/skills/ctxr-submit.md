@@ -51,7 +51,9 @@ Every pull request takes one of three routes. Say which, and why, in its body:
 5. Validate: run `ctxr doctor` (store scope, not `--staged` — a session's job is to leave the whole store
    healthy, not merely pass one commit's gate). Fix a failure; never bypass it, and never proceed past it.
 6. Commit: `git commit -m "<message>"`, describing the unit staged in step 3.
-7. Name the branch: if it still carries a generated name, `git branch -m "<name>"` before pushing — never
+7. Name the branch: `<prefix>/<short-slug>`, with a prefix from `skill/` `feat/` `project/` `notes/` `chore/`
+   `refactor/` `fix/` unless this store's conventions say otherwise. If it still carries a generated name,
+   `git branch -m "<name>"` before pushing — never
    let a generated name reach the forge. A name given at `ctxr session start` does not settle this: it
    named a worktree when the work began, and what ships is decided here.
 8. Before opening the pull request, run `ctxr publish urls --since origin/__DEFAULT_BRANCH__ --json`. When it
@@ -63,7 +65,8 @@ Every pull request takes one of three routes. Say which, and why, in its body:
    When the report carries no preview, leave that column out; when it says no base URL is declared, say the
    addresses are bare routes. When it lists no page, add no section.
    Then run: `git push -u origin "<branch>"`, then `gh pr create --base __DEFAULT_BRANCH__ --title "<title>" --body
-   "<why / what changed / route / verification / follow-ups>"`. The body answers those five questions; write the
+   "<why / what changed / route / verification / follow-ups>"`. `gh` authenticates from its own credential
+   file: never export or interpolate a token, and never rewrite the origin's URL — it is a credential. The body answers those five questions; write the
    why so a reviewer need not re-derive it. Do not stop to confirm first — the request to
    submit is the consent for both, and `ctxr doctor` in step 5 is the gate on this path. If `gh` has no
    reachable GitHub remote for this repository, `git push` still succeeds on its own — report the pushed

@@ -31,9 +31,29 @@ conventions is standardized in contexture.
   it, strip its `<!-- hash:… -->` once, and rebuild. Editing the gloss alone does not clear the finding, because the
   hash is frozen by design. It also states that the graph is a per-checkout cache, built at the point of use when
   `doctor` reports it stale, and never on a schedule.
+- **The baseline conventions carry the every-turn rules any store would write.** The operator ruled each of these
+  general when triaging pkm's conventions:
+  - outliner bullets and wikilinks;
+  - preserve a note's content;
+  - the task checkbox format;
+  - no credentials (last four digits only);
+  - scratch files outside the store, in a configured `harness.scratch_path` (default `/tmp/`);
+  - no access control on notes, so sensitive material is placed deliberately.
+- **A store log becomes standard.** `organize.log_path` defaults to `log.md` and is excluded from retrieval.
+  Entries take the form `## [YYYY-MM-DD] <kind> | <title>`. `ctxr-ingest-orchestration` and `ctxr-organize-audit`
+  append to it, and the baseline suggests a lint pass at session start when the last `lint` entry is over seven
+  days old.
+- **`ctxr-capture`** states that a capture keeps the durable mechanic, not perishable state, and that a file a note
+  links to or displays (a PDF, an image) lives under the capture root's `assets/`.
+- **`ctxr-submit`** states the `gh` credential practice (never export `GH_TOKEN`, never rewrite the origin) and a
+  default branch-prefix vocabulary.
 - **The retrieval section** gains one fallback line for a literal search that finds nothing: try the vocabulary the
   note would use, expand acronyms, and walk the graph from the nearest note found. The fallback stays within the
   generated-prose ceiling.
+
+- **The generated-prose ceiling rises** to cover the baseline additions. These are every-turn rules moving out of
+  stores and into contexture's share, so a store's `AGENTS.md` shrinks by more than contexture's grows
+  (design.md D4).
 
 ## Non-goals
 
@@ -60,4 +80,6 @@ conventions is standardized in contexture.
   `templates/skills/ctxr-derived-artifacts.md`, `templates/agents/retrieval-leg-routing.md`.
 - Tests: `test/unit/skills.test.ts` (one assertion per scenario), and the existing exact-output fixture for the
   retrieval section.
-- Downstream: pkm's house conventions shrink to what is actually pkm's (pkm#339).
+- Config: `harness.scratch_path` and `organize.log_path`, convention keys with shipped defaults. The log path joins
+  the retrieval exclusions.
+- Downstream: pkm's house conventions shrink to its store context and house-taste lens (pkm#339).

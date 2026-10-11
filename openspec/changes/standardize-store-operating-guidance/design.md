@@ -26,5 +26,30 @@ explicit and is a fair follow-up, but it adds CLI surface this change does not n
 
 ### D3. The retrieval fallback stays inside the ceiling
 
-The generated-prose ceiling (7,000 bytes) has about 350 bytes of headroom. The fallback is one sentence, and the
+The generated-prose ceiling (7,000 bytes at the time) had about 350 bytes of headroom. The fallback is one sentence, and the
 graph-cache detail goes in the derived-artifacts skill, which loads only when it is used.
+
+### D4. The ceiling rises, because store content moves into contexture's share
+
+The ceiling exists to stop contexture's generated prose from growing for its own sake. This change grows it, by
+about 1.5 KB, with rules every store was already writing in its own conventions (pkm's took 3 KB to say them). The
+total per store goes down, and the rules are now consistent across stores. The new ceiling is the measured size
+rounded up to the next 500 bytes. It still only goes down from there.
+
+### D5. The store log is on by default
+
+**Case for opt-in** (like `organize.mission_path`): a store that does not want a log gets a hot file every session
+appends to, and git history already records what changed.
+**Why default on:**
+- Git history records *diffs*. The log records *intent* (what was ingested and why, when a lint last ran), which
+  is what an agent at session start needs and cannot cheaply reconstruct from `git log`.
+- The operator chose it as standard.
+- Merge collisions on it are already covered by `ctxr-session-lifecycle`'s hot-file rule.
+
+A store sets `organize.log_path` elsewhere if it wants the file somewhere else.
+
+### D6. Scratch is a configured path
+
+The scratch rule names a place, and the right place differs by machine and harness. On one of pkm's harnesses
+`$HOME` is a tracked, auto-pushed directory. `harness.scratch_path` defaults to `/tmp/` and is rendered into the
+baseline, so the rule and the path cannot disagree.

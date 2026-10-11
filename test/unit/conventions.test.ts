@@ -9,7 +9,7 @@ import {
   renderConventionsSection,
 } from '../../src/core/agents-doc.js';
 import { extractDocMetadata, inlineDocBody, scanConventions } from '../../src/core/conventions.js';
-import { removeManagedBaselineFile, seedHouseConventionsFile } from '../../src/core/convention-doc.js';
+import { removeManagedBaselineFile, renderBaselineConventions, seedHouseConventionsFile } from '../../src/core/convention-doc.js';
 import { makeTmpDir } from '../helpers/tmp-store.js';
 
 import { SHIPPED_DEFAULTS } from '../../src/config/defaults.js';
@@ -323,5 +323,28 @@ describe('seedHouseConventionsFile', () => {
     } finally {
       await tmp.cleanup();
     }
+  });
+});
+
+describe('standardize-store-operating-guidance: the baseline carries the every-turn rules', () => {
+  it('states outliner, wikilinks, preserve-content, task format, last-4, scratch path, no access control, and the log', () => {
+    const baseline = renderBaselineConventions(makeConfig());
+    expect(baseline).toMatch(/Write in outliner bullets, not prose paragraphs/);
+    expect(baseline).toMatch(/Link liberally with wikilinks/);
+    expect(baseline).toMatch(/Extend what a note says rather than overwrite it/);
+    expect(baseline).toContain('`- [ ] Task (added YYYY-MM-DD, due YYYY-MM-DD)`');
+    expect(baseline).toMatch(/the last four digits only/);
+    expect(baseline).toContain('Scratch and intermediate files go in `/tmp/`');
+    expect(baseline).toMatch(/Notes carry no access control/);
+    expect(baseline).toContain('`log.md` is append-only');
+    expect(baseline).toMatch(/more than seven days old or missing, suggest a lint pass/);
+  });
+
+  it('renders the configured scratch and log paths', () => {
+    const base = makeConfig();
+    const config = { ...base, harness: { ...base.harness, scratch_path: '/var/tmp/ctx/' }, organize: { ...base.organize, log_path: 'journal/log.md' } };
+    const baseline = renderBaselineConventions(config);
+    expect(baseline).toContain('go in `/var/tmp/ctx/`');
+    expect(baseline).toContain('`journal/log.md` is append-only');
   });
 });

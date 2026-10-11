@@ -79,6 +79,12 @@ export const DEFAULT_CONVENTION_MAX_BYTES = 32 * 1024;
  */
 export const DEFAULT_ENTRY_DOCUMENT_MAX_BYTES = 24_000;
 
+/** standardize-store-operating-guidance D6: where scratch and intermediate files go, rendered into the baseline. */
+export const DEFAULT_SCRATCH_PATH = '/tmp/';
+
+/** standardize-store-operating-guidance D5: the append-only store log at the store root. */
+export const DEFAULT_LOG_PATH = 'log.md';
+
 /**
  * lean-composed-entry-document D3: the size AGENTS.md should stay under —
  * a judgment about per-turn cost and adherence, reported by `ctxr lint`,
@@ -291,11 +297,12 @@ export const SHIPPED_DEFAULTS = {
     capture_root: DEFAULT_CAPTURE_ROOT,
     tracking_params: DEFAULT_TRACKING_PARAMS,
   },
-  organize: { rollup_stale_days: DEFAULT_ROLLUP_STALE_DAYS },
+  organize: { rollup_stale_days: DEFAULT_ROLLUP_STALE_DAYS, log_path: DEFAULT_LOG_PATH },
   harness: {
     skills_path: DEFAULT_SKILLS_PATH,
     guidance_path: DEFAULT_GUIDANCE_PATH,
     convention_max_bytes: DEFAULT_CONVENTION_MAX_BYTES,
+    scratch_path: DEFAULT_SCRATCH_PATH,
     entry_document_max_bytes: DEFAULT_ENTRY_DOCUMENT_MAX_BYTES,
     entry_document_target_bytes: DEFAULT_ENTRY_DOCUMENT_TARGET_BYTES,
   },

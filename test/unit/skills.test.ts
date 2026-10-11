@@ -928,3 +928,27 @@ describe('standardize-store-operating-guidance: guidance every store would other
     expect(da).toMatch(/per-checkout cache[^]*no schedule keeps it fresh/);
   });
 });
+
+describe('standardize-store-operating-guidance: the store log, capture, and submit practice', () => {
+  const skills = rendered();
+
+  it('ingest orchestration and organize audit append to the configured log', () => {
+    expect(skills['ctxr-ingest-orchestration']).toContain('append `## [YYYY-MM-DD] ingest | <title>` to `log.md`');
+    expect(skills['ctxr-organize-audit']).toContain('append `## [YYYY-MM-DD] lint | <one-line summary>` to `log.md`');
+    const custom = rendered({ ...makeConfig(), organize: { ...makeConfig().organize, log_path: 'journal/log.md' } });
+    expect(custom['ctxr-ingest-orchestration']).toContain('to `journal/log.md`');
+  });
+
+  it('capture names perishable state and the attachments directory under the capture root', () => {
+    const capture = skills['ctxr-capture']!;
+    expect(capture).toMatch(/kept for its durable mechanic,\s+not its momentary state/);
+    expect(capture).toContain(`lives under \`${makeConfig().ingest.capture_root}assets/\``);
+  });
+
+  it('submit names the credential practice and the branch form', () => {
+    const submit = skills['ctxr-submit']!;
+    expect(submit).toMatch(/never export or interpolate a token, and never rewrite the origin's URL/);
+    expect(submit).toContain('`<prefix>/<short-slug>`');
+    for (const prefix of ['skill/', 'feat/', 'project/', 'notes/', 'chore/', 'refactor/', 'fix/']) expect(submit).toContain(`\`${prefix}\``);
+  });
+});

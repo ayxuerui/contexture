@@ -49,3 +49,5 @@ to put the file — "create a new note" is one option among several, never the d
    records its provenance exactly as a new one does, and a note built from several sources cites all of
    them. A deliberate ingest despite an `alternate_source_match` is the same command.
 7. Verify: `ctxr lint` (orphans, broken links, material still in the inbox) and `ctxr catalog check`.
+8. Log it: append `## [YYYY-MM-DD] ingest | <title>` to `__LOG_PATH__`, with a bullet naming the note it informed
+   and what changed there.

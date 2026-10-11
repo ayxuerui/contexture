@@ -18,7 +18,11 @@ import { makeTmpDir } from '../helpers/tmp-store.js';
  * number when a template shrinks. Raising it needs a change that argues for
  * the increase.
  */
-const CONTEXTURE_OWNED_CEILING_BYTES = 7_000;
+// standardize-store-operating-guidance D4: raised from 7,000 when every
+// store's own every-turn rules (writing style, scratch, credentials, the store
+// log) moved into the baseline — a store's AGENTS.md shrinks by more than
+// this grew.
+const CONTEXTURE_OWNED_CEILING_BYTES = 8_500;
 
 describe('contexture-owned entry document prose', () => {
   it(`stays under ${CONTEXTURE_OWNED_CEILING_BYTES} bytes on a freshly initialized default store`, async () => {

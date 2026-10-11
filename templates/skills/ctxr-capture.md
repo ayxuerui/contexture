@@ -26,6 +26,13 @@ it does, a capture missing that section is refused at ingest, and so is one whos
 it or appears only inside a code block, so check the store's configuration before deciding a summary is
 enough.
 
+Perishable material — a promotion, a price, an offer with an end date — is kept for its durable mechanic,
+not its momentary state: capture how it works, and keep the state that will change in a section a later
+capture overwrites.
+
+A file a note links to or displays (a PDF it cites, an image it shows) lives under `__CAPTURE_ROOT__assets/`,
+never in a folder of its own beside the notes.
+
 One capture per item. Two meetings in one file cannot be cited separately, deduplicated separately, or
 retracted separately.
 

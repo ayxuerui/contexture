@@ -3,7 +3,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { mkdir, readdir, readFile, rm } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { DEFAULT_HOUSE_CONVENTIONS_FILE_NAME, RELATION_DIRECTEDNESS_NOTE, RELATION_VOCABULARY } from '../config/defaults.js';
+import { DEFAULT_HOUSE_CONVENTIONS_FILE_NAME, DEFAULT_LOG_PATH, RELATION_DIRECTEDNESS_NOTE, RELATION_VOCABULARY } from '../config/defaults.js';
 import type { StoreConfig, TaxonomyLayerConfig } from '../config/schema.js';
 import type { Finding } from './envelope.js';
 import { scanDocsDir, SKILL_FILE_NAME, type ScannedDoc } from './conventions.js';
@@ -206,6 +206,7 @@ const INGEST_ORCHESTRATION: SkillSeed = {
     skillTemplate('ctxr-ingest-orchestration')
       .replaceAll('__GRAPH_DOCUMENT_PATH__', GRAPH_DOCUMENT_RELATIVE_PATH)
       .replaceAll('__TEMPLATES_PATH__', config.templates.path)
+      .replaceAll('__LOG_PATH__', config.organize.log_path ?? DEFAULT_LOG_PATH)
       .split('\n'),
 };
 
@@ -320,7 +321,7 @@ const ORGANIZE_AUDIT: SkillSeed = {
   file: 'ctxr-organize-audit',
   name: 'Organize audit',
   description: 'Audit store health with ctxr lint (observations) and ctxr doctor (blocking invariants), retire by moving, and classify broken links before fixing them.',
-  body: () => skillTemplate('ctxr-organize-audit').split('\n'),
+  body: (config) => skillTemplate('ctxr-organize-audit').replaceAll('__LOG_PATH__', config.organize.log_path ?? DEFAULT_LOG_PATH).split('\n'),
 };
 
 const PUBLISH: SkillSeed = {

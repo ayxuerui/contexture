@@ -57,6 +57,21 @@ describe('listNotes', () => {
     }
   });
 
+  it('excludes the store log, at the default path and a configured one', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      await writeNote(tmp.root, 'projects/a.md');
+      await writeNote(tmp.root, 'log.md');
+      expect((await listNotes(tmp.root, makeConfig())).map((n) => n.path)).toEqual(['projects/a.md']);
+      await writeNote(tmp.root, 'journal/log.md');
+      const base = makeConfig();
+      const moved = await listNotes(tmp.root, makeConfig({ organize: { ...base.organize, log_path: 'journal/log.md' } }));
+      expect(moved.map((n) => n.path)).not.toContain('journal/log.md');
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
   it('finds .md files across nested directories, sorted', async () => {
     const tmp = await makeTmpDir();
     try {
