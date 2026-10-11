@@ -969,3 +969,11 @@ describe('standardize-store-operating-guidance: source and retirement practice',
     expect(skills['ctxr-organize-audit']).toContain(`\`git mv <folder> ${makeConfig().organize.archive_destination}<name>\``);
   });
 });
+
+describe('standardize-store-operating-guidance: a unit with supporting notes gets its own folder', () => {
+  it('names the configured cluster depth', () => {
+    const placement = rendered()['ctxr-placement']!;
+    expect(placement).toMatch(/gets a folder of its own\. The graph clusters notes by their first 2 path segments/);
+    expect(placement).not.toContain('__CLUSTER_DEPTH__');
+  });
+});

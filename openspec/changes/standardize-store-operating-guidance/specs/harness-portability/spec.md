@@ -87,7 +87,11 @@ The capture skill SHALL instruct the agent to:
 - treat several items from one source system covering the same occasion as one source, checked against each other by content rather than string matching, and never counted as corroborating each other;
 - record, when a source does not separate speakers, that every attribution built from it is inference.
 
-The ingest-orchestration skill SHALL instruct recording who claimed an unverified quantity, when, and in what setting. The organize-audit skill SHALL state that a unit living as a folder of notes is retired by moving the whole folder into the configured archive destination, since the archive command moves one note. The baseline conventions SHALL state that a note's `title:` equals its filename stem.
+The ingest-orchestration skill SHALL instruct recording who claimed an unverified quantity, when, and in what setting. The organize-audit skill SHALL state that a unit living as a folder of notes is retired by moving the whole folder into the configured archive destination, since the archive command moves one note. The baseline conventions SHALL state that a note's `title:` equals its filename stem. The placement skill SHALL state that a unit carrying supporting notes gets a folder of its own, because the graph clusters notes by their first configured cluster-depth path segments and a common parent would merge their clusters.
+
+#### Scenario: A unit with supporting notes gets its own folder
+- **WHEN** the placement skill is rendered for a store whose graph cluster depth is 2
+- **THEN** it tells the agent to give a unit with supporting notes its own folder, naming the first 2 path segments as what the graph clusters by
 
 #### Scenario: Capture carries the same-event, speaker, and primary-material rules
 - **WHEN** the capture skill is rendered
