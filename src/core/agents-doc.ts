@@ -3,6 +3,8 @@ import path from 'node:path';
 import type { StoreConfig } from '../config/schema.js';
 import { GRAPH_DOCUMENT_RELATIVE_PATH } from './graph/persist.js';
 import { CONFIG_FILE_NAME } from './root.js';
+import { parseNoteText } from './notes/parse.js';
+import { ROLLED_UP_FIELD } from './rollup.js';
 import { excludedPrefixesFor } from './notes/list.js';
 import { extractDocMetadata, inlineDocBody, scanConventions, type ScannedDoc } from './conventions.js';
 import { renderBaselineConventions } from './convention-doc.js';
@@ -139,36 +141,15 @@ export async function buildAgentsPlacementSection(root: string, config: StoreCon
  */
 export const AGENTS_MD_CANONICAL_FENCE = htmlCommentFence('canonical');
 
-/**
- * context-organize spec, kept through inline-conventions-and-mission's
- * design decision "the identity/mission pointer coexists with the inlined
- * Mission section": when `organize.mission_path` is configured, the
- * canonical section still names it as a document to load at session start,
- * immediately followed (as its own fenced section — see
- * `renderMissionSection` below) by that document's full inlined body.
- * Nothing is rendered when unset: the `__MISSION_POINTER__` template line
- * disappears entirely (via `substituteBlock`'s empty-list case), not a
- * placeholder.
- */
-function renderMissionPointer(config: StoreConfig): string[] {
-  const { mission_path: missionPath } = config.organize;
-  if (!missionPath) return [];
-  return [
-    '',
-    `Load \`${missionPath}\` at the start of every session — this store's standing current-state document, ` +
-      'kept current by the mission skill and written through `ctxr rollup write`; its full content follows in the "Mission" section below.',
-  ];
-}
-
 export function renderCanonicalSection(config: StoreConfig): string[] {
-  return substituteBlock(
-    agentsTemplate('canonical')
-      .replaceAll('__CONFIG_FILE_NAME__', CONFIG_FILE_NAME)
-      .replaceAll('__SKILLS_PATH__', config.harness.skills_path)
-      .replaceAll('__TEMPLATES_PATH__', config.templates.path),
-    '__MISSION_POINTER__',
-    renderMissionPointer(config),
-  ).split('\n');
+  // a-dated-mission-core: no mission pointer here — the Mission section
+  // already carries the content and names its source, and the pointer
+  // caused ritual re-reads of a document every agent already had.
+  return agentsTemplate('canonical')
+    .replaceAll('__CONFIG_FILE_NAME__', CONFIG_FILE_NAME)
+    .replaceAll('__SKILLS_PATH__', config.harness.skills_path)
+    .replaceAll('__TEMPLATES_PATH__', config.templates.path)
+    .split('\n');
 }
 
 export async function buildAgentsCanonicalSection(root: string, config: StoreConfig): Promise<{ changed: boolean }> {
@@ -185,12 +166,33 @@ export async function buildAgentsCanonicalSection(root: string, config: StoreCon
  */
 export const AGENTS_MD_MISSION_FENCE = htmlCommentFence('mission');
 
+/**
+ * a-dated-mission-core D2: the date the operator last confirmed the mission,
+ * from its recorded rollup timestamp — rendered rather than judged, so the
+ * generated text stays deterministic and the agent compares it to today.
+ */
+export function missionConfirmedLine(missionRaw: string, missionPath: string): string {
+  let rolledUp: unknown;
+  try {
+    rolledUp = parseNoteText(missionRaw, missionPath).frontmatter?.[ROLLED_UP_FIELD];
+  } catch {
+    rolledUp = undefined;
+  }
+  const raw = rolledUp instanceof Date ? rolledUp.toISOString() : typeof rolledUp === 'string' ? rolledUp : '';
+  const date = /^\d{4}-\d{2}-\d{2}/.exec(raw)?.[0];
+  return date
+    ? `_Last confirmed ${date}. Check what has moved since before relying on a priority below._`
+    : '_Never confirmed: these priorities have not been reviewed since the document was seeded._';
+}
+
 export function renderMissionSection(config: StoreConfig, missionRaw: string | null): string[] {
   const { mission_path: missionPath } = config.organize;
   if (!missionPath || missionRaw === null) return [];
   const doc = extractDocMetadata(missionRaw, missionPath);
   return substituteBlock(
-    agentsTemplate('mission').replaceAll('__MISSION_PATH__', missionPath),
+    agentsTemplate('mission')
+      .replaceAll('__MISSION_PATH__', missionPath)
+      .replaceAll('__MISSION_CONFIRMED__', missionConfirmedLine(missionRaw, missionPath)),
     '__MISSION_BODY__',
     inlineDocBody(doc, 1),
   ).split('\n');

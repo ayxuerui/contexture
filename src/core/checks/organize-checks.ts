@@ -200,14 +200,22 @@ export const rollupStaleCheck = defineCheck({
   scopes: ['store'],
   async run(ctx) {
     const notes = await ctx.notes();
-    const stale = await findStaleRollups(ctx.git, ctx.storeRoot, notes, {}, ctx.config.organize.rollup_stale_days);
+    // a-dated-mission-core: the mission's elapsed-time rule runs here too, so
+    // every lint surfaces a stale mission — not only an explicit staleness query.
+    const missionPath = ctx.config.organize.mission_path;
+    const staleDays = ctx.config.organize.rollup_stale_days;
+    const stale = await findStaleRollups(ctx.git, ctx.storeRoot, notes, { missionPath }, staleDays);
     const findings: Finding[] = stale.map((entry) => ({
       code: 'organize.rollup_stale',
       severity: 'info',
       message:
-        entry.rolledUp === null
-          ? `"${entry.entity}" has a rollup section but no recorded rollup timestamp.`
-          : `"${entry.entity}"'s rollup is stale — "${entry.newestBacklink!.path}" was modified after the last rollup.`,
+        entry.entity === missionPath
+          ? entry.rolledUp === null
+            ? `The mission "${entry.entity}" has never been confirmed — run \`ctxr-mission\` with the operator.`
+            : `The mission "${entry.entity}" was last confirmed ${entry.rolledUp.slice(0, 10)}, more than ${staleDays} days ago — review it with the operator (\`ctxr-mission\`).`
+          : entry.rolledUp === null
+            ? `"${entry.entity}" has a rollup section but no recorded rollup timestamp.`
+            : `"${entry.entity}"'s rollup is stale — "${entry.newestBacklink!.path}" was modified after the last rollup.`,
       subject: entry.entity,
       details: { rolledUp: entry.rolledUp, newestBacklink: entry.newestBacklink },
     }));
@@ -255,6 +263,50 @@ export const agentsMdSectionOrderBlockedCheck = defineCheck({
   },
 });
 
+/**
+ * a-dated-mission-core: a dated next action in the mission that has already
+ * passed is the commonest way the core goes wrong while still looking
+ * current — reported, never failed, since only the operator can re-plan it.
+ */
+const DUE_DATE_RE = /\bdue\b[^0-9\n]{0,12}(\d{4}-\d{2}-\d{2})/gi;
+
+export function pastDueDates(body: string, today: string): { date: string; line: string }[] {
+  const found: { date: string; line: string }[] = [];
+  for (const line of body.split('\n')) {
+    for (const match of line.matchAll(DUE_DATE_RE)) {
+      if (match[1]! < today) found.push({ date: match[1]!, line: line.trim().slice(0, 160) });
+    }
+  }
+  return found;
+}
+
+export const missionPastDueCheck = defineCheck({
+  id: 'organize.mission_past_due',
+  title: 'The mission names no due date that has already passed',
+  severity: 'observation',
+  capability: 'context-organize',
+  scopes: ['store'],
+  async run(ctx) {
+    const missionPath = ctx.config.organize.mission_path;
+    if (!missionPath) return { status: 'skip', skipReason: 'no organize.mission_path configured', findings: [] };
+    let raw: string;
+    try {
+      raw = await readFile(path.join(ctx.storeRoot, missionPath), 'utf8');
+    } catch {
+      return { status: 'skip', skipReason: `no mission document at ${missionPath}`, findings: [] };
+    }
+    const today = new Date().toISOString().slice(0, 10);
+    const findings: Finding[] = pastDueDates(raw, today).map(({ date, line }) => ({
+      code: 'organize.mission_past_due',
+      severity: 'info',
+      message: `The mission names ${date} as due, which has passed: "${line}"`,
+      subject: missionPath,
+      details: { date, line },
+    }));
+    return { status: findings.length > 0 ? 'fail' : 'pass', findings };
+  },
+});
+
 export const ORGANIZE_CHECKS = [
   orphanNotesCheck,
   brokenLinksCheck,
@@ -262,5 +314,6 @@ export const ORGANIZE_CHECKS = [
   captureMissingRequiredSectionCheck,
   catalogGapsLintCheck,
   rollupStaleCheck,
+  missionPastDueCheck,
   agentsMdSectionOrderBlockedCheck,
 ];

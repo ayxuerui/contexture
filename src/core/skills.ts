@@ -3,7 +3,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { mkdir, readdir, readFile, rm } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { DEFAULT_HOUSE_CONVENTIONS_FILE_NAME, DEFAULT_LOG_PATH, RELATION_DIRECTEDNESS_NOTE, RELATION_VOCABULARY } from '../config/defaults.js';
+import { DEFAULT_HOUSE_CONVENTIONS_FILE_NAME, DEFAULT_LOG_PATH, DEFAULT_MISSION_MAX_BYTES, RELATION_DIRECTEDNESS_NOTE, RELATION_VOCABULARY } from '../config/defaults.js';
 import type { StoreConfig, TaxonomyLayerConfig } from '../config/schema.js';
 import type { Finding } from './envelope.js';
 import { scanDocsDir, SKILL_FILE_NAME, type ScannedDoc } from './conventions.js';
@@ -175,6 +175,7 @@ const PLACEMENT: SkillSeed = {
     skillTemplate('ctxr-placement')
       .replace('__LAYER_STEP__', placementLayerStep(config).join('\n'))
       .replaceAll('__TEMPLATES_PATH__', config.templates.path)
+      .replaceAll('__CLUSTER_DEPTH__', String(config.retrieval.graph.cluster_depth))
       .split('\n'),
 };
 
@@ -257,8 +258,13 @@ const ROLLUP: SkillSeed = {
 const MISSION: SkillSeed = {
   file: 'ctxr-mission',
   name: 'Mission',
-  description: "Keep the store's mission document current from recent work and its taxonomy layers, with every active priority naming its status/purpose/next action, back-burner items stating why they're dormant, and sunset candidates and debt carried as their own sections.",
-  body: () => skillTemplate('ctxr-mission').split('\n'),
+  description:
+    "Keep the store's mission core current — the primary mission, the top priorities in rank order with status/purpose/next action, and what is not now — with the back burner, sunset candidates, and open debt in a linked register; propose changes and write only on the operator's confirmation.",
+  body: (config) =>
+    skillTemplate('ctxr-mission')
+      .replaceAll('__LOG_PATH__', config.organize.log_path ?? DEFAULT_LOG_PATH)
+      .replaceAll('__MISSION_MAX_BYTES__', String(config.organize.mission_max_bytes ?? DEFAULT_MISSION_MAX_BYTES))
+      .split('\n'),
 };
 
 const SUBMIT: SkillSeed = {
@@ -321,7 +327,11 @@ const ORGANIZE_AUDIT: SkillSeed = {
   file: 'ctxr-organize-audit',
   name: 'Organize audit',
   description: 'Audit store health with ctxr lint (observations) and ctxr doctor (blocking invariants), retire by moving, and classify broken links before fixing them.',
-  body: (config) => skillTemplate('ctxr-organize-audit').replaceAll('__LOG_PATH__', config.organize.log_path ?? DEFAULT_LOG_PATH).split('\n'),
+  body: (config) =>
+    skillTemplate('ctxr-organize-audit')
+      .replaceAll('__LOG_PATH__', config.organize.log_path ?? DEFAULT_LOG_PATH)
+      .replaceAll('__ARCHIVE_DESTINATION__', config.organize.archive_destination)
+      .split('\n'),
 };
 
 const PUBLISH: SkillSeed = {

@@ -19,4 +19,3 @@ Every write happens inside a session worktree (`ctxr session start`), never on t
 ### Identity and recall
 
 Identity, persona, and the agent's conversational recall — what it remembers of the user and of itself from one session to the next — belong to its harness, not to this store. Subject-matter knowledge belongs here, including anything worth finding again in a later session: the store holds knowledge and skills, documented as portable markdown under `__SKILLS_PATH__`, and never a persona or recall file of its own.
-__MISSION_POINTER__

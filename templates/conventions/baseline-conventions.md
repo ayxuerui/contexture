@@ -6,6 +6,7 @@ description: Contexture's shipped conventions, rendered from this store's own co
 
 - Write in outliner bullets, not prose paragraphs, unless asked otherwise. Link liberally with wikilinks, and when you create a note, search the store and suggest links to what already exists.
 - Extend what a note says rather than overwrite it, unless a rewrite is asked for.
+- Keep a note's `title:` equal to its filename stem, unique in the store: the catalog builds each entry's wikilink from `title:`, so a divergent title links to nothing.
 - A task is a checkbox with a dated parenthetical: `- [ ] Task (added YYYY-MM-DD, due YYYY-MM-DD)`, `- [~] Task (added YYYY-MM-DD)` while in progress, `- [x] Task (done YYYY-MM-DD)`. Omit a date that does not apply.
 
 ## What stays out of the store

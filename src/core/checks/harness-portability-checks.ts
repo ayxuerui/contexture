@@ -1,8 +1,15 @@
 import { readFile } from 'node:fs/promises';
+import path from 'node:path';
 import { configuredAdapters } from '../../adapters/registry.js';
 import { BUILTIN_ADAPTERS } from '../../adapters/builtin/index.js';
 import type { HarnessGenerationAdapter } from '../../adapters/types.js';
-import { DEFAULT_ENTRY_DOCUMENT_MAX_BYTES, DEFAULT_ENTRY_DOCUMENT_TARGET_BYTES, DEFAULT_SKILLS_PATH } from '../../config/defaults.js';
+import {
+  DEFAULT_ENTRY_DOCUMENT_MAX_BYTES,
+  DEFAULT_ENTRY_DOCUMENT_TARGET_BYTES,
+  DEFAULT_MISSION_MAX_BYTES,
+  DEFAULT_SKILLS_PATH,
+} from '../../config/defaults.js';
+import { extractDocMetadata, inlineDocBody } from '../conventions.js';
 import { GENERIC_START_RE } from '../fs/fenced-region.js';
 import { AGENTS_MD_CONVENTIONS_FENCE, agentsMdPath } from '../agents-doc.js';
 import type { Finding } from '../envelope.js';
@@ -212,9 +219,49 @@ export const entryDocumentTargetSizeCheck = defineCheck({
   },
 });
 
+/**
+ * a-dated-mission-core D3: the mission core loads on every turn, so its size
+ * is budgeted like the conventions section — measured on the inlined body.
+ */
+export const missionSizeCheck = defineCheck({
+  id: 'harness_portability.mission_size',
+  title: 'The inlined mission core stays within its size budget',
+  severity: 'invariant',
+  capability: 'harness-portability',
+  scopes: ['store'],
+  async run(ctx) {
+    const missionPath = ctx.config.organize.mission_path;
+    if (!missionPath) return { status: 'skip', skipReason: 'no organize.mission_path configured', findings: [] };
+    let raw: string;
+    try {
+      raw = await readFile(path.join(ctx.storeRoot, missionPath), 'utf8');
+    } catch {
+      return { status: 'skip', skipReason: `no mission document at ${missionPath}`, findings: [] };
+    }
+    const size = Buffer.byteLength(inlineDocBody(extractDocMetadata(raw, missionPath), 1).join('\n'), 'utf8');
+    const budget = ctx.config.organize.mission_max_bytes ?? DEFAULT_MISSION_MAX_BYTES;
+    if (size <= budget) return { status: 'pass', findings: [] };
+    return {
+      status: 'fail',
+      findings: [
+        {
+          code: 'harness_portability.mission_size_exceeded',
+          severity: 'error',
+          message:
+            `The mission's inlined core is ${size} bytes, over its ${budget}-byte budget. Keep the primary mission, the ranked ` +
+            'priorities, and what is not now; move the back burner, sunset candidates, and open debt to the register note (`ctxr-mission`).',
+          subject: missionPath,
+          details: { size, budget },
+        },
+      ],
+    };
+  },
+});
+
 export const HARNESS_PORTABILITY_CHECKS = [
   conventionsSectionSizeCheck,
   skillsPathIsHarnessBrandedCheck,
   entryDocumentReadLimitCheck,
   entryDocumentTargetSizeCheck,
+  missionSizeCheck,
 ];
