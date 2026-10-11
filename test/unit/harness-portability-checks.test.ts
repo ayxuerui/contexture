@@ -184,14 +184,14 @@ describe('skillsPathIsHarnessBrandedCheck', () => {
   });
 });
 
-describe('lean-composed-entry-document: the entry document fits the harnesses that read it', () => {
+describe('lean-composed-entry-document: the entry document fits every supported harness', () => {
   const harnessGen = 'harness-generation' as const;
 
   /** An AGENTS.md of exactly `size` bytes whose conventions fence opens at byte `conventionsAt`. */
   async function writeAgentsMd(root: string, size: number, conventionsAt = 1000): Promise<void> {
     const head = `<!-- >>> contexture:canonical (managed — do not edit) >>> -->\n`;
     const conv = `<!-- >>> contexture:conventions (managed — do not edit) >>> -->\n`;
-    const pad1 = 'a'.repeat(conventionsAt - Buffer.byteLength(head));
+    const pad1 = `${'a'.repeat(conventionsAt - Buffer.byteLength(head) - 1)}\n`;
     const rest = size - conventionsAt - Buffer.byteLength(conv);
     await writeFile(agentsMdPath(root), head + pad1 + conv + 'b'.repeat(rest));
   }
@@ -202,16 +202,18 @@ describe('lean-composed-entry-document: the entry document fits the harnesses th
     expect(entryDocumentTargetSizeCheck.severity).toBe('observation');
   });
 
-  it('fails past a declared harness\'s limit, naming harness, size, limit, and section', async () => {
+  it('applies the limit whichever harnesses a store declares, naming each harness that would cut it off', async () => {
     const tmp = await makeTmpDir();
     try {
-      await writeAgentsMd(tmp.root, 30_000);
-      const config = makeConfig({ adapters: [{ id: 'antigravity', kind: harnessGen }] });
+      await writeAgentsMd(tmp.root, 40_000, 30_000);
+      const config = makeConfig({ adapters: [{ id: 'claude-code', kind: harnessGen }] });
       const result = await entryDocumentReadLimitCheck.run(makeCtx(tmp.root, config));
       expect(result.status).toBe('fail');
-      expect(result.findings).toHaveLength(1);
-      expect(result.findings[0]?.subject).toBe('antigravity');
-      expect(result.findings[0]?.details).toEqual({ size: 30_000, limit: 24_000, section: 'conventions' });
+      expect(result.findings.map((f) => f.subject).sort()).toEqual(['antigravity', 'codex']);
+      const agy = result.findings.find((f) => f.subject === 'antigravity')!;
+      expect(agy.details).toEqual({ size: 40_000, limit: 24_000, harness_limit: 24_000, section: 'canonical' });
+      const codex = result.findings.find((f) => f.subject === 'codex')!;
+      expect(codex.details).toEqual({ size: 40_000, limit: 24_000, harness_limit: 32_768, section: 'conventions' });
     } finally {
       await tmp.cleanup();
     }
@@ -221,19 +223,50 @@ describe('lean-composed-entry-document: the entry document fits the harnesses th
     const tmp = await makeTmpDir();
     try {
       await writeAgentsMd(tmp.root, 28_000);
-      const config = makeConfig({ adapters: [{ id: 'codex', kind: harnessGen }, { id: 'antigravity', kind: harnessGen }] });
-      const result = await entryDocumentReadLimitCheck.run(makeCtx(tmp.root, config));
+      const result = await entryDocumentReadLimitCheck.run(makeCtx(tmp.root, makeConfig()));
       expect(result.findings.map((f) => f.subject)).toEqual(['antigravity']);
     } finally {
       await tmp.cleanup();
     }
   });
 
-  it('passes for harnesses with no limit, while lint reports the target', async () => {
+  it('holds a store that raised the limit to its own number', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      await writeAgentsMd(tmp.root, 30_000);
+      const base = makeConfig();
+      const config = makeConfig({ harness: { ...base.harness, entry_document_max_bytes: 40_000 } });
+      expect((await entryDocumentReadLimitCheck.run(makeCtx(tmp.root, config))).status).toBe('pass');
+      await writeAgentsMd(tmp.root, 41_000);
+      const over = await entryDocumentReadLimitCheck.run(makeCtx(tmp.root, config));
+      expect(over.status).toBe('fail');
+      expect(over.findings.map((f) => f.subject).sort()).toEqual(['antigravity', 'codex']);
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('fails a store whose own limit is below every harness, with no harness to name', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      await writeAgentsMd(tmp.root, 18_000);
+      const base = makeConfig();
+      const config = makeConfig({ harness: { ...base.harness, entry_document_max_bytes: 16_000 } });
+      const result = await entryDocumentReadLimitCheck.run(makeCtx(tmp.root, config));
+      expect(result.status).toBe('fail');
+      expect(result.findings).toHaveLength(1);
+      expect(result.findings[0]?.subject).toBeUndefined();
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('lint reports the target for a large document within a raised limit', async () => {
     const tmp = await makeTmpDir();
     try {
       await writeAgentsMd(tmp.root, 100_000);
-      const config = makeConfig({ adapters: [{ id: 'claude-code', kind: harnessGen }] });
+      const base = makeConfig();
+      const config = makeConfig({ harness: { ...base.harness, entry_document_max_bytes: 200_000 } });
       expect((await entryDocumentReadLimitCheck.run(makeCtx(tmp.root, config))).status).toBe('pass');
       const target = await entryDocumentTargetSizeCheck.run(makeCtx(tmp.root, config));
       expect(target.status).toBe('fail');
@@ -243,22 +276,11 @@ describe('lean-composed-entry-document: the entry document fits the harnesses th
     }
   });
 
-  it('honors a store override of a harness\'s limit', async () => {
-    const tmp = await makeTmpDir();
-    try {
-      await writeAgentsMd(tmp.root, 50_000);
-      const config = makeConfig({ adapters: [{ id: 'codex', kind: harnessGen, entry_document_max_bytes: 65_536 }] });
-      expect((await entryDocumentReadLimitCheck.run(makeCtx(tmp.root, config))).status).toBe('pass');
-    } finally {
-      await tmp.cleanup();
-    }
-  });
-
   it('reports a document over the target but within every limit as an observation only', async () => {
     const tmp = await makeTmpDir();
     try {
       await writeAgentsMd(tmp.root, 22_000);
-      const config = makeConfig({ adapters: [{ id: 'codex', kind: harnessGen }] });
+      const config = makeConfig();
       expect((await entryDocumentReadLimitCheck.run(makeCtx(tmp.root, config))).status).toBe('pass');
       expect((await entryDocumentTargetSizeCheck.run(makeCtx(tmp.root, config))).status).toBe('fail');
     } finally {

@@ -13,8 +13,8 @@ import type { HarnessGenerationAdapter } from '../types.js';
  * 32,768 bytes, combined across every `AGENTS.md` from the repo root down to
  * the working directory. Only the operator's own `~/.codex/config.toml` (or
  * `-c`) raises it — a repo-level `.codex/config.toml` is not honored for it,
- * even with the project trusted — which is why a store records a raised
- * value as its own override rather than this adapter guessing at it.
+ * even with the project trusted. Antigravity's smaller limit sets the
+ * store-wide default regardless (lean-composed-entry-document D3).
  *
  * No permission config (design.md D4): Codex ignores a repo-level config for
  * the settings that matter, and interactive Codex already asks the operator

@@ -71,8 +71,9 @@ export interface HarnessGenerationAdapter extends Adapter<'harness-generation'> 
    * support-codex-and-antigravity-harnesses: the largest AGENTS.md, in bytes,
    * this harness loads in full — content past it is silently never seen.
    * Absent means the harness reads the whole document. Optional and additive,
-   * so `SUPPORTED_ADAPTER_INTERFACE_VERSION` stays at 2 (design.md D3); a
-   * store may override it per declaration (`entry_document_max_bytes`).
+   * so `SUPPORTED_ADAPTER_INTERFACE_VERSION` stays at 2 (design.md D3). The
+   * smallest of these across the built-ins is every store's default
+   * `harness.entry_document_max_bytes` (lean-composed-entry-document D3).
    */
   entryDocumentMaxBytes?: number;
   /** The harness-specific file this adapter writes, relative to the store root (e.g. "CLAUDE.md"). Omit for a harness that reads AGENTS.md directly — no entry file is generated for it. */

@@ -25,9 +25,8 @@ repository (codex-cli 0.154.0, agy 1.3.2) showed what actually breaks:
   selected at `ctxr init`, interactively and through `--harness`. The `--harness` help text is derived from the
   selectable list rather than hardcoded.
 - A harness-generation adapter MAY declare the largest entry document its harness reads in full: 32,768 bytes for
-  `codex` and 24,000 bytes for `antigravity`. A store MAY override that number in its own adapter declaration, for
-  example an operator who has raised Codex's `project_doc_max_bytes` on their own machine. The new key is optional
-  and has no shipped default.
+  `codex` and 24,000 bytes for `antigravity`. These declarations are the measured record that the store-wide limit
+  in `lean-composed-entry-document` is derived from.
 - The per-harness read limits are what the companion change `lean-composed-entry-document` checks `AGENTS.md`
   against (a `doctor` failure there). This change declares the limits; it does not check them.
 - Fix `skills_path_is_harness_branded` so that an adapter whose declared skills directory *is* the cross-harness
@@ -64,8 +63,7 @@ repository (codex-cli 0.154.0, agy 1.3.2) showed what actually breaks:
 <!-- none -->
 
 ### Modified Capabilities
-- `adapters`: a harness-generation adapter may declare its harness's entry-document read limit, and a store may
-  override it.
+- `adapters`: a harness-generation adapter may declare its harness's entry-document read limit.
 - `harness-portability`: Codex and Antigravity become selectable harnesses, and the branded-path observation stops
   reporting the canonical location.
 
@@ -73,8 +71,6 @@ repository (codex-cli 0.154.0, agy 1.3.2) showed what actually breaks:
 
 - `src/adapters/harness/` gains `codex.ts` and `antigravity.ts`. `src/adapters/builtin/index.ts` registers them, and
   `src/adapters/types.ts` gains optional `entryDocumentMaxBytes`. The interface version stays at 2 (design.md D3).
-- `src/config/schema.ts`: `AdapterDeclarationSchema` gains optional `entry_document_max_bytes`, with no shipped
-  default.
 - `src/commands/init.ts` and `src/run.ts`: the selectable list and the derived `--harness` help.
 - `src/core/checks/harness-portability-checks.ts`: the branded-path fix.
 - README: the harness list and a section on Codex and Antigravity.

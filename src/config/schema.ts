@@ -313,6 +313,13 @@ const HarnessSchema = z
      * and the schema cannot disagree about the budget.
      */
     convention_max_bytes: z.number().int().positive().default(SHIPPED_DEFAULTS.harness.convention_max_bytes),
+    /**
+     * lean-composed-entry-document D3: AGENTS.md's size limit, enforced by
+     * `ctxr doctor` whichever harnesses the store declares. Its shipped
+     * default is the smallest read limit among the built-in harness adapters,
+     * so a store fits every supported harness unless it raises this.
+     */
+    entry_document_max_bytes: z.number().int().positive().default(SHIPPED_DEFAULTS.harness.entry_document_max_bytes),
     /** lean-composed-entry-document D3: AGENTS.md's target size, reported by `ctxr lint` when exceeded. */
     entry_document_target_bytes: z.number().int().positive().default(SHIPPED_DEFAULTS.harness.entry_document_target_bytes),
   })
@@ -334,6 +341,7 @@ const HarnessSchema = z
       // Spread for the same reason as above: optional in the output type, so
       // the many hand-built `StoreConfig` fixtures need not name it. Always
       // present on a config read through this schema.
+      ...(value.entry_document_max_bytes !== undefined ? { entry_document_max_bytes: value.entry_document_max_bytes } : {}),
       ...(value.entry_document_target_bytes !== undefined ? { entry_document_target_bytes: value.entry_document_target_bytes } : {}),
     };
   });
@@ -352,13 +360,6 @@ const AdapterDeclarationSchema = z.object({
   module: z.string().min(1).optional(),
   /** vendored-craft-skills spec: overrides a harness-generation adapter's declared skillsDir for this store; equal to the configured skills path means no bridge is created. */
   skills_dir: z.string().min(1).optional(),
-  /**
-   * support-codex-and-antigravity-harnesses: overrides the adapter's declared
-   * entry-document read limit — e.g. an operator who raised Codex's
-   * `project_doc_max_bytes` on their own machine records it here. Opt-in, so
-   * no shipped default: absent means the adapter's own declaration applies.
-   */
-  entry_document_max_bytes: z.number().int().positive().optional(),
 });
 
 /**

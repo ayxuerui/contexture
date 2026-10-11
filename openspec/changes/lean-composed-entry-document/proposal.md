@@ -27,12 +27,13 @@ prose is 12 KB, half of Antigravity's budget before a store adds anything.
   trigger such as "Before a research pass or recording evidence") is no longer inlined. The guidance index lists it as
   one row: its title, its trigger, and its path. A file without `read_when` is inlined exactly as today, so a store
   that changes nothing renders the same conventions as before.
-- **The entry document is held to the harnesses that read it.**
-  - `ctxr doctor` fails when `AGENTS.md` is larger than the smallest read limit among the store's declared harnesses.
-    The limits are the per-harness ones `support-codex-and-antigravity-harnesses` adds. The failure names the harness,
-    the size, the limit, and the section the cut falls in.
-  - `ctxr lint` reports when `AGENTS.md` exceeds a target size, `harness.entry_document_target_bytes`, which defaults
-    to 20,480 bytes. That leaves headroom under Antigravity's 24,000.
+- **The entry document is held to one limit that fits every supported harness.**
+  - `ctxr doctor` fails when `AGENTS.md` exceeds `harness.entry_document_max_bytes`. Its default is the smallest read
+    limit any built-in harness declares, 24,000 bytes (Antigravity's), and it applies whichever harnesses a store
+    declares, so a store works in Claude Code, Codex, and Antigravity alike. The failure names each harness that
+    would cut the document off, and the section where each stops.
+  - `ctxr lint` reports when `AGENTS.md` exceeds a target size, `harness.entry_document_target_bytes`, which
+    defaults to 20,480 bytes.
 - **contexture's own generated prose shrinks, and a test keeps it shrunk.**
   - The fundamentals, retrieval, capture, and baseline templates are rewritten to their every-turn content.
   - Procedure that a shipped skill already carries is left to that skill: the ingest walkthrough, the five
@@ -65,10 +66,10 @@ prose is 12 KB, half of Antigravity's budget before a store adds anything.
 
 ### Modified Capabilities
 - `harness-portability`: conventions with `read_when` are routed rather than inlined; the entry document gains a
-  guidance index section, a whole-document size budget against declared harnesses' read limits and a target, and a
+  guidance index section, a store-wide size limit that fits every supported harness and a target, and a
   guarded ceiling on contexture's own generated prose. The canonical-entry-document, fixed-order, and drift
   requirements are revised to match.
-- `store-integrity`: doctor's enumerated checks include the entry document staying within every declared harness's
+- `store-integrity`: doctor's enumerated checks include the entry document staying within its size limit, which by default fits every supported harness's
   read limit.
 
 ## Impact
@@ -81,15 +82,17 @@ prose is 12 KB, half of Antigravity's budget before a store adds anything.
 - `src/core/reconcile.ts`: calls the new build function.
 - `src/core/checks/integrity-checks.ts`: the staged drift check covers the index.
 - `src/core/checks/harness-portability-checks.ts`: the read-limit (doctor) and target (lint) checks.
-- `src/config/schema.ts` and `defaults.ts`: `harness.entry_document_target_bytes`, a convention key with a shipped
-  default.
+- `src/config/schema.ts` and `defaults.ts`: `harness.entry_document_max_bytes` and
+  `harness.entry_document_target_bytes`, convention keys with shipped defaults. A test asserts the limit's default
+  equals the smallest built-in adapter limit.
 - `templates/agents/*.md` and `templates/conventions/baseline-conventions.md`: rewritten shorter.
   `templates/agents/guidance-index.md` is new. `templates/conventions/house-conventions-seed.md` documents
   `read_when` in its comment.
 - Tests: the existing `AGENTS.md` assertions are updated to the shorter templates, plus a new generated-size ceiling
   test.
-- Depends on `support-codex-and-antigravity-harnesses` for the per-harness read limits. That change's lint-only size
-  observation is dropped in favor of this change's doctor check.
-- Downstream: existing stores render the same conventions until their operator adds `read_when`. A store that declares
-  Codex or Antigravity and is over the limit fails `doctor` until it is split or trimmed. That failure is the point of
-  the change.
+- Depends on `support-codex-and-antigravity-harnesses` for the per-harness read limits the default is derived from.
+  That change's lint-only size observation and its per-adapter override are dropped in favor of this change's
+  single store-wide limit.
+- Downstream: existing stores render the same conventions until their operator adds `read_when`. A store over
+  24,000 bytes fails `doctor` on upgrade, whichever harnesses it declares, until it is split or trimmed (or raises
+  its limit explicitly). That failure is the point of the change.

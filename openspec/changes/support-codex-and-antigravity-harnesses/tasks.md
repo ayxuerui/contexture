@@ -1,9 +1,9 @@
 ## 1. Adapter interface and configuration
 
 - [x] 1.1 Add optional `entryDocumentMaxBytes?: number` to `HarnessGenerationAdapter` in `src/adapters/types.ts`. Its doc comment states that absent means the harness reads the whole entry document, and that adding it leaves `SUPPORTED_ADAPTER_INTERFACE_VERSION` at 2 (design.md D3).
-- [x] 1.2 Add optional `entry_document_max_bytes` (positive integer) to `AdapterDeclarationSchema` in `src/config/schema.ts`, with no `.default()` and no `SHIPPED_DEFAULTS` entry. Confirm that `src/config/render.ts` does not emit it for a store that never set it.
-- [x] 1.3 Add a helper that resolves a declared adapter's effective entry-document limit (store override first, then the adapter's value, otherwise none). It sits beside `effectiveSkillsDir` in `src/core/harness/bridge.ts`, or in a sibling module if that reads better at the point of use.
-- [x] 1.4 Extend `test/unit/config-schema.test.ts`: a positive override parses, zero and negative values are refused with the adapter named, and an absent key round-trips without being rendered.
+- [x] 1.2 (Superseded in review: the per-adapter store override was dropped in favor of the store-wide `harness.entry_document_max_bytes` in `lean-composed-entry-document`.)
+- [x] 1.3 (Superseded with 1.2.)
+- [x] 1.4 (Superseded with 1.2.)
 - [x] 1.5 Run `npx vitest run test/unit/config-schema.test.ts test/unit/adapters-registry.test.ts` and confirm it exits 0.
 
 ## 2. The two adapters

@@ -1,8 +1,9 @@
 import { readFile } from 'node:fs/promises';
 import { configuredAdapters } from '../../adapters/registry.js';
-import { DEFAULT_ENTRY_DOCUMENT_TARGET_BYTES, DEFAULT_SKILLS_PATH } from '../../config/defaults.js';
+import { BUILTIN_ADAPTERS } from '../../adapters/builtin/index.js';
+import type { HarnessGenerationAdapter } from '../../adapters/types.js';
+import { DEFAULT_ENTRY_DOCUMENT_MAX_BYTES, DEFAULT_ENTRY_DOCUMENT_TARGET_BYTES, DEFAULT_SKILLS_PATH } from '../../config/defaults.js';
 import { GENERIC_START_RE } from '../fs/fenced-region.js';
-import { effectiveEntryDocumentMaxBytes } from '../harness/bridge.js';
 import { AGENTS_MD_CONVENTIONS_FENCE, agentsMdPath } from '../agents-doc.js';
 import type { Finding } from '../envelope.js';
 import { readFencedRegionFromFile } from '../fs/fenced-region.js';
@@ -117,16 +118,25 @@ export function sectionAtByte(content: string, offset: number): string | null {
   return current;
 }
 
+/** Every built-in harness adapter that declares a read limit — declared by the store or not. */
+export function limitedBuiltinHarnesses(): HarnessGenerationAdapter[] {
+  return BUILTIN_ADAPTERS.filter(
+    (a): a is HarnessGenerationAdapter => a.kind === 'harness-generation' && (a as HarnessGenerationAdapter).entryDocumentMaxBytes !== undefined,
+  ) as HarnessGenerationAdapter[];
+}
+
 /**
- * lean-composed-entry-document: "The entry document fits the harnesses that
- * read it." An invariant, because past a declared harness's read limit the
- * content is silently never seen by that harness. Store scope only — the
- * pre-commit run never sees it, so an over-limit store can still commit the
- * edits that bring it back under.
+ * lean-composed-entry-document: "The entry document fits every supported
+ * harness." One store-wide limit, defaulting to the smallest built-in read
+ * limit, applied whichever harnesses the store declares (design.md D3). An
+ * invariant, because past a harness's limit content is silently never seen.
+ * Each finding names a built-in harness whose own limit is exceeded. Store
+ * scope only, so an over-limit store can still commit the edits that bring
+ * it back under.
  */
 export const entryDocumentReadLimitCheck = defineCheck({
   id: 'harness_portability.entry_document_read_limit',
-  title: 'AGENTS.md fits within the read limit of every declared harness',
+  title: 'AGENTS.md fits within its size limit, which by default every supported harness reads in full',
   severity: 'invariant',
   capability: 'harness-portability',
   scopes: ['store'],
@@ -136,23 +146,34 @@ export const entryDocumentReadLimitCheck = defineCheck({
       return { status: 'skip', skipReason: 'AGENTS.md has not been generated yet — run `ctxr update`', findings: [] };
     }
     const size = Buffer.byteLength(content, 'utf8');
-    const findings: Finding[] = [];
-    for (const adapter of configuredAdapters(ctx.config, 'harness-generation')) {
-      const limit = effectiveEntryDocumentMaxBytes(ctx.config, adapter.id, adapter.entryDocumentMaxBytes);
-      if (limit === undefined || size <= limit) continue;
-      const section = sectionAtByte(content, limit);
+    const limit = ctx.config.harness.entry_document_max_bytes ?? DEFAULT_ENTRY_DOCUMENT_MAX_BYTES;
+    if (size <= limit) return { status: 'pass', findings: [] };
+    const findings: Finding[] = limitedBuiltinHarnesses()
+      .filter((adapter) => size > adapter.entryDocumentMaxBytes!)
+      .map((adapter) => {
+        const harnessLimit = adapter.entryDocumentMaxBytes!;
+        const section = sectionAtByte(content, harnessLimit);
+        return {
+          code: 'harness_portability.entry_document_read_limit_exceeded',
+          severity: 'error' as const,
+          message:
+            `AGENTS.md is ${size} bytes, over this store's ${limit}-byte limit; ${adapter.id} stops reading at ${harnessLimit}, ` +
+            `${section ? `inside the "${section}" section` : 'before the first generated section'}. ` +
+            'Move guidance that is not needed on every turn into a file declaring `read_when`, or trim the mission.',
+          subject: adapter.id,
+          details: { size, limit, harness_limit: harnessLimit, section },
+        };
+      });
+    // A store that set its own limit below every harness's still fails, with no harness to name.
+    if (findings.length === 0) {
       findings.push({
         code: 'harness_portability.entry_document_read_limit_exceeded',
         severity: 'error',
-        message:
-          `AGENTS.md is ${size} bytes; ${adapter.id} stops reading at ${limit}, ` +
-          `${section ? `inside the "${section}" section` : 'before the first generated section'}. ` +
-          'Move guidance that is not needed on every turn into a file declaring `read_when`, or trim the mission.',
-        subject: adapter.id,
-        details: { size, limit, section },
+        message: `AGENTS.md is ${size} bytes, over this store's ${limit}-byte limit (\`harness.entry_document_max_bytes\`).`,
+        details: { size, limit },
       });
     }
-    return { status: findings.length > 0 ? 'fail' : 'pass', findings };
+    return { status: 'fail', findings };
   },
 });
 

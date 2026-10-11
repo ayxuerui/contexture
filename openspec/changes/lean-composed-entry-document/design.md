@@ -83,23 +83,36 @@ operator's rules matter every turn.
 **What would flip it:** agents repeatedly skipping an index row for a task its trigger plainly names. The first remedy
 would be sharper trigger wording, or a store skill. Re-inlining is the last resort.
 
-### D3. The budget is enforced against declared harnesses, with a target below it
+### D3. One store-wide limit that fits every supported harness, with a target below it
 
 There are two numbers, and each needs its own enforcement:
-- **The hard limit is a fact about a harness.** Exceeding it means content is lost silently, so it is a `doctor`
-  invariant. It is computed from the declared adapters' effective limits, so a store that declares no limited harness
-  is never failed for a limit it is not subject to.
+- **The limit is about harnesses.** Past it, content is lost silently, so it is a `doctor` invariant. Its default is
+  the smallest read limit among the harnesses contexture ships, 24,000 bytes (Antigravity's), and it applies to every
+  store regardless of which harnesses it declares.
 - **The target (20,480 bytes by default) is a judgment about cost and adherence.** The operator asked for 16–20 KB.
   Exceeding it is not broken, so it is a `lint` observation.
 
-**Case for a single doctor-enforced 20 KB cap on every store:** simpler, and it holds even a Claude-Code-only store to
-the discipline the evidence supports.
-**Why not:** it would fail stores for a judgment call, and the store-integrity spec's split exists precisely to keep
-"worth reviewing" out of "broken". A store can lower its own target. The `doctor` check runs at store scope, not in
-the staged pre-commit run, so an over-limit store can still commit the edits that bring it under.
+**Case for checking only the declared harnesses** (the first draft): a store that runs only under Claude Code is
+never failed for a limit it is not subject to, and declaring a harness is already the store's statement of where it
+runs.
+**Why one store-wide limit wins:**
+- The operator works the same store from Claude Code, Codex, and Antigravity interactively. The declaration list is
+  about skills bridging, and it lags reality: pkm declared neither Codex nor Antigravity while both were in use,
+  so a declared-only check would have passed it at 50 KB.
+- A store that fits every harness by construction can be opened in any of them with no config edit, which is the
+  portability this capability exists for.
+- The declared-only design also needed a per-adapter override (for an operator who raised Codex's limit locally).
+  A single key replaces both, and a store that really targets only harnesses with no limit can raise it explicitly.
+  That choice is then visible in its configuration, rather than implied by an omission.
 
-This supersedes `support-codex-and-antigravity-harnesses`' lint-only read-limit observation. That change keeps the
-adapters' declared limits and the store override; this one owns every size check.
+**What would flip it:** a new built-in harness with a much smaller limit, which would drag every store's default
+down. The answer then is to decide whether to ship that adapter, not to make the limit per-store again.
+
+The limit check runs at store scope, not in the staged pre-commit run, so an over-limit store can still commit the
+edits that bring it under.
+
+This supersedes `support-codex-and-antigravity-harnesses`' lint-only read-limit observation and its per-adapter
+override. That change keeps the adapters' declared limits as the record the default is derived from.
 
 ### D4. Store-specific additions to a skill are ordinary on-demand guidance
 
@@ -148,9 +161,10 @@ This is cheap to revisit: the order is one constant.
 - **The trigger wording is now load-bearing.** A vague `read_when` ("General notes") routes nothing. → The seed comment
   shows the form ("Before <task>…"). A lint check for weak triggers is possible later, once real examples exist to
   judge it by.
-- **Stores over a declared harness's limit start failing `doctor`.** → This is intended, and it is visible only once
-  the store declares that harness. The remedy (add `read_when` to a document, trim the mission) is in the operator's
-  hands, and it is store-scope only, so commits are not blocked.
+- **Every store over 24,000 bytes starts failing `doctor` on upgrade**, including both downstream stores until pkm's
+  split lands and readyrun-brain is split or trimmed. → This is intended. The remedy (add `read_when` to a document,
+  trim the mission, or raise the limit explicitly) is in the operator's hands, and the check is store-scope only, so
+  commits are not blocked.
 - **Shorter generated prose may drop something an agent relied on.** → Each cut is procedure a named shipped skill
   carries. Every section names that skill, and the existing tests for those skills' content still hold.
 

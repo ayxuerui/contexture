@@ -134,7 +134,7 @@ improvising around a declined prompt.
 ## Risks / Trade-offs
 
 - **The limits will move.** Both are vendor defaults that have changed before (Antigravity went from 12,000 characters
-  to 24,000 bytes). → They live in exactly one place each, the adapter. The store override covers an operator ahead
+  to 24,000 bytes). → They live in exactly one place each, the adapter. The store-wide limit (`harness.entry_document_max_bytes`) covers an operator ahead
   of a release, and the README records the version each was measured on.
 - **The limit is measured on the root `AGENTS.md` alone.** Codex concatenates `AGENTS.md` files from the repo root
   down to the working directory, and a store with nested ones spends the same budget sooner. → The check reports the

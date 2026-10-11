@@ -10,9 +10,9 @@
 
 ## 2. Size checks
 
-- [x] 2.1 `src/config/schema.ts` and `defaults.ts`: add `harness.entry_document_target_bytes` (positive integer, shipped default 20,480). It is a convention key, so the renderer omits it when it equals the default.
-- [x] 2.2 `src/core/checks/harness-portability-checks.ts`: add `entryDocumentReadLimitCheck` (invariant, store scope). It compares `AGENTS.md`'s byte length against each declared adapter's effective limit and names the harness, size, limit, and the `contexture:<region>` fence containing the byte at the limit, or the nearest preceding one. Add `entryDocumentTargetSizeCheck` (observation). Register both.
-- [x] 2.3 Tests in `test/unit/harness-portability-checks.test.ts`, one per scenario of "The entry document fits the harnesses that read it". Assert that `doctor --staged` does not run the read-limit check.
+- [x] 2.1 `src/config/schema.ts` and `defaults.ts`: add `harness.entry_document_max_bytes` (shipped default 24,000) and `harness.entry_document_target_bytes` (shipped default 20,480), both positive integers. They are convention keys, so the renderer omits each when it equals its default. Add a unit test asserting the limit's default equals the smallest `entryDocumentMaxBytes` across `BUILTIN_ADAPTERS`.
+- [x] 2.2 `src/core/checks/harness-portability-checks.ts`: add `entryDocumentReadLimitCheck` (invariant, store scope). It fails when `AGENTS.md`'s byte length exceeds `harness.entry_document_max_bytes`, with one finding per built-in harness whose declared limit is exceeded (declared by the store or not), naming the harness, size, limit, and the `contexture:<region>` fence containing the byte at that harness's limit. Add `entryDocumentTargetSizeCheck` (observation). Register both.
+- [x] 2.3 Tests in `test/unit/harness-portability-checks.test.ts`, one per scenario of "The entry document fits every supported harness".
 - [x] 2.4 Run `npx vitest run test/unit/harness-portability-checks.test.ts test/unit/config-schema.test.ts test/unit/lint-command.test.ts` and confirm it exits 0.
 
 ## 3. Leaner generated prose
@@ -25,5 +25,5 @@
 ## 4. End to end
 
 - [x] 4.1 Run `npm run typecheck && npm test` and confirm both exit 0.
-- [x] 4.2 Run `npm run build`, then initialize a scratch store with `node dist/bin.js init --harness codex,antigravity --profile para` and `CONTEXTURE_BIN` set to the worktree build. Add one inlined and one `read_when` convention file, then run `node dist/bin.js update`. Confirm three things: `AGENTS.md` shows the inlined file in "Store conventions" and the other in the guidance index; `node dist/bin.js doctor` exits 0; and padding the inlined file past 24,000 bytes makes `doctor` exit non-zero naming `antigravity`.
+- [x] 4.2 Run `npm run build`, then initialize a scratch store with `node dist/bin.js init --harness codex,antigravity --profile para` and `CONTEXTURE_BIN` set to the worktree build. Add one inlined and one `read_when` convention file, then run `node dist/bin.js update`. Confirm three things: `AGENTS.md` shows the inlined file in "Store conventions" and the other in the guidance index; `node dist/bin.js doctor` exits 0; and padding the inlined file past 24,000 bytes makes `doctor` exit non-zero naming `antigravity`, on a store initialized with `--harness claude-code` as well.
 - [x] 4.3 Run `openspec validate lean-composed-entry-document --strict` and confirm it exits 0.

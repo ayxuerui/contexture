@@ -23,23 +23,27 @@ An operator-authored convention document MAY declare, in its frontmatter, a `rea
 - **WHEN** no convention document declares `read_when` and the entry document is regenerated
 - **THEN** `AGENTS.md` carries no guidance index section
 
-### Requirement: The entry document fits the harnesses that read it
-`ctxr doctor` SHALL fail when `AGENTS.md` is larger, in bytes, than the smallest effective entry-document read limit among the store's declared harnesses (the per-harness limits the adapters capability defines). The failure SHALL name each harness whose limit is exceeded, the document's size, that harness's limit, and the first generated section the limit falls inside. When no declared harness has an effective limit, the check SHALL pass. Separately, `ctxr lint` SHALL report, as an observation, when `AGENTS.md` exceeds the store's target size, `harness.entry_document_target_bytes`, which SHALL default to a shipped value of 20,480 bytes. The target is a convention key with a shipped default, and a store may lower or raise it.
+### Requirement: The entry document fits every supported harness
+`ctxr doctor` SHALL fail when `AGENTS.md` is larger, in bytes, than the store's entry-document limit, `harness.entry_document_max_bytes`. That key SHALL default to the smallest entry-document read limit declared by any harness-generation adapter contexture ships (the adapters capability), whichever harnesses the store declares. A store therefore works with every supported harness without listing each one. The failure SHALL name every built-in harness whose read limit the document exceeds, the document's size, the limit, and the first generated section that harness's limit falls inside. A store MAY set the key to a different positive value. A value above the shipped default is an explicit choice to give up the guarantee for the harnesses it exceeds, and the failure, once past those harnesses' limits, still names them. Separately, `ctxr lint` SHALL report, as an observation, when `AGENTS.md` exceeds the store's target size, `harness.entry_document_target_bytes`, which SHALL default to a shipped value of 20,480 bytes.
 
-#### Scenario: A document past a declared harness's limit fails doctor
-- **WHEN** a store declares `antigravity`, sets no override, and its `AGENTS.md` is 30,000 bytes with the 24,000th byte inside the "Store conventions" section
-- **THEN** `ctxr doctor` fails, naming `antigravity`, a size of 30,000 bytes, a limit of 24,000, and the "Store conventions" section
+#### Scenario: The limit applies whichever harnesses a store declares
+- **WHEN** a store declares only `claude-code`, sets no limit, and its `AGENTS.md` is 30,000 bytes
+- **THEN** `ctxr doctor` fails against the default limit of 24,000 bytes, naming `antigravity` and `codex` with their limits and the section each stops reading in
 
 #### Scenario: Only the harnesses whose limits are exceeded are named
-- **WHEN** a store declares both `codex` and `antigravity` and its `AGENTS.md` is 28,000 bytes
+- **WHEN** a store's `AGENTS.md` is 28,000 bytes
 - **THEN** `ctxr doctor` fails naming `antigravity` and not `codex`
 
-#### Scenario: A store whose harnesses read everything passes
-- **WHEN** a store declares only harnesses with no read limit and its `AGENTS.md` is 100,000 bytes
-- **THEN** the read-limit check passes, and `ctxr lint` reports that the document exceeds its target size
+#### Scenario: The default is the smallest built-in read limit
+- **WHEN** a store sets no `harness.entry_document_max_bytes`
+- **THEN** its limit equals the smallest read limit any built-in harness adapter declares
 
-#### Scenario: A document over the target but within every limit is an observation
-- **WHEN** a store with the default target declares `codex`, and its `AGENTS.md` is 22,000 bytes
+#### Scenario: A store that raises the limit is held to its own number
+- **WHEN** a store sets `harness.entry_document_max_bytes` to 40,000 and its `AGENTS.md` is 30,000 bytes
+- **THEN** `ctxr doctor` passes, and the store's configuration records that it no longer fits `antigravity` or `codex`
+
+#### Scenario: A document over the target but within the limit is an observation
+- **WHEN** a store with the default target and limit has an `AGENTS.md` of 22,000 bytes
 - **THEN** `ctxr doctor` passes, and `ctxr lint` reports the size and the 20,480-byte target
 
 #### Scenario: A store sets its own target

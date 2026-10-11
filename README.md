@@ -143,7 +143,7 @@ That file is not inlined. `AGENTS.md`'s *Read when* section lists it as one line
 
 **Size limits:**
 - `ctxr lint` reports when `AGENTS.md` grows past `harness.entry_document_target_bytes`, which is 20 KiB by default.
-- `ctxr doctor` fails when it grows past what a declared harness actually reads.
+- `ctxr doctor` fails when it grows past `harness.entry_document_max_bytes`. The default is 24,000 bytes, the smallest limit any supported harness reads in full, so a store works in Claude Code, Codex, and Antigravity whichever it declares.
 
 ## Codex and Antigravity
 
@@ -153,11 +153,11 @@ Both read `AGENTS.md` at the store root and discover skills under `.agents/skill
 
 | Harness | Stops reading at | Measured on | Can it be raised? |
 |---|---:|---|---|
-| Codex | 32,768 bytes | codex-cli 0.154.0 | Yes: set `project_doc_max_bytes` in your own `~/.codex/config.toml`. A repo-level `.codex/config.toml` is not honored for it. Record the raised value in the store as `adapters[].entry_document_max_bytes`. |
+| Codex | 32,768 bytes | codex-cli 0.154.0 | Yes: set `project_doc_max_bytes` in your own `~/.codex/config.toml`. A repo-level `.codex/config.toml` is not honored for it. |
 | Antigravity | about 24,000 bytes | agy 1.3.2 | No. |
 
 - **Codex's limit covers every `AGENTS.md` it loads, combined**, from the repo root down to your working directory, so nested ones spend the same budget.
-- **`ctxr doctor` fails when `AGENTS.md` exceeds a declared harness's limit.** The finding names the section the cut falls in. The remedy is to move task-specific guidance behind `read_when`, or trim the mission.
+- **Every store is held to the smaller of the two, 24,000 bytes, by default**, whether or not it declares these harnesses. `ctxr doctor` fails past it, naming each harness that would cut the file off and the section where it stops. The remedy is to move task-specific guidance behind `read_when`, or trim the mission. A store that really runs only where nothing is cut off can raise `harness.entry_document_max_bytes`, which records that choice in its configuration.
 
 **Codex's sandbox keeps `.git` read-only.** Interactive Codex asks you to approve each git step of `ctxr-submit` outside its sandbox: `git add`, `git commit`, `git push`, `gh`. That includes session worktrees, whose git data lives in the main repository's `.git/worktrees/`.
 

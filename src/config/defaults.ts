@@ -71,10 +71,19 @@ export const DEFAULT_MISSION_PATH = `${DEFAULT_GUIDANCE_PATH}${DEFAULT_MISSION_F
 export const DEFAULT_CONVENTION_MAX_BYTES = 32 * 1024;
 
 /**
+ * lean-composed-entry-document D3: AGENTS.md's hard size limit, the same for
+ * every store — the smallest entry-document read limit any built-in harness
+ * adapter declares (Antigravity's), so a store fits Claude Code, Codex, and
+ * Antigravity alike. A number rather than a computation because the
+ * adapters import from this module; a unit test asserts the two agree.
+ */
+export const DEFAULT_ENTRY_DOCUMENT_MAX_BYTES = 24_000;
+
+/**
  * lean-composed-entry-document D3: the size AGENTS.md should stay under —
  * a judgment about per-turn cost and adherence, reported by `ctxr lint`,
  * set with headroom under the smallest harness read limit (Antigravity's
- * 24,000 bytes). The hard limit is the declared harnesses' own.
+ * 24,000 bytes). The hard limit is `DEFAULT_ENTRY_DOCUMENT_MAX_BYTES`.
  */
 export const DEFAULT_ENTRY_DOCUMENT_TARGET_BYTES = 20 * 1024;
 
@@ -287,6 +296,7 @@ export const SHIPPED_DEFAULTS = {
     skills_path: DEFAULT_SKILLS_PATH,
     guidance_path: DEFAULT_GUIDANCE_PATH,
     convention_max_bytes: DEFAULT_CONVENTION_MAX_BYTES,
+    entry_document_max_bytes: DEFAULT_ENTRY_DOCUMENT_MAX_BYTES,
     entry_document_target_bytes: DEFAULT_ENTRY_DOCUMENT_TARGET_BYTES,
   },
   adapters: DEFAULT_ADAPTERS,
