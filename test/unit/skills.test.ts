@@ -952,3 +952,20 @@ describe('standardize-store-operating-guidance: the store log, capture, and subm
     for (const prefix of ['skill/', 'feat/', 'project/', 'notes/', 'chore/', 'refactor/', 'fix/']) expect(submit).toContain(`\`${prefix}\``);
   });
 });
+
+describe('standardize-store-operating-guidance: source and retirement practice', () => {
+  const skills = rendered();
+  it('capture checks sources before research, merges same-occasion items, and marks unseparated speakers', () => {
+    const capture = skills['ctxr-capture']!;
+    expect(capture).toMatch(/Before a research pass on a topic, query the connected meeting and note sources/);
+    expect(capture).toMatch(/covering the same occasion[^]*are one source/);
+    expect(capture).toMatch(/A fact appearing in both is never corroborated by the pair/);
+    expect(capture).toMatch(/does not separate speakers[^]*Any\s+attribution built from it is inference/);
+  });
+  it('ingest records who claimed a figure, when, and in what setting', () => {
+    expect(skills['ctxr-ingest-orchestration']).toMatch(/carries who claimed it, when, and\s+in what setting/);
+  });
+  it('organize audit retires a folder whole into the configured archive destination', () => {
+    expect(skills['ctxr-organize-audit']).toContain(`\`git mv <folder> ${makeConfig().organize.archive_destination}<name>\``);
+  });
+});

@@ -80,3 +80,27 @@ The capture skill SHALL state that a capture keeps the durable mechanic of peris
 #### Scenario: Submit names the credential practice and branch form
 - **WHEN** the submit skill is rendered
 - **THEN** it forbids exporting a `gh` token or rewriting the origin, and gives the `<prefix>/<slug>` branch form with its default prefixes
+
+### Requirement: Source and retirement practice ships in the skills
+The capture skill SHALL instruct the agent to:
+- query connected sources for uncaptured primary material on a topic before a research pass;
+- treat several items from one source system covering the same occasion as one source, checked against each other by content rather than string matching, and never counted as corroborating each other;
+- record, when a source does not separate speakers, that every attribution built from it is inference.
+
+The ingest-orchestration skill SHALL instruct recording who claimed an unverified quantity, when, and in what setting. The organize-audit skill SHALL state that a unit living as a folder of notes is retired by moving the whole folder into the configured archive destination, since the archive command moves one note. The baseline conventions SHALL state that a note's `title:` equals its filename stem.
+
+#### Scenario: Capture carries the same-event, speaker, and primary-material rules
+- **WHEN** the capture skill is rendered
+- **THEN** it names checking connected sources before research, treating same-occasion items as one source, and marking attributions from an unseparated transcript as inference
+
+#### Scenario: Ingest records a claim's provenance
+- **WHEN** the ingest-orchestration skill is rendered
+- **THEN** it tells the agent to record who claimed an unverified quantity, when, and in what setting
+
+#### Scenario: A folder is retired whole
+- **WHEN** the organize-audit skill is rendered for a store whose archive destination is `archives/`
+- **THEN** it tells the agent to retire a folder of notes with `git mv <folder> archives/<name>`
+
+#### Scenario: Titles match filename stems
+- **WHEN** the baseline conventions are rendered
+- **THEN** they state that a note's `title:` equals its filename stem

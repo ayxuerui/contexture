@@ -47,6 +47,12 @@ conventions is standardized in contexture.
   links to or displays (a PDF, an image) lives under the capture root's `assets/`.
 - **`ctxr-submit`** states the `gh` credential practice (never export `GH_TOKEN`, never rewrite the origin) and a
   default branch-prefix vocabulary.
+- **Source and retirement practice**, lifted from readyrun-brain's conventions:
+  - `ctxr-capture` checks connected sources before a research pass, treats same-occasion items as one source,
+    and marks attributions from a transcript without speaker separation as inference;
+  - `ctxr-ingest-orchestration` records who claimed an unverified number, when, and where;
+  - `ctxr-organize-audit` retires a folder of notes whole, with `git mv`;
+  - the baseline keeps `title:` equal to the filename stem.
 - **The retrieval section** gains one fallback line for a literal search that finds nothing: try the vocabulary the
   note would use, expand acronyms, and walk the graph from the nearest note found. The fallback stays within the
   generated-prose ceiling.

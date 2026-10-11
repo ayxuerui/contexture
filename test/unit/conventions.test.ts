@@ -332,6 +332,7 @@ describe('standardize-store-operating-guidance: the baseline carries the every-t
     expect(baseline).toMatch(/Write in outliner bullets, not prose paragraphs/);
     expect(baseline).toMatch(/Link liberally with wikilinks/);
     expect(baseline).toMatch(/Extend what a note says rather than overwrite it/);
+    expect(baseline).toMatch(/Keep a note's `title:` equal to its filename stem/);
     expect(baseline).toContain('`- [ ] Task (added YYYY-MM-DD, due YYYY-MM-DD)`');
     expect(baseline).toMatch(/the last four digits only/);
     expect(baseline).toContain('Scratch and intermediate files go in `/tmp/`');
