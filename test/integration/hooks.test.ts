@@ -165,4 +165,29 @@ describe('installed hooks (real dist/bin.js, real git)', () => {
       await tmp.cleanup();
     }
   });
+
+  it('pre-commit accepts a body-only edit to an on-demand document without restaging AGENTS.md, and still refuses an inlined edit', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const env = hermeticGitEnv();
+      await runCli(['init'], { cwd: tmp.root, env });
+      const doc = path.join('.contexture', 'guidance', 'research.md');
+      await writeFile(path.join(tmp.root, doc), '---\ntitle: Research\nread_when: Before a research pass\n---\nSteps.\n');
+      await runCli(['update'], { cwd: tmp.root, env });
+      await execFileAsync('git', ['add', 'AGENTS.md', doc], { cwd: tmp.root, env });
+      await execFileAsync('git', ['commit', '-m', 'add on-demand guidance'], { cwd: tmp.root, env });
+
+      await writeFile(path.join(tmp.root, doc), '---\ntitle: Research\nread_when: Before a research pass\n---\nRevised steps.\n');
+      await execFileAsync('git', ['add', doc], { cwd: tmp.root, env });
+      await execFileAsync('git', ['commit', '-m', 'revise on-demand body'], { cwd: tmp.root, env }); // throws on failure
+
+      const house = path.join('.contexture', 'guidance', 'house-conventions.md');
+      await writeFile(path.join(tmp.root, house), (await readFile(path.join(tmp.root, house), 'utf8')) + '\nA new every-turn rule.\n');
+      await execFileAsync('git', ['add', house], { cwd: tmp.root, env });
+      const refused = await gitCommit(tmp.root, env, 'inlined edit without AGENTS.md');
+      expect(refused.code).not.toBe(0);
+    } finally {
+      await tmp.cleanup();
+    }
+  });
 });

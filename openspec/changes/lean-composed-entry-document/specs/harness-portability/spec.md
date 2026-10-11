@@ -15,6 +15,10 @@ An operator-authored convention document MAY declare, in its frontmatter, a `rea
 - **WHEN** an operator edits an on-demand document's `read_when` and `ctxr update` runs
 - **THEN** the guidance index carries the new text, and an immediately repeated update reports nothing changed
 
+#### Scenario: Editing an on-demand document's body needs no regeneration
+- **WHEN** a commit stages a change to only the body of an on-demand document, leaving its title and `read_when` unchanged, and stages no `AGENTS.md`
+- **THEN** the pre-commit hook accepts it, because `AGENTS.md` carries nothing of that body
+
 #### Scenario: No on-demand documents means no index section
 - **WHEN** no convention document declares `read_when` and the entry document is regenerated
 - **THEN** `AGENTS.md` carries no guidance index section

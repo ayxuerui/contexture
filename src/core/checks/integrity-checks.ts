@@ -395,20 +395,23 @@ export const stagedAgentsMdInlinedContentCurrentCheck = defineCheck({
     const relevantSourceStaged = staged.some((f) => f.path.startsWith(conventionsPrefix) || f.path === missionPath);
     if (!relevantSourceStaged) return { status: 'pass', findings: [] };
 
+    // lean-composed-entry-document: AGENTS.md need not be staged at all when
+    // the change leaves it untouched — an edit to an on-demand document's
+    // body is never in AGENTS.md. Compare against the version this commit
+    // would carry: the staged one if staged, else the index's (= HEAD's).
     const agentsMdStaged = staged.find((f) => f.path === 'AGENTS.md');
-    if (!agentsMdStaged || agentsMdStaged.content === undefined) {
-      return {
-        status: 'fail',
-        findings: [
-          {
-            code: 'staged.agents_md_inlined_content_current.not_staged',
-            severity: 'error',
-            message:
-              'This commit stages a change to an operator convention file or the mission document, but not AGENTS.md — run `ctxr update` and stage the result.',
-          },
-        ],
-      };
+    const notStaged: Finding = {
+      code: 'staged.agents_md_inlined_content_current.not_staged',
+      severity: 'error',
+      message:
+        'This commit stages a change to an operator convention file or the mission document, but not AGENTS.md — run `ctxr update` and stage the result.',
+    };
+    let committedAgentsMd = agentsMdStaged?.content;
+    if (!agentsMdStaged) {
+      const shown = await ctx.git.run(['show', ':AGENTS.md'], { cwd: ctx.storeRoot, allowFailure: true });
+      if (shown.exitCode === 0) committedAgentsMd = shown.stdout;
     }
+    if (committedAgentsMd === undefined) return { status: 'fail', findings: [notStaged] };
 
     const conventions = await scanConventions(ctx.storeRoot, ctx.config);
     const effectiveConventions = await Promise.all(
@@ -418,14 +421,14 @@ export const stagedAgentsMdInlinedContentCurrentCheck = defineCheck({
       }),
     );
     const freshConventions = renderConventionsSection(ctx.config, effectiveConventions).join('\n');
-    const stagedConventionsRegion = readFencedRegion(agentsMdStaged.content, AGENTS_MD_CONVENTIONS_FENCE).join('\n');
+    const stagedConventionsRegion = readFencedRegion(committedAgentsMd, AGENTS_MD_CONVENTIONS_FENCE).join('\n');
 
     const findings: Finding[] = [];
     // lean-composed-entry-document: an on-demand document's row is derived
     // content too — staging a changed trigger or title without the matching
     // AGENTS.md regeneration leaves the router stale.
     const freshIndex = renderGuidanceIndexSection(effectiveConventions).join('\n');
-    const stagedIndexRegion = readFencedRegion(agentsMdStaged.content, AGENTS_MD_GUIDANCE_INDEX_FENCE).join('\n');
+    const stagedIndexRegion = readFencedRegion(committedAgentsMd, AGENTS_MD_GUIDANCE_INDEX_FENCE).join('\n');
     if (freshIndex !== stagedIndexRegion) {
       findings.push({
         code: 'staged.agents_md_inlined_content_current.guidance_index_mismatch',
@@ -444,7 +447,7 @@ export const stagedAgentsMdInlinedContentCurrentCheck = defineCheck({
     if (missionPath) {
       const missionRaw = await stagedOrDiskContent(ctx.storeRoot, staged, missionPath);
       const freshMission = renderMissionSection(ctx.config, missionRaw).join('\n');
-      const stagedMissionRegion = readFencedRegion(agentsMdStaged.content, AGENTS_MD_MISSION_FENCE).join('\n');
+      const stagedMissionRegion = readFencedRegion(committedAgentsMd, AGENTS_MD_MISSION_FENCE).join('\n');
       if (freshMission !== stagedMissionRegion) {
         findings.push({
           code: 'staged.agents_md_inlined_content_current.mission_mismatch',
@@ -454,6 +457,8 @@ export const stagedAgentsMdInlinedContentCurrentCheck = defineCheck({
       }
     }
 
+    // Unstaged and stale: the actionable fix is to regenerate and stage it.
+    if (!agentsMdStaged && findings.length > 0) return { status: 'fail', findings: [notStaged] };
     return { status: findings.length > 0 ? 'fail' : 'pass', findings };
   },
 });
