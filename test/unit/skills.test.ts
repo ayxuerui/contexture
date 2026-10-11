@@ -188,15 +188,15 @@ describe('owned-skills-expansion: each skill carries its load-bearing rule (task
   });
 
   it('mission: kept current from recent work and the taxonomy layers, status/purpose/next-action, dormant reasons, sunset/debt as their own sections, and writes via ctxr rollup write (generalize-identity-migration-residue)', () => {
-    const s = skills['ctxr-mission'];
+    // a-dated-mission-core: the template wraps differently now; compare on normalized whitespace.
+    const s = skills['ctxr-mission']!.replace(/\s+/g, ' ');
     expect(s).toContain('AGENTS.md');
-    expect(s).toContain('If no mission document is configured for');
+    expect(s).toMatch(/If no mission document is\s+configured for/);
     expect(s).toContain('every store location the taxonomy');
     expect(s).toContain('status, its purpose, and its next useful action');
-    expect(s).toContain('state plainly why it is not active right now');
-    expect(s).toContain('Carry sunset candidates');
-    expect(s).toContain('operational');
-    expect(s).toContain('debt');
+    expect(s).toContain('stating plainly why it is not active right now');
+    expect(s).toContain('sunset candidates');
+    expect(s).toContain('open operational debt');
     expect(s).toContain('`ctxr rollup stale`');
     expect(s).toContain('`ctxr rollup write <mission_path> --content-file <file>`');
     expect(s).toContain('## Report');
@@ -975,5 +975,21 @@ describe('standardize-store-operating-guidance: a unit with supporting notes get
     const placement = rendered()['ctxr-placement']!;
     expect(placement).toMatch(/gets a folder of its own\. The graph clusters notes by their first 2 path segments/);
     expect(placement).not.toContain('__CLUSTER_DEPTH__');
+  });
+});
+
+describe('a-dated-mission-core: the mission skill writes a core and proposes before writing', () => {
+  const mission = rendered()['ctxr-mission']!;
+  it('names the core, the register, and the log for closed debt', () => {
+    expect(mission).toMatch(/\*\*Primary mission\*\*/);
+    expect(mission).toMatch(/\*\*Top priorities, in rank order\*\*/);
+    expect(mission).toMatch(/\*\*Not now\*\*/);
+    expect(mission).toMatch(/Keep the register in a note the core links to/);
+    expect(mission).toMatch(/Debt that is closed is\s+history: record it in `log\.md` and remove it/);
+    expect(mission).toContain('The core stays under `2048` bytes');
+  });
+  it('proposes changes to the ranking and writes only once the operator confirms', () => {
+    expect(mission).toMatch(/write only once the operator confirms/);
+    expect(mission).toMatch(/A factual correction[^]*is yours to make/);
   });
 });

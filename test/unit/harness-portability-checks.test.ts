@@ -7,6 +7,7 @@ import {
   conventionsSectionSizeCheck,
   entryDocumentReadLimitCheck,
   entryDocumentTargetSizeCheck,
+  missionSizeCheck,
   sectionAtByte,
   skillsPathIsHarnessBrandedCheck,
 } from '../../src/core/checks/harness-portability-checks.js';
@@ -317,5 +318,36 @@ describe('lean-composed-entry-document: the entry document fits every supported 
     expect(sectionAtByte(doc, 2)).toBeNull();
     expect(sectionAtByte(doc, doc.indexOf('xx'))).toBe('canonical');
     expect(sectionAtByte(doc, doc.indexOf('yy'))).toBe('mission');
+  });
+});
+
+describe('a-dated-mission-core: the mission budget', () => {
+  async function mission(root: string, body: string): Promise<StoreConfig> {
+    await writeFile(path.join(root, 'mission.md'), `---\ntitle: Mission\n---\n# Mission\n\n${body}\n`);
+    const base = makeConfig();
+    return makeConfig({ organize: { ...base.organize, mission_path: 'mission.md' } });
+  }
+  it('is an invariant that fails past the default 2,048-byte budget, naming size and budget', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const config = await mission(tmp.root, 'x'.repeat(3000));
+      expect(missionSizeCheck.severity).toBe('invariant');
+      const result = await missionSizeCheck.run(makeCtx(tmp.root, config));
+      expect(result.status).toBe('fail');
+      expect(result.findings[0]?.details).toEqual({ size: 3000, budget: 2048 });
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+  it('passes under a store-set budget, and skips with no mission configured', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const config = await mission(tmp.root, 'x'.repeat(3000));
+      const raised = { ...config, organize: { ...config.organize, mission_max_bytes: 4096 } };
+      expect((await missionSizeCheck.run(makeCtx(tmp.root, raised))).status).toBe('pass');
+      expect((await missionSizeCheck.run(makeCtx(tmp.root, makeConfig()))).status).toBe('skip');
+    } finally {
+      await tmp.cleanup();
+    }
   });
 });

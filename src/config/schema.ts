@@ -253,6 +253,8 @@ const OrganizeSchema = z
     mission_path: z.string().min(1).optional(),
     /** standardize-store-operating-guidance D5: the append-only store log, on by default and excluded from retrieval. */
     log_path: z.string().min(1).default(SHIPPED_DEFAULTS.organize.log_path),
+    /** a-dated-mission-core D3: the inlined mission core's size budget. */
+    mission_max_bytes: z.number().int().positive().default(SHIPPED_DEFAULTS.organize.mission_max_bytes),
   })
   .transform((value, ctx) => {
     /**
@@ -288,6 +290,7 @@ const OrganizeSchema = z
       ...(value.mission_path !== undefined ? { mission_path: value.mission_path } : {}),
       // Spread for the fixtures' sake, as above; always present once read through this schema.
       ...(value.log_path !== undefined ? { log_path: value.log_path } : {}),
+      ...(value.mission_max_bytes !== undefined ? { mission_max_bytes: value.mission_max_bytes } : {}),
     };
   });
 

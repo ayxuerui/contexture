@@ -85,6 +85,9 @@ export const DEFAULT_SCRATCH_PATH = '/tmp/';
 /** standardize-store-operating-guidance D5: the append-only store log at the store root. */
 export const DEFAULT_LOG_PATH = 'log.md';
 
+/** a-dated-mission-core D3: the inlined mission core's size budget, enforced by `ctxr doctor`. */
+export const DEFAULT_MISSION_MAX_BYTES = 2048;
+
 /**
  * lean-composed-entry-document D3: the size AGENTS.md should stay under —
  * a judgment about per-turn cost and adherence, reported by `ctxr lint`,
@@ -297,7 +300,7 @@ export const SHIPPED_DEFAULTS = {
     capture_root: DEFAULT_CAPTURE_ROOT,
     tracking_params: DEFAULT_TRACKING_PARAMS,
   },
-  organize: { rollup_stale_days: DEFAULT_ROLLUP_STALE_DAYS, log_path: DEFAULT_LOG_PATH },
+  organize: { rollup_stale_days: DEFAULT_ROLLUP_STALE_DAYS, log_path: DEFAULT_LOG_PATH, mission_max_bytes: DEFAULT_MISSION_MAX_BYTES },
   harness: {
     skills_path: DEFAULT_SKILLS_PATH,
     guidance_path: DEFAULT_GUIDANCE_PATH,

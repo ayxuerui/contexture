@@ -6,7 +6,9 @@ import type { CheckContext } from '../../src/core/checks/types.js';
 import {
   brokenLinksCheck,
   catalogGapsLintCheck,
+  missionPastDueCheck,
   orphanNotesCheck,
+  pastDueDates,
   rollupStaleCheck,
   uningestedInboxCheck,
 } from '../../src/core/checks/organize-checks.js';
@@ -257,5 +259,44 @@ describe('rollupStaleCheck (store-primitives-from-migration-audit D4)', () => {
     const notes = [{ path: 'plain.md', frontmatter: { rolled_up: '2026-01-01T00:00:00.000Z' }, body: 'no fence here' }];
     const result = await rollupStaleCheck.run(ctxWithGit(notes, {}));
     expect(result.status).toBe('pass');
+  });
+});
+
+describe('a-dated-mission-core: lint reports a stale or past-due mission', () => {
+  async function storeWithMission(rolledUp: string, body: string): Promise<{ ctx: CheckContext; cleanup: () => Promise<void> }> {
+    const tmp = await makeTmpDir();
+    await writeFile(path.join(tmp.root, 'mission.md'), `---\ntitle: Mission\nrolled_up: ${rolledUp}\n---\n# Mission\n\n${body}\n`);
+    const base = makeConfig();
+    const ctx: CheckContext = {
+      storeRoot: tmp.root,
+      config: { ...base, organize: { ...base.organize, mission_path: 'mission.md' } },
+      scope: 'store',
+      git: { run: async () => ({ stdout: '', stderr: '', exitCode: 0 }) },
+      notes: async () => [],
+      graph: async () => null,
+      catalog: async () => undefined,
+    };
+    return { ctx, cleanup: tmp.cleanup };
+  }
+
+  it('names a mission confirmed longer ago than rollup_stale_days', async () => {
+    const { ctx, cleanup } = await storeWithMission('2026-01-01T00:00:00.000Z', 'Now.');
+    try {
+      const result = await rollupStaleCheck.run(ctx);
+      expect(result.findings.map((f) => f.subject)).toEqual(['mission.md']);
+      expect(result.findings[0]?.message).toMatch(/last confirmed 2026-01-01/);
+    } finally {
+      await cleanup();
+    }
+  });
+
+  it('reports a past due date with its line, and not a future one', () => {
+    const found = pastDueDates('- Physical AI interviews. Due: 2026-09-18\n- Space tech gate due 2026-10-28', '2026-10-11');
+    expect(found).toEqual([{ date: '2026-09-18', line: '- Physical AI interviews. Due: 2026-09-18' }]);
+  });
+
+  it('is an observation that skips without a mission', async () => {
+    expect(missionPastDueCheck.severity).toBe('observation');
+    expect((await missionPastDueCheck.run(makeCtx([]))).status).toBe('skip');
   });
 });

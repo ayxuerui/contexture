@@ -250,13 +250,11 @@ describe('renderCanonicalSection', () => {
     }
   });
 
-  it('names the configured mission document, immediately after the boundary paragraph, only when set', () => {
+  it('a-dated-mission-core: carries no separate instruction to load the mission, configured or not', () => {
     const withMission = renderCanonicalSection(makeConfig({ organize: { archive_destination: 'archive/', rollup_stale_days: 7, mission_path: 'MISSION.md' } })).join('\n');
-    expect(withMission).toContain('`MISSION.md`');
-    expect(withMission).toMatch(/session start/);
-
-    const withoutMission = renderCanonicalSection(makeConfig()).join('\n');
-    expect(withoutMission).not.toMatch(/Load `.*` at the start of every session/);
+    expect(withMission).not.toContain('MISSION.md');
+    expect(withMission).not.toMatch(/at the start of every session/);
+    expect(renderCanonicalSection(makeConfig()).join('\n')).not.toMatch(/at the start of every session/);
   });
 });
 
@@ -586,19 +584,17 @@ describe('exact rendered output', () => {
     ]);
   });
 
-  it('renders the canonical section with a mission document configured', () => {
+  it('renders the canonical section identically with a mission document configured', () => {
     const config = makeConfig({ organize: { archive_destination: 'archive/', rollup_stale_days: 7, mission_path: 'MISSION.md' } });
-    const lines = renderCanonicalSection(config);
-    expect(lines.at(-1)).toBe(
-      'Load `MISSION.md` at the start of every session — this store\'s standing current-state document, kept current by the mission skill and written through `ctxr rollup write`; its full content follows in the "Mission" section below.',
-    );
-    expect(lines.at(-2)).toBe('');
+    expect(renderCanonicalSection(config)).toEqual(renderCanonicalSection(makeConfig()));
   });
 
   it('renders the mission section', () => {
     const config = makeConfig({ organize: { archive_destination: 'archive/', rollup_stale_days: 7, mission_path: 'MISSION.md' } });
     expect(renderMissionSection(config, '# Mission\n\nCurrent priorities.\n')).toEqual([
       "## Mission",
+      "",
+      "_Never confirmed: these priorities have not been reviewed since the document was seeded._",
       "",
       "Current priorities.",
       "",
@@ -709,5 +705,17 @@ describe('standardize-store-operating-guidance: the retrieval fallback', () => {
   it('names what to do when a search finds nothing', () => {
     const lines = renderLegRoutingSection(makeConfig()).join('\n');
     expect(lines).toMatch(/When a search finds nothing, retry with the vocabulary the note itself would use, expand acronyms, and walk the graph/);
+  });
+});
+
+describe('a-dated-mission-core: the confirmation date', () => {
+  const config = makeConfig({ organize: { archive_destination: 'archive/', rollup_stale_days: 7, mission_path: 'MISSION.md' } });
+  it('renders the date the mission was last confirmed, before the body', () => {
+    const lines = renderMissionSection(config, '---\nrolled_up: 2026-10-05T06:38:28.528Z\n---\n# Mission\n\nNow.\n');
+    expect(lines[2]).toBe('_Last confirmed 2026-10-05. Check what has moved since before relying on a priority below._');
+    expect(lines.indexOf('Now.')).toBeGreaterThan(2);
+  });
+  it('says so when the mission was never confirmed', () => {
+    expect(renderMissionSection(config, '# Mission\n\nNow.\n').join('\n')).toMatch(/Never confirmed/);
   });
 });
