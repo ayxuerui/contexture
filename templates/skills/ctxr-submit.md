@@ -23,13 +23,25 @@ pull request?" — needing to ask is itself the answer: leave, and let the work 
 Ending a turn without that signal is normal and is not this skill. Say in one line what is uncommitted
 and which worktree holds it, then stop. The work is safe on the branch and the next message picks it up.
 
+## Routes
+
+Every pull request takes one of three routes. Say which, and why, in its body:
+
+- **Session** (the default): the session's work plus the capture it approved.
+- **Own**: a new skill, a structural change (folders, the entry document, conventions), or a refactor touching five
+  or more files — reviewed on its own so it is not buried in content.
+- **Housekeeping**: small appends nothing else depends on (a log line, a stray link fix), batched rather than folded
+  into unrelated work.
+
 ## Steps
 
 1. Re-scan (mandatory — never replay a plan from an earlier snapshot): `git fetch origin`,
    `git status --short`, `git diff --stat`, `git diff --cached --stat`,
    `git ls-files --others --exclude-standard`, `git log --oneline origin/__DEFAULT_BRANCH__..HEAD`. State moves
    under you while you work; name the delta from the previous scan rather than silently folding new work
-   into old buckets.
+   into old buckets. If the session touched or linked to an entity note, run `ctxr rollup stale --for <entity>`
+   (or a plain `ctxr rollup stale` when unsure which), and offer `ctxr-rollup` on anything flagged — never run a
+   rollup unasked; the operator decides.
 2. Capture pass: run `ctxr-session-capture` exactly once here — closing a session is itself a capture
    trigger; do not fire it again after submitting.
 3. Stage surgically: `git add <paths>`, never `git add -A`; confirm with `git status --short` that the
@@ -51,7 +63,8 @@ and which worktree holds it, then stop. The work is safe on the branch and the n
    When the report carries no preview, leave that column out; when it says no base URL is declared, say the
    addresses are bare routes. When it lists no page, add no section.
    Then run: `git push -u origin "<branch>"`, then `gh pr create --base __DEFAULT_BRANCH__ --title "<title>" --body
-   "<why / what changed / verification / follow-ups>"`. Do not stop to confirm first — the request to
+   "<why / what changed / route / verification / follow-ups>"`. The body answers those five questions; write the
+   why so a reviewer need not re-derive it. Do not stop to confirm first — the request to
    submit is the consent for both, and `ctxr doctor` in step 5 is the gate on this path. If `gh` has no
    reachable GitHub remote for this repository, `git push` still succeeds on its own — report the pushed
    branch and give the operator the manual pull-request instructions instead of retrying `gh`.

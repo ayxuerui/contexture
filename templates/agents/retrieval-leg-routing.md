@@ -6,4 +6,6 @@ Find before you write. contexture builds and maintains the catalog and the wikil
 2. **Structure** — paths, hubs, orphans, clusters, bridges — comes from `ctxr graph query`; read the graph document at `__GRAPH_DOCUMENT_PATH__` for cluster context before writing.
 3. **Widen** with your own content matching (e.g. ripgrep) for a literal string or identifier, excluding __EXCLUSION_PATHS__, and feed a hit back in as `--seed`. Captures under `__CAPTURE_ROOT__` are excluded because they are provenance, not notes: to learn whether the store already holds some material, search `__CAPTURE_ROOT__` directly, by content and by the `capture_file` a capture names.
 
+When a search finds nothing, retry with the vocabulary the note itself would use, expand acronyms, and walk the graph from the nearest note you did find.
+
 There is no `ctxr search` command: nothing takes a free-text query, and no result carries a relevance score.

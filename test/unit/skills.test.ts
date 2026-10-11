@@ -898,3 +898,33 @@ describe('the second-opinion skill', () => {
     expect(s).toContain('Do not rerun that one reviewer on a different model');
   });
 });
+
+describe('standardize-store-operating-guidance: guidance every store would otherwise restate', () => {
+  const skills = rendered();
+
+  it('submit names its three routes and the five questions the body answers', () => {
+    const submit = skills['ctxr-submit']!;
+    for (const route of ['**Session**', '**Own**', '**Housekeeping**']) expect(submit).toContain(route);
+    expect(submit).toMatch(/Say which, and why, in its body/);
+    expect(submit).toContain('<why / what changed / route / verification / follow-ups>');
+  });
+
+  it('submit checks for stale rollups during the re-scan and never runs one unasked', () => {
+    const submit = skills['ctxr-submit']!;
+    expect(submit).toContain('ctxr rollup stale --for <entity>');
+    expect(submit).toMatch(/offer `ctxr-rollup` on anything flagged — never run a\s+rollup unasked/);
+  });
+
+  it('second opinion is required before an irreversible change, and its verdict lands in the PR body', () => {
+    const so = skills['ctxr-second-opinion']!;
+    expect(so).toMatch(/A critique is required, not optional, before implementing a change that is architectural, irreversible/);
+    expect(so).toMatch(/pull request and its commit are the decision record/);
+  });
+
+  it('derived artifacts documents confirming a stale gloss and the per-checkout graph', () => {
+    const da = skills['ctxr-derived-artifacts']!;
+    expect(da).toMatch(/stripping its `<!-- hash:… -->` marker once/);
+    expect(da).toMatch(/editing the gloss and rebuilding does not clear the finding/);
+    expect(da).toMatch(/per-checkout cache[^]*no schedule keeps it fresh/);
+  });
+});

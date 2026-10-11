@@ -514,6 +514,8 @@ describe('exact rendered output', () => {
       "2. **Structure** — paths, hubs, orphans, clusters, bridges — comes from `ctxr graph query`; read the graph document at `.contexture/cache/graph.md` for cluster context before writing.",
       "3. **Widen** with your own content matching (e.g. ripgrep) for a literal string or identifier, excluding `.contexture/`, `.worktrees/`, `catalog/`, `guidance/`, `identity/`, `publish/`, `skills/`, and feed a hit back in as `--seed`. Captures under `raw/` are excluded because they are provenance, not notes: to learn whether the store already holds some material, search `raw/` directly, by content and by the `capture_file` a capture names.",
       "",
+      "When a search finds nothing, retry with the vocabulary the note itself would use, expand acronyms, and walk the graph from the nearest note you did find.",
+      "",
       "There is no `ctxr search` command: nothing takes a free-text query, and no result carries a relevance score.",
     ]);
   });
@@ -700,5 +702,12 @@ describe('lean-composed-entry-document: a guidance document may load on demand',
     } finally {
       await tmp.cleanup();
     }
+  });
+});
+
+describe('standardize-store-operating-guidance: the retrieval fallback', () => {
+  it('names what to do when a search finds nothing', () => {
+    const lines = renderLegRoutingSection(makeConfig()).join('\n');
+    expect(lines).toMatch(/When a search finds nothing, retry with the vocabulary the note itself would use, expand acronyms, and walk the graph/);
   });
 });
