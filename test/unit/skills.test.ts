@@ -993,3 +993,13 @@ describe('a-dated-mission-core: the mission skill writes a core and proposes bef
     expect(mission).toMatch(/A factual correction[^]*is yours to make/);
   });
 });
+
+describe('organize-audit-carries-the-migration-recipe', () => {
+  it('renders the five-step migration recipe in order', () => {
+    const audit = rendered()['ctxr-organize-audit']!;
+    const steps = ['**Snapshot, don\'t abort.**', '**Preflight.**', '**Two commits, never a broken intermediate.**', '**Stage surgically.**', '**After they land,**'];
+    const at = steps.map((s) => audit.indexOf(s));
+    expect(at.every((i) => i > 0)).toBe(true);
+    expect([...at].sort((a, b) => a - b)).toEqual(at);
+  });
+});
