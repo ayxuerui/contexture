@@ -140,3 +140,40 @@ describe('archive command', () => {
     }
   });
 });
+
+describe('research-and-capture-identity: archiving a folder whole', () => {
+  it('moves a tracked folder into the destination under its own name with one git mv, reporting outside links into it', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const store: Store = { root: tmp.root, config: makeConfig() };
+      await writeNote(tmp.root, 'projects/Bet/Bet Overview.md', '# Bet Overview\n\n[[Bet Economics]]\n');
+      await writeNote(tmp.root, 'projects/Bet/Bet Economics.md', '# Bet Economics\n');
+      await writeNote(tmp.root, 'projects/other.md', 'See [[Bet Economics]].\n');
+      const { git, calls } = fakeGitRunner(trackedGitResponses('projects/Bet'));
+      const env = makeFakeEnv({ cwd: tmp.root, git });
+
+      const outcome = await execute(env, store, { path: 'projects/Bet/' });
+      expect(outcome.exitCode).toBe(ExitCode.Ok);
+      expect(outcome.data).toEqual({ path: 'projects/Bet', newPath: 'archive/Bet', linkingNotes: ['projects/other.md'] });
+      expect(calls).toContainEqual(['mv', 'projects/Bet', 'archive/Bet']);
+      expect(outcome.humanSummary).toMatch(/folder "projects\/Bet" \(2 note\(s\)\)/);
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('refuses a folder whose destination exists, and one that is not tracked', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const store: Store = { root: tmp.root, config: makeConfig() };
+      await writeNote(tmp.root, 'projects/Bet/Bet Overview.md', '# Bet Overview\n');
+      const untracked = fakeGitRunner(new Map([['ls-files --error-unmatch -- projects/Bet', { exitCode: 1, stdout: '', stderr: '' }]]));
+      await expect(execute(makeFakeEnv({ cwd: tmp.root, git: untracked.git }), store, { path: 'projects/Bet' })).rejects.toBeInstanceOf(NoteNotTrackedError);
+      await writeNote(tmp.root, 'archive/Bet/x.md', '# x\n');
+      const tracked = fakeGitRunner(trackedGitResponses('projects/Bet'));
+      await expect(execute(makeFakeEnv({ cwd: tmp.root, git: tracked.git }), store, { path: 'projects/Bet' })).rejects.toBeInstanceOf(ArchiveDestinationExistsError);
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+});

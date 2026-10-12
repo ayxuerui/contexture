@@ -270,6 +270,17 @@ export class CaptureSourceTypeMismatchError extends ContextureError {
   }
 }
 
+export class SourceIdUnprefixedError extends ContextureError {
+  constructor(sourceId: string, sourceType: string) {
+    super(ExitCode.Usage, {
+      code: 'ingest.source_id_unprefixed',
+      severity: 'error',
+      message: `--source-id "${sourceId}" does not begin with its source type; pass "${sourceType}/<id>" (for example "${sourceType}/${sourceId.replace(/^.*\//, '')}"), then ingest again.`,
+      subject: sourceId,
+    });
+  }
+}
+
 export class NoteNotTrackedError extends ContextureError {
   constructor(notePath: string) {
     super(ExitCode.Usage, {

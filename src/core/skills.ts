@@ -3,7 +3,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { mkdir, readdir, readFile, rm } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { DEFAULT_HOUSE_CONVENTIONS_FILE_NAME, DEFAULT_LOG_PATH, DEFAULT_MISSION_MAX_BYTES, RELATION_DIRECTEDNESS_NOTE, RELATION_VOCABULARY } from '../config/defaults.js';
+import { DEFAULT_HOUSE_CONVENTIONS_FILE_NAME, DEFAULT_LOG_PATH, DEFAULT_MISSION_MAX_BYTES, DEFAULT_SCRATCH_PATH, RELATION_DIRECTEDNESS_NOTE, RELATION_VOCABULARY } from '../config/defaults.js';
 import type { StoreConfig, TaxonomyLayerConfig } from '../config/schema.js';
 import type { Finding } from './envelope.js';
 import { scanDocsDir, SKILL_FILE_NAME, type ScannedDoc } from './conventions.js';
@@ -357,6 +357,24 @@ const SECOND_OPINION: SkillSeed = {
   supportingFiles: () => skillSupportingFiles('ctxr-second-opinion'),
 };
 
+/**
+ * research-and-capture-identity: the research method, written against whatever
+ * web access the harness provides (search tool, browser, or none) so it never
+ * names one harness's browser. Named for the judgment: there is no `ctxr
+ * research` command, and the procedure drives retrieval, capture, and ingest.
+ */
+const RESEARCH: SkillSeed = {
+  file: 'ctxr-research',
+  name: 'Research',
+  description:
+    'Research a question against real sources and land the findings in the store, with several perspectives, source tiers, a contradiction map, and a review before anyone acts on it, using whatever web access the harness provides.',
+  body: (config) =>
+    skillTemplate('ctxr-research')
+      .replaceAll('__SCRATCH_PATH__', config.harness.scratch_path ?? DEFAULT_SCRATCH_PATH)
+      .replaceAll('__LOG_PATH__', config.organize.log_path ?? DEFAULT_LOG_PATH)
+      .split('\n'),
+};
+
 export const SKILLS: readonly SkillSeed[] = [
   CAPTURE,
   INGEST_ORCHESTRATION,
@@ -374,6 +392,7 @@ export const SKILLS: readonly SkillSeed[] = [
   ORGANIZE_AUDIT,
   PUBLISH,
   SECOND_OPINION,
+  RESEARCH,
 ];
 
 /** The owned skills, rendered against one store's configuration — what `syncShippedSkills` writes. */

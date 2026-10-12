@@ -8,6 +8,7 @@ import { execute as executeSourceHash } from '../../src/commands/source-hash.js'
 import type { StoreConfig } from '../../src/config/schema.js';
 import {
   AlreadyIngestedError,
+  SourceIdUnprefixedError,
   CaptureSourceTypeMismatchError,
   MissingRequiredCaptureSectionError,
   NoteNotFoundError,
@@ -78,20 +79,20 @@ describe('ingest command', () => {
       const store = await setUpStore(tmp.root);
       const env = makeFakeEnv({ cwd: tmp.root });
 
-      const outcome = await executeIngest(env, store, { path: CAPTURE, into: NOTE, sourceType: 'web', sourceId: 'src-1' });
+      const outcome = await executeIngest(env, store, { path: CAPTURE, into: NOTE, sourceType: 'web', sourceId: 'web/src-1' });
       expect(outcome.exitCode).toBe(ExitCode.Ok);
       expect(outcome.data).toEqual({
         capture: RETAINED,
         note: NOTE,
         sourceType: 'web',
-        sourceId: 'src-1',
+        sourceId: 'web/src-1',
         sourceHash: expect.stringMatching(/^[0-9a-f]{16}$/),
         ingested: env.now().toISOString(),
       });
 
       const retained = await readFile(path.join(tmp.root, RETAINED), 'utf8');
       expect(retained).toContain('source_type: web');
-      expect(retained).toContain('source_id: src-1');
+      expect(retained).toContain('source_id: web/src-1');
       expect(retained).toContain('# Captured');
       // The capture survived ingest and left the inbox.
       expect(existsSync(path.join(tmp.root, CAPTURE))).toBe(false);
@@ -112,7 +113,7 @@ describe('ingest command', () => {
       const store = await setUpStore(tmp.root);
       store.config.retrieval.exclude_paths = ['raw/'];
       const env = makeFakeEnv({ cwd: tmp.root });
-      await executeIngest(env, store, { path: CAPTURE, into: NOTE, sourceType: 'web', sourceId: 'src-1' });
+      await executeIngest(env, store, { path: CAPTURE, into: NOTE, sourceType: 'web', sourceId: 'web/src-1' });
 
       const { checkCatalogCoverage } = await import('../../src/core/catalog/build.js');
       expect(await checkCatalogCoverage(store)).toEqual({ missing: [], dangling: [] });
@@ -131,7 +132,7 @@ describe('ingest command', () => {
       await writeNote(tmp.root, CAPTURE, '---\nsource_type: article\nsource_id: src-1\n---\n# Captured\n');
       const env = makeFakeEnv({ cwd: tmp.root });
 
-      const outcome = await executeIngest(env, store, { path: CAPTURE, into: NOTE, sourceType: 'article', sourceId: 'src-1' });
+      const outcome = await executeIngest(env, store, { path: CAPTURE, into: NOTE, sourceType: 'article', sourceId: 'article/src-1' });
       expect(outcome.exitCode).toBe(ExitCode.Ok);
       expect(await readFile(path.join(tmp.root, RETAINED), 'utf8')).toContain('ingested:');
     } finally {
@@ -144,10 +145,10 @@ describe('ingest command', () => {
     try {
       const store = await setUpStore(tmp.root);
       const env = makeFakeEnv({ cwd: tmp.root });
-      await executeIngest(env, store, { path: CAPTURE, into: NOTE, sourceType: 'web', sourceId: 'src-1' });
+      await executeIngest(env, store, { path: CAPTURE, into: NOTE, sourceType: 'web', sourceId: 'web/src-1' });
 
       await expect(
-        executeIngest(env, store, { path: RETAINED, into: NOTE, sourceType: 'web', sourceId: 'src-1' }),
+        executeIngest(env, store, { path: RETAINED, into: NOTE, sourceType: 'web', sourceId: 'web/src-1' }),
       ).rejects.toBeInstanceOf(AlreadyIngestedError);
     } finally {
       await tmp.cleanup();
@@ -162,7 +163,7 @@ describe('ingest command', () => {
       const before = await readFile(path.join(tmp.root, CAPTURE), 'utf8');
 
       await expect(
-        executeIngest(env, store, { path: CAPTURE, into: 'projects/absent.md', sourceType: 'web', sourceId: 'src-1' }),
+        executeIngest(env, store, { path: CAPTURE, into: 'projects/absent.md', sourceType: 'web', sourceId: 'web/src-1' }),
       ).rejects.toBeInstanceOf(NoteNotFoundError);
       expect(await readFile(path.join(tmp.root, CAPTURE), 'utf8')).toBe(before);
     } finally {
@@ -177,8 +178,8 @@ describe('ingest command', () => {
       await writeNote(tmp.root, 'raw/inbox/b.md', '# Also captured\n');
       const env = makeFakeEnv({ cwd: tmp.root });
 
-      await executeIngest(env, store, { path: CAPTURE, into: NOTE, sourceType: 'web', sourceId: 'src-1' });
-      await executeIngest(env, store, { path: 'raw/inbox/b.md', into: NOTE, sourceType: 'web', sourceId: 'src-2' });
+      await executeIngest(env, store, { path: CAPTURE, into: NOTE, sourceType: 'web', sourceId: 'web/src-1' });
+      await executeIngest(env, store, { path: 'raw/inbox/b.md', into: NOTE, sourceType: 'web', sourceId: 'web/src-2' });
 
       const note = await readFile(path.join(tmp.root, NOTE), 'utf8');
       expect(note).toContain(`- ${RETAINED}`);
@@ -194,7 +195,7 @@ describe('ingest command', () => {
       const store = await setUpStore(tmp.root);
       await writeNote(tmp.root, CAPTURE, '---\ntitle: Pre-existing Title\n---\n# Captured\n\nRaw content.\n');
       const env = makeFakeEnv({ cwd: tmp.root });
-      await executeIngest(env, store, { path: CAPTURE, into: NOTE, sourceType: 'web', sourceId: 'src-1' });
+      await executeIngest(env, store, { path: CAPTURE, into: NOTE, sourceType: 'web', sourceId: 'web/src-1' });
 
       expect(await readFile(path.join(tmp.root, RETAINED), 'utf8')).toContain('title: Pre-existing Title');
     } finally {
@@ -223,7 +224,7 @@ describe('ingest command', () => {
         const env = makeFakeEnv({ cwd: tmp.root });
 
         await expect(
-          executeIngest(env, store, { path: CAPTURE, into: NOTE, sourceType: 'ctx-a', sourceId: 'src-1' }),
+          executeIngest(env, store, { path: CAPTURE, into: NOTE, sourceType: 'ctx-a', sourceId: 'ctx-a/src-1' }),
         ).rejects.toBeInstanceOf(MissingRequiredCaptureSectionError);
 
         // Refused whole: still in the inbox, unstamped, and uncited.
@@ -244,7 +245,7 @@ describe('ingest command', () => {
         store.config = configRequiring('Transcript');
         const env = makeFakeEnv({ cwd: tmp.root });
 
-        await executeIngest(env, store, { path: CAPTURE, into: NOTE, sourceType: 'ctx-a', sourceId: 'src-1' }).then(
+        await executeIngest(env, store, { path: CAPTURE, into: NOTE, sourceType: 'ctx-a', sourceId: 'ctx-a/src-1' }).then(
           () => expect.unreachable('ingest should have refused the capture'),
           (err: unknown) => {
             expect(err).toBeInstanceOf(MissingRequiredCaptureSectionError);
@@ -264,7 +265,7 @@ describe('ingest command', () => {
         await writeNote(tmp.root, CAPTURE, '# Captured\n\n## Summary\n\nDerived.\n\n### Transcript\n\nWhat was said.\n');
         const env = makeFakeEnv({ cwd: tmp.root });
 
-        const outcome = await executeIngest(env, store, { path: CAPTURE, into: NOTE, sourceType: 'ctx-a', sourceId: 'src-1' });
+        const outcome = await executeIngest(env, store, { path: CAPTURE, into: NOTE, sourceType: 'ctx-a', sourceId: 'ctx-a/src-1' });
         expect(outcome.exitCode).toBe(ExitCode.Ok);
         expect(outcome.data?.capture).toBe(RETAINED);
       } finally {
@@ -291,7 +292,7 @@ describe('ingest command', () => {
         const env = makeFakeEnv({ cwd: tmp.root });
 
         await expect(
-          executeIngest(env, store, { path: CAPTURE, into: NOTE, sourceType: 'ctx-a', sourceId: 'src-1' }),
+          executeIngest(env, store, { path: CAPTURE, into: NOTE, sourceType: 'ctx-a', sourceId: 'ctx-a/src-1' }),
         ).rejects.toBeInstanceOf(MissingRequiredCaptureSectionError);
         await expectUntouched(tmp.root);
       } finally {
@@ -308,7 +309,7 @@ describe('ingest command', () => {
         const env = makeFakeEnv({ cwd: tmp.root });
 
         await expect(
-          executeIngest(env, store, { path: CAPTURE, into: NOTE, sourceType: 'ctx-a', sourceId: 'src-1' }),
+          executeIngest(env, store, { path: CAPTURE, into: NOTE, sourceType: 'ctx-a', sourceId: 'ctx-a/src-1' }),
         ).rejects.toBeInstanceOf(MissingRequiredCaptureSectionError);
         await expectUntouched(tmp.root);
       } finally {
@@ -325,7 +326,7 @@ describe('ingest command', () => {
         await writeNote(tmp.root, CAPTURE, '---\nsource_type: ctx-a\n---\n# Captured\n\n## Summary\n\nDerived only.\n');
         const env = makeFakeEnv({ cwd: tmp.root });
 
-        await executeIngest(env, store, { path: CAPTURE, into: NOTE, sourceType: 'ctx-b', sourceId: 'src-1' }).then(
+        await executeIngest(env, store, { path: CAPTURE, into: NOTE, sourceType: 'ctx-b', sourceId: 'ctx-b/src-1' }).then(
           () => expect.unreachable('ingest should have refused the capture'),
           (err: unknown) => {
             expect(err).toBeInstanceOf(CaptureSourceTypeMismatchError);
@@ -350,7 +351,7 @@ describe('ingest command', () => {
         const env = makeFakeEnv({ cwd: tmp.root });
 
         await expect(
-          executeIngest(env, store, { path: CAPTURE, into: NOTE, sourceType: 'ctx-b', sourceId: 'src-1' }),
+          executeIngest(env, store, { path: CAPTURE, into: NOTE, sourceType: 'ctx-b', sourceId: 'ctx-b/src-1' }),
         ).rejects.toBeInstanceOf(CaptureSourceTypeMismatchError);
       } finally {
         await tmp.cleanup();
@@ -365,7 +366,7 @@ describe('ingest command', () => {
         const env = makeFakeEnv({ cwd: tmp.root });
 
         await expect(
-          executeIngest(env, store, { path: CAPTURE, into: NOTE, sourceType: 'ctx-b', sourceId: 'src-1' }),
+          executeIngest(env, store, { path: CAPTURE, into: NOTE, sourceType: 'ctx-b', sourceId: 'ctx-b/src-1' }),
         ).rejects.toBeInstanceOf(CaptureSourceTypeMismatchError);
         await expectUntouched(tmp.root);
       } finally {
@@ -382,11 +383,11 @@ describe('ingest command', () => {
         const env = makeFakeEnv({ cwd: tmp.root });
 
         await expect(
-          executeIngest(env, store, { path: CAPTURE, into: NOTE, sourceType: 'ctx-a', sourceId: 'src-1' }),
+          executeIngest(env, store, { path: CAPTURE, into: NOTE, sourceType: 'ctx-a', sourceId: 'ctx-a/src-1' }),
         ).rejects.toBeInstanceOf(MissingRequiredCaptureSectionError);
 
         await writeNote(tmp.root, CAPTURE, '---\nsource_type: ctx-a\n---\n# Captured\n\n## Transcript\n\nWhat was said.\n');
-        const outcome = await executeIngest(env, store, { path: CAPTURE, into: NOTE, sourceType: 'ctx-a', sourceId: 'src-1' });
+        const outcome = await executeIngest(env, store, { path: CAPTURE, into: NOTE, sourceType: 'ctx-a', sourceId: 'ctx-a/src-1' });
         expect(outcome.exitCode).toBe(ExitCode.Ok);
       } finally {
         await tmp.cleanup();
@@ -401,11 +402,11 @@ describe('ingest command', () => {
         const env = makeFakeEnv({ cwd: tmp.root });
         // CAPTURE from setUpStore carries no source_type and no Transcript.
         await expect(
-          executeIngest(env, store, { path: CAPTURE, into: NOTE, sourceType: 'ctx-a', sourceId: 'src-1' }),
+          executeIngest(env, store, { path: CAPTURE, into: NOTE, sourceType: 'ctx-a', sourceId: 'ctx-a/src-1' }),
         ).rejects.toBeInstanceOf(MissingRequiredCaptureSectionError);
 
         await writeNote(tmp.root, CAPTURE, '# Captured\n\n## Transcript\n\nWhat was said.\n');
-        const outcome = await executeIngest(env, store, { path: CAPTURE, into: NOTE, sourceType: 'ctx-a', sourceId: 'src-1' });
+        const outcome = await executeIngest(env, store, { path: CAPTURE, into: NOTE, sourceType: 'ctx-a', sourceId: 'ctx-a/src-1' });
         expect(outcome.exitCode).toBe(ExitCode.Ok);
         expect(await readFile(path.join(tmp.root, RETAINED), 'utf8')).toContain('source_type: ctx-a');
       } finally {
@@ -420,7 +421,7 @@ describe('ingest command', () => {
         store.config = configRequiring('Transcript', 'ctx-b');
         const env = makeFakeEnv({ cwd: tmp.root });
 
-        const outcome = await executeIngest(env, store, { path: CAPTURE, into: NOTE, sourceType: 'ctx-a', sourceId: 'src-1' });
+        const outcome = await executeIngest(env, store, { path: CAPTURE, into: NOTE, sourceType: 'ctx-a', sourceId: 'ctx-a/src-1' });
         expect(outcome.exitCode).toBe(ExitCode.Ok);
       } finally {
         await tmp.cleanup();
@@ -439,7 +440,7 @@ describe('ingest command', () => {
         const env = makeFakeEnv({ cwd: tmp.root });
 
         await expect(
-          executeIngest(env, store, { path: 'raw/inbox/deck.pdf.md', into: NOTE, sourceType: 'ctx-a', sourceId: 'src-deck' }),
+          executeIngest(env, store, { path: 'raw/inbox/deck.pdf.md', into: NOTE, sourceType: 'ctx-a', sourceId: 'ctx-a/src-deck' }),
         ).rejects.toBeInstanceOf(MissingRequiredCaptureSectionError);
       } finally {
         await tmp.cleanup();
@@ -459,7 +460,7 @@ describe('ingest command', () => {
         path: 'raw/inbox/deck.pdf.md',
         into: NOTE,
         sourceType: 'file',
-        sourceId: 'src-deck',
+        sourceId: 'file/src-deck',
       });
 
       expect(outcome.data?.capture).toBe('raw/202601/deck.pdf.md');
@@ -503,11 +504,11 @@ describe('source check command (via the CLI command layer)', () => {
       await writeNote(tmp.root, 'raw/inbox/a.md', '# Fresh\n\nContent.\n');
       await writeNote(tmp.root, 'projects/topic.md', '# Topic\n');
       const env = makeFakeEnv({ cwd: tmp.root });
-      await executeIngest(env, store, { path: 'raw/inbox/a.md', into: 'projects/topic.md', sourceType: 'web', sourceId: 'src-1' });
+      await executeIngest(env, store, { path: 'raw/inbox/a.md', into: 'projects/topic.md', sourceType: 'web', sourceId: 'web/src-1' });
 
       const retained = 'raw/202601/a.md';
       const before = await readFile(path.join(tmp.root, retained), 'utf8');
-      const outcome = await executeSourceCheck(env, store, { path: retained, sourceId: 'src-1' });
+      const outcome = await executeSourceCheck(env, store, { path: retained, sourceId: 'web/src-1' });
       const after = await readFile(path.join(tmp.root, retained), 'utf8');
 
       expect(outcome.data?.verdict).toBe('already_ingested');
@@ -583,6 +584,26 @@ describe('source check command (via the CLI command layer)', () => {
       const outcome = await executeSourceCheck(env, store, { path: 'raw/inbox/a.md', sourceId: 'src-1' });
       expect(outcome.data?.verdict).toBe('drift');
       expect(outcome.data?.matches).toEqual(['projects/prior.md']);
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+});
+
+describe('research-and-capture-identity: ingest refuses an unprefixed source id', () => {
+  it('refuses a --source-id that does not begin with its source type, writing nothing', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      await writeNote(tmp.root, 'raw/inbox/a.md', '# Captured\n');
+      await writeNote(tmp.root, 'projects/topic.md', '# Topic\n');
+      const store: Store = { root: tmp.root, config: makeConfig() };
+      const env = makeFakeEnv({ cwd: tmp.root });
+      for (const sourceId of ['KAjUF', 'web/KAjUF']) {
+        await expect(
+          executeIngest(env, store, { path: 'raw/inbox/a.md', into: 'projects/topic.md', sourceType: 'circleback', sourceId }),
+        ).rejects.toBeInstanceOf(SourceIdUnprefixedError);
+      }
+      expect(await readFile(path.join(tmp.root, 'raw/inbox/a.md'), 'utf8')).toBe('# Captured\n');
     } finally {
       await tmp.cleanup();
     }

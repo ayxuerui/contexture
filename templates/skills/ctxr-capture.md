@@ -47,6 +47,9 @@ When a source does not separate speakers, say so in the capture as a caveat on t
 attribution built from it is inference, and a service's own summary attributing positions to named people
 is not the record.
 
+A slide deck is read as images, not extracted text: render its pages and read those, since a deck's meaning
+lives in its layout.
+
 One capture per item. Two meetings in one file cannot be cited separately, deduplicated separately, or
 retracted separately.
 
@@ -59,7 +62,11 @@ In the capture's frontmatter:
   `ctxr ingest --source-type`: a capture that says one source type and is ingested as another is refused,
   and a store's required section is looked up under the type the capture is recorded under.
 - `source_id` — that source type, then a slash, then the identifier the source system itself uses for
-  this item. Prefer an opaque, stable id over a title or a date, which get edited.
+  this item. Prefer an opaque, stable id over a title or a date, which get edited. Material no system
+  identifies takes a hash instead: a file its SHA-1 (`pdf/<sha1 of the file>`), pasted text the SHA-1 of the
+  text (`manual/<sha1>`). An email is its `Message-ID`; a web page is its URL, which `ctxr source check`
+  compares with the store's tracking parameters (`ingest.tracking_params`) removed. Pass the same prefixed form
+  to `ctxr ingest --source-id`, which refuses one that does not begin with its source type.
 
 Do not write `source_hash` or `ingested`. Ingest assigns both, once, and a capture that arrives
 claiming them is treated as already ingested.

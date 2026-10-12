@@ -74,7 +74,7 @@ const CAPTURE_SERVICE_NAMES = ['granola', 'otter', 'circleback', 'fathom', 'fire
 const TIER_WORDS = ['personal', 'private', 'public', 'shared', 'internal', 'team', 'confidential'];
 
 describe('SKILLS', () => {
-  it('names the sixteen owned skills, in index order', () => {
+  it('names the seventeen owned skills, in index order', () => {
     expect(SKILLS.map((p) => p.file)).toEqual([
       'ctxr-capture',
       'ctxr-ingest-orchestration',
@@ -92,6 +92,7 @@ describe('SKILLS', () => {
       'ctxr-organize-audit',
       'ctxr-publish',
       'ctxr-second-opinion',
+      'ctxr-research',
     ]);
   });
 
@@ -966,7 +967,7 @@ describe('standardize-store-operating-guidance: source and retirement practice',
     expect(skills['ctxr-ingest-orchestration']).toMatch(/carries who claimed it, when, and\s+in what setting/);
   });
   it('organize audit retires a folder whole into the configured archive destination', () => {
-    expect(skills['ctxr-organize-audit']).toContain(`\`git mv <folder> ${makeConfig().organize.archive_destination}<name>\``);
+    expect(skills['ctxr-organize-audit']).toMatch(/`ctxr archive <folder>` moves it, under its own name, into `[^`]+`/);
   });
 });
 
@@ -1001,5 +1002,31 @@ describe('organize-audit-carries-the-migration-recipe', () => {
     const at = steps.map((s) => audit.indexOf(s));
     expect(at.every((i) => i > 0)).toBe(true);
     expect([...at].sort((a, b) => a - b)).toEqual(at);
+  });
+});
+
+describe('research-and-capture-identity: the research skill and capture identity', () => {
+  const skills = rendered();
+  it('research uses whatever web access the harness provides, and names no harness browser', () => {
+    const research = skills['ctxr-research']!;
+    expect(research).toMatch(/Web access differs by harness and by machine/);
+    expect(research).toMatch(/When the store documents its own browser\s+routing[^]*follow it/);
+    expect(research).toMatch(/When the harness can reach no web source at all, say so and\s+stop/);
+    for (const term of ['9223', 'tunnel', 'Browserbase', 'mcp_browser', 'Hermes', 'WebSearch']) expect(research).not.toContain(term);
+  });
+  it('research carries perspectives, tiers, the contradiction map, review, and landing', () => {
+    const research = skills['ctxr-research']!;
+    for (const heading of ['## 1. Frame', '## 2. Perspectives', '## 4. Tier the sources', '## 5. Map the contradictions', '## 7. Review before anyone acts on it', '## 8. Land it']) {
+      expect(research).toContain(heading);
+    }
+    expect(research).toContain('`ctxr-ingest-orchestration`');
+    expect(research).not.toContain('__SCRATCH_PATH__');
+  });
+  it('capture names identity for unidentified material and the prefixed --source-id', () => {
+    const capture = skills['ctxr-capture']!;
+    expect(capture).toMatch(/`pdf\/<sha1 of the file>`/);
+    expect(capture).toMatch(/`manual\/<sha1>`/);
+    expect(capture).toMatch(/refuses one that does not begin with its source type/);
+    expect(capture).toMatch(/A slide deck is read as images/);
   });
 });

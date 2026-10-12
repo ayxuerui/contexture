@@ -20,9 +20,10 @@ note's frontmatter travels unchanged (never rewrite it on the move). Retiring is
 not deletion. Verify with `git status --short` showing `R` (a rename, history preserved), not a delete
 plus an add, then `ctxr catalog check`.
 
-`ctxr archive` moves one note. A unit that lives as a folder of notes (a project with its supporting notes)
-is retired whole: `git mv <folder> __ARCHIVE_DESTINATION__<name>`, then record in its hub note, in the past
-tense, why it left. Archiving its notes one by one would scatter them across a flat destination.
+A unit that lives as a folder of notes (a project with its supporting notes) is retired whole —
+`ctxr archive <folder>` moves it, under its own name, into `__ARCHIVE_DESTINATION__` as one tracked rename —
+then record in its hub note, in the past tense, why it left. Archiving its notes one by one would scatter them
+across the destination.
 
 ## Stale rollups
 

@@ -70,6 +70,7 @@ describe('init git call sequence', () => {
           '.agents/skills/ctxr-second-opinion/personas/pragmatist.md',
           '.agents/skills/ctxr-second-opinion/personas/skeptic.md',
           '.agents/skills/ctxr-second-opinion/run.mjs',
+          '.agents/skills/ctxr-research/SKILL.md',
           '.agents/skills/frontend-design/LICENSE.txt',
           '.agents/skills/frontend-design/SKILL.md',
           '.agents/skills/frontend-design/.ctxr-vendored.json',

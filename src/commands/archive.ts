@@ -1,4 +1,4 @@
-import { existsSync } from 'node:fs';
+import { existsSync, statSync } from 'node:fs';
 import { mkdir } from 'node:fs/promises';
 import path from 'node:path';
 import type { CommandOutcome, CommandRequires } from '../core/command.js';
@@ -44,11 +44,15 @@ function toStoreRelativePath(env: RunEnv, store: Store, givenPath: string): stri
  * operator is aware those notes now point at the archived location.
  */
 export async function execute(env: RunEnv, store: Store, flags: ArchiveFlags): Promise<CommandOutcome<ArchiveData>> {
-  const relativePath = toStoreRelativePath(env, store, flags.path);
+  const relativePath = toStoreRelativePath(env, store, flags.path).replace(/\/+$/, '');
   const absolutePath = path.join(store.root, relativePath);
   if (!existsSync(absolutePath)) throw new NoteNotFoundError(relativePath);
 
-  const stem = path.basename(relativePath, '.md');
+  // research-and-capture-identity: a folder (a project with its supporting
+  // notes) archives whole — one tracked rename into the destination, under its
+  // own name — rather than note by note into a flat destination, which would
+  // scatter the notes that belong together.
+  const isFolder = statSync(absolutePath).isDirectory();
   const newRelativePath = path
     .join(store.config.organize.archive_destination, path.basename(relativePath))
     .split(path.sep)
@@ -60,9 +64,12 @@ export async function execute(env: RunEnv, store: Store, flags: ArchiveFlags): P
   }
 
   const notes = await listNotes(store.root, store.config);
+  const moving = isFolder ? notes.filter((note) => note.path.startsWith(`${relativePath}/`)) : notes.filter((note) => note.path === relativePath);
+  const movingPaths = new Set(moving.map((note) => note.path));
+  const stems = new Set(isFolder ? moving.map((note) => path.basename(note.path, '.md')) : [path.basename(relativePath, '.md')]);
   const linkingNotes = notes
-    .filter((note) => note.path !== relativePath)
-    .filter((note) => extractLinkTargets(note.body).includes(stem))
+    .filter((note) => !movingPaths.has(note.path) && note.path !== relativePath)
+    .filter((note) => extractLinkTargets(note.body).some((target) => stems.has(target)))
     .map((note) => note.path)
     .sort();
 
@@ -81,7 +88,7 @@ export async function execute(env: RunEnv, store: Store, flags: ArchiveFlags): P
     humanSummary:
       newRelativePath === relativePath
         ? `"${relativePath}" is already archived.`
-        : `Archived "${relativePath}" to "${newRelativePath}"${linkingNotes.length > 0 ? ` (${linkingNotes.length} note(s) link to it)` : ''}.`,
+        : `Archived ${isFolder ? `folder "${relativePath}" (${moving.length} note(s))` : `"${relativePath}"`} to "${newRelativePath}"${linkingNotes.length > 0 ? ` (${linkingNotes.length} note(s) link to it)` : ''}.`,
     storeRoot: store.root,
     schemaVersion: store.config.schema_version,
   };

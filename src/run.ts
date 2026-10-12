@@ -500,7 +500,7 @@ export async function run(argv: readonly string[], env: RunEnv): Promise<ExitCod
 
   program
     .command('archive <path>')
-    .description('retire a note via a single tracked rename, reporting every note that links to it')
+    .description('retire a note, or a folder of notes whole, via a single tracked rename, reporting every note that links to it')
     .action(async (notePath: string, _cmdOpts: object, cmd: Command) => {
       const { runEnv, jsonMode, root } = deriveRunEnv(env, cmd);
       result = await runCommand('archive', runEnv, jsonMode, async () => {

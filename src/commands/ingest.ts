@@ -10,6 +10,7 @@ import {
   CaptureSourceTypeMismatchError,
   MissingRequiredCaptureSectionError,
   NoteNotFoundError,
+  SourceIdUnprefixedError,
 } from '../core/errors.js';
 import { ExitCode } from '../core/exit-codes.js';
 import { isUnderPrefix } from '../core/fs/prefix.js';
@@ -108,6 +109,15 @@ function citedSources(frontmatter: Record<string, unknown> | undefined, captureP
 export async function execute(env: RunEnv, store: Store, flags: IngestFlags): Promise<CommandOutcome<IngestData>> {
   const capturePath = toStoreRelativePath(env, store, flags.path);
   const notePath = toStoreRelativePath(env, store, flags.into);
+  /**
+   * research-and-capture-identity: the id is written onto the capture as
+   * given, so a bare one (`KAjUF…` instead of `circleback/KAjUF…`) would land
+   * in the store's debt form and defeat deduplication against every
+   * correctly prefixed record. Refused before anything is read or written.
+   */
+  if (!flags.sourceId.startsWith(`${flags.sourceType}/`)) {
+    throw new SourceIdUnprefixedError(flags.sourceId, flags.sourceType);
+  }
 
   const capture = await readOrThrow(store, capturePath);
   if (hasAssignedIdentity(capture)) {
