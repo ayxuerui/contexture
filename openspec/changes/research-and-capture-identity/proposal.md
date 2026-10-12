@@ -33,9 +33,12 @@ hand-written `git mv`.
   `manual/<sha1>`), an email's `Message-ID`, a URL compared with the tracking parameters removed, and reading a
   slide deck as images.
 - **`ctxr ingest` refuses a `--source-id` that does not begin with `<source-type>/`**, writing nothing.
-- **`ctxr archive` accepts a folder.** The folder moves whole, under its own name, into the archive destination
-  as one tracked rename. The command reports every note outside the folder that links into it.
-  `ctxr-organize-audit` names the command instead of a hand-written `git mv`.
+- **`ctxr archive` accepts a folder, and keeps the source path.** A note or folder lands at its store-relative
+  path beneath the archive destination (`projects/Bet` becomes `archives/projects/Bet`) as one tracked rename,
+  so an archived item still shows where it lived. The command reports every note outside it that links in, and
+  refuses an item already archived. `ctxr-organize-audit` names the command instead of a hand-written `git mv`,
+  says to record what happened to every retired item and when, and hands a retired mission priority to
+  `ctxr-mission`.
 
 ## Non-goals
 
@@ -51,9 +54,10 @@ hand-written `git mv`.
 <!-- none -->
 
 ### Modified Capabilities
-- `harness-portability`: the research skill, and the capture skill's identity conventions.
+- `harness-portability`: the research skill, the capture skill's identity conventions, and the organize-audit
+  skill's retirement practice.
 - `context-ingest`: ingest refuses an unprefixed source id.
-- `context-organize`: a folder archives whole.
+- `context-organize`: archiving keeps the source path, and a folder archives whole.
 
 ## Impact
 
@@ -62,5 +66,6 @@ hand-written `git mv`.
 - `src/commands/ingest.ts`, with `SourceIdUnprefixedError` in `src/core/errors.ts`.
 - `src/commands/archive.ts`, `src/run.ts`.
 - Tests and the README skill table.
-- **Downstream:** pkm's `research-assistant` retires once this is released. Its source-bank references become
+- **Downstream:** pkm's `research-assistant` retires once this is released, and pkm needs no archive convention
+  document of its own. Its source-bank references become
   notes.
