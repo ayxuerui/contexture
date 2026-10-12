@@ -15,15 +15,18 @@ organized by actionability. Single-note calls go through `ctxr-placement`.
 ## Retiring: move, don't tag
 
 A status tag left in place defeats the layer — the active layers must show only active work.
-`ctxr archive <path>` moves the note into the configured archive location as a tracked rename; the
-note's frontmatter travels unchanged (never rewrite it on the move). Retiring is reversible cold storage,
-not deletion. Verify with `git status --short` showing `R` (a rename, history preserved), not a delete
+`ctxr archive <path>` moves the note to the same path beneath `__ARCHIVE_DESTINATION__` as a tracked rename, so
+the archive still shows where it lived and the reverse rename restores it. The note's frontmatter travels unchanged
+(never rewrite it on the move). Retiring is reversible cold storage, not deletion. Verify with `git status --short` showing `R` (a rename, history preserved), not a delete
 plus an add, then `ctxr catalog check`.
 
 A unit that lives as a folder of notes (a project with its supporting notes) is retired whole —
-`ctxr archive <folder>` moves it, under its own name, into `__ARCHIVE_DESTINATION__` as one tracked rename —
-then record in its hub note, in the past tense, why it left. Archiving its notes one by one would scatter them
-across the destination.
+`ctxr archive <folder>` moves it to `__ARCHIVE_DESTINATION__<folder>` as one tracked rename. Archiving its notes
+one by one leaves the unit half-retired until the last one moves.
+
+Every retirement records, in the past tense, what happened and when it was retired — in the hub note for a
+folder, as a blockquote at the top of a single note — so the item reads as a record, not as live work. When the
+item was one of the mission's priorities, hand it to `ctxr-mission`, which proposes what takes the freed slot.
 
 ## Stale rollups
 

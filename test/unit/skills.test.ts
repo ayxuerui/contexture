@@ -966,8 +966,13 @@ describe('standardize-store-operating-guidance: source and retirement practice',
   it('ingest records who claimed a figure, when, and in what setting', () => {
     expect(skills['ctxr-ingest-orchestration']).toMatch(/carries who claimed it, when, and\s+in what setting/);
   });
-  it('organize audit retires a folder whole into the configured archive destination', () => {
-    expect(skills['ctxr-organize-audit']).toMatch(/`ctxr archive <folder>` moves it, under its own name, into `[^`]+`/);
+  it('organize audit retires a folder whole to its own path beneath the configured archive destination', () => {
+    expect(skills['ctxr-organize-audit']).toMatch(/`ctxr archive <folder>` moves it to `archive\/<folder>` as one tracked rename/);
+  });
+  it('organize audit records every retirement and hands a retired priority to the mission skill', () => {
+    const audit = skills['ctxr-organize-audit']!;
+    expect(audit).toMatch(/Every retirement records, in the past tense, what happened and when/);
+    expect(audit).toMatch(/one of the mission's priorities, hand it to `ctxr-mission`/);
   });
 });
 

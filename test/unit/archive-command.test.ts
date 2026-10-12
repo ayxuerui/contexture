@@ -3,7 +3,7 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { execute } from '../../src/commands/archive.js';
 import type { StoreConfig } from '../../src/config/schema.js';
-import { ArchiveDestinationExistsError, NoteNotFoundError, NoteNotTrackedError } from '../../src/core/errors.js';
+import { AlreadyArchivedError, ArchiveDestinationExistsError, NoteNotFoundError, NoteNotTrackedError } from '../../src/core/errors.js';
 import { ExitCode } from '../../src/core/exit-codes.js';
 import type { GitResult } from '../../src/core/git/exec.js';
 import type { Store } from '../../src/core/store.js';
@@ -45,7 +45,7 @@ function trackedGitResponses(relativePath: string): Map<string, GitResult> {
 }
 
 describe('archive command', () => {
-  it('moves a tracked note into organize.archive_destination via a single git mv call', async () => {
+  it('moves a tracked note to its own path beneath organize.archive_destination via a single git mv call', async () => {
     const tmp = await makeTmpDir();
     try {
       const store: Store = { root: tmp.root, config: makeConfig() };
@@ -55,8 +55,8 @@ describe('archive command', () => {
 
       const outcome = await execute(env, store, { path: 'projects/a.md' });
       expect(outcome.exitCode).toBe(ExitCode.Ok);
-      expect(outcome.data).toEqual({ path: 'projects/a.md', newPath: 'archive/a.md', linkingNotes: [] });
-      expect(calls).toContainEqual(['mv', 'projects/a.md', 'archive/a.md']);
+      expect(outcome.data).toEqual({ path: 'projects/a.md', newPath: 'archive/projects/a.md', linkingNotes: [] });
+      expect(calls).toContainEqual(['mv', 'projects/a.md', 'archive/projects/a.md']);
     } finally {
       await tmp.cleanup();
     }
@@ -109,10 +109,24 @@ describe('archive command', () => {
     try {
       const store: Store = { root: tmp.root, config: makeConfig() };
       await writeNote(tmp.root, 'projects/a.md', 'Content.\n');
-      await writeNote(tmp.root, 'archive/a.md', 'Already here.\n');
+      await writeNote(tmp.root, 'archive/projects/a.md', 'Already here.\n');
       const { git } = fakeGitRunner(trackedGitResponses('projects/a.md'));
       const env = makeFakeEnv({ cwd: tmp.root, git });
       await expect(execute(env, store, { path: 'projects/a.md' })).rejects.toBeInstanceOf(ArchiveDestinationExistsError);
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('refuses a note already beneath the archive destination, moving nothing', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const store: Store = { root: tmp.root, config: makeConfig() };
+      await writeNote(tmp.root, 'archive/projects/a.md', 'Content.\n');
+      const { git, calls } = fakeGitRunner(trackedGitResponses('archive/projects/a.md'));
+      const env = makeFakeEnv({ cwd: tmp.root, git });
+      await expect(execute(env, store, { path: 'archive/projects/a.md' })).rejects.toBeInstanceOf(AlreadyArchivedError);
+      expect(calls.some((call) => call[0] === 'mv')).toBe(false);
     } finally {
       await tmp.cleanup();
     }
@@ -142,7 +156,7 @@ describe('archive command', () => {
 });
 
 describe('research-and-capture-identity: archiving a folder whole', () => {
-  it('moves a tracked folder into the destination under its own name with one git mv, reporting outside links into it', async () => {
+  it('moves a tracked folder to its own path beneath the destination with one git mv, reporting outside links into it', async () => {
     const tmp = await makeTmpDir();
     try {
       const store: Store = { root: tmp.root, config: makeConfig() };
@@ -154,8 +168,8 @@ describe('research-and-capture-identity: archiving a folder whole', () => {
 
       const outcome = await execute(env, store, { path: 'projects/Bet/' });
       expect(outcome.exitCode).toBe(ExitCode.Ok);
-      expect(outcome.data).toEqual({ path: 'projects/Bet', newPath: 'archive/Bet', linkingNotes: ['projects/other.md'] });
-      expect(calls).toContainEqual(['mv', 'projects/Bet', 'archive/Bet']);
+      expect(outcome.data).toEqual({ path: 'projects/Bet', newPath: 'archive/projects/Bet', linkingNotes: ['projects/other.md'] });
+      expect(calls).toContainEqual(['mv', 'projects/Bet', 'archive/projects/Bet']);
       expect(outcome.humanSummary).toMatch(/folder "projects\/Bet" \(2 note\(s\)\)/);
     } finally {
       await tmp.cleanup();
@@ -169,7 +183,7 @@ describe('research-and-capture-identity: archiving a folder whole', () => {
       await writeNote(tmp.root, 'projects/Bet/Bet Overview.md', '# Bet Overview\n');
       const untracked = fakeGitRunner(new Map([['ls-files --error-unmatch -- projects/Bet', { exitCode: 1, stdout: '', stderr: '' }]]));
       await expect(execute(makeFakeEnv({ cwd: tmp.root, git: untracked.git }), store, { path: 'projects/Bet' })).rejects.toBeInstanceOf(NoteNotTrackedError);
-      await writeNote(tmp.root, 'archive/Bet/x.md', '# x\n');
+      await writeNote(tmp.root, 'archive/projects/Bet/x.md', '# x\n');
       const tracked = fakeGitRunner(trackedGitResponses('projects/Bet'));
       await expect(execute(makeFakeEnv({ cwd: tmp.root, git: tracked.git }), store, { path: 'projects/Bet' })).rejects.toBeInstanceOf(ArchiveDestinationExistsError);
     } finally {

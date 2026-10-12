@@ -303,6 +303,17 @@ export class ArchiveDestinationExistsError extends ContextureError {
   }
 }
 
+export class AlreadyArchivedError extends ContextureError {
+  constructor(relativePath: string, archiveDestination: string) {
+    super(ExitCode.Usage, {
+      code: 'archive.already_archived',
+      severity: 'error',
+      message: `Cannot archive: "${relativePath}" is already beneath the archive destination "${archiveDestination}".`,
+      subject: relativePath,
+    });
+  }
+}
+
 export class CaptureFileMissingError extends ContextureError {
   constructor(sidecarPath: string, capturePath: string) {
     super(ExitCode.Usage, {
