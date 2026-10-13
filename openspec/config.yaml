@@ -110,6 +110,12 @@ operations:
     guidance:
       - "Verify claims by running the actual command in tasks.md and reporting
          its real output — never assert a check passed without having run it."
+      - "When a change edits a shipped skill's step, rewrite the steps it touches
+         about 80% of the way to ASD-STE100: one instruction per sentence, at
+         most 20 words to instruct, active voice, one word for one thing. Keep
+         each reason as its own sentence starting `Why:` — never delete it. Do
+         not rewrite steps the change does not otherwise touch
+         (explain-in-controlled-english D7)."
   archive:
     guidance:
       - "Confirm no requirement anywhere in the archived specs hardcodes a
