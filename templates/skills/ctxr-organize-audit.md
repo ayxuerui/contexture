@@ -42,6 +42,20 @@ have moved since their last synthesis, or which have never been rolled up — ha
 
 ## Moves at scale
 
-Two commits, never a broken intermediate: commit 1 = the moves PLUS the wikilink fixes they require;
-commit 2 = tooling and doc patches. Before the moves, grep for hardcoded references to the old paths.
-After they land, rebuild the derived artifacts (`ctxr-derived-artifacts`) and re-run `ctxr lint`.
+A restructure that moves folders between layers is a migration. Run it in this order.
+
+1. **Snapshot, don't abort.** If the worktree holds unrelated uncommitted work, commit it first as
+   `WIP: pre-<slug> snapshot` and note that commit. It is the rollback anchor, and the baseline step 4 diffs
+   against.
+2. **Preflight.** Grep the whole store for the old path prefixes. That covers notes, skills, scripts and
+   generated config, but not `.git` or the session worktrees path. Every hit is a hardcoded reference the
+   move will break. A wikilink written with a path (`[[old/folder/Note]]`) breaks on the move, so rewrite it
+   to the bare name first. `ctxr doctor` reports links that resolve ambiguously; a collision the move would
+   create shows there afterwards.
+3. **Two commits, never a broken intermediate.** Commit 1 is the moves plus the wikilink fixes they
+   require, so the store is consistent after it alone. Commit 2 is tooling and doc patches.
+4. **Stage surgically.** Diff each staged file against the snapshot. A file whose diff is larger than the
+   migration's own edit is carrying unrelated drift: unstage it, restore it from the snapshot, re-apply only
+   the migration edit, and leave the drift for its own commit.
+5. **After they land,** rebuild the derived artifacts (`ctxr-derived-artifacts`), re-run `ctxr lint` and
+   `ctxr doctor`, and log the migration in the store log with the snapshot, move, and tooling commits.
