@@ -2,12 +2,28 @@ Turn store content into a shareable HTML page for a subject — a store subtree,
 concept whose sources aren't co-located. Deciding what belongs on the page is the one step no
 convention can enforce for you; everything else here is a decision procedure, not a mechanism.
 
-## 1. Does this earn a page over a note?
+## 1. Permanent or disposable? Decide first
 
-Reach for a page when the reader needs to compare options side by side, see spatial structure, manipulate
-something, navigate non-linearly, or share a link — and the store's own notes genuinely can't. A page
-costs several times the effort of the markdown it's drawn from; don't build one to restate a note in a
-different font. If a note would do the job, the note is the deliverable.
+Decide the page's lifespan before you do anything else. A page has one of two lifespans:
+
+- **Permanent.** The page is the rendered form of one note that will keep changing. Keep it, and
+  update it when the note changes.
+- **Disposable.** The page helps somebody understand something once. Examples are an explainer, a
+  report on one week of agent work, or a comparison for one decision. Nobody updates it.
+
+Choose disposable when you cannot name the one note that the page represents. Why: a kept page that
+names no note holds facts that live nowhere else, and nothing can tell when they go out of date.
+
+The location of the page sets its lifespan. Nothing in the page declares it. A disposable page sits
+under `disposable/` directly below the store's published-pages location. Every other page is
+permanent.
+
+For a permanent page, make sure that the page earns its place over a note. Use a page when the reader
+must compare options side by side, see spatial structure, manipulate something, navigate
+non-linearly, or open a link. Use it only when the store's own notes cannot do this. Why: a page
+costs several times the effort of the markdown it comes from. If a note does the job, the note is the
+deliverable. Do not apply this test to a disposable page. Why: a disposable page is cheap on purpose,
+and it is the cheap way to understand something once.
 
 ## 2. Name the subject, let the selector produce the set
 
@@ -28,46 +44,61 @@ content belongs in front of this page's intended readers — a page written for 
 not carry material written about that party, or about anyone else who did not expect to be quoted.
 When you are unsure about a note, leave it out and name it to the operator rather than guessing.
 
-## 4. Fix the identity once, at the path `gather` reported
+## 4. Fix the identity once
 
-Step 2 reported the path under the store's published-pages location at which a page for this subject
-belongs, derived from where the subject's notes live. Take it verbatim, append the page's own name,
-and hand the result to `ctxr publish new <slug>`, which creates the folder and its sibling README:
+**A disposable page.** Run `ctxr publish new --disposable <name>`. The command creates the folder
+`disposable/<YYYY-MM-DD>-<name>` with today's date, and its sibling README. Give the name alone. Why:
+the command supplies the date, and it refuses a name that starts with one. Do not use the path that
+`gather` reported. Why: disposable pages sit in one flat folder, sorted by date, not by subject.
+
+**A permanent page.** Step 2 reported the path at which a page for this subject belongs. That path is
+under the store's published-pages location, and comes from where the subject's notes live.
+Take it verbatim, append the page's own name, and give the result to `ctxr publish new <slug>`. The
+command creates the folder and its sibling README:
 
 ```sh
 ctxr publish new <reported path>/<page-name>
 ```
 
-The depth is the store's own, not a fixed number of levels — a subject whose notes live four folders
-deep files four folders deep. That is what makes the published-pages navigation read like the store
-instead of like one long list. `ctxr publish check` reports a page filed flat at the published-pages
-root as a failing check, and checks nothing further about the location, because which folder is
-right is the question `gather` already answered.
+The depth is the store's own, not a fixed number of levels. A subject whose notes are four folders
+deep gets a page four folders deep. Why: then the published-pages navigation reads like the store, not
+like one long list. `ctxr publish check` fails a page filed flat at the published-pages root. It
+checks nothing more about the location. Why: `gather` already answered which folder is correct.
 
-Name the page for what it *is*, never for its subject. The folders above it already carry the
-subject, so `<reported path>/<subject>` says one word twice while `<reported path>/decision-board`
+Name the page for what it *is*, never for its subject. Why: the folders above it already name the
+subject. `<reported path>/<subject>` says one word two times, and `<reported path>/decision-board`
 says something.
 
-When `gather` reports that an existing page belongs at the reported path too, it is because this
-subject is acquiring a second page, and a subject's pages collect under one folder naming it. Move
-that page there before you scaffold the new one, and tell the operator its URL changed — somebody
-may already be holding that link. `ctxr publish urls` reports the old address beside the new one, and
-`ctxr-submit` carries both into the pull request. `gather` moves nothing itself, and it names which signal counted
-the page as this subject's; read that before you move anything, because the signal is a reading of
-the page's README and can be wrong. Lead a page's source notes with the note it is a representation
-of — that lead link is what says whose page this is, and everything after it is a citation.
+Sometimes `gather` reports that an existing page also belongs at the reported path. This subject then
+gets a second page, and the pages of a subject collect under one folder that names it. Move that page
+there before you create the new one, and tell the operator its URL changed. Why: somebody can already
+have that link. `ctxr publish urls` reports the old address next to the new one, and `ctxr-submit`
+puts both into the pull request. `gather` moves nothing. It names the signal that counted the page as
+this subject's page. Read that signal before you move anything. Why: the signal is a reading of the
+page's README, and it can be wrong.
 
-When `gather` reports that no path derives — the subject names the store root itself, so no folder
-names it — the choice is yours to make and to own: pick the folder that best names the subject to
-the reader, write that choice and your reason into the page's README, and name it to the operator.
-Nothing checks this for you, by design. Filing a page under a word that names nothing serves nobody
-who reads it.
+Lead a page's source notes with the note it is a representation of. `ctxr publish check` fails a
+permanent page whose README does not start with a wikilink to exactly one note. For a page that comes
+from a store folder, that note is the folder's hub note. If the folder has no hub note, write one, or
+make the page disposable. The page can link to many more notes after the lead link. Why: the lead link
+says which note the page represents, and each link after it is a citation.
 
-A slug starting with a date (`YYYY-` or `YYYY-MM-DD-`) is reserved for a frozen snapshot — never used
-for a page you intend to keep updating. That rule binds the page's own final segment, not the folders
-it is filed under. The command refuses to overwrite an existing folder; if one already exists for
-this subject, edit its files directly rather than re-running `publish new` — a rename or an overwrite
-breaks any link already handed out.
+After you write the README, run `ctxr publish stamp <path>`. The command records the represented
+note's hash on the lead-link line. Why: `ctxr publish check` then reports the page as stale when that
+note changes.
+
+Sometimes `gather` reports that no path derives. One reason is that the subject is the store root, so
+no folder names it. The other reason is that the path would start with `disposable/`, a segment that
+only disposable pages can use. Then you choose the folder, and you own that choice. Pick the folder
+that best names the subject to the reader.
+Then write that choice and your reason into the page's README, and tell the operator. Nothing checks
+this choice. Why: a page filed under a word that names nothing helps no reader.
+
+Never start the page's own name with a date (`YYYY-` or `YYYY-MM-DD-`). That naming is reserved for
+the frozen pages that `ctxr publish new --disposable` makes. The rule applies to the final segment, not
+to the folders above it. The command refuses to overwrite an existing folder. If a folder already
+exists for this subject, edit its files directly. Do not run `publish new` again. Why: a rename or an
+overwrite breaks a link that somebody already has.
 
 ## 5. Choose the form, then delegate the craft
 
@@ -93,11 +124,20 @@ lower is the same material in shorter words.
 
 ## 6. Verify the output invariants
 
-`ctxr publish check <path>` runs the mechanical half of the checklist — no external network address,
-a viewport meta tag, at least one print rule, a provenance line, a sibling README, balanced tags,
-valid syntax in every embedded script, and the page's filing location from step 4. It exits non-zero naming every failing check; fix all of them
-before reporting the page as ready. It answers only what's derivable from the file itself — the DO-test
-in step 1, the form and reader choices in step 5, and factual accuracy stay judgment calls, not checker output.
+Run `ctxr publish check <path>`. It runs the mechanical half of the checklist:
+
+- no external network address, a viewport meta tag, at least one print rule, and a provenance line;
+- a sibling README, balanced tags, and valid syntax in every embedded script;
+- the page's filing location from step 4;
+- for a disposable page, its shape (`disposable-shape`): one folder directly under `disposable/`,
+  with a real date at the start of its name;
+- for a permanent page, the note it represents (`represented-note`) and that note's recorded hash
+  (`represented-note-hash`).
+
+The command reports the page's lifespan. It exits non-zero and names every failing check. Fix all of
+them before you report the page as ready. The command answers only what the files can show. Why: the
+lifespan choice and the DO-test in step 1, the form and reader choices in step 5, and factual accuracy
+are judgment calls, not checker output.
 
 `ctxr publish new` and `ctxr publish check` each end by naming the address `ctxr serve` answers for
 this page. Look at the page before you hand it on. Whether the form works, whether the prose reads,
@@ -131,10 +171,25 @@ anything else the store retrieves. Confirm with `ctxr lint` after landing.
 
 ## 8. Provenance and drift
 
-The source notes are the fact of record. When a fact changes, change the note first, then the page —
-and grep the page for every place that fact was echoed (a summary line, a total, a status badge) before
-declaring the update done; a page that repeats a number in three places goes stale in all three if only
-one is touched.
+The source notes are the fact of record. When a fact changes, change the note first, then the page.
+Search the page for every place that repeats the fact, such as a summary line, a total, or a status
+badge. Update each one before you say the update is done. Why: a page that repeats a number in three
+places goes stale in all three if you change only one.
+
+`ctxr publish check` and `ctxr lint` report a permanent page as stale when its represented note
+changed after the stamp. To confirm a stale page, do these steps in order:
+
+1. Review the page against the note, and update the page where the two disagree.
+2. Remove the `<!-- hash:… -->` marker from the README's lead-link line.
+3. Run `ctxr publish stamp <path>` again.
+
+`ctxr publish stamp` never overwrites a marker. Why: a stamp without a review confirms nothing, so
+the stale report stays until somebody removes the marker.
+
+Never revise a disposable page after it lands. Why: it is a snapshot of one moment, and its link
+shows that moment. Make a new disposable page instead. Do not remove a disposable page yourself.
+`ctxr lint` lists disposable pages that are older than 30 days, and the operator decides which to
+remove (`ctxr-organize-audit`).
 
 ## 9. Landing
 

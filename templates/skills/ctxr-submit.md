@@ -56,15 +56,16 @@ Every pull request takes one of three routes. Say which, and why, in its body:
    `git branch -m "<name>"` before pushing — never
    let a generated name reach the forge. A name given at `ctxr session start` does not settle this: it
    named a worktree when the work began, and what ships is decided here.
-8. Before you open the pull request, run `ctxr publish urls --since origin/__DEFAULT_BRANCH__ --json`.
-   When the report lists a page, add a **Pages** section to the body. In that section, put a table with one
-   row for each page: its status, its preview address, and its published address. Copy each address from the
-   report. An address is never rebuilt by hand. Mark the old address of a moved page as one that stops
-   working. Mark the address of a removed page the same way. Under the table, state the condition one time: a
-   preview resolves only while this pull request is open and the server can see this
-   session's worktree. The published address resolves when the served checkout gets the landed commit.
-   When the report has no preview, leave out that column. When the report says that no base URL is declared,
-   say that the addresses are bare routes. When it lists no page, add no section.
+8. Before opening the pull request, run `ctxr publish urls --since origin/__DEFAULT_BRANCH__ --json`.
+   When it lists a page, add a **Pages** section to the body. The section is a table with one row per page.
+   Each row gives the page's status, its lifespan (permanent or disposable), its preview address, and its
+   published address. Copy every value from the report, never rebuilt by hand. Why: the report reads the
+   change set, and a guess from the path can be wrong. Mark the old address of a moved page as one that
+   stops working. Mark the address of a removed page the same way. Under the table, state the condition
+   one time: a preview resolves only while this pull request is open and the server can see this
+   session's worktree, and the published address resolves when the served checkout has the landed commit.
+   When the report has no preview, leave out that column. When it says that no base URL is declared, say
+   that the addresses are bare routes. When it lists no page, add no section.
    Then run `ctxr graph diff --since origin/__DEFAULT_BRANCH__ --format markdown`. Paste its output into the
    body verbatim, as the **Knowledge changes** section. Do not add, remove, or change a word of it. Why: you
    wrote the change, and the reviewer checks your account against this record, which the command wrote.

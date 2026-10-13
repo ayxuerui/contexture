@@ -99,7 +99,10 @@ async function resolveNoteSet(env: RunEnv, store: Store, flags: PublishGatherFla
  */
 function filingSummary(filing: Filing): string {
   if (filing.prefix === null) {
-    return 'Page filing: none derives — no folder path names this subject.';
+    // two-kinds-of-published-page D2: the reservation is the second reason no path derives.
+    return filing.no_path_reason === 'reserved-segment'
+      ? 'Page filing: none derives — the path would begin with "disposable/", a segment reserved for disposable pages.'
+      : 'Page filing: none derives — no folder path names this subject.';
   }
   const collected = filing.subject_segment === null ? '' : ', collected under the segment naming the subject';
   const moves = filing.moves.length === 0 ? '' : `; ${filing.moves.length} existing page(s) belong there too`;

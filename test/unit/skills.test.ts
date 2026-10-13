@@ -439,6 +439,52 @@ describe('owned-skills-expansion: each skill carries its load-bearing rule (task
     expect(s).toMatch(/Report the address you actually opened/);
   });
 
+  it('two-kinds-of-published-page: publish settles the lifespan first, scaffolds a disposable page by option, and stamps a permanent one', () => {
+    const s = skills['ctxr-publish']!;
+    const lifespanStep = s.indexOf('## 1. Permanent or disposable? Decide first');
+    expect(lifespanStep).toBeGreaterThanOrEqual(0);
+    expect(lifespanStep).toBeLessThan(s.indexOf('`ctxr publish gather`'));
+    expect(s.slice(0, lifespanStep).trim()).not.toMatch(/^## /m); // nothing is a step before it
+    expect(s).toContain('`ctxr publish new --disposable <name>`');
+    expect(s).toMatch(/Choose disposable when you cannot name the one note that the page represents/);
+    expect(s).toMatch(/Never revise a disposable page after it lands/);
+    expect(s).toMatch(/Do not remove a disposable page yourself/);
+    // The earn-a-page test is scoped to permanent pages.
+    expect(s).toMatch(/For a permanent page, make sure that the page earns its place over a note/);
+    expect(s).toMatch(/Do not apply this test to a disposable page/);
+    // The lead link is the checked invariant, with the hub-note rule for a folder subject.
+    expect(s).toMatch(/that note is the folder's hub note/);
+    expect(s).toContain('`ctxr publish stamp <path>`');
+    expect(s).toContain('`represented-note-hash`');
+    expect(s).toContain('`disposable-shape`');
+    // Confirming a stale page is review, then remove the marker, then stamp — in that order.
+    const review = s.indexOf('Review the page against the note');
+    const remove = s.indexOf('Remove the `<!-- hash:… -->` marker');
+    const restamp = s.indexOf('Run `ctxr publish stamp <path>` again');
+    expect(review).toBeGreaterThan(0);
+    expect(review).toBeLessThan(remove);
+    expect(remove).toBeLessThan(restamp);
+    // The reserved dated naming is what `--disposable` stamps.
+    expect(s).toMatch(/That naming is reserved for\s+the frozen pages that `ctxr publish new --disposable` makes/);
+  });
+
+  it('two-kinds-of-published-page: organize-audit proposes removal of old disposable pages and hands drift to publish', () => {
+    const s = skills['ctxr-organize-audit']!;
+    expect(s).toContain('## Disposable pages and drifted pages');
+    expect(s).toMatch(/Show the list to the operator as a proposal/);
+    expect(s).toMatch(/Remove only the pages that the operator approves/);
+    expect(s).toContain('`git rm -r <page folder>`');
+    expect(s).toMatch(/Land the removal through `ctxr-submit`/);
+    expect(s).toMatch(/Give each one to `ctxr-publish`\. Do not stamp the page\s+yourself/);
+  });
+
+  it('two-kinds-of-published-page: submit\'s Pages row carries the lifespan, copied from the report', () => {
+    const s = skills['ctxr-submit']!;
+    const step = s.slice(s.indexOf('8. Before opening'), s.indexOf('9. Verify'));
+    expect(step).toMatch(/its lifespan \(permanent or disposable\)/);
+    expect(step).toMatch(/Copy every value from the report/);
+  });
+
   it('store-primitives-from-migration-audit: owned skills call the new verbs instead of a manual equivalent', () => {
     const s = skills;
     expect(s['ctxr-ingest-orchestration']).toContain('`drift`');

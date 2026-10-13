@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { execute as executeCheck } from '../../src/commands/publish-check.js';
 import type { StoreConfig } from '../../src/config/schema.js';
 import { ExitCode } from '../../src/core/exit-codes.js';
+import { contentHashOfBody } from '../../src/core/content/canonicalize.js';
 import { PublishPageNotFoundError } from '../../src/core/errors.js';
 import type { Store } from '../../src/core/store.js';
 import { makeTmpDir } from '../helpers/tmp-store.js';
@@ -47,13 +48,26 @@ async function writePage(root: string, slug: string, html: string, readme: strin
   return htmlPath;
 }
 
+const NOTE_BODY = '# Ctx note\n\nThe note a page represents.\n';
+
+/**
+ * two-kinds-of-published-page: a permanent page passes only when its README
+ * leads with the one note it represents and carries that note's hash, so a
+ * page meant to pass every other check writes the note and a stamped README.
+ */
+async function stampedReadme(root: string, noteBody = NOTE_BODY): Promise<string> {
+  await mkdir(path.join(root, 'notes'), { recursive: true });
+  await writeFile(path.join(root, 'notes', 'ctx-note.md'), noteBody);
+  return `# page\n\n## Source notes\n\n- [[ctx-note]] — the note this page represents <!-- hash:${contentHashOfBody(noteBody)} -->\n`;
+}
+
 describe('publish check', () => {
   it('passes a page satisfying every invariant', async () => {
     const tmp = await makeTmpDir();
     try {
       const store: Store = { root: tmp.root, config: makeConfig() };
       // Filed under a grouping directory, which the filing-location check now requires.
-      const htmlPath = await writePage(tmp.root, 'ctx-a/good', GOOD_HTML);
+      const htmlPath = await writePage(tmp.root, 'ctx-a/good', GOOD_HTML, await stampedReadme(tmp.root));
 
       const outcome = await executeCheck(store, { path: htmlPath });
       expect(outcome.exitCode).toBe(ExitCode.Ok);
@@ -61,6 +75,7 @@ describe('publish check', () => {
         path: 'publish/ctx-a/good/index.html',
         passed: true,
         failures: [],
+        lifespan: 'permanent',
         served_at: {
           area: 'publish',
           route: '/publish/ctx-a/good/index.html',
@@ -185,7 +200,7 @@ describe('publish check', () => {
     const tmp = await makeTmpDir();
     try {
       const store: Store = { root: tmp.root, config: makeConfig() };
-      const htmlPath = await writePage(tmp.root, 'flat-page', GOOD_HTML);
+      const htmlPath = await writePage(tmp.root, 'flat-page', GOOD_HTML, await stampedReadme(tmp.root));
 
       const outcome = await executeCheck(store, { path: htmlPath });
       expect(outcome.exitCode).toBe(ExitCode.CheckFailed);
@@ -215,7 +230,7 @@ describe('publish check', () => {
     const tmp = await makeTmpDir();
     try {
       const store: Store = { root: tmp.root, config: makeConfig() };
-      const htmlPath = await writePage(tmp.root, 'ctx-a/ctx-b/deep', GOOD_HTML);
+      const htmlPath = await writePage(tmp.root, 'ctx-a/ctx-b/deep', GOOD_HTML, await stampedReadme(tmp.root));
 
       const outcome = await executeCheck(store, { path: htmlPath });
       expect(outcome.exitCode).toBe(ExitCode.Ok);
@@ -235,7 +250,7 @@ describe('publish check', () => {
         root: tmp.root,
         config: { ...config, taxonomy: { profile: 'custom', layers: [{ name: 'Ctx A', path: 'ctx-a', description: 'a' }] } },
       };
-      const htmlPath = await writePage(tmp.root, 'flat-page', GOOD_HTML);
+      const htmlPath = await writePage(tmp.root, 'flat-page', GOOD_HTML, await stampedReadme(tmp.root));
 
       const outcome = await executeCheck(store, { path: htmlPath });
       const message = outcome.data?.failures.find((f) => f.check === 'page-location')?.message ?? '';
@@ -291,7 +306,7 @@ describe('publish check', () => {
       const worktreeRoot = path.join(tmp.root, config.session.worktrees_path, 'session-20260920-180253-d97aa6');
       await mkdir(worktreeRoot, { recursive: true });
       const store: Store = { root: worktreeRoot, config };
-      const htmlPath = await writePage(worktreeRoot, 'ctx-a/good', GOOD_HTML);
+      const htmlPath = await writePage(worktreeRoot, 'ctx-a/good', GOOD_HTML, await stampedReadme(worktreeRoot));
 
       const outcome = await executeCheck(store, { path: htmlPath });
       expect(outcome.exitCode).toBe(ExitCode.Ok);
@@ -355,4 +370,153 @@ describe('publish check', () => {
     }
   });
 
+});
+
+describe('publish check — two-kinds-of-published-page lifespans', () => {
+  async function checkAt(slug: string, readme: string | ((root: string) => Promise<string>) = '# page\n') {
+    const tmp = await makeTmpDir();
+    const store: Store = { root: tmp.root, config: makeConfig() };
+    const readmeText = typeof readme === 'string' ? readme : await readme(tmp.root);
+    const htmlPath = await writePage(tmp.root, slug, GOOD_HTML, readmeText);
+    const outcome = await executeCheck(store, { path: htmlPath });
+    return { tmp, store, htmlPath, outcome, checks: outcome.data?.failures.map((f) => f.check) ?? [] };
+  }
+
+  it('reports a well-formed disposable page as disposable, passing, with no represented-note check', async () => {
+    const { tmp, outcome } = await checkAt('disposable/2026-10-13-agent-week');
+    try {
+      expect(outcome.exitCode).toBe(ExitCode.Ok);
+      expect(outcome.data?.lifespan).toBe('disposable');
+      expect(outcome.data?.failures).toEqual([]);
+      expect(outcome.humanSummary).toContain('(disposable)');
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('passes page-location for disposable/<dated>/', async () => {
+    const { tmp, checks } = await checkAt('disposable/2026-01-01-example');
+    try {
+      expect(checks).not.toContain('page-location');
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  for (const slug of ['disposable/folder-a/2026-10-13-agent-week', 'disposable/agent-week', 'disposable/2026-13-45-agent-week', 'disposable/ctx-a/example-page']) {
+    it(`fails disposable-shape for ${slug}`, async () => {
+      const { tmp, outcome, checks } = await checkAt(slug);
+      try {
+        expect(outcome.data?.lifespan).toBe('disposable');
+        expect(outcome.exitCode).toBe(ExitCode.CheckFailed);
+        expect(checks).toContain('disposable-shape');
+        expect(checks).not.toContain('represented-note');
+      } finally {
+        await tmp.cleanup();
+      }
+    });
+  }
+
+  it('reports a page anywhere else as permanent', async () => {
+    const { tmp, outcome } = await checkAt('ctx-a/work/example-page', stampedReadme);
+    try {
+      expect(outcome.data?.lifespan).toBe('permanent');
+      expect(outcome.exitCode).toBe(ExitCode.Ok);
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('passes a permanent page leading with its note and citing many after it', async () => {
+    const readme = async (root: string) => {
+      const lead = await stampedReadme(root);
+      for (const n of ['cite-a', 'cite-b']) await writeFile(path.join(root, 'notes', `${n}.md`), `# ${n}\n`);
+      return `${lead}- [[cite-a]]\n- [[cite-b]]\n- [[not-a-note-at-all]]\n`;
+    };
+    const { tmp, outcome } = await checkAt('ctx-a/hub-page', readme);
+    try {
+      expect(outcome.data?.failures).toEqual([]);
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('fails represented-note when the README links no note', async () => {
+    const { tmp, outcome } = await checkAt('ctx-a/unlinked', '# page\n\nNo links here.\n');
+    try {
+      expect(outcome.exitCode).toBe(ExitCode.CheckFailed);
+      const failure = outcome.data?.failures.find((f) => f.check === 'represented-note');
+      expect(failure?.message).toContain('names no note');
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('reads the lead link from the body, never from frontmatter', async () => {
+    const readme = async (root: string) => {
+      await stampedReadme(root); // the note exists, so only the frontmatter-vs-body reading decides
+      return '---\nsource: "[[ctx-note]]"\n---\n# page\n\nNo links in the body.\n';
+    };
+    const { tmp, outcome } = await checkAt('ctx-a/frontmatter-only', readme);
+    try {
+      expect(outcome.data?.failures.find((f) => f.check === 'represented-note')?.message).toContain('names no note');
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('fails represented-note when the lead link names no existing note', async () => {
+    const { tmp, outcome } = await checkAt('ctx-a/unknown', '# page\n\n- [[nowhere-note]]\n');
+    try {
+      expect(outcome.exitCode).toBe(ExitCode.CheckFailed);
+      const failure = outcome.data?.failures.find((f) => f.check === 'represented-note');
+      expect(failure?.message).toContain('"nowhere-note", which no note in the store carries');
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('fails represented-note naming both notes when the lead link stem is shared', async () => {
+    const readme = async (root: string) => {
+      for (const dir of ['ctx-a', 'ctx-b']) {
+        await mkdir(path.join(root, dir), { recursive: true });
+        await writeFile(path.join(root, dir, 'twin.md'), `# twin in ${dir}\n`);
+      }
+      return '# page\n\n- [[twin]]\n';
+    };
+    const { tmp, outcome } = await checkAt('ctx-a/ambiguous', readme);
+    try {
+      expect(outcome.exitCode).toBe(ExitCode.CheckFailed);
+      const failure = outcome.data?.failures.find((f) => f.check === 'represented-note');
+      expect(failure?.message).toContain('ctx-a/twin.md');
+      expect(failure?.message).toContain('ctx-b/twin.md');
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('fails represented-note-hash as not stamped when the lead line carries no marker', async () => {
+    const readme = async (root: string) => (await stampedReadme(root)).replace(/ <!-- hash:[0-9a-f]{16} -->/, '');
+    const { tmp, outcome, checks } = await checkAt('ctx-a/unstamped', readme);
+    try {
+      expect(outcome.exitCode).toBe(ExitCode.CheckFailed);
+      expect(checks).toEqual(['represented-note-hash']);
+      expect(outcome.data?.failures[0]?.message).toContain('not stamped');
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('fails represented-note-hash as stale once the note changes after stamping', async () => {
+    const { tmp, store, htmlPath } = await checkAt('ctx-a/drifted', stampedReadme);
+    try {
+      await writeFile(path.join(tmp.root, 'notes', 'ctx-note.md'), `${NOTE_BODY}\nA new fact.\n`);
+      const outcome = await executeCheck(store, { path: htmlPath });
+      expect(outcome.exitCode).toBe(ExitCode.CheckFailed);
+      expect(outcome.data?.failures.map((f) => f.check)).toEqual(['represented-note-hash']);
+      expect(outcome.data?.failures[0]?.message).toContain('stale');
+    } finally {
+      await tmp.cleanup();
+    }
+  });
 });

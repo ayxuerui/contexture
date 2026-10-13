@@ -17,6 +17,7 @@ import * as publishGatherCommand from './commands/publish-gather.js';
 import * as publishCheckCommand from './commands/publish-check.js';
 import * as publishUrlsCommand from './commands/publish-urls.js';
 import * as publishNewCommand from './commands/publish-new.js';
+import * as publishStampCommand from './commands/publish-stamp.js';
 import * as sessionCaptureCommand from './commands/session-capture.js';
 import * as sessionListCommand from './commands/session-list.js';
 import * as serveCommand from './commands/serve.js';
@@ -587,18 +588,30 @@ export async function run(argv: readonly string[], env: RunEnv): Promise<ExitCod
 
   publishCommand
     .command('new <slug>')
-    .description('scaffold a page folder with a sibling README, and name the address it is served at — the slug may name a path of folders under the publish path — refusing a reserved or already-existing slug')
-    .action(async (slug: string, _cmdOpts: object, cmd: Command) => {
+    .description('scaffold a page folder with a sibling README, and name the address it is served at and its lifespan — the slug may name a path of folders under the publish path — refusing a reserved or already-existing slug; with --disposable, a throwaway page at disposable/<today>-<slug>')
+    .option('--disposable', 'scaffold a disposable page at disposable/<YYYY-MM-DD>-<slug>, dated today by the command (two-kinds-of-published-page)')
+    .action(async (slug: string, cmdOpts: { disposable?: boolean }, cmd: Command) => {
       const { runEnv, jsonMode, root } = deriveRunEnv(env, cmd);
       result = await runCommand('publish.new', runEnv, jsonMode, async () => {
         const store = await openStore(runEnv, { root });
-        return publishNewCommand.execute(store, { slug });
+        return publishNewCommand.execute(store, { slug, disposable: cmdOpts.disposable === true });
+      });
+    });
+
+  publishCommand
+    .command('stamp <path>')
+    .description("record the hash of the note a permanent page represents (its README's lead link) as a marker on that line — once; never overwrites a marker, and refuses a disposable page")
+    .action(async (pagePath: string, _cmdOpts: object, cmd: Command) => {
+      const { runEnv, jsonMode, root } = deriveRunEnv(env, cmd);
+      result = await runCommand('publish.stamp', runEnv, jsonMode, async () => {
+        const store = await openStore(runEnv, { root });
+        return publishStampCommand.execute(store, { path: pagePath });
       });
     });
 
   publishCommand
     .command('check <path>')
-    .description('the mechanized structural checks a published page must pass (no external references, viewport meta, print rule, provenance, sibling README, script syntax), and the address it is served at')
+    .description("the mechanized structural checks a published page must pass (no external references, viewport meta, print rule, provenance, sibling README, script syntax; a disposable page's shape; a permanent page's represented note and its hash), and the page's address and lifespan")
     .action(async (pagePath: string, _cmdOpts: object, cmd: Command) => {
       const { runEnv, jsonMode, root } = deriveRunEnv(env, cmd);
       result = await runCommand('publish.check', runEnv, jsonMode, async () => {

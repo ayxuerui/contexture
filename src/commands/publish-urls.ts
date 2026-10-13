@@ -4,6 +4,7 @@ import type { CommandOutcome, CommandRequires } from '../core/command.js';
 import { PublishChangeSetRequiredError } from '../core/errors.js';
 import { ExitCode } from '../core/exit-codes.js';
 import { createExecFileGitRunner } from '../core/git/exec.js';
+import { lifespanOf, type PageLifespan } from '../core/publish/lifespan.js';
 import type { Store } from '../core/store.js';
 
 export const requires: CommandRequires = { store: 'required' };
@@ -30,6 +31,11 @@ export interface PageUrlEntry {
   published: PageAddress;
   /** For a moved page: where it was, and the address that stops working. */
   moved_from: { path: string; published: PageAddress } | null;
+  /**
+   * two-kinds-of-published-page: read from `path` — so a moved page carries
+   * the lifespan of where it moved to, and a removed one that of where it was.
+   */
+  lifespan: PageLifespan;
 }
 
 export interface PublishUrlsData {
@@ -100,6 +106,14 @@ function addressesOf(store: Store, file: string): { preview: PageAddress | null;
 }
 
 function entryFor(store: Store, change: Change): PageUrlEntry | null {
+  const entry = entryWithoutLifespan(store, change);
+  if (entry === null) return null;
+  // Every entry's path is under the publish path (`addressesOf` answered for
+  // it), so the fallback is never taken; it keeps the type honest.
+  return { ...entry, lifespan: lifespanOf(`${entry.path}/${PUBLISH_INDEX_FILE}`, store.config.publish.path) ?? 'permanent' };
+}
+
+function entryWithoutLifespan(store: Store, change: Change): Omit<PageUrlEntry, 'lifespan'> | null {
   if (!isIndexFile(change.file) && !(change.from !== null && isIndexFile(change.from))) return null;
 
   const current = isIndexFile(change.file) && change.status !== 'removed' ? addressesOf(store, change.file) : null;
@@ -144,7 +158,7 @@ export async function execute(store: Store, flags: PublishUrlsFlags): Promise<Co
   const baseUrlDeclared = store.config.serve?.base_url !== undefined;
 
   const lines = pages.map((page) => {
-    const parts = [`${page.status} ${page.path}`];
+    const parts = [`${page.status} ${page.path} (${page.lifespan})`];
     if (page.preview !== null) parts.push(`preview ${show(page.preview)}`);
     parts.push(page.status === 'removed' ? `stops working: ${show(page.published)}` : `published ${show(page.published)}`);
     if (page.moved_from !== null) parts.push(`was ${page.moved_from.path}, old address ${show(page.moved_from.published)} stops working`);
