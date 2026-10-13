@@ -303,3 +303,30 @@ ul.ctxr-tree ul.ctxr-tree {
 .ctxr-build-hint code {
   font-weight: 600;
 }
+
+/*
+ * render-diagrams-in-notes design.md D3/D7: an undrawn diagram is a source
+ * block in the code palette like any other, readable as it stands without
+ * script. Once drawn, it sits centered and scrolls sideways when wider than
+ * the column. A block the renderer could not draw keeps its source and gains
+ * a label in the broken palette, so it is never mistaken for a plain code block.
+ */
+.ctxr-diagram[data-ctxr-diagram-drawn] {
+  background: none;
+  padding: 0.5rem 0;
+  text-align: center;
+  white-space: normal;
+}
+
+.ctxr-diagram[data-ctxr-diagram-error] {
+  border-left: 3px solid var(--ctxr-broken);
+}
+
+.ctxr-diagram[data-ctxr-diagram-error]::before {
+  content: "Diagram not drawn: " attr(data-ctxr-diagram-error);
+  display: block;
+  margin-bottom: 0.5rem;
+  color: var(--ctxr-broken);
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  white-space: pre-wrap;
+}

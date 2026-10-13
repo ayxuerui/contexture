@@ -1,8 +1,9 @@
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { DIAGRAM_SCRIPT_FILE, DIAGRAM_SCRIPT_ROUTE, diagramRenderer } from './diagram-assets.js';
 import type { NavState, ThemeMode } from './preferences.js';
-import { escapeHtml } from './render.js';
+import { escapeHtml, type RenderedBody } from './render.js';
 
 /**
  * local-browsing-surface design.md D7: shell.html/style.css are markup and
@@ -37,6 +38,16 @@ const NAV_TOGGLE_LABEL: Readonly<Record<NavState, string>> = {
 };
 
 /**
+ * render-diagrams-in-notes design.md D6: only a body holding a diagram block
+ * references any script — the renderer as a classic deferred script, then the
+ * page script as a module, which runs after it because deferred classic and
+ * module scripts execute in document order. Both are routes on this server.
+ */
+function diagramScripts(): string {
+  return `<script defer src="${diagramRenderer().route}"></script><script type="module" src="${DIAGRAM_SCRIPT_ROUTE}"></script>`;
+}
+
+/**
  * Wraps rendered body HTML in the shared page shell, substituting every
  * slot exactly once. browse-navigation-by-folder design.md D1: the
  * navigation is a slot here rather than markup each route prepends, so no
@@ -51,18 +62,25 @@ const NAV_TOGGLE_LABEL: Readonly<Record<NavState, string>> = {
  * is still escaped, since escaping a value already known-safe costs nothing
  * and keeps every slot here following the same rule.
  */
-export async function renderShell(title: string, bodyHtml: string, navHtml: string, state: ShellState): Promise<string> {
+export async function renderShell(title: string, body: RenderedBody, navHtml: string, state: ShellState): Promise<string> {
   const shell = await readServeTemplate('shell.html');
+  // First, so slot-shaped text inside a title, the navigation or a body can never be taken for it.
   return shell
+    .replace('{{SCRIPTS}}', () => (body.hasDiagram ? diagramScripts() : ''))
     .replace('{{TITLE}}', () => escapeHtml(title))
     .replace('{{THEME}}', () => state.theme)
     .replace('{{NAV_STATE}}', () => state.navState)
     .replace('{{NAV_TOGGLE_HREF}}', () => NAV_TOGGLE_HREF[state.navState])
     .replace('{{NAV_TOGGLE_LABEL}}', () => escapeHtml(NAV_TOGGLE_LABEL[state.navState]))
     .replace('{{NAV}}', () => navHtml)
-    .replace('{{BODY}}', () => bodyHtml);
+    .replace('{{BODY}}', () => body.html);
 }
 
 export async function readStylesheet(): Promise<string> {
   return readServeTemplate('style.css');
+}
+
+/** render-diagrams-in-notes design.md D6: served as a file, so the shell itself stays free of script. */
+export async function readDiagramScript(): Promise<string> {
+  return readServeTemplate(DIAGRAM_SCRIPT_FILE);
 }

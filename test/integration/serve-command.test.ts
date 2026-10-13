@@ -1,5 +1,6 @@
 import { execFile } from 'node:child_process';
-import { mkdir, readdir, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
+import { createRequire } from 'node:module';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import { describe, expect, it } from 'vitest';
@@ -497,4 +498,142 @@ describe('ctxr serve review view of a session worktree (real CLI)', () => {
       await tmp.cleanup();
     }
   }, 60_000);
+});
+
+/** render-diagrams-in-notes: the scenarios a real server and real HTTP can check, short of a browser. */
+describe('ctxr serve diagrams (real CLI)', () => {
+  const DIAGRAM = '```mermaid\nflowchart LR\n  A["<b>start</b> & go"] --> B\n```\n';
+  const ESCAPED_SOURCE = 'flowchart LR\n  A[&quot;&lt;b&gt;start&lt;/b&gt; &amp; go&quot;] --&gt; B\n';
+
+  const requireFromTest = createRequire(import.meta.url);
+  const rendererFile = requireFromTest.resolve('@mermaid-js/tiny');
+  const rendererVersion = (requireFromTest('@mermaid-js/tiny/package.json') as { version: string }).version;
+  const rendererRoute = `/assets/mermaid/${rendererVersion}/mermaid.tiny.js`;
+
+  function expectDiagramPage(html: string, label: string): void {
+    expect(html, label).toContain(`<pre class="ctxr-diagram"><code>${ESCAPED_SOURCE}</code></pre>`);
+    expect(html, label).toContain(`<script defer src="${rendererRoute}"></script><script type="module" src="/assets/diagrams.mjs"></script>`);
+    for (const [, url] of html.matchAll(/\s(?:src|href)="([^"]*)"/g)) {
+      expect(url, `${label}: ${url}`).not.toMatch(/^https?:/);
+    }
+  }
+
+  it('renders mermaid blocks as marked source with local scripts, only where a diagram is', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const env = hermeticGitEnv();
+      expect((await runCli(['init'], { cwd: tmp.root, env })).exitCode).toBe(0);
+      await writeNote(tmp.root, 'projects/diagram.md', `# Diagram\n\n${DIAGRAM}`);
+      await writeNote(tmp.root, 'projects/plain.md', '# Plain\n\n```dot\ndigraph { a -> b }\n```\n');
+      expect((await runCli(['catalog', 'build'], { cwd: tmp.root, env })).exitCode).toBe(0);
+      expect((await runCli(['graph', 'build'], { cwd: tmp.root, env })).exitCode).toBe(0);
+      // Derived documents are served from disk as they stand, so a block written into them takes the same route.
+      await writeFile(path.join(tmp.root, '.contexture/catalog/projects.md'), `# Projects\n\n${DIAGRAM}`);
+      await writeFile(path.join(tmp.root, '.contexture/cache/graph.md'), `# Graph\n\n${DIAGRAM}`);
+
+      const { child, firstLine } = await runCliBackground(['serve', '--port', '0', '--json'], { cwd: tmp.root, env });
+      try {
+        const baseUrl = (JSON.parse(firstLine) as { data: { url: string } }).data.url;
+        const get = async (route: string, init?: RequestInit) => fetch(new URL(route, baseUrl), init);
+
+        expectDiagramPage(await (await get('/notes/projects/diagram.md')).text(), 'note');
+        expectDiagramPage(await (await get('/catalog/projects')).text(), 'catalog');
+        expectDiagramPage(await (await get('/graph')).text(), 'graph');
+
+        const plainHtml = await (await get('/notes/projects/plain.md')).text();
+        expect(plainHtml).toContain('<pre><code class="language-dot">');
+        expect(plainHtml).not.toContain('<script');
+        expect(plainHtml).not.toContain('ctxr-diagram');
+        expect(await (await get('/')).text()).not.toContain('<script');
+
+        // Theme and navigation choices behave on a diagram page exactly as on a page without one.
+        const htmlTag = (html: string) => /<html [^>]*>/.exec(html)?.[0];
+        for (const query of ['?ctxr-theme=dark', '?ctxr-nav=collapsed']) {
+          const withDiagram = await get(`/notes/projects/diagram.md${query}`);
+          const without = await get(`/notes/projects/plain.md${query}`);
+          expect(withDiagram.headers.get('set-cookie'), query).not.toBeNull();
+          expect(withDiagram.headers.get('set-cookie'), query).toBe(without.headers.get('set-cookie'));
+          expect(htmlTag(await withDiagram.text()), query).toBe(htmlTag(await without.text()));
+        }
+        const persisted = await (await get('/notes/projects/diagram.md', { headers: { cookie: 'ctxr_theme=dark; ctxr_nav=collapsed' } })).text();
+        expect(persisted).toContain('data-ctxr-theme="dark"');
+        expect(persisted).toContain('data-ctxr-nav="collapsed"');
+      } finally {
+        await stopCliBackground(child);
+      }
+    } finally {
+      await tmp.cleanup();
+    }
+  }, 20_000);
+
+  it('serves the renderer from the installed package and the page script, without reading the store', async () => {
+    const tmp = await makeTmpDir();
+    const unreadable = path.join(tmp.root, 'projects');
+    try {
+      const env = hermeticGitEnv();
+      expect((await runCli(['init'], { cwd: tmp.root, env })).exitCode).toBe(0);
+      await writeNote(tmp.root, 'projects/a.md', '# A\n');
+
+      const { child, firstLine } = await runCliBackground(['serve', '--port', '0', '--json'], { cwd: tmp.root, env });
+      try {
+        const baseUrl = (JSON.parse(firstLine) as { data: { url: string } }).data.url;
+        // A notes directory the server cannot read: the asset routes must not need to.
+        await chmod(unreadable, 0o000);
+        // Anti-vacuity: a route that does read the store fails on it.
+        expect((await fetch(baseUrl)).status).toBe(500);
+
+        const rendererRes = await fetch(new URL(rendererRoute, baseUrl));
+        expect(rendererRes.status).toBe(200);
+        expect(rendererRes.headers.get('content-type')).toContain('text/javascript');
+        expect(rendererRes.headers.get('cache-control')).toBe('public, max-age=31536000, immutable');
+        expect(Buffer.from(await rendererRes.arrayBuffer()).equals(await readFile(rendererFile))).toBe(true);
+
+        const scriptRes = await fetch(new URL('/assets/diagrams.mjs', baseUrl));
+        expect(scriptRes.status).toBe(200);
+        expect(scriptRes.headers.get('content-type')).toContain('text/javascript');
+        expect(scriptRes.headers.get('cache-control')).toBeNull();
+        expect(await scriptRes.text()).toContain('export function effectiveScheme');
+
+        expect((await fetch(new URL('/assets/mermaid/0.0.0-not-installed/mermaid.tiny.js', baseUrl))).status).toBe(404);
+        expect((await fetch(new URL(`/assets/mermaid/${rendererVersion}/other.js`, baseUrl))).status).toBe(404);
+      } finally {
+        await chmod(unreadable, 0o755);
+        await stopCliBackground(child);
+      }
+    } finally {
+      await tmp.cleanup();
+    }
+  }, 20_000);
+
+  it('serves a published page and a preview page carrying a mermaid block byte-verbatim', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const env = hermeticGitEnv();
+      expect((await runCli(['init'], { cwd: tmp.root, env })).exitCode).toBe(0);
+      const page = `<!doctype html><html><head><title>Diagram Page</title></head><body><pre>\n${DIAGRAM}</pre></body></html>`;
+      await writeNote(tmp.root, '.contexture/publish/diagram-page/index.html', page);
+
+      const started = await runCli(['--json', 'session', 'start'], { cwd: tmp.root, env });
+      expect(started.exitCode).toBe(0);
+      const worktree = (JSON.parse(started.stdout) as { data: { worktree: string } }).data.worktree;
+      await writeNote(worktree, '.contexture/publish/ctx-a/draft/index.html', page);
+
+      const { child, firstLine } = await runCliBackground(['serve', '--port', '0', '--json'], { cwd: tmp.root, env });
+      try {
+        const baseUrl = (JSON.parse(firstLine) as { data: { url: string } }).data.url;
+        for (const route of ['publish/diagram-page/index.html', `preview/${path.basename(worktree)}/ctx-a/draft/index.html`]) {
+          const res = await fetch(`${baseUrl}${route}`);
+          expect(res.status, route).toBe(200);
+          const body = await res.text();
+          expect(body, route).toBe(page);
+          expect(body, route).not.toContain('ctxr-diagram');
+          expect(body, route).not.toContain('<script');
+        }
+      } finally {
+        await stopCliBackground(child);
+      }
+    } finally {
+      await tmp.cleanup();
+    }
+  }, 30_000);
 });
