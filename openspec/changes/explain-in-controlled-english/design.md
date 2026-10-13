@@ -13,36 +13,32 @@ What agents write in a store falls into three kinds, by reader:
 | Record | notes, rollups, the log | agents and the operator | later, many times, often by `rg` |
 | Instruction | skills, the entry document | agents | every session |
 
-This change covers explanation. D5 and D6 decide the other two.
+This change covers explanation. D6 and D7 decide the other two.
 
-## The rule set
+## The section
 
-The text `ctxr-explanation` will carry, modulo final wording under the test suite's guards:
+The text the baseline conventions will carry, as measured (543 bytes):
 
-> - Write one instruction or one fact in each sentence.
-> - Use 20 words or fewer in a sentence that tells the reader to do something. Use 25 words or fewer in a
->   sentence that describes something.
-> - Use the active voice and name who or what acted: "`ctxr doctor` found 2 dangling links", not "2
->   dangling links were found".
-> - Use one word for one thing. If you call a note a "rollup", do not also call it a "summary note".
-> - Keep the store's own names exactly as written: note titles, folders, commands, fields. They are
->   technical names, not words to simplify.
-> - Put three or more items, or any sequence of steps, in a list.
-> - Give numbers, not vague quantities: "4 notes", not "several notes".
-> - Keep "the", "a" and "an". Do not remove words to make a sentence shorter.
-> - Keep a paragraph to 6 sentences or fewer, on one subject.
-> - Put a reason in its own sentence that starts with `Why:`. That sentence may be longer than 25 words
->   when splitting it would lose the meaning.
+> ## Explaining
 >
-> Copy, do not rewrite: quoted text, command output, code, and every table or block a skill tells you to
-> copy from a report. Do not use the STE approved-word dictionary or its limits on verb tenses.
+> When you explain something to the operator, write about 80% of the way to ASD-STE100: one fact per
+> sentence, at most 20 words to instruct and 25 to describe, active voice, one word for one thing, lists for
+> three or more items, numbers over vague words. Keep the store's names as written. Give each reason its own
+> `Why:` sentence. Copy quotes, output and report tables unchanged.
+>
+> Draw a diagram when structure, flow or sequence would take a paragraph: fenced `mermaid` in notes, pull
+> requests and answers; inline SVG in pages.
 
-Before, from a real `ctxr-submit` line:
+It names the standard and its rules tersely, because models already know STE: the tip this change follows
+works by naming the standard, not by teaching it. It spells out only the departures a model would not infer:
+the store's names are technical names, reasons stay (labelled), and copied material is not rewritten.
+
+Before, a real `ctxr-submit` line:
 
 > Validate: run `ctxr doctor` (store scope, not `--staged` — a session's job is to leave the whole store
 > healthy, not merely pass one commit's gate). Fix a failure; never bypass it, and never proceed past it.
 
-After:
+After, under the section:
 
 > Run `ctxr doctor` on the full store. Do not use `--staged`. If `doctor` reports a failure, fix it. Do not
 > continue until it passes. Why: a session must leave the whole store healthy, not only pass the check on
@@ -52,120 +48,138 @@ After:
 
 ### D1: Scope is every explanation for the operator, not one surface
 
-The tip this change follows is "ask your LLM to explain something in ASD-STE100". What makes a text an
-explanation is its reader and purpose — the operator, understanding something now — not where it is
-written. A rule scoped to pull requests alone would leave conversation, pages and research findings, which
-are most of the explaining, untouched.
+The tip is "ask your LLM to explain something in ASD-STE100". What makes a text an explanation is its reader
+and purpose — the operator, understanding something now — not where it is written. Most explaining happens
+in conversation, which no skill governs.
 
-*Alternative: pull requests only, as a trial.* The strongest case: the pull request is the one text written
-for the operator's merge decision, it is short-lived, and a bad trial costs a few awkward pull requests.
-Against: it tests the rules on the narrowest slice of explanation and leaves the operator's most frequent
-reading — answers in conversation — unchanged. Flip: the rules visibly degrade conversation answers
-(robotic, over-split), in which case scope narrows to written artifacts.
+*Alternative: pull requests only.* The strongest case: the pull request is the one text written for the
+merge decision, and it is short-lived. Against: it leaves conversation, pages and findings — most of the
+explaining — unchanged. Flip: the rules visibly degrade conversation answers, in which case the section
+narrows to written artifacts.
 
-### D2: The rules live in an owned skill; the entry document carries one routing line
+### D2: The rules live in the baseline conventions, not in a skill
 
-Four places explain to the operator: conversation, `ctxr-submit`, `ctxr-publish`, `ctxr-research`. One file
-holds the rules so they are tuned in one place. Conversation is reached by no skill, so one line in the
-baseline conventions — inlined into every entry document, read every turn — routes any explanation to the
-skill.
+The section is an every-turn rule: it applies to any answer in any session. The entry document is where
+every-turn rules live, and a harness reads it on every session without deciding to.
 
-*Alternative: the whole rule set in the baseline conventions.* The strongest case: an always-loaded rule
-needs no skill discovery, and a harness that loads skills unreliably would still apply it. Against: the
-rule set is about 1 KB and contexture's share of the entry document has about 520 bytes left under its
-8,500-byte ceiling, part of which `render-diagrams-in-notes` also asks for; raising the ceiling needs its
-own argued change. Flip: evidence that agents follow the routing line but do not load the skill.
+*Alternative: an owned skill (`ctxr-explanation`) holding the full rule set, a before-and-after example and
+the diagram guidance, with a one-line pointer in the entry document and a mention in the submit, publish and
+research skills.* This was the earlier draft. The strongest case: a skill has room for examples and
+per-surface detail, costs almost no entry-document bytes, and is tuned in one file. Against, raised by the
+operator and by one of three reviewers in a critique: a pointer costs nearly as many bytes as the rules
+themselves (about 195 against 543), the rule only works if the agent also loads the skill — an extra failure
+point exactly where explaining is most frequent — and the three skill edits add regression surface for no
+behavior the section does not already give. Flip: the rules need examples or per-surface detail that cannot
+fit, or agents apply the terse form wrongly in a way a worked example would fix.
 
-*Alternative: inline in each consuming skill.* Four copies drift. Rejected without a flip.
+### D3: Raise contexture's entry-document ceiling from 8,500 to 8,900 bytes
 
-The name is a noun for the judgment, as `ctxr-research` is: there is no `ctxr explanation` command, and
-`ctxr-explain` would read as one.
+The section does not fit under the current ceiling: 7,978 bytes are used, the section adds 545, and the
+result is 8,523. The ceiling requirement allows an increase only in a change that argues it. The argument:
 
-### D3: No mechanical check
+- The ceiling is a self-imposed budget, not a harness limit. The binding limit is the smallest harness read
+  limit (24 KB), and `ctxr lint` observes a 20 KB target. A fresh store's `AGENTS.md` is 10,553 bytes; the
+  operator's two stores are 12,486 and 10,815. 400 more bytes keeps every one of them under half the limit.
+- The ceiling exists to stop procedure that belongs in a skill from creeping into the entry document. This
+  section is not procedure: it is an every-turn rule, which is what the baseline is for (D2).
+- 8,900 also leaves room for the planned records rule (D6, about 80 bytes) and some margin, so the next
+  every-turn rule does not force another increase immediately.
+
+*Alternative: trim the section to fit under 8,500.* Measured: removing 23 more bytes is possible (symbols for
+"at most", dropping a word from the diagram line), and leaves 6 bytes of margin. The strongest case: the
+ceiling has never been raised, and holding it keeps pressure on every byte. Against: it would block D6 and
+anything after it, and the cuts make the rules harder to read for the reader they exist to help. Flip: the
+records rule (D6) is dropped, and nothing else is queued for the baseline.
+
+### D4: No mechanical check
 
 *Alternative: a `ctxr` command that reports long sentences, passive constructions and vague quantities.*
 The strongest case: models count words badly, so an unchecked limit is a suggestion; computing is the
 CLI's job; and the trial's result would rest on numbers. Against: sentence splitting and voice detection are
-heuristics whose false positives the skill would have to tell the agent to ignore, and conversation answers
-never pass through a command. Flip: written explanations (pull requests, pages) that routinely exceed the
-limits by a wide margin.
+heuristics whose false positives the agent would have to be told to ignore, and conversation answers never
+pass through a command. Flip: written explanations (pull requests, pages) that routinely exceed the limits
+by a wide margin.
 
-### D4: Every store gets it; no configuration key
+### D5: Trial in a release; roll back if it does not work
 
-*Alternative: an opt-in key with no shipped default.* The strongest case: other users of the npm package
-get a style change they did not ask for. Against: it changes how text reads, nothing a store depends on;
-reverting is one release; a trial key stays forever. A store's house conventions can already override the
-baseline line. Flip: a report that the style hurt a store's reviews.
+The section ships to every store in a normal release. The trial is that release.
 
-### D5: Records — yes, with a subset of the rules, in a later change
+*Alternative: trial first in the operator's two stores, by pasting the rules into each store's house
+conventions, and release only on a "keep".* All three reviewers in a critique raised this: a release puts an
+unvalidated style change in every store before the trial decides. The strongest case: no other store pays for
+a bad trial, and it needs no code at all. Against, the operator's decision: the change alters how text reads,
+nothing a store depends on; a release that removes it undoes it everywhere on the next `ctxr update`; and a
+house-conventions trial tests a copy that then has to be ported, not the shipped text. A store that disagrees
+can override the section in its own house conventions today. Flip: another store reports that the section
+hurt its reviews before the trial ends.
+
+*Alternative: an opt-in configuration key.* A trial key would stay forever, and it would test only the
+stores that set it. Rejected without a flip.
+
+### D6: Records — yes, with a subset of the rules, in a later change
 
 Notes are read again and again, by the operator and by agents, and retrieval has no ranker: content
-matching is `rg`. Two STE rules pay off directly there. **One word for one thing** decides whether a search
+matching is `rg`. Two rules pay off directly there. **One word for one thing** decides whether a search
 finds the note: a store that writes "rollup" in one note and "summary note" in the next splits its own
 retrieval. **One fact per bullet** makes a note extendable without rewriting, which the baseline already
-asks for. Numbers instead of vague quantities and an active voice that names the actor make a record
-checkable later.
+asks for. Numbers instead of vague quantities and a named actor make a record checkable later.
 
-The other rules add little: notes already use outliner bullets, which keeps sentences short, and the length
-limits would fight quoted and captured material, which must stay verbatim as provenance.
+The sentence and paragraph limits add little — notes are already bullets — and would fight quoted and
+captured material, which stays verbatim as provenance.
 
-So records should follow a subset — one word for one thing, one fact per bullet, numbers, a named actor —
-added to the existing "Writing notes" bullet (about 80 bytes), not the full rule set.
+So records should take that subset, appended to the existing "Writing notes" rule (about 80 bytes), after
+this change's trial ends in "keep". *Against applying it at all:* a style rule on durable content reshapes
+every store's text over years, and notes are partly the operator's own writing. That is why it waits. Flip
+to "never": the trial ends in "revert".
 
-*Against applying it at all:* notes are the operator's own writing as much as the agents', and a style rule
-on durable content reshapes every store's text over time. That is why it is a separate change, after this
-one has shown whether the rules read well. Flip to "never": the explanation trial reverts.
-
-### D6: Instructions — yes, gradually, never as a bulk rewrite
+### D7: Instructions — yes, gradually, never as a bulk rewrite
 
 STE was written for procedures, and skills are procedures. Their failure mode — an agent that skips or
-merges a step — is what one-instruction-per-sentence prevents, and the operator also reads skills to audit
-what agents are told.
+merges a step — is what one instruction per sentence prevents, and the operator also reads skills to audit
+what agents are told. The cost is the reasoning: a skill's "because" clauses let an agent handle a case the
+skill never listed. The `Why:` sentence keeps it.
 
-The cost is the reasoning. A skill's "because" clauses are what let an agent handle a case the skill never
-listed, and plain STE deletes them. The `Why:` label answers that: the step becomes controlled, the reason
-stays, labelled.
-
-Against a rewrite now: about 90 KB across 17 skills; the test suite asserts many exact phrases in them, so a
-rewrite is a large, risky diff; and no skill has been observed misread because of its prose.
-
-So: apply the rules to step lines (keeping reasons as `Why:` sentences) whenever a skill is next edited,
-recorded as an authoring rule in this repository's OpenSpec context, not shipped to stores. The entry
-document follows the same path. Flip to a bulk rewrite: a recorded misreading of a skill step that a
-controlled rewrite would have prevented.
+Against a rewrite now: about 90 KB across 17 skills; the test suite asserts many exact phrases in them; and no
+skill has been observed misread because of its prose. So: apply the rules to step lines whenever a skill is
+next edited, recorded as an authoring rule in this repository's OpenSpec context. Flip to a bulk rewrite: a
+recorded misreading of a skill step that a controlled rewrite would have prevented.
 
 ### Order
 
-Explanation (this change) → records (D5, one bullet) → instructions (D6, as skills are touched). Each step
-waits on the evidence from the one before.
+Explanation (this change) → records (D6) → instructions (D7, as skills are touched). Each waits on the
+evidence from the one before.
 
 ## Risks / Trade-offs
 
-- [Conversation answers read as terse] → D1's flip; the exit review covers answers as well as artifacts.
-- [Copied blocks get "simplified"] → The skill says to copy report-derived content unchanged.
-- [The harness's own style instructions conflict with the routing line] → The routing line is a store
-  convention; where a harness instruction wins, explanations in that harness are unchanged, which the exit
-  review would show.
+- [Conversation answers read as terse] → D1's flip; the trial review covers answers.
+- [A harness's own style instructions override the section in conversation] → The trial records, per
+  harness, whether the section was followed, so "did not help" is not confused with "was not applied".
+- [Copied blocks get "simplified"] → The section says to copy them unchanged.
+- [The terse form is applied wrongly] → D2's flip: move to a skill with worked examples.
 
 ## Trial and exit criteria
 
-After about two weeks of use in the operator's stores (pkm, readyrun-brain), the operator compares
-explanations — answers, pull requests, pages — with what came before, and decides: keep and move to D5,
-keep as is, tune a rule (D5's `Why:` exemption is the likeliest), or revert.
+The trial starts with the release that carries this change and runs about two weeks in the operator's
+stores (pkm, readyrun-brain).
+
+- **Before:** the last 5 pull request bodies and the last research findings in each store, already in git
+  history, are the comparison set. No capture step is needed.
+- **During:** for each harness the operator uses (Claude Code, Codex, Antigravity, Hermes), note whether
+  explanations follow the section at all.
+- **Spot checks:** sentence length against the 20/25 limits, and whether reasons appear as `Why:`
+  sentences.
+- **Decision:** keep (and queue D6), tune a rule, or revert in the next release.
 
 ## Migration Plan
 
-None. The skill and the baseline line arrive through `ctxr update`. Reverting removes both.
+None. The section arrives through `ctxr update`. Reverting removes it and may lower the ceiling back.
 
 ## Open Questions
 
-- Should this repository's own pull requests follow the rules during the trial?
+- Should this repository's own pull requests follow the section during the trial?
 
 ## Related changes
 
-`render-diagrams-in-notes` adds a "when a diagram fits" section to `ctxr-explanation`, because choosing a
-diagram over sentences is the same judgment as choosing the sentences' shape: how to explain. That change
-depends on this one landing first. Its guidance also covers diagrams in notes, which this change's
-sentence rules do not reach, so the routing line names both: explaining something to the operator, and
-drawing a diagram anywhere. That costs about 25 more bytes than routing explanations alone, and keeps one
-copy of the diagram guidance instead of a second one in the baseline.
+`render-diagrams-in-notes` relies on the diagram sentence in this section for its guidance, and supplies the
+rendering in `ctxr serve`. Diagrams are part of the same judgment — how to explain — and the section is
+always loaded, so it also reaches agents writing notes.

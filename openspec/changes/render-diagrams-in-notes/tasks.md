@@ -43,17 +43,9 @@
 - [ ] 3.6 Also in `test/integration/serve-command.test.ts`, for "A published page carrying a mermaid block is still served byte-verbatim": place a published page and a session-worktree preview page whose `index.html` contains a ```` ```mermaid ```` block. Assert that both responses are byte-identical to the files on disk and contain no `ctxr-diagram` and no `<script` the file did not already contain.
 - [ ] 3.7 Run `npx vitest run test/unit/browse-templates.test.ts test/unit/serve-diagrams-script.test.ts test/integration/serve-command.test.ts` and confirm it exits 0.
 
-## 4. Diagram guidance in the explanation skill
+## 4. Guidance (delivered by the sibling)
 
-- [ ] 4.1 Confirm `explain-in-controlled-english` has landed: `test -f templates/skills/ctxr-explanation.md && grep -n "ctxr-explanation" src/core/skills.ts` must print a match. If it has not landed, stop. This change depends on it (design.md D1).
-- [ ] 4.2 Add a "Diagrams" section to `templates/skills/ctxr-explanation.md` with the content in design.md D1:
-  - when a diagram fits: structure, flow, sequence, relationships, or a before/after that sentences or bullets would flatten; never a restated list; small enough to read as text;
-  - in a note, a pull request body, or a conversation answer: a fenced `mermaid` block that GitHub, Obsidian and `ctxr serve` draw and a diff reviews as text, never an image or hand-written SVG;
-  - in a published page: the diagram drawn in the page's own HTML or inline SVG, with no renderer script and no external address;
-  - that the section applies to notes although the rest of the skill does not.
-  Write it under the skill's own sentence rules. Check that the text contains none of personal, private, public, shared, internal, team, or confidential, and that any `--flag` binds to a command registered in `src/run.ts`. Do not edit `templates/conventions/baseline-conventions.md`.
-- [ ] 4.3 In `test/unit/skills.test.ts`, add one assertion per scenario of "The explanation skill says when a diagram fits and how to draw it on each surface". Run them against the rendered `ctxr-explanation` content, and keep the existing tier-word and flag guards covering it.
-- [ ] 4.4 Run `npx vitest run test/unit/skills.test.ts test/integration/entry-document-ceiling.test.ts` and confirm it exits 0, with the ceiling test unchanged.
+- [ ] 4.1 This change adds no guidance prose and no guidance test: the diagram sentence, its assertion, and the ceiling increase to 8,900 bytes belong to `explain-in-controlled-english` (design.md D1). Before marking this change done, confirm that change has landed by running `grep -F "Draw a diagram when structure, flow or sequence" templates/conventions/baseline-conventions.md`, which must print one line. Do not edit `templates/conventions/baseline-conventions.md` from this change.
 
 ## 5. End to end
 

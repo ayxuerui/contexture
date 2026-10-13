@@ -17,9 +17,10 @@ See proposal.md, Why. The current state that shapes the approach:
 - **The entry document has a budget.** The baseline conventions are inlined into `AGENTS.md`. A test holds
   contexture's generated share under a ceiling (`CONTEXTURE_OWNED_CEILING_BYTES`, 8,500 bytes), and `doctor` fails a
   store whose `AGENTS.md` exceeds 24,000 bytes (Antigravity's limit).
-- **Explanation has a home, once `explain-in-controlled-english` lands.** That change ships the owned skill
-  `ctxr-explanation` and one baseline line that routes every explanation for the operator to it: answers, pull
-  requests, published pages, and research findings. Notes, skills and the entry document are outside its scope.
+- **Explaining gets a baseline section, once `explain-in-controlled-english` lands.** That change adds
+  "## Explaining" to the baseline conventions, inlined into every entry document. It carries the controlled-English
+  rules for every explanation an agent writes for the operator, and it raises the contexture-owned ceiling from 8,500
+  to 8,900 bytes to pay for them.
 
 What the npm registry offers for mermaid, checked on 2026-10-13 with `npm view` and the downloads API:
 
@@ -36,61 +37,71 @@ What the npm registry offers for mermaid, checked on 2026-10-13 with `npm view` 
 ## Goals / Non-Goals
 
 **Goals:**
-- An agent draws a diagram whenever one fits, on every surface where it explains something to the operator.
+- An agent draws a diagram whenever one fits, in notes, pull requests, answers and pages, prompted by a rule it reads
+  on every turn.
 - One source text per diagram, drawn in `ctxr serve`, in GitHub and in Obsidian.
 - With scripting disabled, a page loses nothing but the drawing, and the theme and navigation still work.
 - No byte of a served page comes from outside the server, and no request leaves it.
 - The renderer stays current through the dependency process the repository already runs.
 
 **Non-Goals:** see proposal.md. At the design level, this change also:
-- adds no diagram rendering to `ctxr publish`, to page templates, or to the publish or preview routes (a page draws its own diagram, per D1);
+- adds no diagram rendering to `ctxr publish`, to page templates, or to the publish or preview routes (a page draws its own diagram as inline SVG, per D1);
 - makes no attempt to make mermaid's layout match GitHub's pixel for pixel;
 - adds no server-side cache of drawn diagrams.
 
 ## Decisions
 
-### D1. The guidance is a section of `ctxr-explanation`, and it covers every surface
+### D1. The guidance is one sentence in the baseline's "Explaining" section
 
 The point of this change is that an agent draws a diagram when one fits. Rendering in `serve` supports that goal but
 is not the goal itself. The deciding question is where the "when a diagram fits" judgment lives.
 
-`explain-in-controlled-english` creates the owned skill `ctxr-explanation` for every explanation an agent writes for
-the operator: a conversation answer, a pull request's title, body and commit message, a published page's prose, and
-research findings. One baseline line routes every such explanation to the skill. Choosing a diagram over sentences is
-the same judgment as choosing the sentences' shape: how to explain this to this reader. The guidance is therefore a
-"Diagrams" section of that skill, not a rule of its own. It states two things:
-- **When a diagram fits:** the content is a structure, a flow, a sequence, a set of relationships, or a before/after
-  that sentences or bullets would flatten. A diagram never restates a list that already reads well as a list. It
-  stays small enough to read as text.
-- **The form per surface:**
-  - in a note, a pull request body, or a conversation answer, a fenced `mermaid` block (D2), which GitHub, Obsidian
-    and `ctxr serve` draw, and which a diff reviews as text;
-  - in a published page, which is self-contained, served byte-verbatim and refused by `ctxr publish check` if it
-    names an external address, the diagram is drawn in the page's own HTML or inline SVG, with no renderer script
-    and no external address.
+Choosing a diagram over sentences is the same judgment as choosing the sentences' shape: how to explain this to this
+reader. So the guidance is one sentence in the "## Explaining" baseline section that `explain-in-controlled-english`
+adds. That change owns the sentence and delivers it verbatim:
 
-Because the baseline already routes explanations to the skill, this change adds no bytes to the entry document. It
-depends on `explain-in-controlled-english` landing first.
+> Draw a diagram when structure, flow or sequence would take a paragraph: fenced `mermaid` in notes, pull requests and
+> answers; inline SVG in pages.
 
-**The case for a baseline bullet under "Writing notes"** (this change's first draft). That section is where the
-baseline tells the agent to write outliner bullets on every turn. A counterweight in the same place reaches every
-note, whichever skill or none is writing it, and it costs about 300 bytes.
-**Why the skill wins:**
-- The judgment is not specific to notes. The surfaces where the operator most needs a picture are pull requests,
-  pages and answers, and a bullet under "Writing notes" does not reach them.
-- One home for "how to explain" keeps the two rules from drifting apart. A bullet in the baseline and a section in
-  the skill would be two statements of overlapping guidance.
-- The entry document is held to a 24,000-byte limit, and contexture's own share is held under a ceiling. Content that
-  matters for some turns belongs in a skill (`lean-composed-entry-document`).
+It covers both halves: when (structure, flow or sequence that would take a paragraph) and the form on each surface.
+- **Notes, pull requests, answers:** a fenced `mermaid` block (D2). GitHub, Obsidian and `ctxr serve` draw it, and a
+  diff reviews it as text.
+- **Published pages:** inline SVG in the page's own markup. A page is self-contained, served byte-verbatim, and
+  refused by `ctxr publish check` if it names an external address.
 
-**The case for a separate `ctxr-diagram` skill.** It would have a sharper trigger, and its description could name
-diagrams directly.
-**Why not:** it would need its own routing line in the baseline, which costs bytes again. Its trigger, "about to
-explain something with structure", is also indistinguishable from the explanation skill's own trigger.
+The section is inlined into the entry document, so it reaches every turn, including an agent writing a note outside
+any skill. The bytes are carried by the sibling change, which raises contexture's owned-prose ceiling from 8,500 to
+8,900. This change adds no shipped prose of its own, and depends on `explain-in-controlled-english` landing first.
 
-**What would flip it:** agents writing notes that never draw a diagram where one plainly fits. `ctxr-explanation`
-scopes notes out, so its routing line may not fire when an agent writes a note. The fix would be a short pointer from
-the records rule that `explain-in-controlled-english` D5 plans, not a second copy of the guidance.
+**The case for a fuller section in a skill.** One sentence leaves out most of what makes a diagram good:
+- which mermaid type fits which content (flowchart for flow, `sequenceDiagram` for exchanges, `stateDiagram` for
+  lifecycles);
+- a before/after shown as two diagrams;
+- how large is too large;
+- an example of a list that should stay a list.
+
+A skill has room for all of that at no every-turn cost. A skill is also the house pattern for guidance that matters on
+some turns (`lean-composed-entry-document`).
+**Why one baseline sentence wins:**
+- The operator decided that the explanation rules are every-turn rules and belong in the entry document, not in a
+  skill. That decision removed the `ctxr-explanation` skill this change's previous draft added a section to.
+- A skill fires only when its trigger is recognized. Writing a note, an answer or a pull request body happens on most
+  turns and outside any one skill. A trigger like "about to explain something with structure" is exactly the kind an
+  agent fails to recognize, so the guidance would not fire in the moments it is for.
+- Models already know mermaid's diagram types. What they lack is the prompt to reach for one, and the rule for which
+  form each surface takes. One sentence carries both.
+
+**What would flip it:**
+- Diagrams drawn where a list would do, or diagrams too large to read. Either means the sentence needs the detail
+  that only a skill has room for. The fix is an on-demand guidance document or a skill section that the baseline
+  sentence points to, keeping the sentence as the trigger.
+- Agents still not drawing where a diagram plainly fits. That would show the sentence is too weak as written, and the
+  first remedy is sharper wording in the baseline, not more text elsewhere.
+
+**The case for a skill as the only home** (the decision the operator reversed). It costs no entry-document bytes, and
+it keeps the 24,000-byte limit's headroom for the operator's own conventions.
+**Why not:** the operator's decision is that every-turn rules go in the entry document. The sibling pays 400 bytes of
+ceiling for the whole "Explaining" section, of which this sentence is about 150.
 
 ### D2. Diagrams are fenced `mermaid` blocks
 
@@ -150,8 +161,8 @@ also let `ctxr` check that a diagram parses, because the renderer would run in N
 - it has 546 k weekly downloads;
 - it themes through CSS custom properties, so the drawn SVG would follow the shell's `--ctxr-*` palette by the
   cascade, with no script at all;
-- its six diagram types are close to exactly the ones the guidance (D1) points agents at: flowchart,
-  sequence, state, class, and ER.
+- its six diagram types (flowchart, sequence, state, class, ER, and XY chart) cover the structure, flow and sequence
+  that the guidance (D1) points agents at.
 
 The other server-side routes are not viable for this repository. `@mermaid-js/mermaid-cli` and `mermaid-isomorphic`
 both drive a headless Chromium (through `puppeteer` and `playwright`). That means a browser download inside a CLI
@@ -289,20 +300,20 @@ drift from `style.css`.
   and the page script registers none. The no-outside-request scenario is checked in a real browser in tasks.md.
 - **Large graph diagrams lay out poorly in mermaid.** → This is the sibling `review-the-knowledge-diff` change's
   concern, and its size limit belongs there. D2 names what would move that one view to another engine.
-- **Notes may not reach the guidance.** `ctxr-explanation` scopes notes out, so an agent writing a note may never load
-  its "Diagrams" section. → The note surface is still named in the section, so an agent that loads the skill for an
-  answer applies the same form in a note. D1 names the fix if notes stay diagram-free: a pointer from the records
-  rule that `explain-in-controlled-english` D5 plans.
-- **The change depends on `explain-in-controlled-english`.** → tasks.md checks that the skill template exists before
-  adding the section. If that change is reworked or dropped, D1's rejected baseline bullet is the fallback home.
+- **One sentence may be too little guidance.** → D1 names the flip: an on-demand document or skill section that the
+  sentence points to, with the sentence kept as the trigger.
+- **The change depends on `explain-in-controlled-english`.** → This change ships no prose of its own, so the rendering
+  half can land in either order. Until the sibling lands, nothing tells agents to draw diagrams; `serve` would simply
+  draw any mermaid block a note already holds. tasks.md checks that the sentence is present before calling the work
+  done.
 
 ## Migration Plan
 
-No store migration. Upgrading `ctxr` installs the new dependency. `ctxr update` re-delivers `ctxr-explanation` with its
-new "Diagrams" section, like any owned-skill edit, and the entry document does not change. Notes that already contain mermaid
+No store migration. Upgrading `ctxr` installs the new dependency. The entry document does not change because of this
+change; the diagram sentence arrives with `explain-in-controlled-english`'s baseline section. Notes that already contain mermaid
 blocks start drawing in `serve` with no edit.
 
-Rollback is removing the dependency, the two asset routes, the fence rule, the shell slot, and the skill section.
+Rollback is removing the dependency, the two asset routes, the fence rule, and the shell slot.
 Notes keep their mermaid blocks, which then render as code blocks again, as they did before this change.
 
 ## Open Questions
