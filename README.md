@@ -125,7 +125,7 @@ Every harness loads this file on every turn, so it is kept short. contexture's o
 | `ctxr-session-capture` | What a finished session produced that is worth keeping |
 | `ctxr-upgrade` | Whether to upgrade the installed CLI now, and asking before it does |
 | `ctxr-second-opinion` | Whether a plan or a taste call needs three different model families, and how to weigh what they say |
-| `ctxr-research` | How to research a question against real sources — perspectives, source tiers, contradictions, review — with whatever web access the harness has |
+| `ctxr-research` | How to research a question against real sources — a brief and findings ledger, perspectives, source tiers, contradictions, and every claim verified against a source it opened — with whatever web access the harness has |
 
 Your house rules go in `.contexture/guidance/`.
 
