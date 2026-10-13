@@ -220,7 +220,11 @@ Why it loses:
 pass the check, so the lead link stops meaning anything. The fallback then is a third lifespan, not
 dropping the check.
 
-**Status: provisional until the audit.** The 28-page measurement above shows lead links *agree with
+**Status: confirmed by the audit (2026-10-13).** 43 of 48 kept pages across both client stores map
+to one note or a hub note. The 5 others are dated one-offs that become disposable. See "Audit of
+existing pages" below. The original provisional reasoning follows.
+
+*Before the audit:* The 28-page measurement above shows lead links *agree with
 the subject `gather` was given*; it does not show that each page *is* the rendered form of one note
 rather than a set or a one-off. Task 1.1 classifies every existing page in both downstream client
 stores as one-note, hub-note or neither, and the result is recorded under "Audit of existing pages"
@@ -320,10 +324,64 @@ not page files.
 
 ## Audit of existing pages
 
-*Not yet run — filled in by task 1.2.* Per store (pkm, readyrun-brain): pages total; one-note;
-hub-note; neither (listed by path, one line each); lead link already naming the represented note;
-any `disposable` directory under the publish path or top-level notes folder slugifying to it.
-Decision on D4 (confirmed / revised, and how): recorded here by task 1.3.
+Run 2026-10-13, read-only, against the local clones at `/home/ubuntu/workspace/pkm` and
+`/home/ubuntu/workspace/readyrun-brain`, both on `main`. Pages are every `index.html` under
+`.contexture/publish/` (the shipped default; neither store sets `publish.path`). Session worktrees
+(`.worktrees/`, `.claude/worktrees/`) and pkm's legacy `artifacts/pages/` (outside the publish path)
+were not counted. "Lead link names it" means the README body's first wikilink names the represented
+note *and* that stem resolves to exactly one note file, which is what `represented-note` will check.
+
+| Store | Pages | One-note | Hub-note | Neither | Lead link already names it |
+|---|---|---|---|---|---|
+| pkm | 35 | 20 | 10 | 5 | 26 of the 30 one-note/hub-note pages |
+| readyrun-brain | 13 | 1 | 12 | 0 | 13 of 13 |
+| **Both** | **48** | **21** | **22** | **5 (10%)** | **39 of 43** |
+
+**`neither` pages (all pkm; every one is a dated, frozen one-off):**
+
+- `areas/brightstar-ai/2026-07-09-bcp-hackathon-judge-pack`: a judging scorecard for one event. Its
+  README links no note. It would have been disposable.
+- `projects/job-hunting-2026/google-director-of-engineering-quality-and-ai-research/2026-07-21-courtney-walkin`:
+  a walk-in sheet for one interview. It leads with the role note but does not render it. It would
+  have been disposable.
+- `…/2026-07-22-archana-walkin`: the same kind of page, for another interview. Disposable.
+- `…/2026-07-24-diego-walkin`: the same kind of page, for another interview. Disposable.
+- `…/2026-07-24-venu-walkin`: the same kind of page, for another interview. Disposable.
+
+**Lead links that do not yet name the represented note (4):**
+
+- `archives/projects/banff-vancouver-2026/2026-06-28-trip-board` (one-note): the link uses the note's
+  title, `Banff & Vancouver Family Trip — June 2026`, so the stem matches nothing. The file is
+  `Banff-Vancouver-2026.md`.
+- `resources/ai/foundational-models/evidence-board` (hub-note): the page covers the folder but leads
+  with one member note. The folder has no hub note, so it plainly needs one.
+- `resources/ai/agents/agent-quality-study` (hub-note): leads with `AI Agent Evaluation`. The cluster
+  hub `AI Agent.md` exists.
+- `resources/skills/system-design/system-design-playbook` (hub-note): leads with the delivery
+  framework. The README itself names `[[System Design]]` as the cluster hub.
+
+**Reading of the classes.** Hub-note pages are the project dashboards and explorations. Each leads
+with the project's `… Overview` or hub note: all nine readyrun-brain `exploration` pages, the A-Fund,
+exit, campaign, Kinaera and Kungfu boards, and the readyrun-brain `--under` landscape pages. One of
+these, `resources/startups/fysk-september-16-showcase`, compares the companies from one evening. It
+leads with the folder hub `Startup Landscape`, but it also reads as a one-off that could be
+disposable. Ten pkm pages already carry a dated final segment as "snapshots" (the five above plus
+the trip board, the Nestor sheet, Kinaera entity formation, and two dated `resources/ai/agents`
+pages). They show that authors already reach for a frozen kind of page, and they have no place to
+file one.
+
+**`disposable` collision (D2's flip): none.** Neither store has a `disposable` entry under its
+publish path. Neither store has a top-level notes folder that slugifies to `disposable`. pkm's
+top-level folders are `archives areas artifacts projects raw resources`, and readyrun-brain's are
+`archives areas projects raw resources`. No tracked path in either store contains the word.
+
+**Decision on D4 (task 1.3): confirmed.** Of 48 kept pages, 43 (90%) map to one note or a hub note.
+The 5 `neither` pages are a small share, and every one is a dated one-off. They migrate to
+`disposable/` (or are removed) and do not need a third lifespan. Set-shaped pages are common (22),
+but each one has a hub note to lead with. Only one folder, pkm's
+`resources/AI/Foundational Models/`, lacks a hub. That matches D4's "write the hub" answer. The
+migration backlog that lint will show is 43 unstamped pages. 4 of them also need their lead link
+corrected first. The spec delta and tasks are unchanged.
 
 ## Risks / Trade-offs
 

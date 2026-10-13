@@ -4,7 +4,7 @@ The least reversible call in this change is D4 — that a kept page represents o
 one measurement of lead links, not on a classification of what pages actually are. Nothing in
 phases 2–7 starts until this phase is done and D4 is confirmed or revised.
 
-- [ ] 1.1 Read-only, against local clones of both downstream client stores (pkm and readyrun-brain),
+- [x] 1.1 Read-only, against local clones of both downstream client stores (pkm and readyrun-brain),
       at their current default branch: list every page (`find <publish path> -name index.html`), and
       for each read its README and index page and classify it as **one-note** (it is the rendered
       form of a single note), **hub-note** (it covers a folder or set, and that folder has — or
@@ -13,15 +13,15 @@ phases 2–7 starts until this phase is done and D4 is confirmed or revised.
       record whether its README's first wikilink already names that note, and whether either store
       has a `disposable` directory under its publish path or a top-level notes folder slugifying to
       `disposable` (D2's flip). Write nothing in either store.
-- [ ] 1.2 Record the result in design.md under "Audit of existing pages": per store, the count in each
+- [x] 1.2 Record the result in design.md under "Audit of existing pages": per store, the count in each
       class, the count whose lead link already names the represented note, the `neither` pages listed
       by path with one line each, and the `disposable` collision finding.
-- [ ] 1.3 Decide on the result, and write the decision into D4 before any code: **confirm** D4 when
+- [x] 1.3 Decide on the result, and write the decision into D4 before any code: **confirm** D4 when
       `neither` pages are few and read as one-offs (they become disposable or gain a hub note in the
       migration); **revise** it — e.g. a third lifespan for set-shaped kept pages, or a represented-note
       check that accepts a folder — when `neither` pages are a meaningful share of kept pages. A
       revision updates proposal.md, the publish spec delta and phases 3–6 here before phase 2 starts.
-- [ ] 1.4 `openspec validate two-kinds-of-published-page --strict` — clean after the design.md update.
+- [x] 1.4 `openspec validate two-kinds-of-published-page --strict` — clean after the design.md update.
 
 ## 2. Lifespan and the lead link, as modules
 
