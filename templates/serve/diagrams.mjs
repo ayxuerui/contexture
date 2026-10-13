@@ -69,6 +69,24 @@ export function themeVariables(readProperty) {
   };
 }
 
+/**
+ * The configuration every draw initializes mermaid with. design.md D5:
+ * `securityLevel: 'strict'` alone still renders HTML in flowchart labels in
+ * mermaid 12.2.0, so an `<img>` in a label would load from any address. The
+ * top-level `htmlLabels: false` draws labels as SVG text instead, so markup
+ * in a diagram's source is shown as text or removed, never rendered.
+ */
+export function mermaidConfig(variables) {
+  return {
+    startOnLoad: false,
+    securityLevel: 'strict',
+    htmlLabels: false,
+    suppressErrorRendering: true,
+    theme: 'base',
+    themeVariables: variables,
+  };
+}
+
 const DARK_QUERY = '(prefers-color-scheme: dark)';
 
 /** Each block's source, kept from before the first draw so a redraw starts from the author's text. */
@@ -79,13 +97,7 @@ function initialize(mermaid, root) {
   const style = getComputedStyle(root);
   const readProperty = (name) => style.getPropertyValue(name).trim();
   const scheme = effectiveScheme(root.getAttribute('data-ctxr-theme'), matchMedia(DARK_QUERY).matches);
-  mermaid.initialize({
-    startOnLoad: false,
-    securityLevel: 'strict',
-    suppressErrorRendering: true,
-    theme: 'base',
-    themeVariables: { ...themeVariables(readProperty), darkMode: scheme === 'dark' },
-  });
+  mermaid.initialize(mermaidConfig({ ...themeVariables(readProperty), darkMode: scheme === 'dark' }));
 }
 
 /** Draws one block; a failure keeps its source visible and marks it, without stopping the others. */

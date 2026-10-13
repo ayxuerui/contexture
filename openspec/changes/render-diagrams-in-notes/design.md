@@ -230,7 +230,21 @@ Risks.
 `<pre class="ctxr-diagram"><code>` followed by the escaped source; any other fence falls through to the default rule
 unchanged. The source is HTML-escaped by the same `escapeHtml` the wikilink rule uses, and `html: false` stays. The
 page script reads the source back with `textContent`, so what reaches mermaid is exactly the author's text. The
-mermaid configuration uses `securityLevel: 'strict'`, which encodes markup in labels and disables click handlers.
+mermaid configuration uses `securityLevel: 'strict'`, which disables click handlers, and `htmlLabels: false` at the
+top level, which draws every label as SVG text.
+
+`strict` alone is not enough. Measured in Chromium against `@mermaid-js/tiny` 12.2.0 during implementation:
+- With `strict` and no other setting, a flowchart label's HTML is rendered: `<b>` draws bold, and an `<img>` is kept.
+  A label `A["<img src=https://example.invalid/pixel.png> hi"]` made the browser request that address.
+- The nested form, `flowchart: { htmlLabels: false }`, does not help: the `<b>` and `<img>` elements are still created.
+- The top-level `htmlLabels: false` blocks it: the same label made no request, and `<b>` and `<img>` show as literal
+  text.
+
+**The trade-off.** Labels lose HTML formatting, so `<b>` or `<br>` in a label is shown as text rather than applied.
+mermaid still removes some markup outright: `<script>…</script>` in a label disappears rather than showing as text.
+The guarantee is therefore that markup in a diagram's source is never rendered as markup and never loads or runs
+anything; it is shown as text or removed. Sequence-diagram messages were already shown as literal text without the
+setting.
 
 The render function also reports whether it emitted any diagram block, so the shell can decide whether to reference
 the scripts (D6). It reports this as a value the renderer returns, not by searching the produced HTML for the class
@@ -293,8 +307,9 @@ drift from `style.css`.
 - **The diagram in `serve` and the diagram on GitHub can differ in layout**, because GitHub runs its own mermaid
   version. → Accepted. The source is identical, and D2's promise is "drawn from the same text", not "pixel-identical".
 - **Diagram content is note content, run through a renderer in the reader's browser.** → The source is escaped in the
-  HTML, read back as text, and rendered at `securityLevel: 'strict'`, which encodes markup in labels and disables
-  click handlers. mermaid also sanitizes its output with DOMPurify. A note is the operator's own content, and the
+  HTML, read back as text, and rendered at `securityLevel: 'strict'` with `htmlLabels: false`, so markup in a label
+  is shown as text or removed, and click handlers are disabled (D5 records why `strict` alone is not enough). mermaid
+  also sanitizes its output with DOMPurify. A note is the operator's own content, and the
   threat model is the same as for any markdown the store holds.
 - **A diagram could carry an icon reference that fetches remotely.** → tiny registers no remote icon loader by default,
   and the page script registers none. The no-outside-request scenario is checked in a real browser in tasks.md.

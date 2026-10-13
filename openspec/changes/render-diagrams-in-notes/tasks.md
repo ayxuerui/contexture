@@ -28,7 +28,7 @@
 - [x] 3.1 Add a `{{SCRIPTS}}` slot at the end of `<body>` in `templates/serve/shell.html`. `renderShell` in `src/core/browse/templates.ts` fills it, through a replacer function like every other slot, with the two script references (the renderer route as a classic `defer` script, then `/assets/diagrams.mjs` as `type="module"`) when the body has a diagram, and with the empty string otherwise.
 - [x] 3.2 Write `templates/serve/diagrams.mjs` (design.md D6 and D7):
   - Export a pure `effectiveScheme(themeAttr, prefersDark)` returning `light` or `dark`, and a pure `themeVariables(readProperty)` mapping the `--ctxr-*` custom properties to mermaid `themeVariables`.
-  - On load: keep each `.ctxr-diagram` block's source from `textContent`, then initialize mermaid with `startOnLoad: false`, `securityLevel: 'strict'`, `theme: 'base'`, and the derived variables.
+  - On load: keep each `.ctxr-diagram` block's source from `textContent`, then initialize mermaid with `startOnLoad: false`, `securityLevel: 'strict'`, `htmlLabels: false` at the top level (design.md D5), `theme: 'base'`, and the derived variables.
   - Draw each block on its own. A block that throws keeps its source visible and gains a `data-ctxr-diagram-error` attribute with the message, and the remaining blocks are still drawn.
   - When the theme attribute is `system`, listen for changes to `prefers-color-scheme` and redraw every block from its kept source.
   - Register no icon loader and fetch nothing.
@@ -50,7 +50,7 @@
 ## 5. End to end
 
 - [x] 5.1 Run `npm run typecheck && npm test` and confirm both exit 0.
-- [ ] 5.2 Run `npm run build`, initialize a scratch store with `node dist/bin.js init --harness none`, and add a note with one valid flowchart, one sequence diagram, and one deliberately malformed `mermaid` block. Then start `node dist/bin.js serve --json`. In Chrome through the devtools tools, open the note and record the output of each check below:
+- [x] 5.2 Run `npm run build`, initialize a scratch store with `node dist/bin.js init --harness none`, and add a note with one valid flowchart, one sequence diagram, and one deliberately malformed `mermaid` block. Then start `node dist/bin.js serve --json`. In Chrome through the devtools tools, open the note and record the output of each check below:
   - with scripting enabled, `document.querySelectorAll('.ctxr-diagram svg').length` is `2` and one block carries `data-ctxr-diagram-error`;
   - the network request list contains no request to any origin but the served one;
   - after `?ctxr-theme=dark`, the computed fill of a node differs from the light-theme value and the label text is legible against the background;

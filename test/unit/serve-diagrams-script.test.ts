@@ -12,6 +12,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 interface DiagramScript {
   effectiveScheme(themeAttr: string | null, prefersDark: boolean): 'light' | 'dark';
   themeVariables(readProperty: (name: string) => string): Record<string, string>;
+  mermaidConfig(variables: Record<string, unknown>): Record<string, unknown>;
 }
 
 const SCRIPT_URL = new URL('../../templates/serve/diagrams.mjs', import.meta.url);
@@ -43,6 +44,22 @@ describe('diagrams.mjs effectiveScheme', () => {
     ['system', true, 'dark'],
   ] as const)('theme %s with prefersDark %s resolves to %s', (theme, prefersDark, expected) => {
     expect(script.effectiveScheme(theme, prefersDark)).toBe(expected);
+  });
+});
+
+describe('diagrams.mjs mermaidConfig', () => {
+  // design.md D5: strict alone still renders HTML labels in mermaid 12.2.0; htmlLabels must be off at the top level.
+  it('initializes mermaid strict, with HTML labels off at the top level, drawing on demand', () => {
+    const variables = { background: '#fff' };
+    const config = script.mermaidConfig(variables);
+    expect(config).toMatchObject({ securityLevel: 'strict', htmlLabels: false, startOnLoad: false, theme: 'base' });
+    expect(config.themeVariables).toBe(variables);
+  });
+
+  it('is what the page script actually initializes mermaid with', async () => {
+    const source = await readFile(fileURLToPath(SCRIPT_URL), 'utf8');
+    expect(source).toContain('mermaid.initialize(mermaidConfig(');
+    expect(source.match(/\.initialize\(/g)).toHaveLength(1);
   });
 });
 

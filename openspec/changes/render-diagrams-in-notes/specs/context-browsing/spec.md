@@ -21,8 +21,8 @@ script at all.
 
 #### Scenario: Source text cannot inject markup
 - **WHEN** a `mermaid` block's source contains `<script>` or any other HTML markup
-- **THEN** the server's response carries that text HTML-escaped, and with scripting enabled the drawn diagram shows
-  the markup as text rather than interpreting it
+- **THEN** the server's response carries that text HTML-escaped, and with scripting enabled the drawn diagram never
+  renders that markup as markup and never loads or runs anything from it; the markup is shown as text or removed
 
 #### Scenario: A block that cannot be drawn stays readable
 - **WHEN** a `mermaid` block contains source the renderer cannot parse, and the page is viewed with scripting enabled
