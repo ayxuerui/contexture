@@ -480,7 +480,7 @@ describe('owned-skills-expansion: each skill carries its load-bearing rule (task
 
   it('two-kinds-of-published-page: submit\'s Pages row carries the lifespan, copied from the report', () => {
     const s = skills['ctxr-submit']!;
-    const step = s.slice(s.indexOf('8. Before opening'), s.indexOf('9. Verify'));
+    const step = s.slice(s.indexOf('8. Before you open'), s.indexOf('9. Verify'));
     expect(step).toMatch(/its lifespan \(permanent or disposable\)/);
     expect(step).toMatch(/Copy every value from the report/);
   });

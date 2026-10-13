@@ -56,7 +56,7 @@ Every pull request takes one of three routes. Say which, and why, in its body:
    `git branch -m "<name>"` before pushing — never
    let a generated name reach the forge. A name given at `ctxr session start` does not settle this: it
    named a worktree when the work began, and what ships is decided here.
-8. Before opening the pull request, run `ctxr publish urls --since origin/__DEFAULT_BRANCH__ --json`.
+8. Before you open the pull request, run `ctxr publish urls --since origin/__DEFAULT_BRANCH__ --json`.
    When it lists a page, add a **Pages** section to the body. The section is a table with one row per page.
    Each row gives the page's status, its lifespan (permanent or disposable), its preview address, and its
    published address. Copy every value from the report, never rebuilt by hand. Why: the report reads the

@@ -443,8 +443,9 @@ describe('ctxr serve review view of a session worktree (real CLI)', () => {
         expect(html).toContain('<code>projects/done.md</code>');
         expect(html).toContain(`<code>${archived.to}</code>`);
         expect(html).toContain('<code>nowhere-yet</code>');
-        // Every edge the diagram draws is also in the tables.
-        expect(html).toContain('language-mermaid');
+        // Every edge the diagram draws is also in the tables. render-diagrams-in-notes: the
+        // block is marked for the renderer, and its source stays readable without script.
+        expect(html).toContain('<pre class="ctxr-diagram"><code>');
         for (const edge of delta.links.added) {
           expect(html).toMatch(new RegExp(`<td>(?:<a [^>]*>)?<code>${edge.src}</code>(?:</a>)?</td>\\n<td>(?:<a [^>]*>)?<code>${edge.dst}</code>`));
         }
@@ -458,11 +459,15 @@ describe('ctxr serve review view of a session worktree (real CLI)', () => {
         expect(html).not.toContain('phantom-claim');
         expect(html).not.toContain('uncommitted.md');
 
-        // The shell: navigation and theme, and no script.
+        // The shell: navigation and theme. The only scripts are the local diagram renderer and
+        // page script, which only enhance: every fact above is in the server-rendered HTML.
         expect(navHeadings(html)).toEqual(NAV_AREA_ORDER);
         expect(html).toContain('data-ctxr-theme="system"');
         expect(html).toContain('href="?ctxr-theme=dark"');
-        expect(html).not.toContain('<script');
+        for (const [, src] of html.matchAll(/<script[^>]*\ssrc="([^"]*)"/g)) {
+          expect(src).toMatch(/^\/assets\/(?:mermaid\/[^/]+\/mermaid\.tiny\.js|diagrams\.mjs)$/);
+        }
+        expect(html).not.toMatch(/<script(?![^>]*\ssrc=)/);
 
         // A recorded head that is current gives no notice.
         const current = await (await fetch(`${baseUrl}review/${name}/?head=${h1}`)).text();
