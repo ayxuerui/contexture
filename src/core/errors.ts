@@ -270,6 +270,17 @@ export class CaptureSourceTypeMismatchError extends ContextureError {
   }
 }
 
+export class SourceIdUnprefixedError extends ContextureError {
+  constructor(sourceId: string, sourceType: string) {
+    super(ExitCode.Usage, {
+      code: 'ingest.source_id_unprefixed',
+      severity: 'error',
+      message: `--source-id "${sourceId}" does not begin with its source type; pass "${sourceType}/<id>" (for example "${sourceType}/${sourceId.replace(/^.*\//, '')}"), then ingest again.`,
+      subject: sourceId,
+    });
+  }
+}
+
 export class NoteNotTrackedError extends ContextureError {
   constructor(notePath: string) {
     super(ExitCode.Usage, {
@@ -288,6 +299,17 @@ export class ArchiveDestinationExistsError extends ContextureError {
       severity: 'error',
       message: `Cannot archive: "${destinationPath}" already exists.`,
       subject: destinationPath,
+    });
+  }
+}
+
+export class AlreadyArchivedError extends ContextureError {
+  constructor(relativePath: string, archiveDestination: string) {
+    super(ExitCode.Usage, {
+      code: 'archive.already_archived',
+      severity: 'error',
+      message: `Cannot archive: "${relativePath}" is already beneath the archive destination "${archiveDestination}".`,
+      subject: relativePath,
     });
   }
 }

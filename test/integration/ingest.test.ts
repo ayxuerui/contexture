@@ -27,7 +27,7 @@ describe('contexture ingest / source (real CLI)', () => {
       await writeNote(tmp.root, 'projects/topic.md', '# Topic\n\nWhat the store knows.\n');
 
       const ingested = await runCli(
-        ['ingest', 'raw/inbox/a.md', '--into', 'projects/topic.md', '--source-type', 'web', '--source-id', 'src-1', '--json'],
+        ['ingest', 'raw/inbox/a.md', '--into', 'projects/topic.md', '--source-type', 'web', '--source-id', 'web/src-1', '--json'],
         { cwd: tmp.root, env },
       );
       expect(ingested.exitCode).toBe(0);
@@ -35,10 +35,10 @@ describe('contexture ingest / source (real CLI)', () => {
       expect(retained).toBe(`raw/${ledgerMonth()}/a.md`);
 
       // The capture survived and left the inbox; the note cites it.
-      expect(await readFile(path.join(tmp.root, retained), 'utf8')).toContain('source_id: src-1');
+      expect(await readFile(path.join(tmp.root, retained), 'utf8')).toContain('source_id: web/src-1');
       expect(await readFile(path.join(tmp.root, 'projects/topic.md'), 'utf8')).toContain(retained);
 
-      const secondCheck = await runCli(['source', 'check', retained, '--source-id', 'src-1', '--json'], {
+      const secondCheck = await runCli(['source', 'check', retained, '--source-id', 'web/src-1', '--json'], {
         cwd: tmp.root,
         env,
       });
@@ -46,7 +46,7 @@ describe('contexture ingest / source (real CLI)', () => {
       expect(JSON.parse(secondCheck.stdout).data.verdict).toBe('already_ingested');
 
       const reingest = await runCli(
-        ['ingest', retained, '--into', 'projects/topic.md', '--source-type', 'web', '--source-id', 'src-1', '--json'],
+        ['ingest', retained, '--into', 'projects/topic.md', '--source-type', 'web', '--source-id', 'web/src-1', '--json'],
         { cwd: tmp.root, env },
       );
       expect(reingest.exitCode).not.toBe(0);
@@ -64,13 +64,13 @@ describe('contexture ingest / source (real CLI)', () => {
       await writeNote(tmp.root, 'projects/topic.md', '# Topic\n');
       await writeNote(tmp.root, 'raw/inbox/a.md', '# Same content\n\nIdentical text.\n');
       const first = await runCli(
-        ['ingest', 'raw/inbox/a.md', '--into', 'projects/topic.md', '--source-type', 'web', '--source-id', 'src-a', '--json'],
+        ['ingest', 'raw/inbox/a.md', '--into', 'projects/topic.md', '--source-type', 'web', '--source-id', 'web/src-a', '--json'],
         { cwd: tmp.root, env },
       );
       const retainedA = JSON.parse(first.stdout).data.capture as string;
 
       await writeNote(tmp.root, 'raw/inbox/b.md', '# Same content\n\nIdentical text.\n');
-      const check = await runCli(['source', 'check', 'raw/inbox/b.md', '--source-id', 'src-b', '--json'], {
+      const check = await runCli(['source', 'check', 'raw/inbox/b.md', '--source-id', 'web/src-b', '--json'], {
         cwd: tmp.root,
         env,
       });
@@ -81,7 +81,7 @@ describe('contexture ingest / source (real CLI)', () => {
 
       // The verdict is advisory: a deliberate ingest of the same content under its own identity still works.
       const ingestB = await runCli(
-        ['ingest', 'raw/inbox/b.md', '--into', 'projects/topic.md', '--source-type', 'web', '--source-id', 'src-b', '--json'],
+        ['ingest', 'raw/inbox/b.md', '--into', 'projects/topic.md', '--source-type', 'web', '--source-id', 'web/src-b', '--json'],
         { cwd: tmp.root, env },
       );
       expect(ingestB.exitCode).toBe(0);
@@ -103,14 +103,14 @@ describe('contexture ingest / source (real CLI)', () => {
       await writeNote(tmp.root, 'projects/topic.md', '# Topic\n');
       await writeNote(tmp.root, 'raw/inbox/a.md', '# Original\n\nOriginal body.\n');
       await runCli(
-        ['ingest', 'raw/inbox/a.md', '--into', 'projects/topic.md', '--source-type', 'web', '--source-id', 'src-1', '--json'],
+        ['ingest', 'raw/inbox/a.md', '--into', 'projects/topic.md', '--source-type', 'web', '--source-id', 'web/src-1', '--json'],
         { cwd: tmp.root, env },
       );
 
       // The note is rewritten freely — that must not read as the source drifting.
       await writeNote(tmp.root, 'projects/topic.md', '# Topic\n\nHeavily rewritten synthesis.\n');
       await writeNote(tmp.root, 'raw/inbox/recaptured.md', '# Original\n\nThe source has since changed.\n');
-      const recheck = await runCli(['source', 'check', 'raw/inbox/recaptured.md', '--source-id', 'src-1', '--json'], {
+      const recheck = await runCli(['source', 'check', 'raw/inbox/recaptured.md', '--source-id', 'web/src-1', '--json'], {
         cwd: tmp.root,
         env,
       });
@@ -150,7 +150,7 @@ describe('contexture ingest / source (real CLI)', () => {
       await writeNote(tmp.root, 'projects/topic.md', '# Topic\n');
       await writeNote(tmp.root, 'raw/inbox/a.md', '# New\n\nContent.\n');
       const ingested = await runCli(
-        ['ingest', 'raw/inbox/a.md', '--into', 'projects/topic.md', '--source-type', 'web', '--source-id', 'src-1', '--json'],
+        ['ingest', 'raw/inbox/a.md', '--into', 'projects/topic.md', '--source-type', 'web', '--source-id', 'web/src-1', '--json'],
         { cwd: tmp.root, env },
       );
       const retained = JSON.parse(ingested.stdout).data.capture as string;
@@ -183,7 +183,7 @@ describe('contexture ingest / source (real CLI)', () => {
       await writeNote(tmp.root, 'projects/topic.md', '# Topic\n\nWhat the store knows.\n');
 
       const refused = await runCli(
-        ['ingest', 'raw/inbox/a.md', '--into', 'projects/topic.md', '--source-type', 'ctx-a', '--source-id', 'src-1', '--json'],
+        ['ingest', 'raw/inbox/a.md', '--into', 'projects/topic.md', '--source-type', 'ctx-a', '--source-id', 'ctx-a/src-1', '--json'],
         { cwd: tmp.root, env },
       );
       expect(refused.exitCode).toBe(3);

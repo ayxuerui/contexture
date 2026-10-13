@@ -56,7 +56,7 @@ CLAUDE.md                     harness entry file; a one-line managed import of A
 .claude/
   skills/ -> ../.agents/skills   a bridge, so Claude Code auto-discovers the canonical skills
 .agents/skills/               THE canonical skills location, read natively by most harnesses
-  ctxr-*/SKILL.md               16 contexture-owned skills (refreshed by `ctxr update`)
+  ctxr-*/SKILL.md               17 contexture-owned skills (refreshed by `ctxr update`)
   frontend-design/, eli5/       vendored third-party skills, with licenses and provenance
 .contexture/guidance/
   house-conventions.md        your store's own rules — inlined into AGENTS.md verbatim
@@ -125,6 +125,7 @@ Every harness loads this file on every turn, so it is kept short. contexture's o
 | `ctxr-session-capture` | What a finished session produced that is worth keeping |
 | `ctxr-upgrade` | Whether to upgrade the installed CLI now, and asking before it does |
 | `ctxr-second-opinion` | Whether a plan or a taste call needs three different model families, and how to weigh what they say |
+| `ctxr-research` | How to research a question against real sources — perspectives, source tiers, contradictions, review — with whatever web access the harness has |
 
 Your house rules go in `.contexture/guidance/`.
 
@@ -284,7 +285,7 @@ ctxr archive <path>
 
 A new note starts from a template under `templates.path` (`.contexture/templates/` by default), never from a blank file and never by copying whichever sibling is nearest — that's how a store's notes drift out of any shape at all. `templates.installed` says which of the packaged library a store wants, defaulting to all of it and meaning "install none" when empty, exactly like `skills.vendored`; your own kinds sit in the same directory and are never touched, since contexture only owns the names it packages. A shipped template is contexture's: edit one and `ctxr update` puts it back. A house variant lives under a name the packaged set doesn't use, which nothing touches. A template is fixed content — the same bytes in every store — so the idea template carries the four relation sections literally, each with a note on what belongs under it, plus a `## Source` section for the prose account of where an idea came from (distinct from the `sources:` frontmatter `ctxr ingest` writes). `{{title}}` and `{{date}}` are the whole placeholder vocabulary; the agent substitutes them as it writes, no command expands them, and `ctxr lint` reports a note that landed with one still in it. An existing note is extended in place, never re-cut from a template.
 
-The `lint` / `doctor` split is the point: lint reports what's *worth reviewing* and never blocks; doctor reports what's *broken* and does. `ctxr archive` retires a note as a single tracked rename into `organize.archive_destination`, leaving its frontmatter byte-identical and reporting every note that linked to it — move it, don't tag it, or the active layers stop meaning anything. (The note must be committed first; archive won't rename something git isn't tracking.)
+The `lint` / `doctor` split is the point: lint reports what's *worth reviewing* and never blocks; doctor reports what's *broken* and does. `ctxr archive` retires a note — or a folder of notes whole — as a single tracked rename to the same path beneath `organize.archive_destination` (`projects/Bet` → `archives/projects/Bet`), leaving every note byte-identical and reporting every note that linked to it — move it, don't tag it, or the active layers stop meaning anything. (The note must be committed first; archive won't rename something git isn't tracking.)
 
 → `ctxr-organize-audit`, `ctxr-derived-artifacts`.
 
@@ -379,7 +380,7 @@ To pin a value against a future default change, declare it. Nothing rewrites wha
 | `graph query …` | `neighbors`, `path`, `subgraph`, `hubs`, `clusters`, `bridges`, `orphans` |
 | `ingest <path> --into <note>` | Retain a capture with its source identity, and cite it from a note |
 | `source hash \| check \| stamp \| add-alt` | Dedupe and source identity, ahead of ingest |
-| `archive <path>` | Retire a note via one tracked rename |
+| `archive <path>` | Retire a note, or a folder of notes whole, to its same path beneath the archive destination via one tracked rename |
 | `entry append <path>` | Append a line into a `contexture:<region>` fenced region |
 | `rollup gather \| write \| stale` | Entity synthesis: enumerate, write, find what's out of date |
 | `publish gather \| new \| check` | Resolve a subject, scaffold a page, run the structural gates |
