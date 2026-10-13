@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process';
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, readdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import { describe, expect, it } from 'vitest';
@@ -351,4 +351,150 @@ describe('ctxr serve preview of a session worktree (real CLI)', () => {
       await tmp.cleanup();
     }
   }, 30_000);
+});
+
+/** Runs git and returns its stdout. */
+const gitOut = async (args: readonly string[], cwd: string, env: Record<string, string | undefined>): Promise<string> =>
+  (await promisify(execFile)('git', [...args], { cwd, env: env as NodeJS.ProcessEnv })).stdout;
+
+interface DiffJson {
+  base: string;
+  head: string;
+  counts: Record<string, number>;
+  notes: { added: string[]; removed: string[]; modified: string[]; moved: { from: string; to: string }[]; archived: { from: string; to: string }[] };
+  links: { added: { src: string; dst: string; type: string }[]; removed: { src: string; dst: string; type: string }[] };
+  dangling: { introduced: { from: string; target: string }[] };
+}
+
+const COUNT_LABELS: Readonly<Record<string, string>> = {
+  notes_added: 'Notes added',
+  notes_removed: 'Notes removed',
+  notes_modified: 'Notes modified',
+  notes_moved: 'Notes moved',
+  notes_archived: 'Notes archived',
+  links_added: 'Links added',
+  links_removed: 'Links removed',
+  dangling_introduced: 'Dangling links introduced',
+  dangling_resolved: 'Dangling links resolved',
+  inbound_changed: 'Notes whose inbound links changed',
+  rollups_touched: 'Rollups touched',
+  sources_cited: 'Notes citing new sources',
+};
+
+describe('ctxr serve review view of a session worktree (real CLI)', () => {
+  it('renders the same facts graph diff reports, derived from the delta alone, and touches nothing', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const env = hermeticGitEnv();
+      expect((await runCli(['init'], { cwd: tmp.root, env })).exitCode).toBe(0);
+      await writeNote(tmp.root, 'projects/keep.md', '# Keep\n');
+      await writeNote(tmp.root, 'projects/done.md', '# Done\n\nFinished work, kept for the record.\n');
+      await git(['add', '-A'], tmp.root, env);
+      await git(['commit', '-q', '--no-verify', '-m', 'notes'], tmp.root, env);
+
+      const start = async (): Promise<string> => {
+        const started = await runCli(['--json', 'session', 'start'], { cwd: tmp.root, env });
+        expect(started.exitCode).toBe(0);
+        return (JSON.parse(started.stdout) as { data: { worktree: string } }).data.worktree;
+      };
+      const worktree = await start();
+      const name = path.basename(worktree);
+      const quiet = await start();
+      const quietName = path.basename(quiet);
+
+      await writeNote(worktree, 'projects/worktree-only-note.md', '# Worktree Only\n\n[[keep]] and [[nowhere-yet]]\n');
+      expect((await runCli(['archive', 'projects/done.md'], { cwd: worktree, env })).exitCode).toBe(0);
+      await git(['add', '-A'], worktree, env);
+      await git(['commit', '-q', '--no-verify', '-m', 'Added projects/phantom-claim.md and rewrote everything'], worktree, env);
+      const h1 = (await gitOut(['rev-parse', 'HEAD'], worktree, env)).trim();
+
+      // Uncommitted work: in neither the command's report nor the view.
+      await writeNote(worktree, 'projects/uncommitted.md', '# Uncommitted\n');
+
+      const defaultBranch = (await gitOut(['symbolic-ref', '--short', 'HEAD'], tmp.root, env)).trim();
+      const report = await runCli(['--json', 'graph', 'diff', '--since', defaultBranch], { cwd: worktree, env });
+      expect(report.exitCode, report.stdout + report.stderr).toBe(0);
+      const delta = (JSON.parse(report.stdout) as { data: DiffJson }).data;
+      expect(delta.head).toBe(h1);
+      expect(delta.notes.added).toEqual(['projects/worktree-only-note.md']);
+      expect(delta.notes.archived).toHaveLength(1);
+      const archived = delta.notes.archived[0]!;
+      expect(archived.from).toBe('projects/done.md');
+      expect(archived.to).toMatch(/\/projects\/done\.md$/);
+
+      const statusBefore = await gitOut(['status', '--porcelain'], worktree, env);
+      const cacheListing = async (): Promise<string[]> => readdir(path.join(worktree, '.contexture/cache')).catch(() => []);
+      const cacheBefore = await cacheListing();
+      const { child, firstLine } = await runCliBackground(['serve', '--port', '0', '--json'], { cwd: tmp.root, env });
+      try {
+        const baseUrl = (JSON.parse(firstLine) as { data: { url: string } }).data.url;
+        const res = await fetch(`${baseUrl}review/${name}/`);
+        expect(res.status).toBe(200);
+        const html = await res.text();
+
+        // The same facts as the command, and both full ids.
+        expect(html).toContain(delta.base);
+        expect(html).toContain(delta.head);
+        for (const [key, count] of Object.entries(delta.counts)) {
+          expect(html, key).toContain(`<td>${COUNT_LABELS[key]}</td>\n<td>${count}</td>`);
+        }
+        expect(html).toContain('<code>projects/worktree-only-note.md</code>');
+        expect(html).toContain('<code>projects/done.md</code>');
+        expect(html).toContain(`<code>${archived.to}</code>`);
+        expect(html).toContain('<code>nowhere-yet</code>');
+        // Every edge the diagram draws is also in the tables.
+        expect(html).toContain('language-mermaid');
+        for (const edge of delta.links.added) {
+          expect(html).toMatch(new RegExp(`<td>(?:<a [^>]*>)?<code>${edge.src}</code>(?:</a>)?</td>\\n<td>(?:<a [^>]*>)?<code>${edge.dst}</code>`));
+        }
+
+        // A worktree-only note is text, not a link, and the note route still refuses it.
+        expect(html).not.toContain('href="/notes/projects/worktree-only-note.md"');
+        expect(html).toContain('<a href="/notes/projects/keep.md"><code>projects/keep.md</code></a>');
+        expect((await fetch(`${baseUrl}notes/projects/worktree-only-note.md`)).status).toBe(404);
+
+        // Nothing an agent wrote, and nothing uncommitted.
+        expect(html).not.toContain('phantom-claim');
+        expect(html).not.toContain('uncommitted.md');
+
+        // The shell: navigation and theme, and no script.
+        expect(navHeadings(html)).toEqual(NAV_AREA_ORDER);
+        expect(html).toContain('data-ctxr-theme="system"');
+        expect(html).toContain('href="?ctxr-theme=dark"');
+        expect(html).not.toContain('<script');
+
+        // A recorded head that is current gives no notice.
+        const current = await (await fetch(`${baseUrl}review/${name}/?head=${h1}`)).text();
+        expect(current).not.toContain('ctxr-review-moved');
+
+        // The branch moves on: the notice names both, and the view shows the new head.
+        await writeNote(worktree, 'projects/second.md', '# Second\n');
+        await git(['add', 'projects/second.md'], worktree, env);
+        await git(['commit', '-q', '--no-verify', '-m', 'second'], worktree, env);
+        const h2 = (await gitOut(['rev-parse', 'HEAD'], worktree, env)).trim();
+        const moved = await (await fetch(`${baseUrl}review/${name}/?head=${h1}`)).text();
+        expect(moved).toContain('ctxr-review-moved');
+        expect(moved).toContain(`<code>${h1}</code>`);
+        expect(moved).toContain(`<code>${h2}</code>`);
+        expect(moved).toContain('<code>projects/second.md</code>');
+
+        // A worktree with no knowledge changes says so; an unknown one is refused.
+        const quietRes = await fetch(`${baseUrl}review/${quietName}/`);
+        expect(quietRes.status).toBe(200);
+        expect(await quietRes.text()).toContain('No knowledge changes');
+        expect((await fetch(`${baseUrl}review/session-nope/`)).status).toBe(404);
+        expect((await fetch(`${baseUrl}review/${name}/..%2f..%2fcontexture.yaml`)).status).toBe(404);
+
+        // Serving the view changed nothing in the worktree, cache included.
+        const statusAfter = await gitOut(['status', '--porcelain'], worktree, env);
+        expect(statusAfter).toBe(statusBefore);
+        expect(statusAfter).toContain('projects/uncommitted.md');
+        expect(await cacheListing()).toEqual(cacheBefore);
+      } finally {
+        await stopCliBackground(child);
+      }
+    } finally {
+      await tmp.cleanup();
+    }
+  }, 60_000);
 });

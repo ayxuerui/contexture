@@ -109,7 +109,7 @@ describe('single-source-literals guard', () => {
    * places is the guessing this change exists to end, one level down.
    */
   it('the published-page route prefixes appear only in core/browse/page-url.ts', () => {
-    const prefixes = ['/publish/', '/preview/'];
+    const prefixes = ['/publish/', '/preview/', '/review/'];
     expect(prefixes.length).toBeGreaterThan(0); // anti-vacuity: there is something to check
     for (const prefix of prefixes) {
       const hits = filesContainingQuotedLiteral(prefix, ['core/browse/page-url.ts']);

@@ -627,3 +627,57 @@ export class SessionWorktreeRefusedError extends ContextureError {
     });
   }
 }
+
+/** review-the-knowledge-diff: the base of a graph diff is never assumed, so a range with no `--since` names nothing to compare. */
+export class GraphDiffSinceRequiredError extends ContextureError {
+  constructor() {
+    super(ExitCode.Usage, {
+      code: 'graph.diff_since_required',
+      severity: 'error',
+      message: '"ctxr graph diff" requires --since <ref>.',
+    });
+  }
+}
+
+/** review-the-knowledge-diff: `--since` or `--until` names something that is not a commit here. */
+export class GraphDiffRefNotFoundError extends ContextureError {
+  constructor(flag: '--since' | '--until', ref: string) {
+    super(ExitCode.Usage, {
+      code: 'graph.diff_ref_not_found',
+      severity: 'error',
+      message: `${flag} "${ref}" does not resolve to a commit.`,
+      subject: ref,
+      details: { flag, ref },
+    });
+  }
+}
+
+/** review-the-knowledge-diff: two refs whose histories never meet have no merge base to compare against. */
+export class GraphDiffNoMergeBaseError extends ContextureError {
+  constructor(since: string, head: string) {
+    super(ExitCode.Usage, {
+      code: 'graph.diff_no_merge_base',
+      severity: 'error',
+      message: `"${since}" and "${head}" share no merge base, so there is no base side to compare.`,
+      details: { since, head },
+    });
+  }
+}
+
+/**
+ * review-the-knowledge-diff (D9): `--format` names one of a fixed set of
+ * forms, and `markdown` is the whole output with no envelope, so it cannot
+ * be combined with `--json`.
+ */
+export class GraphDiffFormatError extends ContextureError {
+  constructor(given: string, accepted: readonly string[], withJson: boolean) {
+    super(ExitCode.Usage, {
+      code: 'graph.diff_format',
+      severity: 'error',
+      message: withJson
+        ? '"--format markdown" is the whole output and has no envelope, so it cannot be combined with --json.'
+        : `--format "${given}" is not one of: ${accepted.join(', ')}.`,
+      details: { given, accepted: [...accepted], json: withJson },
+    });
+  }
+}

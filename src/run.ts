@@ -9,6 +9,7 @@ import * as ingestCommand from './commands/ingest.js';
 import * as lintCommand from './commands/lint.js';
 import * as contextGatherCommand from './commands/context-gather.js';
 import * as graphBuildCommand from './commands/graph-build.js';
+import * as graphDiffCommand from './commands/graph-diff.js';
 import * as entryAppendCommand from './commands/entry-append.js';
 import * as graphQueryCommand from './commands/graph-query.js';
 import * as initCommand from './commands/init.js';
@@ -320,6 +321,24 @@ export async function run(argv: readonly string[], env: RunEnv): Promise<ExitCod
       result = await runCommand('graph.build', runEnv, jsonMode, async () => {
         const store = await openStore(runEnv, { root });
         return graphBuildCommand.execute(store, { emitRecords: cmdOpts.emitRecords });
+      });
+    });
+
+  graphCommand
+    .command('diff')
+    .description('how the knowledge changed between two commits: notes, links, dangling links, inbound links, rollups and newly cited sources — read from git, writing nothing')
+    .option('--since <ref>', 'compare from the merge base of this ref and the head (required)')
+    .option('--until <ref>', 'the head commit to compare (default: HEAD)')
+    .option('--format <form>', `the human output: ${graphDiffCommand.GRAPH_DIFF_FORMATS.join(' or ')} (markdown is the pull request's Knowledge changes block; not with --json)`)
+    .action(async (cmdOpts: { since?: string; until?: string; format?: string }, cmd: Command) => {
+      const { runEnv, jsonMode, root } = deriveRunEnv(env, cmd);
+      const flags = { since: cmdOpts.since, until: cmdOpts.until, format: cmdOpts.format };
+      // review-the-knowledge-diff (D9): `--format markdown` is the whole stdout — the
+      // block rides as the human summary, which the reporter writes verbatim and alone.
+      result = await runCommand('graph.diff', runEnv, jsonMode, async () => {
+        graphDiffCommand.checkFlags(flags, jsonMode);
+        const store = await openStore(runEnv, { root });
+        return graphDiffCommand.execute(store, flags, jsonMode);
       });
     });
 

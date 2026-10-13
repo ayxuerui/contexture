@@ -287,13 +287,26 @@ describe('owned-skills-expansion: each skill carries its load-bearing rule (task
 
   it('submit: puts the changed pages\' addresses in the pull request body, taken from the report and omitted when none changed (list-page-urls-in-submit-pr)', () => {
     const s = skills['ctxr-submit']!;
-    const step = s.slice(s.indexOf('8. Before opening'), s.indexOf('9. Verify'));
+    const step = s.slice(s.indexOf('8. Before you open'), s.indexOf('9. Verify'));
     expect(step).toContain('ctxr publish urls --since');
     expect(step.indexOf('ctxr publish urls')).toBeLessThan(step.indexOf('gh pr create'));
     expect(step).toContain('**Pages**');
     expect(step).toMatch(/never rebuilt by hand/);
     expect(step).toMatch(/server can see this\s+session's worktree/);
     expect(step).toMatch(/lists no page, add no section/);
+  });
+
+  it('submit: pastes the knowledge-changes block from ctxr graph diff verbatim, before opening the pull request, even when no note changed (review-the-knowledge-diff)', () => {
+    const s = skills['ctxr-submit']!;
+    const step = s.slice(s.indexOf('8. Before you open'), s.indexOf('9. Verify'));
+    expect(step).toContain('ctxr graph diff --since origin/trunk --format markdown');
+    expect(step.indexOf('ctxr graph diff')).toBeGreaterThan(step.indexOf('ctxr publish urls'));
+    expect(step.indexOf('ctxr graph diff')).toBeLessThan(step.indexOf('gh pr create'));
+    expect(step).toContain('**Knowledge changes**');
+    expect(step).toMatch(/Paste its output into the\s+body verbatim/);
+    expect(step).toMatch(/Do not add, remove, or change a word of it/);
+    expect(step).toMatch(/Always paste the block, also when it says that the range changes no note/);
+    expect(ctxrFlagsIn(step)).toEqual(expect.arrayContaining(['--since', '--format']));
   });
 
   it('land: reads pull-request state before any side effect, merges with gh, confirms after, syncs by fast-forward, and routes conflicts to the lifecycle skill (session-keeps-only-what-git-cannot-do)', () => {
