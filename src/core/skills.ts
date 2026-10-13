@@ -367,7 +367,7 @@ const RESEARCH: SkillSeed = {
   file: 'ctxr-research',
   name: 'Research',
   description:
-    'Research a question against real sources and land the findings in the store, with several perspectives, source tiers, a contradiction map, and a review before anyone acts on it, using whatever web access the harness provides.',
+    'Research a question against real sources and land the findings in the store, with a brief and a findings ledger, several perspectives, source tiers, a contradiction map, and every claim verified against a source you opened before anyone acts on it, using whatever web access the harness provides.',
   body: (config) =>
     skillTemplate('ctxr-research')
       .replaceAll('__SCRATCH_PATH__', config.harness.scratch_path ?? DEFAULT_SCRATCH_PATH)
