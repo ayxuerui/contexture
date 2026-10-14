@@ -175,7 +175,7 @@ describe('critique: model and effort defaults', () => {
   it('keeps gemini\'s effort in the model name, High by default', () => {
     run(critiqueArgs());
     const args = calls('agy')[0]!.args;
-    expect(args[args.indexOf('--model') + 1]).toBe('Gemini 3.1 Pro (High)');
+    expect(args[args.indexOf('--model') + 1]).toBe('Gemini 3.8 Flash (High)');
   });
 
   it('at the fast tier: haiku with no effort, codex at low, and a flash model', () => {
@@ -185,7 +185,7 @@ describe('critique: model and effort defaults', () => {
     expect(claude[claude.indexOf('--model') + 1]).toBe('haiku');
     expect(codexEffort(calls('codex')[0]!.args)).toBe('model_reasoning_effort=low');
     const agy = calls('agy')[0]!.args;
-    expect(agy[agy.indexOf('--model') + 1]).toBe('Gemini 3.8 Flash (High)');
+    expect(agy[agy.indexOf('--model') + 1]).toBe('Gemini 3.8 Flash (Medium)');
   });
 
   it('does not require --effort in claude\'s help, since it is only passed on request', () => {
@@ -420,6 +420,18 @@ describe('usage and preflight', () => {
     const r = run(['--preflight'], { claude: { kind: 'ok', text: 'PONG' }, codex: { kind: 'ok', text: 'PONG' }, agy: { kind: 'ok', text: 'PONG' } });
     expect(r.status).toBe(0);
     expect(r.stdout.match(/\[OK  \]/g)).toHaveLength(3);
+  });
+
+  it('preflight pings each CLI with the model of the tier the run will use, and names it', () => {
+    const up = { claude: { kind: 'ok', text: 'PONG' }, codex: { kind: 'ok', text: 'PONG' }, agy: { kind: 'ok', text: 'PONG' } } as const;
+    const modelOf = (args: readonly string[]) => args[args.indexOf('--model') + 1];
+    const strong = run(['--preflight'], up);
+    expect(strong.status).toBe(0);
+    const pings = () => calls('agy').filter((c) => c.args.includes('--model'));
+    expect(modelOf(pings().at(-1)!.args)).toBe('Gemini 3.8 Flash (High)');
+    expect(strong.stdout).toContain('PONG (Gemini 3.8 Flash (High))');
+    expect(run(['--preflight', '--tier', 'fast'], up).status).toBe(0);
+    expect(modelOf(pings().at(-1)!.args)).toBe('Gemini 3.8 Flash (Medium)');
   });
 
   it('preflight reports a CLI that is down, and one whose --help dropped a flag the runner passes', () => {

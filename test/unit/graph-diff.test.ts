@@ -309,7 +309,7 @@ describe('graph diff: refs and forms', () => {
         const { humanSummary } = await execute(fx.store, { since: 'base', until: undefined, format: 'markdown' });
         expect(humanSummary.startsWith('## Knowledge changes')).toBe(true);
         expect(humanSummary).toContain(`ctxr graph diff --since ${fx.base} --until ${head}`);
-        for (const target of ['gone-a', 'gone-b', 'gone-c']) expect(humanSummary).toContain(`\`${target}\``);
+        for (const target of ['gone-a', 'gone-b', 'gone-c']) expect(humanSummary).toContain(`- \`ctx-a/new.md\` → \`${target}\` (not found)`);
         expect(humanSummary).toContain('`ctx-a/one.md` → `archive/ctx-a/one.md`');
         expect(humanSummary).toContain('`ctx-a/two.md` → `archive/ctx-a/two.md`');
         expect(humanSummary).toContain('1 added');
@@ -457,6 +457,9 @@ describe('graph diff: the review document', () => {
       expect(text).toContain('```mermaid');
       expect(text).toMatch(/n\d -->/);
       expect(text).toMatch(/n\d -.->/);
+      // A terminal reads this text: groups are headings, never literal HTML tags.
+      expect(text).toContain('## Notes added (1)');
+      expect(text).not.toMatch(/<\/?(?:details|summary)>/);
     });
   });
 

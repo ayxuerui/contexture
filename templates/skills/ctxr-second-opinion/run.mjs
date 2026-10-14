@@ -9,7 +9,7 @@
 // file needs no exec bit.
 //
 // Usage:
-//   node run.mjs --preflight [--only claude,codex]
+//   node run.mjs --preflight [--only claude,codex] [--tier strong|fast]
 //   node run.mjs --mode critique --plan-file plan.md [--out DIR] [--tier strong|fast]
 //   node run.mjs --mode poll --prompt-file q.txt [--lens minimalist,marketer]
 //
@@ -43,7 +43,9 @@ const env = (name, fallback) => process.env[`CTXR_SECOND_OPINION_${name}`] || fa
  *    `reasoning effort: none` on a ChatGPT login (seen 2026-10-05), which is no review at all. `low` at the
  *    `fast` tier. A machine that pins its own effort in config.toml is overridden by this; set
  *    CTXR_SECOND_OPINION_CODEX_EFFORT to use another.
- *  - agy: the effort is part of the model name; `(High)` is Gemini's default thinking level.
+ *  - agy: the effort is part of the model name; `(High)` is Gemini's default thinking level. Gemini 3.1 Pro
+ *    left agy's model list by 2026-10-14, which offered only Gemini 3.8 Flash, so the strong tier runs Flash
+ *    at `High` and the fast tier at `Medium`. agy rejects an unknown name, and preflight now tests it.
  * For scale: on one short plan Claude took 35 s at `high` and 514 s at `max`, so a deeper pass is a choice
  * (CTXR_SECOND_OPINION_CLAUDE_EFFORT=max), not something to leave on by default.
  */
@@ -52,12 +54,12 @@ function tiers() {
     strong: {
       claude: { model: env('CLAUDE_MODEL', 'opus'), effort: env('CLAUDE_EFFORT', null) },
       codex: { effort: env('CODEX_EFFORT', 'medium') },
-      agy: { model: env('AGY_MODEL', 'Gemini 3.1 Pro (High)') },
+      agy: { model: env('AGY_MODEL', 'Gemini 3.8 Flash (High)') },
     },
     fast: {
       claude: { model: env('CLAUDE_MODEL', 'haiku'), effort: env('CLAUDE_EFFORT', null) },
       codex: { effort: env('CODEX_EFFORT', 'low') },
-      agy: { model: env('AGY_MODEL', 'Gemini 3.8 Flash (High)') },
+      agy: { model: env('AGY_MODEL', 'Gemini 3.8 Flash (Medium)') },
     },
   };
 }
@@ -378,13 +380,16 @@ async function preflight(clis, opts) {
       if (!help.ok) return { cli, ok: false, detail: help.cause };
       const helpText = help.stdout + help.stderr;
       const missing = spec.flags.filter((f) => !helpText.includes(f));
-      const inv = buildInvocation(cli, 'say PONG only', 'fast');
+      // The ping runs at the tier the run will use. A fixed tier left the other tier's model untested, so a
+      // model name agy no longer accepted passed preflight and failed the critique (2026-10-13).
+      const inv = buildInvocation(cli, 'say PONG only', opts.tier);
       const ping = await runCli(inv.cmd, inv.args, inv.stdin, Math.min(opts.timeout, 60));
       if (!ping.ok) return { cli, ok: false, detail: ping.cause };
       const { text } = normalize(cli, ping);
       if (!/pong/i.test(text)) return { cli, ok: false, detail: `unexpected reply: ${firstLines(text, 2)}` };
       if (missing.length) return { cli, ok: false, detail: `answers, but its --help no longer lists: ${missing.join(' ')}` };
-      return { cli, ok: true, detail: 'PONG' };
+      const model = tiers()[opts.tier][cli].model;
+      return { cli, ok: true, detail: model ? `PONG (${model})` : 'PONG' };
     }),
   );
   for (const r of results) {

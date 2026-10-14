@@ -19,6 +19,7 @@ import { computeGraphDelta, resolveRange } from '../core/graph/diff.js';
 import { storePrefix } from '../core/graph/tree.js';
 import { listSessionWorktreeDirs } from '../core/session.js';
 import type { Store } from '../core/store.js';
+import { packagedTemplate } from '../core/templates.js';
 
 export const requires: CommandRequires = { store: 'required' };
 
@@ -275,10 +276,10 @@ async function renderReview(
 
   const html: string[] = [];
   if (recordedHead !== null && recordedHead !== delta.head) {
-    html.push(
-      `<p class="ctxr-review-moved">The branch has moved past the recorded head <code>${escapeHtml(recordedHead)}</code>. ` +
-        `This view shows the current head <code>${escapeHtml(delta.head)}</code>.</p>`,
-    );
+    const notice = escapeHtml(packagedTemplate('graph/review', 'moved-head'))
+      .replace('__RECORDED__', () => `<code>${escapeHtml(recordedHead)}</code>`)
+      .replace('__CURRENT__', () => `<code>${escapeHtml(delta.head)}</code>`);
+    html.push(`<p class="ctxr-review-moved">${notice}</p>`);
   }
   // render-diagrams-in-notes: the delta's diagram draws like a note's, so the page carries the renderer when any part has one.
   let hasDiagram = false;
