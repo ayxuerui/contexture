@@ -9,6 +9,7 @@ import * as ingestCommand from './commands/ingest.js';
 import * as lintCommand from './commands/lint.js';
 import * as contextGatherCommand from './commands/context-gather.js';
 import * as graphBuildCommand from './commands/graph-build.js';
+import * as graphDiffCommand from './commands/graph-diff.js';
 import * as entryAppendCommand from './commands/entry-append.js';
 import * as graphQueryCommand from './commands/graph-query.js';
 import * as initCommand from './commands/init.js';
@@ -16,6 +17,7 @@ import * as publishGatherCommand from './commands/publish-gather.js';
 import * as publishCheckCommand from './commands/publish-check.js';
 import * as publishUrlsCommand from './commands/publish-urls.js';
 import * as publishNewCommand from './commands/publish-new.js';
+import * as publishStampCommand from './commands/publish-stamp.js';
 import * as sessionCaptureCommand from './commands/session-capture.js';
 import * as sessionListCommand from './commands/session-list.js';
 import * as serveCommand from './commands/serve.js';
@@ -323,6 +325,24 @@ export async function run(argv: readonly string[], env: RunEnv): Promise<ExitCod
       });
     });
 
+  graphCommand
+    .command('diff')
+    .description('how the knowledge changed between two commits: notes, links, dangling links, inbound links, rollups and newly cited sources — read from git, writing nothing')
+    .option('--since <ref>', 'compare from the merge base of this ref and the head (required)')
+    .option('--until <ref>', 'the head commit to compare (default: HEAD)')
+    .option('--format <form>', `the human output: ${graphDiffCommand.GRAPH_DIFF_FORMATS.join(' or ')} (markdown is the pull request's Knowledge changes block; not with --json)`)
+    .action(async (cmdOpts: { since?: string; until?: string; format?: string }, cmd: Command) => {
+      const { runEnv, jsonMode, root } = deriveRunEnv(env, cmd);
+      const flags = { since: cmdOpts.since, until: cmdOpts.until, format: cmdOpts.format };
+      // review-the-knowledge-diff (D9): `--format markdown` is the whole stdout — the
+      // block rides as the human summary, which the reporter writes verbatim and alone.
+      result = await runCommand('graph.diff', runEnv, jsonMode, async () => {
+        graphDiffCommand.checkFlags(flags, jsonMode);
+        const store = await openStore(runEnv, { root });
+        return graphDiffCommand.execute(store, flags, jsonMode);
+      });
+    });
+
   const graphQueryCommandGroup = graphCommand.command('query').description('query the built graph');
 
   graphQueryCommandGroup
@@ -568,18 +588,30 @@ export async function run(argv: readonly string[], env: RunEnv): Promise<ExitCod
 
   publishCommand
     .command('new <slug>')
-    .description('scaffold a page folder with a sibling README, and name the address it is served at — the slug may name a path of folders under the publish path — refusing a reserved or already-existing slug')
-    .action(async (slug: string, _cmdOpts: object, cmd: Command) => {
+    .description('scaffold a page folder with a sibling README, and name the address it is served at and its lifespan — the slug may name a path of folders under the publish path — refusing a reserved or already-existing slug; with --disposable, a throwaway page at disposable/<today>-<slug>')
+    .option('--disposable', 'scaffold a disposable page at disposable/<YYYY-MM-DD>-<slug>, dated today by the command (two-kinds-of-published-page)')
+    .action(async (slug: string, cmdOpts: { disposable?: boolean }, cmd: Command) => {
       const { runEnv, jsonMode, root } = deriveRunEnv(env, cmd);
       result = await runCommand('publish.new', runEnv, jsonMode, async () => {
         const store = await openStore(runEnv, { root });
-        return publishNewCommand.execute(store, { slug });
+        return publishNewCommand.execute(store, { slug, disposable: cmdOpts.disposable === true });
+      });
+    });
+
+  publishCommand
+    .command('stamp <path>')
+    .description("record the hash of the note a permanent page represents (its README's lead link) as a marker on that line — once; never overwrites a marker, and refuses a disposable page")
+    .action(async (pagePath: string, _cmdOpts: object, cmd: Command) => {
+      const { runEnv, jsonMode, root } = deriveRunEnv(env, cmd);
+      result = await runCommand('publish.stamp', runEnv, jsonMode, async () => {
+        const store = await openStore(runEnv, { root });
+        return publishStampCommand.execute(store, { path: pagePath });
       });
     });
 
   publishCommand
     .command('check <path>')
-    .description('the mechanized structural checks a published page must pass (no external references, viewport meta, print rule, provenance, sibling README, script syntax), and the address it is served at')
+    .description("the mechanized structural checks a published page must pass (no external references, viewport meta, print rule, provenance, sibling README, script syntax; a disposable page's shape; a permanent page's represented note and its hash), and the page's address and lifespan")
     .action(async (pagePath: string, _cmdOpts: object, cmd: Command) => {
       const { runEnv, jsonMode, root } = deriveRunEnv(env, cmd);
       result = await runCommand('publish.check', runEnv, jsonMode, async () => {

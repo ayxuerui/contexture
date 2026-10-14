@@ -1,17 +1,23 @@
 import { readFile } from 'node:fs/promises';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import path from 'node:path';
-import { buildLinkResolver } from '../core/browse/link-resolver.js';
+import { DIAGRAM_SCRIPT_ROUTE, RENDERER_ROUTE_PREFIX, diagramRenderer } from '../core/browse/diagram-assets.js';
+import { buildLinkResolver, type LinkResolver } from '../core/browse/link-resolver.js';
 import { renderIndexBody, renderNav } from '../core/browse/nav.js';
-import { PREVIEW_ROUTE_PREFIX, PUBLISH_ROUTE_PREFIX } from '../core/browse/page-url.js';
+import { PREVIEW_ROUTE_PREFIX, PUBLISH_ROUTE_PREFIX, REVIEW_HEAD_PARAM, REVIEW_ROUTE_PREFIX } from '../core/browse/page-url.js';
 import { resolveNavState, resolveTheme } from '../core/browse/preferences.js';
 import { titleFor } from '../core/catalog/model.js';
-import { escapeHtml, renderNoteBody } from '../core/browse/render.js';
+import { escapeHtml, renderNoteBody, type RenderedBody } from '../core/browse/render.js';
 import { buildRouteTable } from '../core/browse/routes.js';
-import { readStylesheet, renderShell } from '../core/browse/templates.js';
+import { readDiagramScript, readStylesheet, renderShell } from '../core/browse/templates.js';
 import type { CommandOutcome, CommandRequires } from '../core/command.js';
 import type { RunEnv } from '../core/env.js';
 import { ExitCode } from '../core/exit-codes.js';
+import { createExecFileGitRunner } from '../core/git/exec.js';
+import { renderDiffParts } from '../core/graph/diff-document.js';
+import { computeGraphDelta, resolveRange } from '../core/graph/diff.js';
+import { storePrefix } from '../core/graph/tree.js';
+import { listSessionWorktreeDirs } from '../core/session.js';
 import type { Store } from '../core/store.js';
 
 export const requires: CommandRequires = { store: 'required' };
@@ -120,6 +126,29 @@ async function handleRequest(store: Store, stderr: NodeJS.WritableStream, req: I
     return;
   }
 
+  /**
+   * render-diagrams-in-notes design.md D6: the two diagram assets are answered
+   * here too, so neither reads store content. The renderer's URL names the
+   * installed version, so it is cached immutably; the page script changes
+   * whenever `ctxr` does, so it keeps the stylesheet's uncached behaviour.
+   */
+  if (pathname.startsWith(RENDERER_ROUTE_PREFIX)) {
+    const renderer = diagramRenderer();
+    if (pathname !== renderer.route) {
+      send(res, method, 404, 'text/plain; charset=utf-8', 'not found\n');
+      return;
+    }
+    send(res, method, 200, 'text/javascript; charset=utf-8', await readFile(renderer.filePath), {
+      'Cache-Control': 'public, max-age=31536000, immutable',
+    });
+    return;
+  }
+
+  if (pathname === DIAGRAM_SCRIPT_ROUTE) {
+    send(res, method, 200, 'text/javascript; charset=utf-8', await readDiagramScript());
+    return;
+  }
+
   const { theme, setCookie: themeSetCookie } = resolveTheme(req.headers.cookie, url.searchParams);
   const { navState, setCookie: navSetCookie } = resolveNavState(req.headers.cookie, url.searchParams);
   const headers = shellHeaders([themeSetCookie, navSetCookie]);
@@ -129,13 +158,13 @@ async function handleRequest(store: Store, stderr: NodeJS.WritableStream, req: I
   const resolveLink = buildLinkResolver([...table.notes.values()]);
 
   if (pathname === '/') {
-    send(res, method, 200, 'text/html; charset=utf-8', await renderShell('contexture', renderIndexBody(table), renderNav(table), shellState), headers);
+    send(res, method, 200, 'text/html; charset=utf-8', await renderShell('contexture', { html: renderIndexBody(table), hasDiagram: false }, renderNav(table), shellState), headers);
     return;
   }
 
   if (pathname === '/graph') {
     const doc = await readDerivedDocument(table.graphDocumentPath);
-    const body = 'hint' in doc ? buildHint('ctxr graph build') : renderNoteBody(doc.text, resolveLink);
+    const body = 'hint' in doc ? { html: buildHint('ctxr graph build'), hasDiagram: false } : renderNoteBody(doc.text, resolveLink);
     send(res, method, 200, 'text/html; charset=utf-8', await renderShell('graph', body, renderNav(table), shellState), headers);
     return;
   }
@@ -159,7 +188,7 @@ async function handleRequest(store: Store, stderr: NodeJS.WritableStream, req: I
       return;
     }
     const doc = await readDerivedDocument(section.absolutePath);
-    const body = 'hint' in doc ? buildHint('ctxr catalog build') : renderNoteBody(doc.text, resolveLink);
+    const body = 'hint' in doc ? { html: buildHint('ctxr catalog build'), hasDiagram: false } : renderNoteBody(doc.text, resolveLink);
     send(res, method, 200, 'text/html; charset=utf-8', await renderShell(sectionId, body, renderNav(table), shellState), headers);
     return;
   }
@@ -196,7 +225,69 @@ async function handleRequest(store: Store, stderr: NodeJS.WritableStream, req: I
     return;
   }
 
+  if (pathname.startsWith(REVIEW_ROUTE_PREFIX)) {
+    const name = pathname.slice(REVIEW_ROUTE_PREFIX.length).replace(/\/$/, '');
+    const worktrees = await listSessionWorktreeDirs(store.root, store.config);
+    if (name.includes('/') || !worktrees.includes(name)) {
+      send(res, method, 404, 'text/plain; charset=utf-8', 'not found\n');
+      return;
+    }
+    const linkFor = (notePath: string): string | null => (table.notes.has(notePath) ? `/notes/${encodeURI(notePath)}` : null);
+    const body = await renderReview(store, name, url.searchParams.get(REVIEW_HEAD_PARAM), linkFor, resolveLink);
+    send(res, method, 200, 'text/html; charset=utf-8', await renderShell(`review — ${name}`, body, renderNav(table), shellState), headers);
+    return;
+  }
+
   send(res, method, 404, 'text/plain; charset=utf-8', 'not found\n');
+}
+
+/**
+ * context-browsing spec (review-the-knowledge-diff D5, D6): one session
+ * worktree's knowledge changes, derived from the delta `ctxr graph diff`
+ * computes for that worktree's `HEAD` against the default branch — `origin/`
+ * plus it when that ref exists, else the local branch, and never a fetch.
+ * Nothing an agent wrote about the change is read: no commit message, no pull
+ * request body, no file the change adds for the purpose.
+ *
+ * Both sides come from git's object store, so the worktree's uncommitted work
+ * is neither shown nor touched. A path links to the note route only when this
+ * server's note route answers for it, so a worktree-only note stays text and
+ * the view widens nothing the note route serves.
+ */
+async function renderReview(
+  store: Store,
+  worktree: string,
+  recordedHead: string | null,
+  linkFor: (notePath: string) => string | null,
+  resolveLink: LinkResolver,
+): Promise<RenderedBody> {
+  const git = createExecFileGitRunner();
+  const prefix = await storePrefix(git, store.root);
+  const worktreeStoreRoot = path.join(store.root, store.config.session.worktrees_path, worktree, prefix);
+  const defaultBranch = store.config.git.default_branch;
+  const remote = await git.run(['rev-parse', '--verify', '--quiet', `refs/remotes/origin/${defaultBranch}`], {
+    cwd: worktreeStoreRoot,
+    allowFailure: true,
+  });
+  const since = remote.exitCode === 0 ? `origin/${defaultBranch}` : defaultBranch;
+  const range = await resolveRange(git, worktreeStoreRoot, since, undefined);
+  const delta = await computeGraphDelta(git, worktreeStoreRoot, range, store.config);
+
+  const html: string[] = [];
+  if (recordedHead !== null && recordedHead !== delta.head) {
+    html.push(
+      `<p class="ctxr-review-moved">The branch has moved past the recorded head <code>${escapeHtml(recordedHead)}</code>. ` +
+        `This view shows the current head <code>${escapeHtml(delta.head)}</code>.</p>`,
+    );
+  }
+  // render-diagrams-in-notes: the delta's diagram draws like a note's, so the page carries the renderer when any part has one.
+  let hasDiagram = false;
+  for (const part of renderDiffParts(delta, { linkFor, diagram: true })) {
+    const rendered = renderNoteBody(part.text, resolveLink);
+    hasDiagram ||= rendered.hasDiagram;
+    html.push(part.kind === 'markdown' ? rendered.html : `<details><summary>${escapeHtml(part.summary)}</summary>\n${rendered.html}</details>\n`);
+  }
+  return { html: html.join('\n'), hasDiagram };
 }
 
 /**

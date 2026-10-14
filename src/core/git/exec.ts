@@ -1,4 +1,4 @@
-import { execFile } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
 
 const execFileAsync = promisify(execFile);
@@ -32,11 +32,19 @@ export interface GitRunner {
   run(args: readonly string[], opts: GitRunOptions): Promise<GitResult>;
 }
 
+/**
+ * review-the-knowledge-diff: `git ls-tree -r` over a whole store prints one
+ * line per tracked file, which passes execFile's 1 MiB default on a store of
+ * a few thousand notes. Raised for every call rather than per call, since no
+ * caller wants a truncated listing.
+ */
+const MAX_OUTPUT_BYTES = 256 * 1024 * 1024;
+
 export function createExecFileGitRunner(): GitRunner {
   return {
     async run(args, opts) {
       try {
-        const { stdout, stderr } = await execFileAsync('git', [...args], { cwd: opts.cwd });
+        const { stdout, stderr } = await execFileAsync('git', [...args], { cwd: opts.cwd, maxBuffer: MAX_OUTPUT_BYTES });
         return { stdout, stderr, exitCode: 0 };
       } catch (err) {
         const e = err as { stdout?: string; stderr?: string; code?: number };
@@ -47,4 +55,46 @@ export function createExecFileGitRunner(): GitRunner {
       }
     },
   };
+}
+
+/**
+ * review-the-knowledge-diff (D2): the contents of many blobs through ONE
+ * `git cat-file --batch` process, keyed by object id, decoded as UTF-8. A
+ * process per blob would put a fork behind every note on both sides of a
+ * graph diff, and `ctxr serve` runs that diff on a request path.
+ *
+ * Reads git's object store only: nothing is checked out, and nothing is
+ * written. An id the object store does not hold rejects, naming it.
+ */
+export async function readBlobs(cwd: string, objectIds: readonly string[]): Promise<Map<string, string>> {
+  const unique = [...new Set(objectIds)];
+  const blobs = new Map<string, string>();
+  if (unique.length === 0) return blobs;
+
+  const output = await new Promise<Buffer>((resolve, reject) => {
+    const child = spawn('git', ['cat-file', '--batch'], { cwd, stdio: ['pipe', 'pipe', 'pipe'] });
+    const chunks: Buffer[] = [];
+    const errors: Buffer[] = [];
+    child.stdout.on('data', (chunk: Buffer) => chunks.push(chunk));
+    child.stderr.on('data', (chunk: Buffer) => errors.push(chunk));
+    child.on('error', reject);
+    child.on('close', (code) => {
+      if (code === 0) resolve(Buffer.concat(chunks));
+      else reject(new Error(`git cat-file --batch exited ${code}: ${Buffer.concat(errors).toString('utf8').trim()}`));
+    });
+    child.stdin.end(`${unique.join('\n')}\n`);
+  });
+
+  // Each record is "<id> <type> <size>\n<content>\n", or "<id> missing\n".
+  let offset = 0;
+  while (offset < output.length) {
+    const headerEnd = output.indexOf(0x0a, offset);
+    const header = output.subarray(offset, headerEnd).toString('utf8').split(' ');
+    if (header[1] === 'missing') throw new Error(`git object ${header[0]} is missing`);
+    const size = Number.parseInt(header[2]!, 10);
+    const start = headerEnd + 1;
+    blobs.set(header[0]!, output.subarray(start, start + size).toString('utf8'));
+    offset = start + size + 1;
+  }
+  return blobs;
 }

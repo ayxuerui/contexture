@@ -9,6 +9,12 @@ description: Contexture's shipped conventions, rendered from this store's own co
 - Keep a note's `title:` equal to its filename stem, unique in the store: the catalog builds each entry's wikilink from `title:`, so a divergent title links to nothing.
 - A task is a checkbox with a dated parenthetical: `- [ ] Task (added YYYY-MM-DD, due YYYY-MM-DD)`, `- [~] Task (added YYYY-MM-DD)` while in progress, `- [x] Task (done YYYY-MM-DD)`. Omit a date that does not apply.
 
+## Explaining
+
+When you explain something to the operator, write about 80% of the way to ASD-STE100: one fact per sentence, at most 20 words to instruct and 25 to describe, active voice, one word for one thing, lists for three or more items, numbers over vague words. Keep the store's names as written. Give each reason its own `Why:` sentence. Copy quotes, output and report tables unchanged.
+
+Draw a diagram when structure, flow or sequence would take a paragraph: fenced `mermaid` in notes, pull requests and answers; inline SVG in pages.
+
 ## What stays out of the store
 
 - Credentials and full card or account numbers never enter it — the last four digits only.

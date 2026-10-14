@@ -56,21 +56,30 @@ Every pull request takes one of three routes. Say which, and why, in its body:
    `git branch -m "<name>"` before pushing — never
    let a generated name reach the forge. A name given at `ctxr session start` does not settle this: it
    named a worktree when the work began, and what ships is decided here.
-8. Before opening the pull request, run `ctxr publish urls --since origin/__DEFAULT_BRANCH__ --json`. When it
-   lists any page, the body gets a **Pages** section: a table with one row per page giving its status, its
-   preview address, and its published address — copied from the report, never rebuilt by hand. Mark a moved
-   page's old address as one that stops working, and a removed page's the same. Under the table state the
-   condition once: a preview resolves only while this pull request is open and the server can see this
-   session's worktree, and the published address resolves once the served checkout takes the landed commit.
-   When the report carries no preview, leave that column out; when it says no base URL is declared, say the
-   addresses are bare routes. When it lists no page, add no section.
-   Then run: `git push -u origin "<branch>"`, then `gh pr create --base __DEFAULT_BRANCH__ --title "<title>" --body
-   "<why / what changed / route / verification / follow-ups>"`. `gh` authenticates from its own credential
-   file: never export or interpolate a token, and never rewrite the origin's URL — it is a credential. The body answers those five questions; write the
-   why so a reviewer need not re-derive it. Do not stop to confirm first — the request to
-   submit is the consent for both, and `ctxr doctor` in step 5 is the gate on this path. If `gh` has no
-   reachable GitHub remote for this repository, `git push` still succeeds on its own — report the pushed
-   branch and give the operator the manual pull-request instructions instead of retrying `gh`.
+8. Before you open the pull request, run `ctxr publish urls --since origin/__DEFAULT_BRANCH__ --json`.
+   When it lists a page, add a **Pages** section to the body. The section is a table with one row per page.
+   Each row gives the page's status, its lifespan (permanent or disposable), its preview address, and its
+   published address. Copy every value from the report, never rebuilt by hand. Why: the report reads the
+   change set, and a guess from the path can be wrong. Mark the old address of a moved page as one that
+   stops working. Mark the address of a removed page the same way. Under the table, state the condition
+   one time: a preview resolves only while this pull request is open and the server can see this
+   session's worktree, and the published address resolves when the served checkout has the landed commit.
+   When the report has no preview, leave out that column. When it says that no base URL is declared, say
+   that the addresses are bare routes. When it lists no page, add no section.
+   Then run `ctxr graph diff --since origin/__DEFAULT_BRANCH__ --format markdown`. Paste its output into the
+   body verbatim, as the **Knowledge changes** section. Do not add, remove, or change a word of it. Why: you
+   wrote the change, and the reviewer checks your account against this record, which the command wrote.
+   Always paste the block, also when it says that the range changes no note. Why: a missing section looks the
+   same as a skipped step. The block is the record of the change. The review address in the block is a
+   convenience only. Why: it resolves only while this session's worktree exists and the server can reach it.
+   Then run `git push -u origin "<branch>"`. Then run `gh pr create --base __DEFAULT_BRANCH__ --title "<title>"
+   --body "<why / what changed / route / verification / follow-ups>"`. `gh` reads its own credential file, so
+   never export or interpolate a token, and never rewrite the origin's URL. Why: that URL can hold a
+   credential. The body answers those five questions and carries the sections above. Write the why so that a
+   reviewer does not have to find it again. Do not stop to confirm first. Why: the request to submit is the
+   consent for both, and `ctxr doctor` in step 5 is the gate on this path. If `gh` has no reachable GitHub
+   remote for this repository, `git push` still succeeds alone. Then report the pushed branch, and give the
+   operator the manual pull-request instructions. Do not retry `gh`.
 9. Verify before any retry: a transport error can arrive AFTER the push or the pull-request open already
    succeeded. Before retrying anything, `git ls-remote origin <branch>` and `gh pr list --head <branch>` —
    never replay a push or a pull-request open blindly.

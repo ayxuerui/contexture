@@ -2,9 +2,9 @@ import { existsSync } from 'node:fs';
 import { readFile, readdir } from 'node:fs/promises';
 import path from 'node:path';
 import { PUBLISH_INDEX_FILE } from '../browse/routes.js';
-import { extractLinkTargets } from '../graph/model.js';
-import { parseNoteText } from '../notes/parse.js';
 import { slugifyPath, slugifySegment } from '../slug.js';
+import { DISPOSABLE_SEGMENT } from './lifespan.js';
+import { readLeadLink } from './represents.js';
 
 /** What names the page's subject: the folder its notes live in, plus the note itself when a note names it. */
 export interface FilingSubject {
@@ -31,6 +31,13 @@ export interface Filing {
   /** The segment naming the subject note, present only when D3 inserts one. */
   subject_segment: string | null;
   moves: FilingMove[];
+  /**
+   * Why no path derives, when `prefix` is null: no folder path names the
+   * subject (`store-root`), or the derived path's first segment is the one
+   * reserved for disposable pages (`reserved-segment`,
+   * two-kinds-of-published-page D2). Null whenever a path derives.
+   */
+  no_path_reason: 'store-root' | 'reserved-segment' | null;
 }
 
 /**
@@ -75,10 +82,10 @@ async function readmeLeadsWithStem(absolutePageDirectory: string, stem: string):
   } catch {
     return false;
   }
-  // Parsed rather than grepped so frontmatter is excluded, matching how
-  // `publish check` reads the same file and how the graph resolves a wikilink.
-  // `extractLinkTargets` reports occurrences in body order, so [0] is the lead.
-  return extractLinkTargets(parseNoteText(raw, readmePath).body)[0] === stem;
+  // two-kinds-of-published-page D4: the one reading of a README's lead link,
+  // shared with `publish check`'s represented-note check so the two cannot
+  // diverge on whose page a page is.
+  return readLeadLink(raw, readmePath)?.target === stem;
 }
 
 /**
@@ -138,7 +145,25 @@ async function pagesForNote(publishRoot: string, group: string, subjectSlug: str
  * still yields a path one level deep and satisfies `checkPageLocation`'s floor
  * by construction.
  */
+type UnreservedFiling = Omit<Filing, 'no_path_reason'>;
+
+/**
+ * two-kinds-of-published-page D2: the first segment under the publish path
+ * named `disposable` is reserved for disposable pages, and a store folder named
+ * "Disposable" slugifies to exactly it. A path derived into it is reported as no
+ * path at all, with the reservation as the reason — the existing "no path
+ * derives" outcome with a second reason, so gather still gates nothing.
+ */
 export async function deriveFiling(storeRoot: string, publishPath: string, subject: FilingSubject): Promise<Filing> {
+  const filing = await deriveUnreservedFiling(storeRoot, publishPath, subject);
+  if (filing.prefix === null) return { ...filing, no_path_reason: 'store-root' };
+  if (filing.prefix.split('/')[0] === DISPOSABLE_SEGMENT) {
+    return { prefix: null, path: null, group: filing.group, subject_segment: null, moves: [], no_path_reason: 'reserved-segment' };
+  }
+  return { ...filing, no_path_reason: null };
+}
+
+async function deriveUnreservedFiling(storeRoot: string, publishPath: string, subject: FilingSubject): Promise<UnreservedFiling> {
   const publishPrefix = publishPath.split(path.sep).join('/').replace(/\/+$/, '');
   const publishRoot = path.join(storeRoot, ...publishPrefix.split('/'));
   const group = slugifyPath(subject.directory);

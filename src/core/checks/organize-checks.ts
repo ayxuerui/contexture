@@ -8,6 +8,9 @@ import { orphans } from '../graph/query.js';
 import { SOURCE_TYPE_FIELD } from '../ingest/identity.js';
 import { missingRequiredSection } from '../ingest/required-sections.js';
 import { parseNote } from '../notes/parse.js';
+import { PUBLISH_INDEX_FILE } from '../browse/routes.js';
+import { DISPOSABLE_REVIEW_DAYS, daysBetween, lifespanOf, parseDisposableDate } from '../publish/lifespan.js';
+import { assessRepresentation, readReadme } from '../publish/represents.js';
 import { findStaleRollups } from '../rollup.js';
 import { defineCheck } from './types.js';
 
@@ -307,6 +310,112 @@ export const missionPastDueCheck = defineCheck({
   },
 });
 
+/**
+ * two-kinds-of-published-page: every page folder (a directory holding an index
+ * page — the browsing surface's definition) under the configured publish path,
+ * store-relative. Read off the filesystem: the publish path is excluded from
+ * note enumeration, so `ctx.notes()` never sees a page.
+ */
+async function publishedPageFolders(storeRoot: string, publishPath: string): Promise<string[]> {
+  const prefix = publishPath.replace(/\\/g, '/').replace(/\/+$/, '');
+  const found: string[] = [];
+  async function walk(relative: string): Promise<void> {
+    let entries;
+    try {
+      entries = await readdir(path.join(storeRoot, ...relative.split('/')), { withFileTypes: true });
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === 'ENOENT') return;
+      throw err;
+    }
+    if (relative !== prefix && entries.some((entry) => entry.isFile() && entry.name === PUBLISH_INDEX_FILE)) found.push(relative);
+    for (const entry of entries) {
+      if (entry.isDirectory()) await walk(`${relative}/${entry.name}`);
+    }
+  }
+  await walk(prefix);
+  return found.sort();
+}
+
+/**
+ * context-organize (two-kinds-of-published-page D6): disposable pages past the
+ * fixed 30-day window, listed as removal candidates. Reported, never removed —
+ * a disposable page's link may still be in somebody's hands, so removal is the
+ * operator's call and lands as a reviewed change. Age is read from the dated
+ * name the tool stamped, not from history; an undated page is `publish
+ * check`'s to fail, not this check's to age.
+ */
+export const disposablePageDueCheck = defineCheck({
+  id: 'organize.disposable_page_due',
+  title: 'Disposable pages past their 30-day window',
+  severity: 'observation',
+  capability: 'context-organize',
+  scopes: ['store'],
+  async run(ctx) {
+    const publishPath = ctx.config.publish.path;
+    const today = new Date().toISOString().slice(0, 10);
+    const findings: Finding[] = [];
+    for (const folder of await publishedPageFolders(ctx.storeRoot, publishPath)) {
+      if (lifespanOf(`${folder}/${PUBLISH_INDEX_FILE}`, publishPath) !== 'disposable') continue;
+      const date = parseDisposableDate(path.posix.basename(folder));
+      if (date === null) continue;
+      const age = daysBetween(date, today);
+      if (age <= DISPOSABLE_REVIEW_DAYS) continue;
+      findings.push({
+        code: 'organize.disposable_page_due',
+        severity: 'info',
+        message: `"${folder}" is a disposable page ${age} days old — a removal candidate for the operator to approve or keep.`,
+        subject: folder,
+        details: { date, age_days: age },
+      });
+    }
+    return { status: findings.length > 0 ? 'fail' : 'pass', findings };
+  },
+});
+
+/**
+ * context-organize (two-kinds-of-published-page D6/D8): every permanent page
+ * `ctxr publish check` would fail on its represented-note or
+ * represented-note-hash check, store-wide — the migration backlog an operator
+ * can see at once, without a gate that fails every existing page. Reuses
+ * `assessRepresentation`, never a second reading of the README.
+ */
+export const pageRepresentationCheck = defineCheck({
+  id: 'organize.page_representation',
+  title: 'Permanent pages out of step with the note they represent',
+  severity: 'observation',
+  capability: 'context-organize',
+  scopes: ['store'],
+  async run(ctx) {
+    const publishPath = ctx.config.publish.path;
+    const notes = await ctx.notes();
+    const findings: Finding[] = [];
+    for (const folder of await publishedPageFolders(ctx.storeRoot, publishPath)) {
+      if (lifespanOf(`${folder}/${PUBLISH_INDEX_FILE}`, publishPath) !== 'permanent') continue;
+      const readmePath = `${folder}/README.md`;
+      const raw = await readReadme(path.join(ctx.storeRoot, ...readmePath.split('/')));
+      // No README is `publish check`'s sibling-readme failure; here it is a page naming no note.
+      const representation = raw === null ? { status: 'no-link' as const } : assessRepresentation(raw, readmePath, notes);
+      if (representation.status === 'current') continue;
+      const note = 'note' in representation ? representation.note : null;
+      const condition = representation.status === 'not-stamped' ? 'not-stamped' : representation.status === 'stale' ? 'stale' : 'no-note';
+      const message =
+        condition === 'stale'
+          ? `"${folder}" is stale: "${note}" has changed since the page was stamped.`
+          : condition === 'not-stamped'
+            ? `"${folder}" represents "${note}" but is not stamped.`
+            : `"${folder}" names no note it resolves to (${representation.status}).`;
+      findings.push({
+        code: 'organize.page_representation',
+        severity: 'info',
+        message,
+        subject: folder,
+        details: { condition, note, reason: representation.status },
+      });
+    }
+    return { status: findings.length > 0 ? 'fail' : 'pass', findings };
+  },
+});
+
 export const ORGANIZE_CHECKS = [
   orphanNotesCheck,
   brokenLinksCheck,
@@ -316,4 +425,6 @@ export const ORGANIZE_CHECKS = [
   rollupStaleCheck,
   missionPastDueCheck,
   agentsMdSectionOrderBlockedCheck,
+  disposablePageDueCheck,
+  pageRepresentationCheck,
 ];

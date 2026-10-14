@@ -28,7 +28,7 @@ const ALWAYS_SKIP_DIRS = new Set(['.git', '.githooks', '.queue']);
  * generates: the store root's own `AGENTS.md` (`agents-doc.ts` hardcodes
  * `path.join(root, 'AGENTS.md')`, never a nested path). A same-named file
  * anywhere else is ordinary content an operator happened to name AGENTS.md
- * — the walk below applies this root-only, the same way it treats a
+ * — the admission predicate below applies this root-only, the same way it treats a
  * harness's own entry filename (`skipRootFiles`, right below).
  */
 const ALWAYS_SKIP_FILES = new Set(['AGENTS.md']);
@@ -80,11 +80,41 @@ export function excludedPrefixesFor(config: StoreConfig): string[] {
   ];
 }
 
+/**
+ * review-the-knowledge-diff (D2): the note-admission rule as one pure
+ * predicate over a store-relative, "/"-separated path, so the git-tree
+ * enumeration (`graph/tree.ts`) admits exactly what the filesystem walk does.
+ * Built once per enumeration: the exclusion list and the harness entry files
+ * are resolved here, not per path.
+ */
+export function noteAdmission(config: StoreConfig): (relativePath: string) => boolean {
+  return pathAdmission(excludedPrefixesFor(config), harnessEntryFiles(config));
+}
+
+/** The single-path form of `noteAdmission`, for a caller holding one path. */
+export function admitsNotePath(relativePath: string, config: StoreConfig): boolean {
+  return noteAdmission(config)(relativePath);
+}
+
+function pathAdmission(
+  excludePrefixes: readonly string[],
+  skipRootFiles: ReadonlySet<string>,
+): (relativePath: string) => boolean {
+  return (relativePath) => {
+    const segments = relativePath.split('/');
+    const name = segments[segments.length - 1]!;
+    if (!name.endsWith('.md')) return false;
+    if (segments.slice(0, -1).some((segment) => ALWAYS_SKIP_DIRS.has(segment))) return false;
+    if (segments.length === 1 && (ALWAYS_SKIP_FILES.has(name) || skipRootFiles.has(name))) return false;
+    return !isUnderAnyPrefix(relativePath, excludePrefixes);
+  };
+}
+
 async function walk(
   dir: string,
   root: string,
   excludePrefixes: readonly string[],
-  skipRootFiles: ReadonlySet<string>,
+  admits: (relativePath: string) => boolean,
   results: string[],
 ): Promise<void> {
   let entries;
@@ -100,13 +130,11 @@ async function walk(
     const relativePath = path.relative(root, fullPath).split(path.sep).join('/');
 
     if (entry.isDirectory()) {
+      // Pruning only: `admits` would refuse every file beneath; this skips reading them.
       if (ALWAYS_SKIP_DIRS.has(entry.name)) continue;
       if (isUnderAnyPrefix(relativePath, excludePrefixes)) continue;
-      await walk(fullPath, root, excludePrefixes, skipRootFiles, results);
-    } else if (entry.isFile() && entry.name.endsWith('.md')) {
-      if (relativePath === entry.name && ALWAYS_SKIP_FILES.has(entry.name)) continue;
-      if (relativePath === entry.name && skipRootFiles.has(entry.name)) continue;
-      if (isUnderAnyPrefix(relativePath, excludePrefixes)) continue;
+      await walk(fullPath, root, excludePrefixes, admits, results);
+    } else if (entry.isFile() && admits(relativePath)) {
       results.push(relativePath);
     }
   }
@@ -127,7 +155,7 @@ async function walk(
 export async function listCaptures(storeRoot: string, config: StoreConfig): Promise<Note[]> {
   const captureRoot = path.join(storeRoot, config.ingest.capture_root);
   const relativePaths: string[] = [];
-  await walk(captureRoot, storeRoot, [], new Set(), relativePaths);
+  await walk(captureRoot, storeRoot, [], pathAdmission([], new Set()), relativePaths);
   relativePaths.sort();
   return Promise.all(relativePaths.map((relativePath) => parseNote(path.join(storeRoot, relativePath), relativePath)));
 }
@@ -135,7 +163,8 @@ export async function listCaptures(storeRoot: string, config: StoreConfig): Prom
 /** Every retrievable note in the store: everything under a .md path, minus every declared exclusion. */
 export async function listNotes(storeRoot: string, config: StoreConfig, query: NoteQuery = {}): Promise<Note[]> {
   const relativePaths: string[] = [];
-  await walk(storeRoot, storeRoot, excludedPrefixesFor(config), harnessEntryFiles(config), relativePaths);
+  const excludePrefixes = excludedPrefixesFor(config);
+  await walk(storeRoot, storeRoot, excludePrefixes, pathAdmission(excludePrefixes, harnessEntryFiles(config)), relativePaths);
   relativePaths.sort();
 
   const scoped = query.underPrefix ? relativePaths.filter((p) => isUnderAnyPrefix(p, [query.underPrefix!])) : relativePaths;

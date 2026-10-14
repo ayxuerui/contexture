@@ -34,6 +34,25 @@ item was one of the mission's priorities, hand it to `ctxr-mission`, which propo
 have moved since their last synthesis, or which have never been rolled up — hand each one to
 `ctxr-rollup` rather than re-synthesizing ad hoc.
 
+## Disposable pages and drifted pages
+
+`ctxr lint` lists disposable pages that are older than 30 days. Each one is a removal candidate, not a
+removal. Do these steps:
+
+1. Show the list to the operator as a proposal, with each page's age. Ask which pages to remove.
+2. Remove only the pages that the operator approves. Why: somebody can still have the link to a
+   disposable page, and a removal breaks that link.
+3. Do the removal in a session, on its session branch, with `git rm -r <page folder>`.
+4. Land the removal through `ctxr-submit`. Its **Pages** table marks the address of each removed page
+   as one that stops working.
+
+Never remove a disposable page that the operator did not approve, and never remove one only because it
+is old.
+
+`ctxr lint` also lists permanent pages that are out of step with the note they represent: stale, not
+stamped, or with no note that resolves. Give each one to `ctxr-publish`. Do not stamp the page
+yourself. Why: a stamp without a review of the page against its note confirms nothing.
+
 ## Broken links have classes — classify before fixing
 
 - URL wrapped in wikilink syntax → convert to a markdown link.
