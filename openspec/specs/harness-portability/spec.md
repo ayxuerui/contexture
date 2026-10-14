@@ -337,7 +337,7 @@ The configured skills path SHALL be usable as a harness's native skill directory
 - **THEN** every skill is discoverable there as a complete skill file — the file the harness loads is the file `AGENTS.md` indexes
 
 ### Requirement: Submit and land are owned skills over git and gh
-contexture SHALL ship `ctxr-submit` and `ctxr-land` as contexture-owned skills delivered by init and update. The submit skill SHALL state the entry condition that admits it — an explicit operator request to wrap up, or the operator's own closing signal — alongside the anti-triggers that do not admit it, naming an agent's own judgment that its assigned task is finished as the chief one; that stated condition is what makes the absent confirmation below sound rather than assumed. The submit skill SHALL run the re-scan, run the capture skill exactly once, stage named paths, run `ctxr doctor` for store-scope validation, and end in `git push` followed by `gh pr create` — whose body carries a Pages section, listing the preview and published address of every page the change set adds, modifies, moves or removes as reported by `ctxr publish urls`, with the condition under which a preview resolves, whenever that report is non-empty and omitting the section otherwise — — without an intervening confirmation step, because the request to submit is itself the consent for both — and SHALL close by reporting the pull request and naming the target a subsequent land will need. The land skill SHALL name its target explicitly (never inferring it from the currently checked-out branch), read the pull request's state and mergeability with `gh pr view` before any side effect, gate the merge behind an explicit confirmation, merge with `gh pr merge`, confirm the forge reports merged before synchronizing, and route conflicting or unknown mergeability to the lifecycle skill's conflict playbook. The lifecycle skill SHALL cover start, the session's resting state between turns, re-scan, conflicts, sequencing, and reclaiming worktrees; SHALL state that ending a turn with uncommitted work on the session branch is that resting state rather than an obligation to discharge, and that completing a deliverable is not what ends a session; and SHALL reference both skills without repeating their steps.
+contexture SHALL ship `ctxr-submit` and `ctxr-land` as contexture-owned skills delivered by init and update. The submit skill SHALL state the entry condition that admits it — an explicit operator request to wrap up, or the operator's own closing signal — alongside the anti-triggers that do not admit it, naming an agent's own judgment that its assigned task is finished as the chief one; that stated condition is what makes the absent confirmation below sound rather than assumed. The submit skill SHALL run the re-scan, run the capture skill exactly once, stage named paths, run `ctxr doctor` for store-scope validation, and end in `git push` followed by `gh pr create` — whose body carries a Pages section, listing the preview and published address of every page the change set adds, modifies, moves or removes as reported by `ctxr publish urls`, with the condition under which a preview resolves, whenever that report is non-empty and omitting the section otherwise, and a Knowledge changes section that is the output of `ctxr graph diff --format markdown` pasted verbatim — the agent writes none of that section's text, adds nothing to it and removes nothing from it, so the body carries a record of the change's effect on the store that names its commits and the command reproducing it — without an intervening confirmation step, because the request to submit is itself the consent for both — and SHALL close by reporting the pull request and naming the target a subsequent land will need. The land skill SHALL name its target explicitly (never inferring it from the currently checked-out branch), read the pull request's state and mergeability with `gh pr view` before any side effect, gate the merge behind an explicit confirmation, merge with `gh pr merge`, confirm the forge reports merged before synchronizing, and route conflicting or unknown mergeability to the lifecycle skill's conflict playbook. The lifecycle skill SHALL cover start, the session's resting state between turns, re-scan, conflicts, sequencing, and reclaiming worktrees; SHALL state that ending a turn with uncommitted work on the session branch is that resting state rather than an obligation to discharge, and that completing a deliverable is not what ends a session; and SHALL reference both skills without repeating their steps.
 
 #### Scenario: The lifecycle frame names the resting state
 - **WHEN** the session-lifecycle skill is rendered for a store
@@ -374,6 +374,14 @@ contexture SHALL ship `ctxr-submit` and `ctxr-land` as contexture-owned skills d
 #### Scenario: Submit omits the Pages section when no page changed
 - **WHEN** `ctxr publish urls` reports no pages for the change set
 - **THEN** the pull request body carries no Pages section
+
+#### Scenario: Submit pastes the knowledge-changes block verbatim
+- **WHEN** an agent follows the rendered submit skill
+- **THEN** it runs `ctxr graph diff --since` with `--format markdown` before `gh pr create`, and the pull request body carries that command's output unchanged, naming the base and head commit ids and the reproducing command
+
+#### Scenario: Submit carries the block even when no note changed
+- **WHEN** `ctxr graph diff` reports no note, link, rollup or source change for the change set
+- **THEN** the pull request body still carries the block, which states that the range changes no note, rather than omitting the section or filling it with the agent's own description
 
 ### Requirement: The session-capture skill applies through the command
 The owned session-capture skill SHALL instruct the agent to write the approved items to a proposal file and run `ctxr session capture --proposal <file>`, and to take its report from the command's output.
@@ -1071,3 +1079,89 @@ The entry document's "Mission" section SHALL render, before the inlined body, a 
 #### Scenario: A store sets its own mission budget
 - **WHEN** a store sets `organize.mission_max_bytes` to 4,096 and its mission body is 3,000 bytes
 - **THEN** the mission budget check passes
+
+### Requirement: The baseline conventions say how to explain something to the operator
+The shipped baseline conventions, inlined into every store's entry document, SHALL carry an "Explaining"
+section that applies whenever an agent explains something to the operator. The section SHALL name ASD-STE100
+and state, as the adopted rules: one fact per sentence; at most 20 words in a sentence that instructs and at
+most 25 in one that describes; active voice; one word for one thing; lists for three or more items; numbers
+in place of vague words. It SHALL state the departures from the standard: the store's own names are kept as
+written; each reason gets its own sentence starting `Why:`; quotes, command output and report tables are
+copied unchanged. It SHALL state when to draw a diagram instead of prose, and its form: a fenced `mermaid`
+block in notes, pull requests and answers, and inline SVG in published pages. A store's house conventions
+MAY state a different rule, and the more specific rule applies.
+
+#### Scenario: A fresh store's entry document carries the section
+- **WHEN** a store is freshly initialized
+- **THEN** its entry document's conventions carry the "Explaining" section, naming ASD-STE100, the 20-word
+  and 25-word limits, active voice, one word for one thing, and lists for three or more items
+
+#### Scenario: The departures are stated
+- **WHEN** the rendered baseline conventions are read
+- **THEN** the "Explaining" section states that the store's names are kept as written, that each reason gets
+  a `Why:` sentence, and that quotes, command output and report tables are copied unchanged
+
+#### Scenario: The section says when and how to draw a diagram
+- **WHEN** the rendered baseline conventions are read
+- **THEN** the "Explaining" section names structure, flow and sequence as reasons to draw a diagram, a
+  fenced `mermaid` block for notes, pull requests and answers, and inline SVG for pages
+
+#### Scenario: Update delivers the section to an existing store
+- **WHEN** a store initialized before this change runs `ctxr update`
+- **THEN** its entry document carries the "Explaining" section, with no configuration change required
+
+#### Scenario: The section fits under the raised ceiling
+- **WHEN** the entry-document ceiling test runs against a freshly initialized store
+- **THEN** contexture's share of the entry document, including the section, is at or under 8,900 bytes
+
+### Requirement: The publish skill settles a page's lifespan before anything else
+The rendered `ctxr-publish` skill SHALL instruct, as its first step and ahead of resolving any note
+set, deciding whether the page is permanent — the rendered form of one note that will keep changing —
+or disposable, built to understand something once. For a disposable page it SHALL instruct
+scaffolding with `ctxr publish new --disposable`, never revising the page once it has landed, and
+leaving its removal to the operator when lint lists it. For a permanent page it SHALL instruct leading
+the README's source notes with the one note the page represents — for a page drawn from a store
+folder, that folder's hub note — stamping it with `ctxr publish stamp`, and, when a page is reported
+stale, reviewing the page against the note before removing the marker and stamping again. It SHALL
+state that a page meant to be kept which can name no note it represents is disposable. The enforcing
+mechanism is the test over the rendered skill set.
+
+#### Scenario: Lifespan is the first decision
+- **WHEN** the publish skill is rendered for a store
+- **THEN** its first step decides between a permanent and a disposable page, and appears before the
+  step that resolves the subject's note set
+
+#### Scenario: A disposable page is scaffolded by option and never revised
+- **WHEN** an agent follows the publish skill for a disposable page
+- **THEN** it is instructed to scaffold with `ctxr publish new --disposable`, not to edit the page after
+  it lands, and not to remove it unasked
+
+#### Scenario: A permanent page is led by its note and stamped
+- **WHEN** an agent follows the publish skill for a permanent page
+- **THEN** it is instructed to lead the README with the represented note, run `ctxr publish stamp`, and
+  confirm a stale page by review before removing its marker and stamping again
+
+### Requirement: The organize-audit skill hands disposable-page removal to the operator
+The rendered `ctxr-organize-audit` skill SHALL instruct taking lint's list of disposable pages past
+their window to the operator as a proposal, removing only the pages the operator approves, through a
+session and a reviewed pull request like any other change, and naming each removed page's address as
+one that stops working. It SHALL hand permanent pages lint reports as out of step with their note to
+the publish skill. The enforcing mechanism is the test over the rendered skill set.
+
+#### Scenario: Removal is proposed, never assumed
+- **WHEN** an agent follows the organize-audit skill and lint lists disposable pages past their window
+- **THEN** it is instructed to propose their removal to the operator and remove only what is approved
+
+#### Scenario: A drifted page goes to the publish skill
+- **WHEN** an agent follows the organize-audit skill and lint lists a permanent page as stale
+- **THEN** it is instructed to hand that page to the publish skill rather than restamp it
+
+### Requirement: Submit's Pages table names each page's lifespan
+When the rendered `ctxr-submit` skill instructs a Pages section in the pull request body, it SHALL
+instruct that each page's row carry the lifespan `ctxr publish urls` reports for it, copied from the
+report rather than inferred from the path. The enforcing mechanism is the test over the rendered skill
+set.
+
+#### Scenario: The Pages table carries the lifespan
+- **WHEN** an agent follows the rendered submit skill and `ctxr publish urls` lists a disposable page
+- **THEN** the Pages table row for that page names it as disposable, taken from the report
