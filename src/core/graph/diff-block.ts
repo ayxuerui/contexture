@@ -18,7 +18,17 @@ function template(name: string): string {
   return packagedTemplate('graph/knowledge-changes', name);
 }
 
-const REASON_TEXT: Readonly<Record<string, string>> = { not_found: 'not found', ambiguous: 'ambiguous' };
+/** The reasons a dangling link carries a template for; any other reason is written as the delta names it. */
+const REASON_TEMPLATES: ReadonlySet<string> = new Set(['not_found', 'ambiguous']);
+
+function reasonText(reason: string): string {
+  return REASON_TEMPLATES.has(reason) ? template(`reason-${reason}`) : reason;
+}
+
+/** Fills `__TOKEN__` slots; a function replacement, so a `$` in a path is never read as a pattern. */
+function fill(text: string, values: Readonly<Record<string, string>>): string {
+  return Object.entries(values).reduce((out, [token, value]) => out.replaceAll(`__${token}__`, () => value), text);
+}
 
 function code(text: string): string {
   const longest = Math.max(0, ...[...text.matchAll(/`+/g)].map((match) => match[0].length));
@@ -36,11 +46,13 @@ function bodyLines(delta: GraphDelta): string[] {
   const lines = counts.split('\n');
   if (delta.dangling.introduced.length > 0) {
     lines.push('', ...template('dangling').split('\n'), '');
-    for (const d of delta.dangling.introduced) lines.push(`- ${code(d.from)} → ${code(d.target)} (${REASON_TEXT[d.reason] ?? d.reason})`);
+    for (const d of delta.dangling.introduced) {
+      lines.push(fill(template('dangling-item'), { FROM: code(d.from), TARGET: code(d.target), REASON: reasonText(d.reason) }));
+    }
   }
   if (delta.notes.archived.length > 0) {
     lines.push('', ...template('archived').split('\n'), '');
-    for (const r of delta.notes.archived) lines.push(`- ${code(r.from)} → ${code(r.to)}`);
+    for (const r of delta.notes.archived) lines.push(fill(template('archived-item'), { FROM: code(r.from), TO: code(r.to) }));
   }
   return lines;
 }

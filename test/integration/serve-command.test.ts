@@ -480,8 +480,9 @@ describe('ctxr serve review view of a session worktree (real CLI)', () => {
         const h2 = (await gitOut(['rev-parse', 'HEAD'], worktree, env)).trim();
         const moved = await (await fetch(`${baseUrl}review/${name}/?head=${h1}`)).text();
         expect(moved).toContain('ctxr-review-moved');
-        expect(moved).toContain(`<code>${h1}</code>`);
-        expect(moved).toContain(`<code>${h2}</code>`);
+        expect(moved).toContain(
+          `<p class="ctxr-review-moved">The branch has moved past the recorded head <code>${h1}</code>. This view shows the current head <code>${h2}</code>.</p>`,
+        );
         expect(moved).toContain('<code>projects/second.md</code>');
 
         // A worktree with no knowledge changes says so; an unknown one is refused.

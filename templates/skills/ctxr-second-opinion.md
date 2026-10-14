@@ -34,8 +34,10 @@ node __SKILLS_PATH__/ctxr-second-opinion/run.mjs --preflight
 ```
 
 Each of the three should report `OK` within about twenty seconds. The preflight also confirms that each
-tool still accepts the options the runner passes, because a renamed option makes a reviewer silently run at
-default settings and nothing else notices.
+tool still accepts the options the runner passes. Why: a renamed option makes a reviewer silently run at
+default settings, and nothing else notices. Pass the same `--tier` you will run with. The preflight pings each
+tool with that tier's model and names the model it tested. Why: a model the tool no longer offers fails only at
+the tier that uses it.
 
 If one is down, stop and give the operator the two real choices: sign that tool in and re-run, or continue
 with the others by adding `--only` and naming them. Do not quietly run with one model. A single model is not a
