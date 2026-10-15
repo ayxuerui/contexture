@@ -88,18 +88,21 @@ never prints which model wrote which letter. A **blind** critique returned a wel
 nothing in the plan, so it was written without reading it; it does not count. **Partial** means fewer than
 two valid critiques: say so at the top of your answer and do not call anything a consensus.
 
-Add `--tier fast` to drop each family to a cheaper model, for a plan that is small and easy to redo. The
-default tier is right for anything the operator will act on.
+The default tier, `strong`, runs each family's frontier model. Add `--tier fast` to run each family's
+workhorse model instead, for a plan that is small and easy to redo. Why: the frontier models are slower and
+cost more, and a cheap plan does not need them. The default tier is right for anything the operator will act
+on.
 
 Each reviewer runs at its provider's own recommended default effort, not one this skill chose. Claude gets no
-effort setting, so Claude Code applies its default for the model. Codex gets `medium`, the default its model
-catalog declares; the runner passes it explicitly because Codex left to itself, with no setting pinned, can
-resolve to no reasoning at all. Gemini's effort is part of its model name, and `High` is its default. Measured on a
-short plan, a default critique took about 40 seconds in all, 30 to 37 seconds per reviewer, and costs a few tens
-of cents. A deeper pass is a choice: set `CTXR_SECOND_OPINION_CLAUDE_EFFORT=max` and Claude alone took over
-eight minutes on the same plan, close enough to the runner's ten-minute limit that you should start such a run
-in the background and tell the operator it is under way. A machine that pins its own Codex effort in its
-configuration is overridden by `medium`; set `CTXR_SECOND_OPINION_CODEX_EFFORT` to use another.
+effort setting, so Claude Code applies its default for the model. Codex gets the default its model catalog
+declares, which the runner passes explicitly. Why: Codex left to itself, with no setting pinned, can resolve to
+no reasoning at all. Gemini's effort is part of its model name, and `High` is its default. Measured on a
+short plan at the default tier, a critique took about two minutes in all. Claude (Fable) took about 120
+seconds, Gemini about 70, and Codex (GPT-6-Astra) about 15. The fast tier is quicker and costs less. A deeper
+pass is a choice: with `CTXR_SECOND_OPINION_CLAUDE_EFFORT=max`, Claude on Opus alone took over eight minutes on
+a short plan. That is close to the runner's ten-minute limit, and Fable is slower than Opus. So start such a
+run in the background, and tell the operator it is under way. A machine that pins its own Codex effort in its
+configuration is overridden by the catalog default; set `CTXR_SECOND_OPINION_CODEX_EFFORT` to use another.
 
 ## 4. Synthesize on the letters first
 
@@ -183,7 +186,7 @@ include your own family, say so.
 - Do not poll from inside a critique to settle a quick doubt. If you want a gut check mid-critique, answer it
   yourself.
 - Model names change faster than releases. When a default is stale, set
-  `CTXR_SECOND_OPINION_CLAUDE_MODEL`, `CTXR_SECOND_OPINION_CLAUDE_EFFORT`, `CTXR_SECOND_OPINION_CODEX_EFFORT`
-  or `CTXR_SECOND_OPINION_AGY_MODEL` in the environment for the run. Nothing about the lineup lives in the store's configuration.
+  `CTXR_SECOND_OPINION_CLAUDE_MODEL`, `CTXR_SECOND_OPINION_CLAUDE_EFFORT`, `CTXR_SECOND_OPINION_CODEX_MODEL`,
+  `CTXR_SECOND_OPINION_CODEX_EFFORT` or `CTXR_SECOND_OPINION_AGY_MODEL` in the environment for the run. Nothing about the lineup lives in the store's configuration.
 - The scratch files under the output directory hold each reviewer's raw output and are safe to delete when the
   operator has the synthesis. They can contain the plan, so do not commit them.

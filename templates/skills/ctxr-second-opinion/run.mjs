@@ -36,30 +36,37 @@ const env = (name, fallback) => process.env[`CTXR_SECOND_OPINION_${name}`] || fa
 /**
  * Model choice lives here, in one table. Override by environment, never by editing a store.
  *
+ * The tiers name a class of model, not a price. `strong` is each family's frontier model and `fast` its
+ * workhorse: claude `fable` and `opus`; codex `gpt-6-astra` ("frontier intelligence") and `gpt-6.1-sol`
+ * ("latest workhorse"), as codex's model catalog described them on 2026-10-15. agy offers no frontier
+ * Gemini to this account yet (Gemini 4 Argon is rolling out), so both its tiers run Gemini 3.8 Flash. The tiers
+ * differ in model only: every model runs at its provider's default effort.
+ *
  * Effort is each provider's own recommended default, not one this runner picked:
  *  - claude: no --effort at all, so Claude Code applies its own default for the model.
- *  - codex: `medium`, the default its model catalog declares (`default_reasoning_level`). It is passed
- *    explicitly because the flag cannot simply be left off: with no pin in config.toml, codex resolves to
- *    `reasoning effort: none` on a ChatGPT login (seen 2026-10-05), which is no review at all. `low` at the
- *    `fast` tier. A machine that pins its own effort in config.toml is overridden by this; set
- *    CTXR_SECOND_OPINION_CODEX_EFFORT to use another.
+ *  - codex: the default its model catalog declares (`default_reasoning_level`), which was `low` for both
+ *    gpt-6-astra and gpt-6.1-sol on 2026-10-15. It is passed explicitly because the flag cannot simply be
+ *    left off: with no pin in config.toml, codex resolves to `reasoning effort: none` on a ChatGPT login
+ *    (seen 2026-10-05), which is no review at all. A machine that pins its own effort in config.toml is
+ *    overridden by this; set CTXR_SECOND_OPINION_CODEX_EFFORT to use another.
  *  - agy: the effort is part of the model name; `(High)` is Gemini's default thinking level. Gemini 3.1 Pro
- *    left agy's model list by 2026-10-14, which offered only Gemini 3.8 Flash, so the strong tier runs Flash
- *    at `High` and the fast tier at `Medium`. agy rejects an unknown name, and preflight now tests it.
- * For scale: on one short plan Claude took 35 s at `high` and 514 s at `max`, so a deeper pass is a choice
+ *    left agy's model list by 2026-10-14, which offered only Gemini 3.8 Flash. agy rejects an unknown name,
+ *    and preflight tests it.
+ * For scale: on one short plan Claude (Opus) took 35 s at `high` and 514 s at `max`, and Fable took 122 s at
+ * its default (2026-10-15), so a deeper pass is a choice
  * (CTXR_SECOND_OPINION_CLAUDE_EFFORT=max), not something to leave on by default.
  */
 function tiers() {
   return {
     strong: {
-      claude: { model: env('CLAUDE_MODEL', 'opus'), effort: env('CLAUDE_EFFORT', null) },
-      codex: { effort: env('CODEX_EFFORT', 'medium') },
+      claude: { model: env('CLAUDE_MODEL', 'fable'), effort: env('CLAUDE_EFFORT', null) },
+      codex: { model: env('CODEX_MODEL', 'gpt-6-astra'), effort: env('CODEX_EFFORT', 'low') },
       agy: { model: env('AGY_MODEL', 'Gemini 3.8 Flash (High)') },
     },
     fast: {
-      claude: { model: env('CLAUDE_MODEL', 'haiku'), effort: env('CLAUDE_EFFORT', null) },
-      codex: { effort: env('CODEX_EFFORT', 'low') },
-      agy: { model: env('AGY_MODEL', 'Gemini 3.8 Flash (Medium)') },
+      claude: { model: env('CLAUDE_MODEL', 'opus'), effort: env('CLAUDE_EFFORT', null) },
+      codex: { model: env('CODEX_MODEL', 'gpt-6.1-sol'), effort: env('CODEX_EFFORT', 'low') },
+      agy: { model: env('AGY_MODEL', 'Gemini 3.8 Flash (High)') },
     },
   };
 }
@@ -72,7 +79,7 @@ function tiers() {
  */
 const FLAGS_USED = {
   claude: { helpArgs: ['--help'], flags: ['--tools', '--model', '--no-session-persistence', '--disable-slash-commands', '--output-format'] },
-  codex: { helpArgs: ['exec', '--help'], flags: ['--skip-git-repo-check', '--sandbox', '--ephemeral', '--color', '--config'] },
+  codex: { helpArgs: ['exec', '--help'], flags: ['--skip-git-repo-check', '--sandbox', '--ephemeral', '--color', '--config', '--model'] },
   agy: { helpArgs: ['--help'], flags: ['--print', '--sandbox', '--disable-slash-commands', '--model'] },
 };
 
@@ -171,7 +178,7 @@ function buildInvocation(cli, prompt, tier) {
     return { cmd: 'claude', args, stdin: prompt };
   }
   if (cli === 'codex') {
-    const args = ['exec', '--skip-git-repo-check', '--sandbox', 'read-only', '--ephemeral', '--color', 'never'];
+    const args = ['exec', '--skip-git-repo-check', '--sandbox', 'read-only', '--ephemeral', '--color', 'never', '--model', t.model];
     if (t.effort) args.push('-c', `model_reasoning_effort=${t.effort}`);
     args.push('-');
     return { cmd: 'codex', args, stdin: prompt };
