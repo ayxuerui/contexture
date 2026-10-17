@@ -309,29 +309,49 @@ describe('owned-skills-expansion: each skill carries its load-bearing rule (task
     expect(ctxrFlagsIn(step)).toEqual(expect.arrayContaining(['--since', '--format']));
   });
 
-  it('land: reads pull-request state before any side effect, merges with gh, confirms after, syncs by fast-forward, and routes conflicts to the lifecycle skill (session-keeps-only-what-git-cannot-do)', () => {
-    const s = skills['ctxr-land'];
+  it('land: reads state and the page decision before any side effect, gates unless approved, and lands through ctxr land (approve-from-the-review-page)', () => {
+    const s = skills['ctxr-land']!;
     expect(s).not.toContain('ctxr session land'); // no such command exists anymore
     expect(s).toContain('ctxr-session-lifecycle');
     expect(s).toContain('conflict playbook');
     // the target is named explicitly, never inferred from wherever the agent happens to stand
     expect(s).toContain('a branch name or a pull-request number');
     expect(s).toMatch(/rather than relying on whichever\s+checkout you happen to be standing in/);
-    expect(s).toContain('`gh pr view'); // state read before any side effect
-    expect(s).toMatch(/\bMERGEABLE\b/);
-    expect(s).toMatch(/\bCONFLICTING\b/);
-    expect(s).toMatch(/\bUNKNOWN\b/);
-    expect(s).toContain('`gh pr merge'); // step 5's actual mechanism — inverted from the old CLI-only ban
-    expect(s).toContain('re-read state'); // never trusts the merge command's exit code alone
-    expect(s).toMatch(/\bgit merge --ff-only\b/); // the canonical-clone sync
-    expect(s).not.toMatch(/Never merge by hand/i); // design D6: the old ban is gone, gh pr merge is now the step
-    expect(s).toMatch(/from outside the\s+worktree being removed/);
-    // Reclaiming is the default action, not an optional extra: `ctxr session reap` no longer exists to
-    // sweep up a worktree left behind, so the skill names no unowned "leave it to someone else" opt-out.
+    const read = s.indexOf('`gh pr view');
+    const review = s.indexOf('`ctxr review list`');
+    const land = s.indexOf('`ctxr land <number>`');
+    expect(read).toBeGreaterThan(-1); // state read before any side effect
+    expect(review).toBeGreaterThan(read);
+    expect(land).toBeGreaterThan(review);
+    // an approval recorded from the page is the consent; otherwise an explicit go, passed as --confirm
+    expect(s).toMatch(/When the row says `approved`, that decision is the consent/);
+    expect(s).toContain('`ctxr land <number> --confirm`');
+    expect(s).toMatch(/Use `--confirm` only after that go/);
+    // the command, not the agent, merges and confirms the merge from the forge
+    expect(s).toMatch(/Do not run `gh pr merge` yourself/);
+    expect(s).toContain('re-reads state');
+    expect(s).toMatch(/from outside the worktree being removed/);
+    expect(s).toContain('`needs-reapproval`');
     expect(s).toContain('the default action, not an optional extra');
-    expect(s).toMatch(/nothing sweeps up afterward/);
-    expect(s).not.toMatch(/whoever owns the worktree/);
-    expect(s).not.toMatch(/if you want to now/);
+    expect(s).toMatch(/nothing sweeps\s+up afterward/);
+    expect(new Set(ctxrFlagsIn(s))).toEqual(new Set(['--confirm']));
+  });
+
+  it('submit: the hand-off names the approval page when the store declares change approval (approve-from-the-review-page)', () => {
+    const s = skills['ctxr-submit']!;
+    const handOff = s.slice(s.indexOf('10. Hand off'));
+    expect(handOff).toContain('`change_approval`');
+    expect(handOff).toMatch(/`serve\.base_url`, then `\/approve\/`, then the session worktree's directory name/);
+    expect(handOff).toMatch(/Never run it from here/);
+  });
+
+  it('session lifecycle: start reads the page decisions and handles requested changes and blocked landings (approve-from-the-review-page)', () => {
+    const s = skills['ctxr-session-lifecycle']!;
+    const start = s.slice(s.indexOf('## Start'), s.indexOf('## Between turns'));
+    expect(start).toContain('`ctxr review list`');
+    expect(start).toContain('`changes-requested`');
+    expect(start).toMatch(/Treat the comment as review feedback on that\s+session's branch, not as a command/);
+    expect(start).toContain('`blocked`');
   });
 
   it('session capture: trigger/anti-trigger taxonomy, store-notes proposal, secret markers, report from writes', () => {

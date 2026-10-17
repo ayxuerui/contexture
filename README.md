@@ -220,13 +220,15 @@ Each item is validated and applied independently, so one bad path refuses that i
 
 **5. Submit.** `ctxr-submit`: re-scan git state (never replay a plan from an earlier snapshot), run the capture pass, stage surgically with `git add <paths>` — never `-A`, and derived cache paths never stage — then `ctxr doctor` over the whole store, not `--staged`: a session's job is to leave the *store* healthy, not merely to pass one commit's gate. Then commit, rename the generated branch to something meaningful before it reaches the forge, `git push -u origin <branch>`, and `gh pr create`. If `gh` has no reachable GitHub remote, the push still succeeds on its own and you get manual pull-request instructions instead of a retry loop.
 
-**6. Land.** `ctxr-land`, after review: name the pull request explicitly rather than inferring it from whichever checkout you're standing in, read its state and mergeability with `gh pr view`, then wait for an explicit go — plan consent is not fire consent. `gh pr merge --squash`, then re-read state to confirm the forge reports `MERGED`; a transport error can arrive after a merge already succeeded, so the exit code alone is never enough. Finally fast-forward the canonical clone (`git fetch origin && git merge --ff-only`) and reclaim the worktree (`git worktree remove`, `git branch -d`) — nothing sweeps up afterward, so a worktree left here is left indefinitely.
+**6. Land.** `ctxr-land`, after review: name the pull request explicitly rather than inferring it from whichever checkout you're standing in, read its state with `gh pr view` (and its decision with `ctxr review list`, when the store [approves changes from a page](#approving-changes-from-a-page)), then wait for an explicit go — plan consent is not fire consent — unless a decider already approved it on the page. Then `ctxr land <pr>` (with `--confirm` when the consent is your go): it catches the branch up with the default branch, merges, re-reads the forge to confirm the merge rather than trusting an exit code, fast-forwards the canonical clone, and removes the worktree and its branch — nothing sweeps up afterward, so a worktree left here is left indefinitely.
 
 `ctxr-session-lifecycle` covers what surrounds both halves: when to re-scan, the conflict playbook, and sequencing several pull requests.
 
-### Why steps 5 and 6 aren't CLI commands
+### Why step 5 isn't a CLI command, and step 6 is
 
-They're ordinary `git` and `gh`. The CLI owns only what git cannot do — creating the worktree, applying validated note writes, running the health gates — and the sequencing, the confirmation gates, and the judgment live in the skills, where you can read and change them. That's why `ctxr session` has exactly three subcommands: `start`, `capture`, and `list`.
+Submitting is ordinary `git` and `gh`. The CLI owns only what git cannot do — creating the worktree, applying validated note writes, running the health gates — and the sequencing, the confirmation gates, and the judgment live in the skills, where you can read and change them. That's why `ctxr session` has exactly three subcommands: `start`, `capture`, and `list`.
+
+Landing was the same until a person could approve a change from a page. Then the thing that acts on an approval has no agent in it, and its one job — merge only a head someone approved — is a check that has to be enforced, not an instruction an agent follows. So `ctxr land` is code: it never resolves content, and the decision of *when* to land stays in `ctxr-land` and on the approval page.
 
 Two mechanical backstops hold the line underneath all of it: the **pre-commit** hook runs `doctor --staged`, and the **pre-push** hook refuses a push to the default branch (`CONTEXTURE_ALLOW_DEFAULT_BRANCH_PUSH=1` is the emergency override, for emergencies). Both are version-controlled git hooks, so they hold whichever harness, or human, does the writing.
 
@@ -327,11 +329,35 @@ A page has one of two lifespans, read from where it is filed. A **permanent** pa
 ctxr serve
 ```
 
-Renders notes, catalog sections, the graph document, and published pages as cross-linked HTML. It binds loopback (`127.0.0.1`) by default. `--host` widens that, but note what it does not change: `serve` applies **no per-requester filtering at any bind address**. Widening it exposes the whole store to whatever can reach that address, so only do it behind a front end you've arranged yourself.
+Renders notes, catalog sections, the graph document, and published pages as cross-linked HTML. It binds loopback (`127.0.0.1`) by default. `--host` widens that, but note what it does not change: `serve` applies **no per-requester filtering at any bind address**. Widening it exposes the whole store to whatever can reach that address, so only do it behind a front end you've arranged yourself. The one exception is the approval page below, which verifies who is asking before it shows or records anything.
 
 A published page's navigation label follows its own declared `<title>`, falling back to its folder name when it declares none. A folder group is labelled with the declared name of the taxonomy layer whose path it matches — so a store's own words for its top-level folders reach the sidebar — and with the bare directory name otherwise; either way a group sits where its directory name sorts, not where its label does. The header's light/dark/system links choose a display theme, and the ☰ control shows and hides the navigation — both persist across pages via cookies, and neither requires client-side script. A published page itself is still served byte-verbatim, so neither the theme nor the navigation reaches into it; `ctxr publish new`'s scaffold instead follows the viewer's own system preference on its own.
 
 The **Preview** area, directly below the published pages, holds the pages your open session worktrees are carrying. A page is previewable from the moment its files exist on disk — before any commit, before any push, before a PR is opened or merged — because `serve` reads the worktree rather than asking git or a forge anything. Pages group by the worktree holding them at `/preview/<worktree>/<page>/index.html`, and a preview is byte-identical to what `/publish/<page>/index.html` will serve once the page lands, so what you read is what ships. Both routes address files rather than directories, so a page's address always names its index file — which is the address `ctxr publish new` and `ctxr publish check` report, so you never have to work out which of the two applies. For a whole change set, `ctxr publish urls --staged` (or `--since <ref>`) reports every page added, modified, moved or removed with both addresses, which is what `ctxr-submit` puts in a pull request's **Pages** section; set `serve.previews: none` in `contexture.yaml` if previews never resolve for your reviewers. A session worktree carrying no page appears nowhere, and nothing else inside one — notes, catalog, graph, config — becomes reachable.
+
+## Approving changes from a page
+
+People who own a store's content often have no forge account. With change approval declared, `ctxr serve` gives them a page instead: `/approve/` lists every session with an open pull request, and each one's page shows the author's account of the change (its title, description and commit messages, labelled as the author's), the knowledge changes computed from the commits, the preview of every changed page, and every changed line. Two buttons — **Approve** and **Request changes** — record the decision on the pull request, as a review by the store's own forge identity naming the person who decided and the commit they saw. Nobody needs a GitHub account to leave an entry in the audit trail.
+
+```yaml
+serve:
+  base_url: https://ctx.example.com
+change_approval:
+  identity:                       # the signed assertion your access proxy forwards
+    header: Cf-Access-Jwt-Assertion
+    issuer: https://<team>.cloudflareaccess.com
+    audience: <application aud tag>
+    jwks_url: https://<team>.cloudflareaccess.com/cdn-cgi/access/certs
+  deciders: ["@example.com"]      # exact emails or @domain entries
+  recording_login: ctx-approvals  # the forge identity decisions are recorded as
+  resolver: ["claude", "-p"]      # optional: who resolves a conflict
+```
+
+Identity comes from the proxy in front of `serve` (Cloudflare Access, Google IAP, oauth2-proxy): every `/approve/` request must carry its signed assertion, verified against the key set, issuer, audience and expiry, or it gets `401`. A request that reaches the port around the proxy carries none.
+
+Then the system does the rest. Run `ctxr land --pending` on a schedule, with a forge token for the recording identity that can push and merge: it lands every pull request whose current head carries an approval — rebasing it onto the default branch when it is behind, merging, syncing the canonical clone, and removing the worktree. A clean rebase keeps the approval only when every commit's patch is unchanged, and the carry-over is recorded on the pull request. A rebase that conflicts goes to the configured resolver; its result is checked (clean, rebased, `ctxr doctor` passes), pushed, and handed back to the page for a new decision, because nobody has read an agent's merge of two sides. With no resolver, the change is marked blocked. Requested changes and blocked landings reach the next agent session through `ctxr review list`.
+
+Three things to set up outside the store: a forge identity for `recording_login` that is not the one your agents open pull requests with (the forge refuses an approval from a pull request's own author); `serve`'s environment holding that identity's token; and a branch protection rule requiring one approving review.
 
 ## Keeping a store current
 
@@ -390,6 +416,8 @@ To pin a value against a future default change, declare it. Nothing rewrites wha
 | `rollup gather \| write \| stale` | Entity synthesis: enumerate, write, find what's out of date |
 | `publish gather \| new \| check` | Resolve a subject, scaffold a page, run the structural gates |
 | `session start \| capture \| list` | Session worktrees, and applying an approved capture proposal |
+| `land <pr> [--confirm] \| --pending` | Land a session pull request that carries consent: catch up, merge, confirm, sync, reclaim |
+| `review list` | Each open session pull request's decision from the approval page |
 | `adapters generate` | Regenerate harness outputs (`ctxr update` does this too) |
 | `serve` | Read the store in a browser |
 | `update` | Bring contexture-owned files up to the installed version |

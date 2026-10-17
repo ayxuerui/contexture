@@ -55,8 +55,7 @@ interface Change {
  * the same as one at it. Rename detection is what turns a subject-folder move
  * into one entry rather than a removal plus an addition.
  */
-async function readChanges(store: Store, flags: PublishUrlsFlags): Promise<Change[]> {
-  const range = flags.staged ? ['--cached'] : [`${flags.since}...HEAD`];
+async function readChanges(store: Store, range: readonly string[]): Promise<Change[]> {
   const { stdout } = await createExecFileGitRunner().run(
     ['diff', '--name-status', '-M', '--relative', '-z', ...range, '--'],
     { cwd: store.root },
@@ -144,6 +143,18 @@ function entryWithoutLifespan(store: Store, change: Change): Omit<PageUrlEntry, 
   return { status: change.status, path: pageDir(change.file), ...current, moved_from: null };
 }
 
+/**
+ * The pages a change set adds, modifies, moves or removes, with their addresses.
+ * `range` is the `git diff` revision argument(s); approve-from-the-review-page
+ * passes a session's base and the pull request's head, so the approval page and
+ * this command never disagree about a page.
+ */
+export async function pageUrlsFor(store: Store, range: readonly string[]): Promise<PageUrlEntry[]> {
+  return (await readChanges(store, range))
+    .map((change) => entryFor(store, change))
+    .filter((entry): entry is PageUrlEntry => entry !== null);
+}
+
 function show(address: PageAddress): string {
   return address.url ?? address.route;
 }
@@ -152,9 +163,7 @@ export async function execute(store: Store, flags: PublishUrlsFlags): Promise<Co
   const given = [...(flags.staged ? ['--staged'] : []), ...(flags.since !== undefined ? ['--since'] : [])];
   if (given.length !== 1) throw new PublishChangeSetRequiredError(given);
 
-  const pages = (await readChanges(store, flags))
-    .map((change) => entryFor(store, change))
-    .filter((entry): entry is PageUrlEntry => entry !== null);
+  const pages = await pageUrlsFor(store, flags.staged ? ['--cached'] : [`${flags.since}...HEAD`]);
   const baseUrlDeclared = store.config.serve?.base_url !== undefined;
 
   const lines = pages.map((page) => {

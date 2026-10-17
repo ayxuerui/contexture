@@ -4,14 +4,16 @@
 
 Governs how store content — retrievable notes, the catalog, the graph's human-readable document, and
 published pages — is addressed by URL, rendered for a browser, and cross-linked, for a human reading
-their own store. This capability defines no requester concept and enforces no per-requester filtering,
+their own store. This capability's routes define no requester concept and enforce no per-requester filtering,
 which is what makes serving possible without first building a filtered per-requester materialization
 (see `context-projection`, proposed separately) — a fact that holds regardless of which address the
 server is bound to. It binds to loopback by default; an operator MAY widen that bind address explicitly
 when they have arranged their own trusted front end (a firewall, a tunnel, a reverse proxy) to account
 for the filtering this capability still does not do. A networked, requester-scoped serving mode with its
 own filtering is out of scope here and would need its own capability built on that materialization, not
-an extension of this one's default.
+an extension of this one's default. The `/approve/` routes `ctxr serve` also answers are not this
+capability's: `change-approval` governs them, and they verify who is asking — to decide who may record a
+decision, not to filter what anyone may read.
 
 ## Requirements
 
