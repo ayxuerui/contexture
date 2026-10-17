@@ -45,5 +45,5 @@
 ## 7. Close-out
 
 - [x] 7.1 Update `openspec/specs/context-browsing/spec.md`'s Purpose so it no longer says the server has no requester concept at all: reads stay requester-free and the `/approve/` routes belong to `change-approval`
-- [ ] 7.2 Add a README section on enabling change approval (recording identity, config block, scheduled `ctxr land --pending`, branch protection); file the contexture-images follow-up (serve token, scheduled runner, resolver CLI)
+- [x] 7.2 Add a README section on enabling change approval (recording identity, config block, scheduled `ctxr land --pending`, branch protection); file the contexture-images follow-up (serve token, scheduled runner, resolver CLI)
 - [x] 7.3 `npm run build && npm test && openspec validate approve-from-the-review-page --strict` all exit 0
