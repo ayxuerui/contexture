@@ -10,6 +10,7 @@ import type { Finding } from '../core/envelope.js';
 import type { RunEnv } from '../core/env.js';
 import { ChangeApprovalNotDeclaredError, LandFlagsError, LandRefusedError } from '../core/errors.js';
 import { ExitCode } from '../core/exit-codes.js';
+import { credentialsFor, ghCredentials, type CredentialKind, type ForgeCredentials } from '../core/forge/credentials.js';
 import { createGhForgeClient, ForgeRequestError, type ForgeClient, type MergeMethod, type PullRequest } from '../core/forge/github.js';
 import { storePrefix } from '../core/graph/tree.js';
 import { addDetachedWorktree, mainWorktreePath, pruneWorktrees, removeWorktree } from '../core/git/worktree.js';
@@ -48,6 +49,8 @@ export interface LandResult {
 }
 
 export interface LandData {
+  /** Which kind of forge credential the command used; never the credential. */
+  credential: CredentialKind;
   results: LandResult[];
 }
 
@@ -55,6 +58,7 @@ interface Context {
   env: RunEnv;
   store: Store;
   forge: ForgeClient;
+  credentials: ForgeCredentials;
   /** The repository's main worktree, and the store root inside it. */
   canonical: string;
   canonicalStoreRoot: string;
@@ -87,6 +91,26 @@ function emptyResult(number: number, worktree: string | null): LandResult {
 
 async function git(ctx: Context, args: readonly string[], cwd: string, allowFailure = false) {
   return ctx.env.git.run(args, { cwd, allowFailure });
+}
+
+/**
+ * write-lifecycle spec ("In App mode, landing's git transport authenticates as
+ * the App"; design.md D4): a fetch or push against `origin`. With an App, the
+ * host's credential helpers are cleared for this one command and replaced by
+ * one that answers with the installation token, read from this process's
+ * environment only — never a remote URL, a config file, or the command line.
+ * Otherwise git uses the credential it already has.
+ */
+const TOKEN_HELPER = '!f() { echo username=x-access-token; echo "password=$CTXR_GIT_TOKEN"; }; f';
+
+async function remoteGit(ctx: Context, args: readonly string[], cwd: string, allowFailure = false) {
+  const token = await ctx.credentials.gitToken();
+  if (token === null) return git(ctx, args, cwd, allowFailure);
+  return ctx.env.git.run(['-c', 'credential.helper=', '-c', `credential.helper=${TOKEN_HELPER}`, ...args], {
+    cwd,
+    allowFailure,
+    env: { ...ctx.env.env, CTXR_GIT_TOKEN: token, GIT_TERMINAL_PROMPT: '0' },
+  });
 }
 
 /** write-lifecycle spec: a record goes on the pull request only under the recording login; otherwise only into the envelope. */
@@ -180,7 +204,7 @@ async function acceptResolution(ctx: Context, cwd: string): Promise<string | nul
 
 /** A leased push of `cwd`'s HEAD to the pull request's branch; false when the lease was refused because the branch moved. */
 async function leasedPush(ctx: Context, cwd: string, branch: string, expected: string): Promise<boolean> {
-  const pushed = await git(ctx, ['push', `--force-with-lease=refs/heads/${branch}:${expected}`, 'origin', `HEAD:refs/heads/${branch}`], cwd, true);
+  const pushed = await remoteGit(ctx, ['push', `--force-with-lease=refs/heads/${branch}:${expected}`, 'origin', `HEAD:refs/heads/${branch}`], cwd, true);
   return pushed.exitCode === 0;
 }
 
@@ -272,7 +296,7 @@ async function catchUp(ctx: Context, result: LandResult, pull: PullRequest, sess
 
 /** write-lifecycle spec: after the forge reports merged — sync the canonical clone, reclaim the worktree, record the landing. */
 async function afterMerge(ctx: Context, result: LandResult, pull: PullRequest, session: SessionWorktree | undefined): Promise<void> {
-  await git(ctx, ['fetch', '--quiet', 'origin', ctx.defaultBranch], ctx.canonical, true);
+  await remoteGit(ctx, ['fetch', '--quiet', 'origin', ctx.defaultBranch], ctx.canonical, true);
   const onBranch = (await git(ctx, ['symbolic-ref', '--quiet', '--short', 'HEAD'], ctx.canonical, true)).stdout.trim();
   if (onBranch !== ctx.defaultBranch) {
     result.canonical_sync = { synced: false, reason: `the canonical clone is on "${onBranch || 'a detached HEAD'}", not ${ctx.defaultBranch}` };
@@ -328,7 +352,7 @@ async function landOne(ctx: Context, number: number, confirm: boolean): Promise<
     throw new LandRefusedError('not_open', `Pull request #${number} is closed without being merged.`, { pull_request: number });
   }
 
-  await git(ctx, ['fetch', '--quiet', 'origin', ctx.defaultBranch, pull.headRef], ctx.canonical, true);
+  await remoteGit(ctx, ['fetch', '--quiet', 'origin', ctx.defaultBranch, pull.headRef], ctx.canonical, true);
 
   let approvedHead: string | null = null;
   if (confirm) {
@@ -401,7 +425,8 @@ export async function execute(env: RunEnv, store: Store, flags: LandFlags, forge
   const approval = store.config.change_approval;
   if (flags.pending && approval === undefined) throw new ChangeApprovalNotDeclaredError('ctxr land --pending');
 
-  const client = forge ?? createGhForgeClient(store.root, env.env);
+  const credentials = forge === undefined ? await credentialsFor(env, store.root) : ghCredentials(env.env);
+  const client = forge ?? createGhForgeClient(store.root, credentials);
   const canonical = await mainWorktreePath(env.git, store.root);
   const prefix = await storePrefix(env.git, store.root);
   const defaultBranch = store.config.git.default_branch;
@@ -410,6 +435,7 @@ export async function execute(env: RunEnv, store: Store, flags: LandFlags, forge
     env,
     store,
     forge: client,
+    credentials,
     canonical,
     canonicalStoreRoot: path.join(canonical, prefix),
     prefix,
@@ -423,7 +449,7 @@ export async function execute(env: RunEnv, store: Store, flags: LandFlags, forge
 
   const results: LandResult[] = [];
   if (flags.pending) {
-    await git(ctx, ['fetch', '--quiet', 'origin'], canonical, true);
+    await remoteGit(ctx, ['fetch', '--quiet', 'origin'], canonical, true);
     const approved = (await sessionPulls(env.git, canonical, store.config, client, recordingLogin!)).filter((p) => p.review.state === 'approved');
     // Each is re-read inside landOne, immediately before its merge, so a decision changed meanwhile is honoured.
     for (const p of approved) results.push(await landOne(ctx, p.pull.number, false));
@@ -436,7 +462,7 @@ export async function execute(env: RunEnv, store: Store, flags: LandFlags, forge
   const failed = flags.pending ? results.some((r) => r.outcome !== 'merged' && r.outcome !== 'needs-reapproval') : results.some((r) => r.outcome !== 'merged');
   return {
     exitCode: failed ? ExitCode.CheckFailed : ExitCode.Ok,
-    data: { results },
+    data: { credential: client.credential, results },
     findings,
     humanSummary: results.length === 0 ? 'No approved session pull request to land.' : results.map(summaryLine).join('\n'),
     storeRoot: store.root,

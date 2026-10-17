@@ -791,3 +791,15 @@ export class LandFlagsError extends ContextureError {
     super(ExitCode.Usage, { code: 'land.flags', severity: 'error', message });
   }
 }
+
+/** change-approval spec (github-app-recording-identity): a GitHub App credential that is incomplete, ambiguous, unreadable, or refused. */
+export class ForgeCredentialsError extends ContextureError {
+  constructor(message: string, variables: readonly string[]) {
+    super(ExitCode.Usage, {
+      code: 'forge.credentials',
+      severity: 'error',
+      message,
+      details: { variables: [...variables] },
+    });
+  }
+}

@@ -5,7 +5,7 @@
 // Head commits are read live from the bare repository $FAKE_GH_ORIGIN, so a push is seen at once,
 // and a merge really lands on the base branch there.
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { appendFileSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
@@ -63,6 +63,13 @@ function render(pull) {
     merge_commit_sha: pull.merge_commit_sha ?? null,
   };
 }
+
+// App mode: every call must carry an installation token the fake GitHub API minted.
+if (state.expectTokenPrefix !== undefined && !(process.env.GH_TOKEN ?? '').startsWith(state.expectTokenPrefix)) {
+  fail(401, 'Bad credentials');
+}
+// Recorded beside the state, never in it: a read that rewrote the state could undo a concurrent write.
+if (state.expectTokenPrefix !== undefined) appendFileSync(`${statePath}.tokens`, `${process.env.GH_TOKEN}\n`);
 
 for (const [needle, status] of Object.entries(state.fail ?? {})) {
   if (endpoint.includes(needle)) fail(status, `forced failure for ${needle}`);

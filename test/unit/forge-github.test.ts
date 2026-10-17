@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { ghCredentials } from '../../src/core/forge/credentials.js';
 import { createGhForgeClient, ForgeRequestError } from '../../src/core/forge/github.js';
 import { makeFakeForge } from '../helpers/fake-forge.js';
 import { makeTmpDir } from '../helpers/tmp-store.js';
@@ -11,7 +12,7 @@ describe('the gh forge client', () => {
         login: 'ctx-approvals',
         pulls: [{ number: 7, head: 'session/ctx-a', title: 'Add ctx-a', body: 'Why: ctx-a.' }],
       });
-      const client = createGhForgeClient(tmp.root, { ...process.env, ...forge.env });
+      const client = createGhForgeClient(tmp.root, ghCredentials({ ...process.env, ...forge.env }));
 
       expect(await client.login()).toBe('ctx-approvals');
       const pull = await client.pull(7);
@@ -33,7 +34,7 @@ describe('the gh forge client', () => {
     const tmp = await makeTmpDir();
     try {
       const forge = await makeFakeForge(tmp.root, { login: 'ctx-approvals', pulls: [] });
-      const client = createGhForgeClient(tmp.root, { ...process.env, ...forge.env });
+      const client = createGhForgeClient(tmp.root, ghCredentials({ ...process.env, ...forge.env }));
       const error = await client.pull(99).catch((err: unknown) => err);
       expect(error).toBeInstanceOf(ForgeRequestError);
       expect((error as ForgeRequestError).status).toBe(404);

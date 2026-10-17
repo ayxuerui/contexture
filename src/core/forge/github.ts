@@ -1,5 +1,6 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
+import type { CredentialKind, ForgeCredentials } from './credentials.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -48,6 +49,8 @@ export type ReviewEvent = 'APPROVE' | 'REQUEST_CHANGES' | 'COMMENT';
 export type MergeMethod = 'squash' | 'merge' | 'rebase';
 
 export interface ForgeClient {
+  /** The credential kind behind every call — reported by commands, never the credential itself. */
+  credential: CredentialKind;
   login(): Promise<string>;
   pull(number: number): Promise<PullRequest>;
   openPulls(): Promise<PullRequest[]>;
@@ -100,9 +103,15 @@ function toPull(raw: RawPull): PullRequest {
   };
 }
 
-/** `env` is the environment `gh` runs with — the caller's own, which is where `gh` finds its credential. */
-export function createGhForgeClient(cwd: string, env: Readonly<Record<string, string | undefined>>): ForgeClient {
+/**
+ * `credentials` supplies the environment of every `gh` call: the caller's own
+ * for `gh`'s credential, or with `GH_TOKEN` set to a fresh installation token
+ * for a GitHub App (github-app-recording-identity D3) — fetched per call, so a
+ * long-running server never uses an expired one.
+ */
+export function createGhForgeClient(cwd: string, credentials: ForgeCredentials): ForgeClient {
   async function api(endpoint: string, opts: { method?: string; input?: unknown } = {}): Promise<unknown> {
+    const env = await credentials.env();
     const args = ['api', endpoint];
     if (opts.method !== undefined) args.push('--method', opts.method);
     if (opts.input !== undefined) args.push('--input', '-');
@@ -121,7 +130,11 @@ export function createGhForgeClient(cwd: string, env: Readonly<Record<string, st
 
   const repo = 'repos/{owner}/{repo}';
   return {
+    credential: credentials.kind,
     async login() {
+      // An installation token cannot call GET /user; an App's login is its bot login (change-approval spec).
+      const bot = await credentials.botLogin();
+      if (bot !== null) return bot;
       return ((await api('user')) as { login: string }).login;
     },
     async pull(number) {

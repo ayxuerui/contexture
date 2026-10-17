@@ -4,6 +4,7 @@ import type { CommandOutcome, CommandRequires } from '../core/command.js';
 import type { RunEnv } from '../core/env.js';
 import { ChangeApprovalNotDeclaredError } from '../core/errors.js';
 import { ExitCode } from '../core/exit-codes.js';
+import { credentialsFor, type CredentialKind } from '../core/forge/credentials.js';
 import { createGhForgeClient, type ForgeClient } from '../core/forge/github.js';
 import type { Store } from '../core/store.js';
 
@@ -26,6 +27,8 @@ export interface ReviewEntry {
 }
 
 export interface ReviewListData {
+  /** Which kind of forge credential the command used; never the credential. */
+  credential: CredentialKind;
   sessions: ReviewEntry[];
 }
 
@@ -37,7 +40,7 @@ export interface ReviewListData {
 export async function execute(env: RunEnv, store: Store, forge?: ForgeClient): Promise<CommandOutcome<ReviewListData>> {
   const approval = store.config.change_approval;
   if (approval === undefined) throw new ChangeApprovalNotDeclaredError('ctxr review list');
-  const client = forge ?? createGhForgeClient(store.root, env.env);
+  const client = forge ?? createGhForgeClient(store.root, await credentialsFor(env, store.root));
   const pulls = await sessionPulls(env.git, store.root, store.config, client, approval.recording_login);
 
   const sessions: ReviewEntry[] = pulls.map((p) => ({
@@ -63,7 +66,7 @@ export async function execute(env: RunEnv, store: Store, forge?: ForgeClient): P
 
   return {
     exitCode: ExitCode.Ok,
-    data: { sessions },
+    data: { credential: client.credential, sessions },
     findings: [],
     humanSummary: sessions.length === 0 ? 'No session has an open pull request.' : lines.join('\n'),
     storeRoot: store.root,

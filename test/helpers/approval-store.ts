@@ -43,6 +43,8 @@ export interface ApprovalStoreOptions {
   /** Omit the change_approval block entirely. */
   noApproval?: boolean;
   identity?: { issuer: string; audience: string; jwksUrl: string };
+  /** The recording login declared, and the login the fake forge authors reviews as. */
+  recordingLogin?: string;
 }
 
 /**
@@ -54,7 +56,8 @@ export async function makeApprovalStore(opts: ApprovalStoreOptions = {}): Promis
   const tmp = await makeTmpDir();
   const origin = path.join(tmp.root, 'origin.git');
   const root = path.join(tmp.root, 'store');
-  const forge = await makeFakeForge(tmp.root, { login: RECORDING_LOGIN, pulls: [] }, origin);
+  const recordingLogin = opts.recordingLogin ?? RECORDING_LOGIN;
+  const forge = await makeFakeForge(tmp.root, { login: recordingLogin, pulls: [] }, origin);
   const env = hermeticGitEnv(forge.env);
   const git = async (args: readonly string[], cwd = root): Promise<string> =>
     (await execFileAsync('git', [...args], { cwd, env: env as NodeJS.ProcessEnv })).stdout.trim();
@@ -71,7 +74,7 @@ export async function makeApprovalStore(opts: ApprovalStoreOptions = {}): Promis
     : 'change_approval:\n' +
       `  identity: { header: Cf-Access-Jwt-Assertion, issuer: "${identity.issuer}", audience: ${identity.audience}, jwks_url: "${identity.jwksUrl}" }\n` +
       '  deciders: ["@example.com"]\n' +
-      `  recording_login: ${RECORDING_LOGIN}\n` +
+      `  recording_login: "${recordingLogin}"\n` +
       (opts.approvalExtra ?? '');
   await appendFile(path.join(root, 'contexture.yaml'), `serve:\n  base_url: "${opts.baseUrl ?? BASE_URL}"\n${block}`);
   await git(['commit', '-qam', 'declare change approval']);
@@ -125,13 +128,13 @@ export async function makeApprovalStore(opts: ApprovalStoreOptions = {}): Promis
 }
 
 /** An approving review by the recording login for `head`, posted straight into the fake forge's state. */
-export async function recordApproval(store: ApprovalStore, number: number, head: string, by = 'a@example.com'): Promise<void> {
+export async function recordApproval(store: ApprovalStore, number: number, head: string, by = 'a@example.com', login = RECORDING_LOGIN): Promise<void> {
   const { decisionBody } = await import('../../src/core/approval/decision.js');
   const at = new Date().toISOString();
   await store.forge.update((state) => {
     state.reviews ??= {};
     (state.reviews[number] ??= []).push({
-      user: { login: RECORDING_LOGIN },
+      user: { login },
       state: 'APPROVED',
       body: decisionBody({ decision: 'approve', head, by, at, carriedFrom: null, comment: null }),
       commit_id: head,

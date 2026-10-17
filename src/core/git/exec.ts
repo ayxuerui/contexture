@@ -26,6 +26,12 @@ export interface GitRunOptions {
   cwd: string;
   /** When true, a non-zero exit resolves with the result instead of throwing. */
   allowFailure?: boolean;
+  /**
+   * github-app-recording-identity (D4): the whole environment for this one git
+   * process, in place of this process's own — how `ctxr land` hands a token to
+   * a credential helper without writing it anywhere.
+   */
+  env?: Readonly<Record<string, string | undefined>>;
 }
 
 export interface GitRunner {
@@ -44,7 +50,11 @@ export function createExecFileGitRunner(): GitRunner {
   return {
     async run(args, opts) {
       try {
-        const { stdout, stderr } = await execFileAsync('git', [...args], { cwd: opts.cwd, maxBuffer: MAX_OUTPUT_BYTES });
+        const { stdout, stderr } = await execFileAsync('git', [...args], {
+          cwd: opts.cwd,
+          maxBuffer: MAX_OUTPUT_BYTES,
+          ...(opts.env === undefined ? {} : { env: opts.env as NodeJS.ProcessEnv }),
+        });
         return { stdout, stderr, exitCode: 0 };
       } catch (err) {
         const e = err as { stdout?: string; stderr?: string; code?: number };

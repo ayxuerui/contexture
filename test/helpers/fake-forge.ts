@@ -25,6 +25,8 @@ export interface FakeForgeState {
   comments?: Record<string, { user: { login: string }; body: string; created_at: string }[]>;
   fail?: Record<string, number>;
   failAfterMerge?: boolean;
+  /** App mode: refuse any call whose GH_TOKEN does not start with this, and record the tokens seen. */
+  expectTokenPrefix?: string;
 }
 
 export interface FakeForge {
@@ -35,6 +37,8 @@ export interface FakeForge {
   read(): Promise<FakeForgeState>;
   write(state: FakeForgeState): Promise<void>;
   update(mutate: (state: FakeForgeState) => void): Promise<void>;
+  /** The distinct GH_TOKEN values `gh` was called with, when `expectTokenPrefix` is set. */
+  tokensSeen(): Promise<string[]>;
 }
 
 /** A `gh` on PATH backed by a JSON state file and, when given, a bare origin repository. */
@@ -57,6 +61,10 @@ export async function makeFakeForge(dir: string, state: FakeForgeState, originGi
     },
     async write(next) {
       await writeFile(statePath, JSON.stringify(next, null, 2));
+    },
+    async tokensSeen() {
+      const text = await readFile(`${statePath}.tokens`, 'utf8').catch(() => '');
+      return [...new Set(text.split('\n').filter(Boolean))];
     },
     async update(mutate) {
       const current = await forge.read();

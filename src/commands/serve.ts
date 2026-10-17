@@ -19,6 +19,7 @@ import { renderReview } from '../core/browse/review.js';
 import { handleApprove, isApprovePath, isDecisionRoute, type ApprovalServer, type PageKit } from '../core/browse/approve.js';
 import { createIdentityVerifier } from '../core/approval/identity.js';
 import { ForgeUnreachableError, RecordingLoginMismatchError } from '../core/errors.js';
+import { credentialsFor, type CredentialKind } from '../core/forge/credentials.js';
 import { createGhForgeClient, ForgeRequestError } from '../core/forge/github.js';
 
 export const requires: CommandRequires = { store: 'required' };
@@ -33,6 +34,8 @@ export interface ServeData {
   port: number;
   host: string;
   root: string;
+  /** The forge credential kind the approval routes use; null when the store declares no change approval. */
+  credential: CredentialKind | null;
 }
 
 /**
@@ -278,7 +281,8 @@ async function handleRequest(store: Store, approval: ApprovalServer | null, stde
 async function approvalServer(env: RunEnv, store: Store): Promise<ApprovalServer | null> {
   const approval = store.config.change_approval;
   if (approval === undefined) return null;
-  const forge = createGhForgeClient(store.root, env.env);
+  const credentials = await credentialsFor(env, store.root);
+  const forge = createGhForgeClient(store.root, credentials);
   let login: string;
   try {
     login = await forge.login();
@@ -287,6 +291,8 @@ async function approvalServer(env: RunEnv, store: Store): Promise<ApprovalServer
     throw err;
   }
   if (login !== approval.recording_login) throw new RecordingLoginMismatchError(approval.recording_login, login);
+  // github-app-recording-identity: an App not installed on this repository is named now, not on the first decision.
+  await credentials.env();
   return {
     approval,
     // The schema requires serve.base_url alongside change_approval.
@@ -320,7 +326,7 @@ export async function execute(env: RunEnv, store: Store, flags: ServeFlags): Pro
 
   return {
     exitCode: ExitCode.Ok,
-    data: { url, port, host, root: store.root },
+    data: { url, port, host, root: store.root, credential: approval?.forge.credential ?? null },
     findings: [],
     humanSummary: `serving ${store.root} at ${url}`,
     storeRoot: store.root,
