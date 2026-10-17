@@ -346,6 +346,61 @@ describe('readConfig', () => {
     }
   });
 
+  /** approve-from-the-review-page: opt-in, no shipped default, and only alongside a base URL. */
+  const CHANGE_APPROVAL_BLOCK =
+    'change_approval:\n' +
+    '  identity: { header: Cf-Access-Jwt-Assertion, issuer: "https://ctx-a.example.test", audience: aud-1, jwks_url: "https://ctx-a.example.test/certs" }\n' +
+    '  deciders: ["@example.com", "ops@ctx-a.example"]\n' +
+    '  recording_login: ctx-approvals\n';
+
+  it('leaves change_approval undeclared when the store says nothing', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      await writeFile(path.join(tmp.root, CONFIG_FILE_NAME), minimalConfig());
+      expect((await readConfig(tmp.root)).change_approval).toBeUndefined();
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('reads a declared change_approval block alongside a base URL', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const text = `${minimalConfig()}serve: { base_url: "https://ctx-a.example.test" }\n${CHANGE_APPROVAL_BLOCK}  resolver: [claude, -p]\n`;
+      await writeFile(path.join(tmp.root, CONFIG_FILE_NAME), text);
+      const config = await readConfig(tmp.root);
+      expect(config.change_approval?.deciders).toEqual(['@example.com', 'ops@ctx-a.example']);
+      expect(config.change_approval?.resolver).toEqual(['claude', '-p']);
+      expect(config.change_approval?.merge_method).toBeUndefined();
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('refuses change_approval without serve.base_url, naming both keys', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      await writeFile(path.join(tmp.root, CONFIG_FILE_NAME), `${minimalConfig()}${CHANGE_APPROVAL_BLOCK}`);
+      const error = await readConfig(tmp.root).catch((err: unknown) => err);
+      expect(error).toBeInstanceOf(InvalidConfigError);
+      expect((error as InvalidConfigError).message).toContain('change_approval');
+      expect((error as InvalidConfigError).message).toContain('serve.base_url');
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('refuses a decider entry that is neither an email nor an @domain', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const text = `${minimalConfig()}serve: { base_url: "https://ctx-a.example.test" }\n${CHANGE_APPROVAL_BLOCK.replace('"ops@ctx-a.example"', '"example.com"')}`;
+      await writeFile(path.join(tmp.root, CONFIG_FILE_NAME), text);
+      await expect(readConfig(tmp.root)).rejects.toThrow(InvalidConfigError);
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
   it('refuses a base URL that is not an absolute http(s) base', async () => {
     for (const value of ['ctx-a.example.test', 'ftp://ctx-a.example.test', 'https://ctx-a.example.test/?a=b', 'https://ctx-a.example.test/#top']) {
       const tmp = await makeTmpDir();
@@ -482,6 +537,7 @@ describe('renderStoreConfig (config-defaults-as-the-convention)', () => {
     const rendered = renderStoreConfig(await resolved(minimalConfig()));
     expect(rendered).not.toContain('serve:');
     expect(rendered).not.toContain('base_url');
+    expect(rendered).not.toContain('change_approval');
   });
 
   it('writes a declared base URL, which carries no shipped default to be omitted against', async () => {

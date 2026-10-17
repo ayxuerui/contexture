@@ -26,6 +26,12 @@ export interface GitRunOptions {
   cwd: string;
   /** When true, a non-zero exit resolves with the result instead of throwing. */
   allowFailure?: boolean;
+  /**
+   * github-app-recording-identity (D4): the whole environment for this one git
+   * process, in place of this process's own — how `ctxr land` hands a token to
+   * a credential helper without writing it anywhere.
+   */
+  env?: Readonly<Record<string, string | undefined>>;
 }
 
 export interface GitRunner {
@@ -44,7 +50,11 @@ export function createExecFileGitRunner(): GitRunner {
   return {
     async run(args, opts) {
       try {
-        const { stdout, stderr } = await execFileAsync('git', [...args], { cwd: opts.cwd, maxBuffer: MAX_OUTPUT_BYTES });
+        const { stdout, stderr } = await execFileAsync('git', [...args], {
+          cwd: opts.cwd,
+          maxBuffer: MAX_OUTPUT_BYTES,
+          ...(opts.env === undefined ? {} : { env: opts.env as NodeJS.ProcessEnv }),
+        });
         return { stdout, stderr, exitCode: 0 };
       } catch (err) {
         const e = err as { stdout?: string; stderr?: string; code?: number };
@@ -97,4 +107,50 @@ export async function readBlobs(cwd: string, objectIds: readonly string[]): Prom
     offset = start + size + 1;
   }
   return blobs;
+}
+
+/**
+ * approve-from-the-review-page (design.md D5): the stable patch identity of
+ * every commit in `range` (`<base>..<head>`), oldest first — `git log -p`
+ * piped into `git patch-id --stable`, two processes and no shell. Two ranges
+ * with equal lists carry the same changes commit for commit, whatever base
+ * each was applied to. Rejects when either process fails, as for an unknown
+ * commit; the caller treats that as "not the same".
+ */
+export async function patchIds(cwd: string, range: string): Promise<string[]> {
+  const order = await new Promise<string>((resolve, reject) => {
+    execFile('git', ['rev-list', '--reverse', '--no-merges', range], { cwd, maxBuffer: MAX_OUTPUT_BYTES }, (err, stdout) =>
+      err ? reject(err) : resolve(stdout),
+    );
+  });
+  const commits = order.split('\n').filter(Boolean);
+  if (commits.length === 0) return [];
+
+  const byCommit = await new Promise<Map<string, string>>((resolve, reject) => {
+    const log = spawn('git', ['log', '-p', '--no-merges', '--no-color', '--format=commit %H', range], { cwd, stdio: ['ignore', 'pipe', 'pipe'] });
+    const patchId = spawn('git', ['patch-id', '--stable'], { cwd, stdio: ['pipe', 'pipe', 'pipe'] });
+    log.stdout.pipe(patchId.stdin);
+    const chunks: Buffer[] = [];
+    patchId.stdout.on('data', (chunk: Buffer) => chunks.push(chunk));
+    let logCode: number | null = null;
+    log.on('error', reject);
+    patchId.on('error', reject);
+    log.on('close', (code) => {
+      logCode = code;
+    });
+    patchId.on('close', (code) => {
+      if (code !== 0 || logCode !== 0) {
+        reject(new Error(`git patch-id over ${range} failed`));
+        return;
+      }
+      const map = new Map<string, string>();
+      for (const line of Buffer.concat(chunks).toString('utf8').split('\n')) {
+        const [id, commit] = line.trim().split(' ');
+        if (id && commit) map.set(commit, id);
+      }
+      resolve(map);
+    });
+  });
+  // A commit with an empty patch has no patch id; it still counts, as an empty one.
+  return commits.map((commit) => byCommit.get(commit) ?? '');
 }

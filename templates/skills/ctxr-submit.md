@@ -85,5 +85,7 @@ Every pull request takes one of three routes. Say which, and why, in its body:
    never replay a push or a pull-request open blindly.
 10. Hand off: report the pull request's number and its url, and name what landing it takes —
     `ctxr-land`, targeting that number — so the next step is one word away instead of something to
-    reconstruct later. Landing stays a separate decision and keeps its own explicit confirmation; never
-    run it from here.
+    reconstruct later. When this store declares `change_approval`, also give the approval page address:
+    `serve.base_url`, then `/approve/`, then the session worktree's directory name and a `/`. Why: a person
+    without a forge account approves the change there, and the change then lands without further steps.
+    Landing stays a separate decision, made on the approval page or by an explicit go. Never run it from here.
