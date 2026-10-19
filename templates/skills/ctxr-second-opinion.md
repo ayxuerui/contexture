@@ -96,9 +96,9 @@ on.
 Each reviewer runs at its provider's own recommended default effort, not one this skill chose. Claude gets no
 effort setting, so Claude Code applies its default for the model. Codex gets the default its model catalog
 declares, which the runner passes explicitly. Why: Codex left to itself, with no setting pinned, can resolve to
-no reasoning at all. Gemini's effort is part of its model name, and `High` is its default. Measured on a
-short plan at the default tier, a critique took about two minutes in all. Claude (Fable) took about 120
-seconds, Gemini about 70, and Codex (GPT-6-Astra) about 15. The fast tier is quicker and costs less. A deeper
+no reasoning at all. Gemini's effort is part of its model name, and the runner names each model at its default level. Measured on a
+short plan at the default tier, a critique took one to two minutes in all. Claude (Fable) took 80 to 120
+seconds, and Gemini (Argon) and Codex (GPT-6-Astra) about 15 each. The fast tier is quicker and costs less. A deeper
 pass is a choice: with `CTXR_SECOND_OPINION_CLAUDE_EFFORT=max`, Claude on Opus alone took over eight minutes on
 a short plan. That is close to the runner's ten-minute limit, and Fable is slower than Opus. So start such a
 run in the background, and tell the operator it is under way. A machine that pins its own Codex effort in its

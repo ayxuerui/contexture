@@ -186,10 +186,10 @@ describe('critique: model and effort defaults', () => {
     expect(codex[codex.indexOf('--model') + 1]).toBe('gpt-6-sol');
   });
 
-  it('keeps gemini\'s effort in the model name, High by default', () => {
+  it('keeps gemini\'s effort in the model name: Argon at its default, Medium', () => {
     run(critiqueArgs());
     const args = calls('agy')[0]!.args;
-    expect(args[args.indexOf('--model') + 1]).toBe('Gemini 3.8 Flash (High)');
+    expect(args[args.indexOf('--model') + 1]).toBe('Gemini 4 Argon (Medium)');
   });
 
   it('at the fast tier: each family\'s workhorse at its default effort — opus with none passed, gpt-6.1-sol at low, flash at high', () => {
@@ -446,7 +446,7 @@ describe('usage and preflight', () => {
     const pings = () => calls('claude').filter((c) => c.args.includes('--model'));
     expect(modelOf(pings().at(-1)!.args)).toBe('fable');
     expect(strong.stdout).toContain('PONG (fable)');
-    expect(strong.stdout).toContain('PONG (Gemini 3.8 Flash (High))');
+    expect(strong.stdout).toContain('PONG (Gemini 4 Argon (Medium))');
     expect(run(['--preflight', '--tier', 'fast'], up).status).toBe(0);
     expect(modelOf(pings().at(-1)!.args)).toBe('opus');
   });
