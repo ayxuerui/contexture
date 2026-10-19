@@ -12,7 +12,8 @@ import { isEmptyDelta, type GraphDelta } from './diff.js';
  * The document is a list of parts rather than one string because the review
  * view renders markdown with `html: false`: a `<details>` group is emitted by
  * the caller around its rendered markdown, not parsed out of it. `toMarkdown`
- * joins the parts with literal `<details>` tags for a markdown reader.
+ * writes each group under a `##` heading instead, because its reader is a
+ * terminal, where a literal `<details>` tag is noise.
  */
 export type DiffDocumentPart = { kind: 'markdown'; text: string } | { kind: 'details'; summary: string; text: string };
 
@@ -152,13 +153,9 @@ export function renderDiffParts(delta: GraphDelta, options: DiffDocumentOptions 
   return parts;
 }
 
-/** The parts as one markdown document, `<details>` groups written as literal tags. */
+/** The parts as one markdown document, each group under a `##` heading naming it and its count. */
 export function toMarkdown(parts: readonly DiffDocumentPart[]): string {
-  return parts
-    .map((part) =>
-      part.kind === 'markdown' ? part.text : ['<details>', `<summary>${part.summary}</summary>`, '', part.text, '', '</details>'].join('\n'),
-    )
-    .join('\n\n');
+  return parts.map((part) => (part.kind === 'markdown' ? part.text : [`## ${part.summary}`, '', part.text].join('\n'))).join('\n\n');
 }
 
 export function renderDiffDocument(delta: GraphDelta, options: DiffDocumentOptions = {}): string {
