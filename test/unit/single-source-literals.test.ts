@@ -140,13 +140,20 @@ describe('single-source-literals guard', () => {
     // different single homes — core/git/exec.ts for git (behind the
     // GitRunner interface every other module depends on instead),
     // core/publish/script-check.ts for node --check (publish check's
-    // embedded-script syntax pass). gh is no longer spawned by the CLI at
-    // all (session-keeps-only-what-git-cannot-do) — the forge adapter that
-    // once wrapped it is gone, and gh now runs only from skill-driven agent
-    // invocations, never from this codebase's own process. The invariant
-    // this guards is "no ad hoc, scattered subprocess spawning," not "only
-    // one file in the whole codebase may ever spawn anything."
-    const allow = ['core/git/exec.ts', 'core/publish/script-check.ts', 'core/harness/isolated-run.ts'];
+    // embedded-script syntax pass). gh came back with
+    // approve-from-the-review-page, and core/forge/github.ts is its one home
+    // (design.md D10) — as core code, not the forge adapter
+    // session-keeps-only-what-git-cannot-do removed. The store's configured
+    // conflict resolver is spawned only from core/approval/resolver.ts. The
+    // invariant this guards is "no ad hoc, scattered subprocess spawning,"
+    // not "only one file in the whole codebase may ever spawn anything."
+    const allow = [
+      'core/git/exec.ts',
+      'core/publish/script-check.ts',
+      'core/harness/isolated-run.ts',
+      'core/forge/github.ts',
+      'core/approval/resolver.ts',
+    ];
     const hits = new Set([
       ...filesContainingSubstring("'node:child_process'", allow),
       ...filesContainingSubstring('"node:child_process"', allow),

@@ -6,6 +6,7 @@ import * as adaptersGenerateCommand from './commands/adapters-generate.js';
 import * as archiveCommand from './commands/archive.js';
 import * as doctorCommand from './commands/doctor.js';
 import * as ingestCommand from './commands/ingest.js';
+import * as landCommand from './commands/land.js';
 import * as lintCommand from './commands/lint.js';
 import * as contextGatherCommand from './commands/context-gather.js';
 import * as graphBuildCommand from './commands/graph-build.js';
@@ -18,6 +19,7 @@ import * as publishCheckCommand from './commands/publish-check.js';
 import * as publishUrlsCommand from './commands/publish-urls.js';
 import * as publishNewCommand from './commands/publish-new.js';
 import * as publishStampCommand from './commands/publish-stamp.js';
+import * as reviewListCommand from './commands/review-list.js';
 import * as sessionCaptureCommand from './commands/session-capture.js';
 import * as sessionListCommand from './commands/session-list.js';
 import * as serveCommand from './commands/serve.js';
@@ -694,6 +696,33 @@ export async function run(argv: readonly string[], env: RunEnv): Promise<ExitCod
       result = await runCommand('verify', runEnv, jsonMode, async () => {
         const store = await openStore(runEnv, { root });
         return verifyCommand.execute(runEnv, store, { portable: cmdOpts.portable });
+      });
+    });
+
+  program
+    .command('land')
+    .description('land a session pull request: check consent for its head, catch it up with the default branch, merge, confirm, sync the canonical clone, and remove the worktree')
+    .argument('[pr]', 'the pull request number to land', (v) => Number.parseInt(v, 10))
+    .option('--pending', 'land every open session pull request whose current head carries an approval from the approval page')
+    .option('--confirm', 'the caller already has an explicit go for this pull request; land it without a recorded approval')
+    .action(async (pr: number | undefined, cmdOpts: { pending?: boolean; confirm?: boolean }, cmd: Command) => {
+      const { runEnv, jsonMode, root } = deriveRunEnv(env, cmd);
+      result = await runCommand('land', runEnv, jsonMode, async () => {
+        const store = await openStore(runEnv, { root });
+        return landCommand.execute(runEnv, store, { pr, pending: Boolean(cmdOpts.pending), confirm: Boolean(cmdOpts.confirm) });
+      });
+    });
+
+  const reviewCommand = program.command('review').description('read the decisions people made on session pull requests from the approval page');
+
+  reviewCommand
+    .command('list')
+    .description('report each open session pull request with its decision state: awaiting, approved, changes-requested, needs-reapproval or blocked')
+    .action(async (_cmdOpts: object, cmd: Command) => {
+      const { runEnv, jsonMode, root } = deriveRunEnv(env, cmd);
+      result = await runCommand('review.list', runEnv, jsonMode, async () => {
+        const store = await openStore(runEnv, { root });
+        return reviewListCommand.execute(runEnv, store);
       });
     });
 

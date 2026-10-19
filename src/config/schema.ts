@@ -163,6 +163,39 @@ const ServeSchema = z.object({
 });
 
 /**
+ * approve-from-the-review-page (change-approval spec): the opt-in block that
+ * turns on the approval page and the landing path. No shipped default and
+ * `.optional()`, like `serve`, so a store that never opts in never carries
+ * the key. Tokens never live here — serve and `ctxr land` read their forge
+ * credential from their own environments (design.md D10).
+ */
+const ChangeApprovalSchema = z.object({
+  /** design.md D2: the signed assertion the access proxy in front forwards on every request. */
+  identity: z.object({
+    header: z.string().min(1),
+    issuer: z.string().min(1),
+    audience: z.string().min(1),
+    jwks_url: z.string().min(1).refine(isAbsoluteHttpBase, { message: 'must be an absolute http(s) URL' }),
+  }),
+  /** Each entry is an exact email address or an `@domain` suffix. */
+  deciders: z
+    .array(
+      z
+        .string()
+        .min(2)
+        .refine((entry) => /^@[^@\s]+$/.test(entry) || /^[^@\s]+@[^@\s]+$/.test(entry), {
+          message: 'must be an email address or an @domain entry',
+        }),
+    )
+    .min(1),
+  /** design.md D4: the forge login whose reviews count as decisions; never the login that opens pull requests. */
+  recording_login: z.string().min(1),
+  /** design.md D6: the argument vector `ctxr land` runs on a conflict; absent means a conflict blocks. */
+  resolver: z.array(z.string().min(1)).min(1).optional(),
+  merge_method: z.enum(['squash', 'merge', 'rebase']).optional(),
+});
+
+/**
  * harness-portability spec (vendored-craft-skills): which vendored
  * third-party skills a store wants, defaulting to the shipped set so a
  * `contexture.yaml` predating this key still parses. An empty list opts
@@ -409,6 +442,7 @@ export const StoreConfigSchema = z
     // records only the store's own decisions. Absent, it stays absent through
     // parse, render and reparse.
     serve: ServeSchema.optional(),
+    change_approval: ChangeApprovalSchema.optional(),
     templates: TemplatesSchema.prefault({}),
     skills: SkillsSchema.prefault({}),
     update_check: UpdateCheckSchema.prefault({}),
@@ -419,6 +453,14 @@ export const StoreConfigSchema = z
   })
   .passthrough()
   .superRefine((value, ctx) => {
+    // change-approval spec: the decision route checks a request's Origin against the base URL (design.md D9).
+    if (value.change_approval !== undefined && value.serve?.base_url === undefined) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['change_approval'],
+        message: 'change_approval requires serve.base_url, which the decision route checks each request\'s Origin against',
+      });
+    }
     /**
      * retain-captures-as-provenance (D7): one prefix has to serve both the
      * retrieval exclusion and the write-path gate, which only holds while the
@@ -441,3 +483,4 @@ export type StoreConfig = z.infer<typeof StoreConfigSchema>;
 export type TaxonomyLayerConfig = z.infer<typeof TaxonomyLayerSchema>;
 export type GraphSettingsConfig = z.infer<typeof GraphSettingsSchema>;
 export type AdapterDeclaration = z.infer<typeof AdapterDeclarationSchema>;
+export type ChangeApprovalConfig = z.infer<typeof ChangeApprovalSchema>;

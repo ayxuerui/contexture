@@ -2,24 +2,25 @@ import { readFile } from 'node:fs/promises';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import path from 'node:path';
 import { DIAGRAM_SCRIPT_ROUTE, RENDERER_ROUTE_PREFIX, diagramRenderer } from '../core/browse/diagram-assets.js';
-import { buildLinkResolver, type LinkResolver } from '../core/browse/link-resolver.js';
+import { buildLinkResolver } from '../core/browse/link-resolver.js';
 import { renderIndexBody, renderNav } from '../core/browse/nav.js';
 import { PREVIEW_ROUTE_PREFIX, PUBLISH_ROUTE_PREFIX, REVIEW_HEAD_PARAM, REVIEW_ROUTE_PREFIX } from '../core/browse/page-url.js';
 import { resolveNavState, resolveTheme } from '../core/browse/preferences.js';
 import { titleFor } from '../core/catalog/model.js';
-import { escapeHtml, renderNoteBody, type RenderedBody } from '../core/browse/render.js';
+import { escapeHtml, renderNoteBody } from '../core/browse/render.js';
 import { buildRouteTable } from '../core/browse/routes.js';
 import { readDiagramScript, readStylesheet, renderShell } from '../core/browse/templates.js';
 import type { CommandOutcome, CommandRequires } from '../core/command.js';
 import type { RunEnv } from '../core/env.js';
 import { ExitCode } from '../core/exit-codes.js';
-import { createExecFileGitRunner } from '../core/git/exec.js';
-import { renderDiffParts } from '../core/graph/diff-document.js';
-import { computeGraphDelta, resolveRange } from '../core/graph/diff.js';
-import { storePrefix } from '../core/graph/tree.js';
 import { listSessionWorktreeDirs } from '../core/session.js';
 import type { Store } from '../core/store.js';
-import { packagedTemplate } from '../core/templates.js';
+import { renderReview } from '../core/browse/review.js';
+import { handleApprove, isApprovePath, isDecisionRoute, type ApprovalServer, type PageKit } from '../core/browse/approve.js';
+import { createIdentityVerifier } from '../core/approval/identity.js';
+import { ForgeUnreachableError, RecordingLoginMismatchError } from '../core/errors.js';
+import { credentialsFor, type CredentialKind } from '../core/forge/credentials.js';
+import { createGhForgeClient, ForgeRequestError } from '../core/forge/github.js';
 
 export const requires: CommandRequires = { store: 'required' };
 
@@ -33,6 +34,8 @@ export interface ServeData {
   port: number;
   host: string;
   root: string;
+  /** The forge credential kind the approval routes use; null when the store declares no change approval. */
+  credential: CredentialKind | null;
 }
 
 /**
@@ -110,13 +113,15 @@ async function readDerivedDocument(absolutePath: string): Promise<{ text: string
   }
 }
 
-async function handleRequest(store: Store, stderr: NodeJS.WritableStream, req: IncomingMessage, res: ServerResponse): Promise<void> {
+async function handleRequest(store: Store, approval: ApprovalServer | null, stderr: NodeJS.WritableStream, req: IncomingMessage, res: ServerResponse): Promise<void> {
   const method = req.method ?? 'GET';
   const url = new URL(req.url ?? '/', 'http://localhost');
   const pathname = decodeURIComponent(url.pathname);
   stderr.write(`${method} ${pathname}\n`);
 
-  if (method !== 'GET' && method !== 'HEAD') {
+  // context-browsing spec: the one exception to read-only is a POST to the decision route of a store that declares change approval.
+  const decisionPost = method === 'POST' && approval !== null && isDecisionRoute(pathname);
+  if (method !== 'GET' && method !== 'HEAD' && !decisionPost) {
     send(res, method, 405, 'text/plain; charset=utf-8', 'method not allowed\n');
     return;
   }
@@ -154,6 +159,26 @@ async function handleRequest(store: Store, stderr: NodeJS.WritableStream, req: I
   const { navState, setCookie: navSetCookie } = resolveNavState(req.headers.cookie, url.searchParams);
   const headers = shellHeaders([themeSetCookie, navSetCookie]);
   const shellState = { theme, navState };
+
+  /**
+   * change-approval spec: the approval routes verify the requester before
+   * anything about the store is read, so the route table and navigation are
+   * built only once the handler asks for them.
+   */
+  if (isApprovePath(pathname)) {
+    const makeKit = async (): Promise<PageKit> => {
+      const table = await buildRouteTable(store);
+      return {
+        page: (title, body) => renderShell(title, body, renderNav(table), shellState),
+        linkFor: (notePath) => (table.notes.has(notePath) ? `/notes/${encodeURI(notePath)}` : null),
+        resolveLink: buildLinkResolver([...table.notes.values()]),
+      };
+    };
+    const reply = await handleApprove(store, approval, req, method, pathname, makeKit);
+    const replyHeaders = reply.contentType.startsWith('text/html') ? { ...headers, ...reply.headers } : { 'Cache-Control': 'no-store', ...reply.headers };
+    send(res, method, reply.status, reply.contentType, reply.body, replyHeaders);
+    return;
+  }
 
   const table = await buildRouteTable(store);
   const resolveLink = buildLinkResolver([...table.notes.values()]);
@@ -243,63 +268,46 @@ async function handleRequest(store: Store, stderr: NodeJS.WritableStream, req: I
 }
 
 /**
- * context-browsing spec (review-the-knowledge-diff D5, D6): one session
- * worktree's knowledge changes, derived from the delta `ctxr graph diff`
- * computes for that worktree's `HEAD` against the default branch — `origin/`
- * plus it when that ref exists, else the local branch, and never a fetch.
- * Nothing an agent wrote about the change is read: no commit message, no pull
- * request body, no file the change adds for the purpose.
- *
- * Both sides come from git's object store, so the worktree's uncommitted work
- * is neither shown nor touched. A path links to the note route only when this
- * server's note route answers for it, so a worktree-only note stays text and
- * the view widens nothing the note route serves.
- */
-async function renderReview(
-  store: Store,
-  worktree: string,
-  recordedHead: string | null,
-  linkFor: (notePath: string) => string | null,
-  resolveLink: LinkResolver,
-): Promise<RenderedBody> {
-  const git = createExecFileGitRunner();
-  const prefix = await storePrefix(git, store.root);
-  const worktreeStoreRoot = path.join(store.root, store.config.session.worktrees_path, worktree, prefix);
-  const defaultBranch = store.config.git.default_branch;
-  const remote = await git.run(['rev-parse', '--verify', '--quiet', `refs/remotes/origin/${defaultBranch}`], {
-    cwd: worktreeStoreRoot,
-    allowFailure: true,
-  });
-  const since = remote.exitCode === 0 ? `origin/${defaultBranch}` : defaultBranch;
-  const range = await resolveRange(git, worktreeStoreRoot, since, undefined);
-  const delta = await computeGraphDelta(git, worktreeStoreRoot, range, store.config);
-
-  const html: string[] = [];
-  if (recordedHead !== null && recordedHead !== delta.head) {
-    const notice = escapeHtml(packagedTemplate('graph/review', 'moved-head'))
-      .replace('__RECORDED__', () => `<code>${escapeHtml(recordedHead)}</code>`)
-      .replace('__CURRENT__', () => `<code>${escapeHtml(delta.head)}</code>`);
-    html.push(`<p class="ctxr-review-moved">${notice}</p>`);
-  }
-  // render-diagrams-in-notes: the delta's diagram draws like a note's, so the page carries the renderer when any part has one.
-  let hasDiagram = false;
-  for (const part of renderDiffParts(delta, { linkFor, diagram: true })) {
-    const rendered = renderNoteBody(part.text, resolveLink);
-    hasDiagram ||= rendered.hasDiagram;
-    html.push(part.kind === 'markdown' ? rendered.html : `<details><summary>${escapeHtml(part.summary)}</summary>\n${rendered.html}</details>\n`);
-  }
-  return { html: html.join('\n'), hasDiagram };
-}
-
-/**
  * cli-contract spec (local-browsing-surface D5): resolves the moment the
  * listener is ready, so `runCommand()` emits exactly one envelope before
  * any request is served — the listener itself keeps the process alive
  * afterward, with no change to how `run()`/`bin.ts` end.
  */
+/**
+ * change-approval spec: with the block declared, the server's forge
+ * credential must be the recording login before it binds — otherwise every
+ * decision would be recorded as someone the store does not count (design.md D4).
+ */
+async function approvalServer(env: RunEnv, store: Store): Promise<ApprovalServer | null> {
+  const approval = store.config.change_approval;
+  if (approval === undefined) return null;
+  const credentials = await credentialsFor(env, store.root);
+  const forge = createGhForgeClient(store.root, credentials);
+  let login: string;
+  try {
+    login = await forge.login();
+  } catch (err) {
+    if (err instanceof ForgeRequestError) throw new ForgeUnreachableError(err.message);
+    throw err;
+  }
+  if (login !== approval.recording_login) throw new RecordingLoginMismatchError(approval.recording_login, login);
+  // github-app-recording-identity: an App not installed on this repository is named now, not on the first decision.
+  await credentials.env();
+  return {
+    approval,
+    // The schema requires serve.base_url alongside change_approval.
+    origin: new URL(store.config.serve!.base_url!).origin,
+    forge,
+    verifier: createIdentityVerifier(approval.identity),
+    git: env.git,
+    now: () => env.now(),
+  };
+}
+
 export async function execute(env: RunEnv, store: Store, flags: ServeFlags): Promise<CommandOutcome<ServeData>> {
+  const approval = await approvalServer(env, store);
   const server = createServer((req, res) => {
-    handleRequest(store, env.io.stderr, req, res).catch((err: unknown) => {
+    handleRequest(store, approval, env.io.stderr, req, res).catch((err: unknown) => {
       env.io.stderr.write(`serve: ${err instanceof Error ? err.message : String(err)}\n`);
       if (!res.headersSent) send(res, req.method ?? 'GET', 500, 'text/plain; charset=utf-8', 'internal error\n');
       else res.end();
@@ -318,7 +326,7 @@ export async function execute(env: RunEnv, store: Store, flags: ServeFlags): Pro
 
   return {
     exitCode: ExitCode.Ok,
-    data: { url, port, host, root: store.root },
+    data: { url, port, host, root: store.root, credential: approval?.forge.credential ?? null },
     findings: [],
     humanSummary: `serving ${store.root} at ${url}`,
     storeRoot: store.root,
