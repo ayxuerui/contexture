@@ -75,7 +75,14 @@ describe('publish commands name where the page is served (real CLI)', () => {
       expect((await runCli(['init'], { cwd: tmp.root, env })).exitCode).toBe(0);
       await runCli(['publish', 'new', 'ctx-a/example-page'], { cwd: tmp.root, env });
 
-      const { appendFile } = await import('node:fs/promises');
+      const { appendFile, mkdir, writeFile } = await import('node:fs/promises');
+      // two-kinds-of-published-page: a permanent page passes only once its README
+      // leads with the note it represents and is stamped against it.
+      await mkdir(path.join(tmp.root, 'projects/ctx-a'), { recursive: true });
+      await writeFile(path.join(tmp.root, 'projects/ctx-a/ctx-note.md'), '# Ctx note\n');
+      await appendFile(path.join(tmp.root, '.contexture/publish/ctx-a/example-page/README.md'), '\n- [[ctx-note]]\n');
+      expect((await runCli(['publish', 'stamp', '.contexture/publish/ctx-a/example-page'], { cwd: tmp.root, env })).exitCode).toBe(0);
+
       await appendFile(path.join(tmp.root, 'contexture.yaml'), '\nserve:\n  base_url: https://ctx-a.example.test/ctx-a/\n');
 
       const checked = await runCli(['--json', 'publish', 'check', '.contexture/publish/ctx-a/example-page/index.html'], {

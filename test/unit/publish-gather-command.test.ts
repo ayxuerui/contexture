@@ -268,3 +268,39 @@ describe('publish gather: the derived filing path', () => {
     }
   });
 });
+
+describe('publish gather: the reserved disposable segment (two-kinds-of-published-page D2)', () => {
+  it('derives no path for a subject under a top-level folder named Disposable, naming the reservation', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      await writeNote(tmp.root, 'Disposable/ctx-note.md', '# note\n');
+      const store: Store = { root: tmp.root, config: makeConfig() };
+      const env = makeFakeEnv({ cwd: tmp.root });
+      const outcome = await executeGather(env, store, { note: 'Disposable/ctx-note.md' });
+      expect(outcome.exitCode).toBe(ExitCode.Ok);
+      expect(outcome.data?.filing.prefix).toBeNull();
+      expect(outcome.data?.filing.path).toBeNull();
+      expect(outcome.data?.filing.no_path_reason).toBe('reserved-segment');
+      expect(outcome.data?.notes.map((n) => n.path)).toEqual(['Disposable/ctx-note.md']);
+      expect(outcome.humanSummary).toContain('reserved for disposable pages');
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('leaves a folder whose name merely begins with the word unaffected', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      await writeNote(tmp.root, 'disposable-notes/ctx-note.md', '# note\n');
+      const store: Store = { root: tmp.root, config: makeConfig() };
+      const env = makeFakeEnv({ cwd: tmp.root });
+      const outcome = await executeGather(env, store, { under: 'disposable-notes' });
+      expect(outcome.exitCode).toBe(ExitCode.Ok);
+      expect(outcome.data?.filing.prefix).toBe('disposable-notes');
+      expect(outcome.data?.filing.no_path_reason).toBeNull();
+      expect(outcome.data?.count).toBe(1);
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+});

@@ -2,7 +2,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import type { StoreConfig } from '../../src/config/schema.js';
-import { listCaptures, listNotes } from '../../src/core/notes/list.js';
+import { admitsNotePath, listCaptures, listNotes } from '../../src/core/notes/list.js';
 import { makeTmpDir } from '../helpers/tmp-store.js';
 
 import { SHIPPED_DEFAULTS } from '../../src/config/defaults.js';
@@ -289,6 +289,43 @@ describe('listCaptures', () => {
       await writeNote(tmp.root, 'raw/202609/deck.pdf.md', '---\nsource_id: file/deck\n---\nSidecar.\n');
       const captures = await listCaptures(tmp.root, withCaptureTierExcluded());
       expect(captures.map((c) => c.path)).toEqual(['raw/202609/deck.pdf.md']);
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+});
+
+/**
+ * review-the-knowledge-diff (D2): the git-tree enumeration admits by the same
+ * predicate the walk calls, so the two must agree path for path.
+ */
+describe('admitsNotePath', () => {
+  const config = makeConfig({
+    retrieval: { ...makeConfig().retrieval, exclude_paths: ['identity/', 'raw/'] },
+    adapters: [{ id: 'claude-code', kind: 'harness-generation' }],
+  });
+  const table: Array<[string, boolean]> = [
+    ['projects/a.md', true],
+    ['identity/secret.md', false],
+    ['raw/202609/capture.md', false],
+    ['publish/page/README.md', false],
+    ['AGENTS.md', false],
+    ['projects/AGENTS.md', true],
+    ['CLAUDE.md', false],
+    ['projects/CLAUDE.md', true],
+    ['projects/notes.txt', false],
+    ['projects/.queue/x.md', false],
+  ];
+
+  it('agrees with the filesystem walk for every row', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      for (const [relPath] of table) await writeNote(tmp.root, relPath);
+      const walked = new Set((await listNotes(tmp.root, config)).map((n) => n.path));
+      for (const [relPath, admitted] of table) {
+        expect(admitsNotePath(relPath, config), relPath).toBe(admitted);
+        expect(walked.has(relPath), relPath).toBe(admitted);
+      }
     } finally {
       await tmp.cleanup();
     }

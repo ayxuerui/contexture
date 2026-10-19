@@ -165,25 +165,41 @@ describe('critique: model and effort defaults', () => {
     expect(effortOf(calls('claude')[1]!.args)).toBe('max');
   });
 
-  it('passes codex its catalog default, medium, explicitly, because leaving it off can resolve to no reasoning', () => {
+  it('passes codex its catalog default, low, explicitly, because leaving it off can resolve to no reasoning', () => {
     run(critiqueArgs());
-    expect(codexEffort(calls('codex')[0]!.args)).toBe('model_reasoning_effort=medium');
+    expect(codexEffort(calls('codex')[0]!.args)).toBe('model_reasoning_effort=low');
     run(['--mode', 'critique', '--plan-file', planFile(), '--out', path.join(tmp.root, 'deep')], {}, { env: { CTXR_SECOND_OPINION_CODEX_EFFORT: 'xhigh' } });
     expect(codexEffort(calls('codex')[1]!.args)).toBe('model_reasoning_effort=xhigh');
   });
 
-  it('keeps gemini\'s effort in the model name, High by default', () => {
+  it('at the default tier: each family\'s frontier model — fable and gpt-6-astra', () => {
     run(critiqueArgs());
-    const args = calls('agy')[0]!.args;
-    expect(args[args.indexOf('--model') + 1]).toBe('Gemini 3.1 Pro (High)');
+    const claude = calls('claude')[0]!.args;
+    expect(claude[claude.indexOf('--model') + 1]).toBe('fable');
+    const codex = calls('codex')[0]!.args;
+    expect(codex[codex.indexOf('--model') + 1]).toBe('gpt-6-astra');
   });
 
-  it('at the fast tier: haiku with no effort, codex at low, and a flash model', () => {
+  it('takes the codex model from the environment', () => {
+    run(critiqueArgs(), {}, { env: { CTXR_SECOND_OPINION_CODEX_MODEL: 'gpt-6-sol' } });
+    const codex = calls('codex')[0]!.args;
+    expect(codex[codex.indexOf('--model') + 1]).toBe('gpt-6-sol');
+  });
+
+  it('keeps gemini\'s effort in the model name: Argon at its default, Medium', () => {
+    run(critiqueArgs());
+    const args = calls('agy')[0]!.args;
+    expect(args[args.indexOf('--model') + 1]).toBe('Gemini 4 Argon (Medium)');
+  });
+
+  it('at the fast tier: each family\'s workhorse at its default effort — opus with none passed, gpt-6.1-sol at low, flash at high', () => {
     run(critiqueArgs(['--tier', 'fast']));
     const claude = calls('claude')[0]!.args;
     expect(claude).not.toContain('--effort');
-    expect(claude[claude.indexOf('--model') + 1]).toBe('haiku');
-    expect(codexEffort(calls('codex')[0]!.args)).toBe('model_reasoning_effort=low');
+    expect(claude[claude.indexOf('--model') + 1]).toBe('opus');
+    const codex = calls('codex')[0]!.args;
+    expect(codex[codex.indexOf('--model') + 1]).toBe('gpt-6.1-sol');
+    expect(codexEffort(codex)).toBe('model_reasoning_effort=low');
     const agy = calls('agy')[0]!.args;
     expect(agy[agy.indexOf('--model') + 1]).toBe('Gemini 3.8 Flash (High)');
   });
@@ -420,6 +436,19 @@ describe('usage and preflight', () => {
     const r = run(['--preflight'], { claude: { kind: 'ok', text: 'PONG' }, codex: { kind: 'ok', text: 'PONG' }, agy: { kind: 'ok', text: 'PONG' } });
     expect(r.status).toBe(0);
     expect(r.stdout.match(/\[OK  \]/g)).toHaveLength(3);
+  });
+
+  it('preflight pings each CLI with the model of the tier the run will use, and names it', () => {
+    const up = { claude: { kind: 'ok', text: 'PONG' }, codex: { kind: 'ok', text: 'PONG' }, agy: { kind: 'ok', text: 'PONG' } } as const;
+    const modelOf = (args: readonly string[]) => args[args.indexOf('--model') + 1];
+    const strong = run(['--preflight'], up);
+    expect(strong.status).toBe(0);
+    const pings = () => calls('claude').filter((c) => c.args.includes('--model'));
+    expect(modelOf(pings().at(-1)!.args)).toBe('fable');
+    expect(strong.stdout).toContain('PONG (fable)');
+    expect(strong.stdout).toContain('PONG (Gemini 4 Argon (Medium))');
+    expect(run(['--preflight', '--tier', 'fast'], up).status).toBe(0);
+    expect(modelOf(pings().at(-1)!.args)).toBe('opus');
   });
 
   it('preflight reports a CLI that is down, and one whose --help dropped a flag the runner passes', () => {

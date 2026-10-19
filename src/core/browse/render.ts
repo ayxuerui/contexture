@@ -69,14 +69,55 @@ function renderWikilink(resolveLink: LinkResolver): RenderRule {
   };
 }
 
+/** The per-render `env` markdown-it threads through every rule; the fence rule records a diagram in it. */
+// A type alias rather than an interface, so it satisfies markdown-it's index-signature `Env`.
+type RenderEnv = { hasDiagram: boolean };
+
+type Markdown = InstanceType<typeof MarkdownIt>;
+
+/** Read from the instance rather than the namespace, for the same reason as `RenderRule` above. */
+type FenceRule = NonNullable<Markdown['renderer']['rules']['fence']>;
+
+/**
+ * render-diagrams-in-notes design.md D5: a fence whose info string's first
+ * word is `mermaid` becomes a source block marked as a diagram, escaped like
+ * every other text this renderer emits — readable as it stands without
+ * script, and the seam the page script draws from. Every other fence goes to
+ * markdown-it's own rule untouched. The first word is split out the way
+ * markdown-it's default rule splits a language name, so the two agree on
+ * what `mermaid` labels.
+ */
+function diagramFence(md: Markdown, defaultFence: FenceRule): FenceRule {
+  return (tokens, idx, options, env, self) => {
+    const token = tokens[idx]!;
+    const language = md.utils.unescapeAll(token.info).trim().split(/\s+/)[0];
+    if (language !== 'mermaid') return defaultFence(tokens, idx, options, env, self);
+    (env as RenderEnv).hasDiagram = true;
+    return `<pre class="ctxr-diagram"><code>${escapeHtml(token.content)}</code></pre>\n`;
+  };
+}
+
 function buildRenderer(resolveLink: LinkResolver) {
   const md = new MarkdownIt({ html: false, linkify: true });
   md.inline.ruler.before('link', 'wikilink', wikilinkRule);
   md.renderer.rules.wikilink = renderWikilink(resolveLink);
+  md.renderer.rules.fence = diagramFence(md, md.renderer.rules.fence!);
   return md;
 }
 
+/**
+ * A rendered body, and whether it holds a diagram block. render-diagrams-in-notes
+ * design.md D5: the flag is set by the fence rule as it emits the block, never
+ * found by searching the HTML, which a code block quoting the class name would match.
+ */
+export interface RenderedBody {
+  html: string;
+  hasDiagram: boolean;
+}
+
 /** Renders a note's markdown body to HTML, with wikilinks resolved via `resolveLink` (design.md D3). */
-export function renderNoteBody(body: string, resolveLink: LinkResolver): string {
-  return buildRenderer(resolveLink).render(body);
+export function renderNoteBody(body: string, resolveLink: LinkResolver): RenderedBody {
+  const env: RenderEnv = { hasDiagram: false };
+  const html = buildRenderer(resolveLink).render(body, env);
+  return { html, hasDiagram: env.hasDiagram };
 }

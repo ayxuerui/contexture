@@ -349,3 +349,30 @@ describe('standardize-store-operating-guidance: the baseline carries the every-t
     expect(baseline).toContain('`journal/log.md` is append-only');
   });
 });
+
+// explain-in-controlled-english: the baseline says how to explain something to
+// the operator — about 80% of ASD-STE100, its departures, and when to draw.
+describe('the baseline says how to explain something to the operator', () => {
+  const section = renderConventionsSection(makeConfig(), []).join('\n');
+
+  it('names the standard and the adopted rules with their limits', () => {
+    expect(section).toContain('Explaining');
+    expect(section).toContain('ASD-STE100');
+    expect(section).toContain('at most 20 words to instruct and 25 to describe');
+    expect(section).toContain('active voice');
+    expect(section).toContain('one word for one thing');
+    expect(section).toContain('lists for three or more items');
+  });
+
+  it('states the departures that keep names, reasons and copied material', () => {
+    expect(section).toContain("Keep the store's names as written.");
+    expect(section).toContain('`Why:` sentence');
+    expect(section).toContain('Copy quotes, output and report tables unchanged.');
+  });
+
+  it('says when to draw a diagram and in what form on each surface', () => {
+    expect(section).toContain('Draw a diagram when structure, flow or sequence would take a paragraph');
+    expect(section).toContain('fenced `mermaid` in notes, pull requests and answers');
+    expect(section).toContain('inline SVG in pages');
+  });
+});

@@ -4,15 +4,24 @@ import path from 'node:path';
 import { pageServedAt, type ServedAt, servedAtSentence } from '../core/browse/page-url.js';
 import { PUBLISH_INDEX_FILE } from '../core/browse/routes.js';
 import type { CommandOutcome, CommandRequires } from '../core/command.js';
-import { PublishInvalidSlugError, PublishReservedSlugError, PublishSlugExistsError } from '../core/errors.js';
+import {
+  PublishDisposableNameError,
+  PublishDisposableSegmentReservedError,
+  PublishInvalidSlugError,
+  PublishReservedSlugError,
+  PublishSlugExistsError,
+} from '../core/errors.js';
 import { ExitCode } from '../core/exit-codes.js';
 import { writeFileAtomic } from '../core/fs/atomic.js';
+import { DISPOSABLE_SEGMENT, type PageLifespan } from '../core/publish/lifespan.js';
 import type { Store } from '../core/store.js';
 
 export const requires: CommandRequires = { store: 'required' };
 
 export interface PublishNewFlags {
   slug: string;
+  /** two-kinds-of-published-page: scaffold under `disposable/<today>-<slug>` instead. */
+  disposable?: boolean;
 }
 
 export interface PublishNewData {
@@ -25,6 +34,8 @@ export interface PublishNewData {
    * publish commands.
    */
   served_at: ServedAt | null;
+  /** two-kinds-of-published-page: read from where the page was filed, never declared. */
+  lifespan: PageLifespan;
 }
 
 /** publish spec: reserved for frozen snapshots — a living page's own name must never collide with this shape. */
@@ -119,32 +130,47 @@ function readmeSkeleton(slug: string, dateCreated: string): string {
  * directly, never by re-running this command.
  */
 export async function execute(store: Store, flags: PublishNewFlags): Promise<CommandOutcome<PublishNewData>> {
+  const dateCreated = new Date().toISOString().slice(0, 10);
   const segments = pageSegments(flags.slug);
-  // The final segment is the page's own identity; the ones before it are the
-  // directories it is filed under, which the reserved naming does not govern.
-  const pageName = segments[segments.length - 1]!;
-  if (RESERVED_SLUG_PATTERN.test(pageName)) {
-    throw new PublishReservedSlugError(flags.slug, pageName);
+  let pagePath: string;
+  if (flags.disposable === true) {
+    // two-kinds-of-published-page D2: one segment, dated by the command. The
+    // dated naming the reservation sets aside for a frozen snapshot is exactly
+    // what this stamps, so a caller-supplied date is refused rather than doubled.
+    if (segments.length !== 1) throw new PublishDisposableNameError(flags.slug, 'multi-segment');
+    if (RESERVED_SLUG_PATTERN.test(flags.slug)) throw new PublishDisposableNameError(flags.slug, 'dated');
+    pagePath = `${DISPOSABLE_SEGMENT}/${dateCreated}-${flags.slug}`;
+  } else {
+    // D2: the disposable segment has exactly one way in.
+    if (segments[0] === DISPOSABLE_SEGMENT) throw new PublishDisposableSegmentReservedError(flags.slug);
+    // The final segment is the page's own identity; the ones before it are the
+    // directories it is filed under, which the reserved naming does not govern.
+    const finalSegment = segments[segments.length - 1]!;
+    if (RESERVED_SLUG_PATTERN.test(finalSegment)) {
+      throw new PublishReservedSlugError(flags.slug, finalSegment);
+    }
+    pagePath = flags.slug;
   }
+  const pageName = pagePath.split('/').pop()!;
 
-  const relativePath = path.join(store.config.publish.path, flags.slug).split(path.sep).join('/');
+  const relativePath = path.join(store.config.publish.path, pagePath).split(path.sep).join('/');
   const absolutePath = path.join(store.root, relativePath);
   if (existsSync(absolutePath)) {
     throw new PublishSlugExistsError(flags.slug, relativePath);
   }
 
-  const dateCreated = new Date().toISOString().slice(0, 10);
   await mkdir(absolutePath, { recursive: true });
   await writeFileAtomic(path.join(absolutePath, PUBLISH_INDEX_FILE), pageSkeleton(pageName, dateCreated));
   await writeFileAtomic(path.join(absolutePath, 'README.md'), readmeSkeleton(pageName, dateCreated));
 
   const servedAt = pageServedAt(store, `${relativePath}/${PUBLISH_INDEX_FILE}`);
+  const lifespan: PageLifespan = flags.disposable === true ? 'disposable' : 'permanent';
 
   return {
     exitCode: ExitCode.Ok,
-    data: { slug: flags.slug, path: relativePath, served_at: servedAt },
+    data: { slug: flags.slug, path: relativePath, served_at: servedAt, lifespan },
     findings: [],
-    humanSummary: `Created "${relativePath}".${servedAtSentence(servedAt)}`,
+    humanSummary: `Created "${relativePath}" (${lifespan}).${servedAtSentence(servedAt)}`,
     storeRoot: store.root,
     schemaVersion: store.config.schema_version,
   };

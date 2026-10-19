@@ -10,6 +10,14 @@ import type { Store } from '../store.js';
  */
 export const PUBLISH_ROUTE_PREFIX = '/publish/';
 export const PREVIEW_ROUTE_PREFIX = '/preview/';
+/**
+ * review-the-knowledge-diff (D6): the per-worktree review view. Spelled here
+ * beside the preview prefix because it addresses the same worktrees by the
+ * same names, and `serve.ts` slices it while `graph diff` reports it.
+ */
+export const REVIEW_ROUTE_PREFIX = '/review/';
+/** The query parameter carrying the head commit a report was computed for, so the view can tell when the branch moved on. */
+export const REVIEW_HEAD_PARAM = 'head';
 
 /**
  * `encodeURI`, never `encodeURIComponent`: a page path carries `/` separators
@@ -123,4 +131,27 @@ export function servedAtSentence(served: ServedAt | null): string {
   if (served.after_landing === null) return ` Served at ${here}.`;
   const landed = served.after_landing.url ?? served.after_landing.route;
   return ` Preview at ${here} (at ${landed} once it lands).`;
+}
+
+/** `worktree` is the session worktree's directory name — the key `listSessionWorktreeDirs` returns. */
+export function reviewRoute(worktree: string): string {
+  return `${REVIEW_ROUTE_PREFIX}${encodeURIComponent(worktree)}/`;
+}
+
+/**
+ * review-the-knowledge-diff (D6, D7): where the review view of the session
+ * worktree `store.root` resolves to answers, carrying the head commit the
+ * caller computed its report for. Null outside a session worktree, and when
+ * the store declares `serve.previews: none` — that key records that
+ * worktree-served addresses do not reach this store's reviewers, and the
+ * review route has the same reachability as a preview.
+ *
+ * Detection and the base-URL join are `pageServedAt`'s own, so the two
+ * addresses a pull request body carries can never disagree about either.
+ */
+export function reviewServedAt(store: Store, headCommit: string): ServedAtRoute | null {
+  if (store.config.serve?.previews === 'none') return null;
+  if (!isSessionWorktreePath(store.config, store.root)) return null;
+  const route = `${reviewRoute(path.basename(store.root))}?${REVIEW_HEAD_PARAM}=${encodeURIComponent(headCommit)}`;
+  return { route, url: joinBaseUrl(store.config.serve?.base_url, route) };
 }

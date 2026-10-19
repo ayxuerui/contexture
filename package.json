@@ -1,6 +1,6 @@
 {
   "name": "ctxr-cli",
-  "version": "0.22.0",
+  "version": "0.24.0",
   "description": "Context store for AI coding agents — markdown and git, catalog and graph retrieval, no vector database.",
   "type": "module",
   "license": "MIT",
@@ -45,6 +45,7 @@
   },
   "dependencies": {
     "@inquirer/prompts": "^8.7.0",
+    "@mermaid-js/tiny": "^12.2.0",
     "commander": "^15.0.0",
     "markdown-it": "^15.0.1",
     "yaml": "^2.9.0",

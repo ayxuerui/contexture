@@ -1,10 +1,16 @@
-import { mkdir, readFile, readdir } from 'node:fs/promises';
+import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { execute as executeNew } from '../../src/commands/publish-new.js';
 import type { StoreConfig } from '../../src/config/schema.js';
 import { ExitCode } from '../../src/core/exit-codes.js';
-import { PublishInvalidSlugError, PublishReservedSlugError, PublishSlugExistsError } from '../../src/core/errors.js';
+import {
+  PublishDisposableNameError,
+  PublishDisposableSegmentReservedError,
+  PublishInvalidSlugError,
+  PublishReservedSlugError,
+  PublishSlugExistsError,
+} from '../../src/core/errors.js';
 import type { Store } from '../../src/core/store.js';
 import { makeTmpDir } from '../helpers/tmp-store.js';
 
@@ -48,6 +54,7 @@ describe('publish new', () => {
           worktree: null,
           after_landing: null,
         },
+        lifespan: 'permanent',
       });
 
       const html = await readFile(path.join(tmp.root, 'publish/some-slug/index.html'), 'utf8');
@@ -96,6 +103,7 @@ describe('publish new', () => {
           worktree: null,
           after_landing: null,
         },
+        lifespan: 'permanent',
       });
 
       const html = await readFile(path.join(tmp.root, 'publish/folder-a/folder-b/nested-page/index.html'), 'utf8');
@@ -213,4 +221,106 @@ describe('publish new', () => {
     }
   });
 
+});
+
+describe('publish new --disposable (two-kinds-of-published-page)', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  function onDate(iso: string): void {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date(`${iso}T12:00:00Z`));
+  }
+
+  it('scaffolds at disposable/<today>-<name> with the ordinary skeleton, reporting it disposable', async () => {
+    onDate('2026-10-13');
+    const tmp = await makeTmpDir();
+    try {
+      const store: Store = { root: tmp.root, config: makeConfig() };
+      const outcome = await executeNew(store, { slug: 'agent-week', disposable: true });
+      expect(outcome.exitCode).toBe(ExitCode.Ok);
+      expect(outcome.data?.path).toBe('publish/disposable/2026-10-13-agent-week');
+      expect(outcome.data?.lifespan).toBe('disposable');
+      expect(outcome.humanSummary).toContain('(disposable)');
+      expect((await readdir(path.join(tmp.root, 'publish/disposable/2026-10-13-agent-week'))).sort()).toEqual(['README.md', 'index.html']);
+      const html = await readFile(path.join(tmp.root, 'publish/disposable/2026-10-13-agent-week/index.html'), 'utf8');
+      // The date in the path is the same date the skeleton's provenance line carries.
+      expect(html).toContain('<span>2026-10-13</span>');
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('refuses a caller-supplied date, creating nothing', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const store: Store = { root: tmp.root, config: makeConfig() };
+      await expect(executeNew(store, { slug: '2026-10-01-agent-week', disposable: true })).rejects.toBeInstanceOf(PublishDisposableNameError);
+      await expect(readdir(path.join(tmp.root, 'publish'))).rejects.toThrow();
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('refuses a multi-segment disposable name, creating nothing', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const store: Store = { root: tmp.root, config: makeConfig() };
+      await expect(executeNew(store, { slug: 'folder-a/agent-week', disposable: true })).rejects.toBeInstanceOf(PublishDisposableNameError);
+      await expect(readdir(path.join(tmp.root, 'publish'))).rejects.toThrow();
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('refuses a disposable name that would escape the publish path', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const store: Store = { root: tmp.root, config: makeConfig() };
+      await expect(executeNew(store, { slug: '..', disposable: true })).rejects.toBeInstanceOf(PublishInvalidSlugError);
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('refuses a slug spelled into disposable/ without the option, naming the reservation and --disposable', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const store: Store = { root: tmp.root, config: makeConfig() };
+      const attempt = executeNew(store, { slug: 'disposable/2026-10-13-agent-week' });
+      await expect(attempt).rejects.toBeInstanceOf(PublishDisposableSegmentReservedError);
+      await expect(attempt).rejects.toThrow(/reserved for disposable pages.*--disposable/);
+      await expect(readdir(path.join(tmp.root, 'publish'))).rejects.toThrow();
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('leaves a folder merely beginning with the word alone', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const store: Store = { root: tmp.root, config: makeConfig() };
+      const outcome = await executeNew(store, { slug: 'disposable-notes/page' });
+      expect(outcome.data?.lifespan).toBe('permanent');
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('refuses a second run on the same date and leaves the first folder unchanged', async () => {
+    onDate('2026-10-13');
+    const tmp = await makeTmpDir();
+    try {
+      const store: Store = { root: tmp.root, config: makeConfig() };
+      await executeNew(store, { slug: 'agent-week', disposable: true });
+      const folder = path.join(tmp.root, 'publish/disposable/2026-10-13-agent-week');
+      await writeFile(path.join(folder, 'index.html'), 'edited by the author');
+
+      await expect(executeNew(store, { slug: 'agent-week', disposable: true })).rejects.toBeInstanceOf(PublishSlugExistsError);
+      expect(await readFile(path.join(folder, 'index.html'), 'utf8')).toBe('edited by the author');
+    } finally {
+      await tmp.cleanup();
+    }
+  });
 });

@@ -71,9 +71,44 @@ describe('publish urls', () => {
           preview: { route: '/preview/session-a/ctx-a/new-page/index.html', url: null },
           published: { route: '/publish/ctx-a/new-page/index.html', url: null },
           moved_from: null,
+          lifespan: 'permanent',
         },
       ]);
       expect(data?.base_url_declared).toBe(false);
+    } finally {
+      await fx.cleanup();
+    }
+  });
+
+  it('names each page\'s lifespan: one disposable and one permanent page added (two-kinds-of-published-page)', async () => {
+    const fx = await fixture(false);
+    try {
+      await put(fx.root, 'publish/disposable/2026-10-13-agent-week/index.html');
+      await put(fx.root, 'publish/ctx-a/kept-page/index.html');
+      git(fx.root, 'add', '-A');
+      git(fx.root, 'commit', '-q', '-m', 'add two');
+      const { data, humanSummary } = await since({ root: fx.root, config: makeConfig() });
+      expect(data?.pages.map((p) => [p.path, p.lifespan]).sort()).toEqual([
+        ['publish/ctx-a/kept-page', 'permanent'],
+        ['publish/disposable/2026-10-13-agent-week', 'disposable'],
+      ]);
+      expect(humanSummary).toContain('publish/disposable/2026-10-13-agent-week (disposable)');
+    } finally {
+      await fx.cleanup();
+    }
+  });
+
+  it('gives a page moved across the boundary the lifespan of where it moved to', async () => {
+    const fx = await fixture(false);
+    try {
+      await mkdir(path.join(fx.root, 'publish/disposable'), { recursive: true });
+      await rename(path.join(fx.root, 'publish/ctx-a/old-page'), path.join(fx.root, 'publish/disposable/2026-10-13-old-page'));
+      git(fx.root, 'add', '-A');
+      git(fx.root, 'commit', '-q', '-m', 'move');
+      const { data } = await since({ root: fx.root, config: makeConfig() });
+      expect(data?.pages).toHaveLength(1);
+      expect(data!.pages[0]!.status).toBe('moved');
+      expect(data!.pages[0]!.lifespan).toBe('disposable');
     } finally {
       await fx.cleanup();
     }

@@ -22,7 +22,10 @@ import { makeTmpDir } from '../helpers/tmp-store.js';
 // store's own every-turn rules (writing style, scratch, credentials, the store
 // log) moved into the baseline — a store's AGENTS.md shrinks by more than
 // this grew.
-const CONTEXTURE_OWNED_CEILING_BYTES = 8_500;
+// explain-in-controlled-english D3: raised from 8,500 for the baseline's
+// "Explaining" section, an every-turn rule rather than procedure; a fresh
+// store's AGENTS.md stays under half the smallest harness read limit.
+const CONTEXTURE_OWNED_CEILING_BYTES = 8_900;
 
 describe('contexture-owned entry document prose', () => {
   it(`stays under ${CONTEXTURE_OWNED_CEILING_BYTES} bytes on a freshly initialized default store`, async () => {

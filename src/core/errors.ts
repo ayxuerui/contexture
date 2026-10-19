@@ -577,6 +577,67 @@ export class PublishPageNotFoundError extends ContextureError {
 }
 
 /**
+ * two-kinds-of-published-page D2: the `disposable` segment has exactly one way
+ * in — `ctxr publish new --disposable` — so a slug spelled into it is refused.
+ */
+export class PublishDisposableSegmentReservedError extends ContextureError {
+  constructor(slug: string) {
+    super(ExitCode.Usage, {
+      code: 'publish.disposable_segment_reserved',
+      severity: 'error',
+      message: `"${slug}" begins with "disposable/", a segment reserved for disposable pages — scaffold one with "ctxr publish new --disposable <name>", which supplies the date.`,
+      subject: slug,
+    });
+  }
+}
+
+/**
+ * two-kinds-of-published-page D2: a disposable page's name is one segment, and
+ * its date is the command's to stamp — never the caller's.
+ */
+export class PublishDisposableNameError extends ContextureError {
+  constructor(name: string, reason: 'multi-segment' | 'dated') {
+    super(ExitCode.Usage, {
+      code: 'publish.disposable_name',
+      severity: 'error',
+      message:
+        reason === 'dated'
+          ? `"${name}" begins with a date — "ctxr publish new --disposable" supplies today's date itself; give the name alone.`
+          : `"${name}" is not a single folder name — a disposable page sits directly under "disposable/", with no grouping folders.`,
+      subject: name,
+      details: { reason },
+    });
+  }
+}
+
+export type PublishStampRefusal = 'disposable' | 'not-a-page' | 'no-readme' | 'no-link' | 'not-found' | 'ambiguous';
+
+/**
+ * two-kinds-of-published-page D5: `ctxr publish stamp` records a permanent
+ * page's represented-note hash, and refuses — writing nothing — a page it
+ * cannot stamp.
+ */
+export class PublishStampRefusedError extends ContextureError {
+  constructor(relativePath: string, reason: PublishStampRefusal, detail = '') {
+    const why: Record<PublishStampRefusal, string> = {
+      disposable: 'it is a disposable page, which is frozen and never stamped',
+      'not-a-page': 'it is not a page under the configured publish path',
+      'no-readme': 'it has no sibling README',
+      'no-link': 'its README links no note',
+      'not-found': `its README's first wikilink names "${detail}", which no note in the store carries`,
+      ambiguous: `its README's first wikilink resolves to more than one note: ${detail}`,
+    };
+    super(ExitCode.Usage, {
+      code: 'publish.stamp_refused',
+      severity: 'error',
+      message: `"${relativePath}" was not stamped: ${why[reason]}.`,
+      subject: relativePath,
+      details: { reason },
+    });
+  }
+}
+
+/**
  * write-lifecycle spec: a session label that normalizes to nothing is refused
  * rather than dropped — dropping it would hand back a session named nothing like
  * what the caller asked for, with no indication that anything happened.
@@ -624,6 +685,60 @@ export class SessionWorktreeRefusedError extends ContextureError {
       message: `git refused to create the session worktree at "${worktreePath}" on branch "${branch}".`,
       subject: worktreePath,
       details: { branch, worktree: worktreePath, git_stderr: stderr.trim() },
+    });
+  }
+}
+
+/** review-the-knowledge-diff: the base of a graph diff is never assumed, so a range with no `--since` names nothing to compare. */
+export class GraphDiffSinceRequiredError extends ContextureError {
+  constructor() {
+    super(ExitCode.Usage, {
+      code: 'graph.diff_since_required',
+      severity: 'error',
+      message: '"ctxr graph diff" requires --since <ref>.',
+    });
+  }
+}
+
+/** review-the-knowledge-diff: `--since` or `--until` names something that is not a commit here. */
+export class GraphDiffRefNotFoundError extends ContextureError {
+  constructor(flag: '--since' | '--until', ref: string) {
+    super(ExitCode.Usage, {
+      code: 'graph.diff_ref_not_found',
+      severity: 'error',
+      message: `${flag} "${ref}" does not resolve to a commit.`,
+      subject: ref,
+      details: { flag, ref },
+    });
+  }
+}
+
+/** review-the-knowledge-diff: two refs whose histories never meet have no merge base to compare against. */
+export class GraphDiffNoMergeBaseError extends ContextureError {
+  constructor(since: string, head: string) {
+    super(ExitCode.Usage, {
+      code: 'graph.diff_no_merge_base',
+      severity: 'error',
+      message: `"${since}" and "${head}" share no merge base, so there is no base side to compare.`,
+      details: { since, head },
+    });
+  }
+}
+
+/**
+ * review-the-knowledge-diff (D9): `--format` names one of a fixed set of
+ * forms, and `markdown` is the whole output with no envelope, so it cannot
+ * be combined with `--json`.
+ */
+export class GraphDiffFormatError extends ContextureError {
+  constructor(given: string, accepted: readonly string[], withJson: boolean) {
+    super(ExitCode.Usage, {
+      code: 'graph.diff_format',
+      severity: 'error',
+      message: withJson
+        ? '"--format markdown" is the whole output and has no envelope, so it cannot be combined with --json.'
+        : `--format "${given}" is not one of: ${accepted.join(', ')}.`,
+      details: { given, accepted: [...accepted], json: withJson },
     });
   }
 }
