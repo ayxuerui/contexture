@@ -93,16 +93,19 @@ export async function sessionPulls(
   config: StoreConfig,
   forge: ForgeClient,
   recordingLogin: string,
+  openPulls?: () => Promise<PullRequest[]>,
 ): Promise<SessionPull[]> {
   const worktrees = await sessionWorktrees(git, repoCwd, config);
-  const open = await forgeRead(() => forge.openPulls());
+  const open = await forgeRead(openPulls ?? (() => forge.openPulls()));
   const base = await baseRef(git, repoCwd, config.git.default_branch);
-  const result: SessionPull[] = [];
-  for (const worktree of worktrees) {
-    const pull = open.find((p) => p.headRef === worktree.branch);
-    if (pull === undefined) continue;
-    const review = await forgeRead(() => reviewStateOf(git, worktree.path, base, forge, recordingLogin, pull));
-    result.push({ ...worktree, pull, review });
-  }
-  return result;
+  // Each pull request's reviews and comments are independent reads, so they go out together.
+  const found = await Promise.all(
+    worktrees.map(async (worktree): Promise<SessionPull | null> => {
+      const pull = open.find((p) => p.headRef === worktree.branch);
+      if (pull === undefined) return null;
+      const review = await forgeRead(() => reviewStateOf(git, worktree.path, base, forge, recordingLogin, pull));
+      return { ...worktree, pull, review };
+    }),
+  );
+  return found.filter((p): p is SessionPull => p !== null);
 }

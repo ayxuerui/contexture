@@ -12,6 +12,7 @@ import { buildRouteTable } from '../core/browse/routes.js';
 import { readDiagramScript, readStylesheet, renderShell } from '../core/browse/templates.js';
 import type { CommandOutcome, CommandRequires } from '../core/command.js';
 import type { RunEnv } from '../core/env.js';
+import type { GitRunner } from '../core/git/exec.js';
 import { ExitCode } from '../core/exit-codes.js';
 import { listSessionWorktreeDirs } from '../core/session.js';
 import type { Store } from '../core/store.js';
@@ -114,7 +115,14 @@ async function readDerivedDocument(absolutePath: string): Promise<{ text: string
   }
 }
 
-async function handleRequest(store: Store, approval: ApprovalServer | null, stderr: NodeJS.WritableStream, req: IncomingMessage, res: ServerResponse): Promise<void> {
+async function handleRequest(
+  store: Store,
+  git: GitRunner,
+  approval: ApprovalServer | null,
+  stderr: NodeJS.WritableStream,
+  req: IncomingMessage,
+  res: ServerResponse,
+): Promise<void> {
   const method = req.method ?? 'GET';
   const url = new URL(req.url ?? '/', 'http://localhost');
   const pathname = decodeURIComponent(url.pathname);
@@ -260,7 +268,7 @@ async function handleRequest(store: Store, approval: ApprovalServer | null, stde
       return;
     }
     const linkFor = (notePath: string): string | null => (table.notes.has(notePath) ? `/notes/${encodeURI(notePath)}` : null);
-    const body = await renderReview(store, name, url.searchParams.get(REVIEW_HEAD_PARAM), linkFor, resolveLink);
+    const body = await renderReview(git, store, name, url.searchParams.get(REVIEW_HEAD_PARAM), linkFor, resolveLink);
     send(res, method, 200, 'text/html; charset=utf-8', await renderShell(`review — ${name}`, body, renderNav(table), shellState), headers);
     return;
   }
@@ -308,7 +316,7 @@ async function approvalServer(env: RunEnv, store: Store): Promise<ApprovalServer
 export async function execute(env: RunEnv, store: Store, flags: ServeFlags): Promise<CommandOutcome<ServeData>> {
   const approval = await approvalServer(env, store);
   const server = createServer((req, res) => {
-    handleRequest(store, approval, env.io.stderr, req, res).catch((err: unknown) => {
+    handleRequest(store, env.git, approval, env.io.stderr, req, res).catch((err: unknown) => {
       env.io.stderr.write(`serve: ${err instanceof Error ? err.message : String(err)}\n`);
       if (!res.headersSent) send(res, req.method ?? 'GET', 500, 'text/plain; charset=utf-8', 'internal error\n');
       else res.end();

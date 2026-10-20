@@ -1,12 +1,21 @@
 import path from 'node:path';
-import { createExecFileGitRunner } from '../git/exec.js';
+import type { GitRunner } from '../git/exec.js';
 import { renderDiffParts } from '../graph/diff-document.js';
-import { computeGraphDelta, resolveRange } from '../graph/diff.js';
+import { computeGraphDelta, resolveRange, type GraphDelta } from '../graph/diff.js';
 import { storePrefix } from '../graph/tree.js';
 import type { Store } from '../store.js';
 import { packagedTemplate } from '../templates.js';
 import type { LinkResolver } from './link-resolver.js';
+import { createMemo } from './memo.js';
 import { escapeHtml, renderNoteBody, type RenderedBody } from './render.js';
+
+/**
+ * The delta for one (store prefix, base, head) — commits are immutable, and the
+ * server's configuration is fixed for its lifetime, so the result never goes
+ * stale. Reading every note on both sides is the slowest thing a review or
+ * approval page does.
+ */
+const deltas = createMemo<GraphDelta>(64);
 
 /**
  * context-browsing spec (review-the-knowledge-diff D5, D6): one session
@@ -25,6 +34,7 @@ import { escapeHtml, renderNoteBody, type RenderedBody } from './render.js';
  * the view widens nothing the note route serves.
  */
 export async function renderReview(
+  git: GitRunner,
   store: Store,
   worktree: string,
   recordedHead: string | null,
@@ -32,7 +42,6 @@ export async function renderReview(
   resolveLink: LinkResolver,
   until?: string,
 ): Promise<RenderedBody> {
-  const git = createExecFileGitRunner();
   const prefix = await storePrefix(git, store.root);
   const worktreeStoreRoot = path.join(store.root, store.config.session.worktrees_path, worktree, prefix);
   const defaultBranch = store.config.git.default_branch;
@@ -42,7 +51,7 @@ export async function renderReview(
   });
   const since = remote.exitCode === 0 ? `origin/${defaultBranch}` : defaultBranch;
   const range = await resolveRange(git, worktreeStoreRoot, since, until);
-  const delta = await computeGraphDelta(git, worktreeStoreRoot, range, store.config);
+  const delta = await deltas.get(`${prefix}\0${range.base}\0${range.head}`, () => computeGraphDelta(git, worktreeStoreRoot, range, store.config));
 
   const html: string[] = [];
   if (recordedHead !== null && recordedHead !== delta.head) {
