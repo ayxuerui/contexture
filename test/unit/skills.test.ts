@@ -488,6 +488,23 @@ describe('owned-skills-expansion: each skill carries its load-bearing rule (task
     expect(s).toMatch(/That naming is reserved for\s+the frozen pages that `ctxr publish new --disposable` makes/);
   });
 
+  it('file-pdfs-beside-their-page: publish files a dated PDF beside index.html, keeps earlier ones, and puts inputs in assets', () => {
+    const s = skills['ctxr-publish']!;
+    expect(s).toContain('`pdf-name`');
+    expect(s).toMatch(/Write the PDF into the page's folder, next to `index.html`/);
+    expect(s).toMatch(/Start its file name with the date you\s+render it: `<YYYY-MM-DD>-<name>\.pdf`/);
+    expect(s).toMatch(/A PDF is never a page on its own/);
+    expect(s).toMatch(/still needs an `index.html`, and\s+you print the PDF from it/);
+    // A re-render adds a file; the earlier one may be what a recipient holds.
+    expect(s).toMatch(/When the page changes, write a new dated PDF\. Do not change or remove an earlier PDF/);
+    expect(s).toMatch(/Put a PDF that the page uses, but that you did not render, in the page's `assets\/` folder/);
+    // The renderer is the store's; contexture ships none.
+    expect(s).toMatch(/The store chooses how to make the PDF/);
+    expect(s).toMatch(/Contexture does not render PDFs/);
+    // The dated-folder reservation names the folder, not the PDF inside it.
+    expect(s).toMatch(/It does not apply to a PDF file in the page's folder/);
+  });
+
   it('two-kinds-of-published-page: organize-audit proposes removal of old disposable pages and hands drift to publish', () => {
     const s = skills['ctxr-organize-audit']!;
     expect(s).toContain('## Disposable pages and drifted pages');

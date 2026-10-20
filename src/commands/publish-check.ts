@@ -1,13 +1,14 @@
 import { existsSync } from 'node:fs';
-import { readFile } from 'node:fs/promises';
+import { readdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { pageServedAt, type ServedAt, servedAtSentence } from '../core/browse/page-url.js';
 import type { CommandOutcome, CommandRequires } from '../core/command.js';
+import { PUBLISH_INDEX_FILE } from '../core/browse/routes.js';
 import { PublishPageNotFoundError } from '../core/errors.js';
 import { ExitCode } from '../core/exit-codes.js';
 import { listNotes, type Note } from '../core/notes/list.js';
 import { parseNoteText } from '../core/notes/parse.js';
-import { DISPOSABLE_SEGMENT, lifespanOf, type PageLifespan, parseDisposableDate } from '../core/publish/lifespan.js';
+import { DISPOSABLE_SEGMENT, lifespanOf, type PageLifespan, parseLeadingDate } from '../core/publish/lifespan.js';
 import { assessRepresentation } from '../core/publish/represents.js';
 import { checkScriptSyntax } from '../core/publish/script-check.js';
 import type { Store } from '../core/store.js';
@@ -21,6 +22,13 @@ export interface PublishCheckFlags {
 export interface PublishCheckFailure {
   check: string;
   message: string;
+}
+
+/** file-pdfs-beside-their-page: a PDF at a page folder's root, a rendering of the page. */
+export interface PublishCheckPdf {
+  /** Store-relative. */
+  path: string;
+  served_at: ServedAt | null;
 }
 
 export interface PublishCheckData {
@@ -38,6 +46,12 @@ export interface PublishCheckData {
    * file outside the configured publish path, which is not a page.
    */
   lifespan: PageLifespan | null;
+  /**
+   * file-pdfs-beside-their-page D5: every PDF at the page folder's root,
+   * sorted by file name, with the address it is served at — so the author can
+   * hand on the PDF's link. A PDF in a subfolder is an input and is not listed.
+   */
+  pdfs: PublishCheckPdf[];
 }
 
 /** publish spec: the fixed tag list a tag-balance pass counts, matching the source convention's checker. */
@@ -112,7 +126,7 @@ function checkDisposableShape(relativePath: string, publishPath: string): Publis
   const publishPrefix = publishPath.split(path.sep).join('/').replace(/\/+$/, '');
   const pageFolder = path.posix.dirname(relativePath.slice(publishPrefix.length + 1));
   const segments = pageFolder.split('/');
-  if (segments.length === 2 && segments[0] === DISPOSABLE_SEGMENT && parseDisposableDate(segments[1]!) !== null) return [];
+  if (segments.length === 2 && segments[0] === DISPOSABLE_SEGMENT && parseLeadingDate(segments[1]!) !== null) return [];
   return [
     {
       check: 'disposable-shape',
@@ -165,6 +179,28 @@ function summaryLabel(failure: PublishCheckFailure): string {
   return `${failure.check} (${failure.message.startsWith('stale') ? 'stale' : 'not stamped'})`;
 }
 
+/**
+ * file-pdfs-beside-their-page D2: a PDF at the page folder's root is a
+ * rendering of the page, and its name leads with the date it was rendered, so
+ * a re-render adds a file beside the one a recipient was sent instead of
+ * replacing it. The date reader is the disposable folder's (D4), applied to
+ * the name without its extension.
+ */
+function checkPdfNames(pdfFileNames: readonly string[]): PublishCheckFailure[] {
+  return pdfFileNames
+    .filter((name) => parseLeadingDate(name.slice(0, -'.pdf'.length)) === null)
+    .map((name) => ({ check: 'pdf-name', message: `"${name}" is not named "<YYYY-MM-DD>-<name>.pdf" with a real date` }));
+}
+
+/** The PDFs directly in a page folder, by file name. Subfolders hold inputs, not renderings (D3). */
+async function pdfsAtPageRoot(pageDir: string): Promise<string[]> {
+  const entries = await readdir(pageDir, { withFileTypes: true });
+  return entries
+    .filter((entry) => entry.isFile() && entry.name.toLowerCase().endsWith('.pdf'))
+    .map((entry) => entry.name)
+    .sort();
+}
+
 function checkProvenanceLine(html: string): PublishCheckFailure[] {
   const hasDate = /\d{4}-\d{2}-\d{2}/.test(html);
   const hasReadmeLink = /href\s*=\s*["'][^"']*readme[^"']*["']/i.test(html);
@@ -209,7 +245,9 @@ async function checkInlineScriptSyntax(html: string): Promise<PublishCheckFailur
  * is deliberately not carried forward; see design.md).
  */
 export async function execute(store: Store, flags: PublishCheckFlags): Promise<CommandOutcome<PublishCheckData>> {
-  const absolutePath = path.isAbsolute(flags.path) ? flags.path : path.resolve(store.root, flags.path);
+  const namedPath = path.isAbsolute(flags.path) ? flags.path : path.resolve(store.root, flags.path);
+  // D5: naming a page's PDF checks the page it renders.
+  const absolutePath = namedPath.toLowerCase().endsWith('.pdf') ? path.join(path.dirname(namedPath), PUBLISH_INDEX_FILE) : namedPath;
   const relativePath = path.relative(store.root, absolutePath).split(path.sep).join('/');
 
   if (!existsSync(absolutePath)) {
@@ -230,6 +268,9 @@ export async function execute(store: Store, flags: PublishCheckFlags): Promise<C
     ...checkTagBalance(html),
     ...checkPageLocation(relativePath, store.config.publish.path),
   ];
+
+  const pdfFileNames = await pdfsAtPageRoot(pageDir);
+  failures.push(...checkPdfNames(pdfFileNames));
 
   const lifespan = lifespanOf(relativePath, store.config.publish.path);
   if (lifespan === 'disposable') failures.push(...checkDisposableShape(relativePath, store.config.publish.path));
@@ -256,15 +297,21 @@ export async function execute(store: Store, flags: PublishCheckFlags): Promise<C
   const servedAt = pageServedAt(store, relativePath);
   const sentence = servedAtSentence(servedAt);
   const lifespanTag = lifespan === null ? '' : ` (${lifespan})`;
+  const pageDirRelative = path.posix.dirname(relativePath);
+  const pdfs = pdfFileNames.map((name) => {
+    const pdfPath = `${pageDirRelative}/${name}`;
+    return { path: pdfPath, served_at: pageServedAt(store, pdfPath) };
+  });
+  const pdfTag = pdfs.length === 0 ? '' : ` ${pdfs.length} PDF rendering(s).`;
 
   return {
     exitCode: failures.length === 0 ? ExitCode.Ok : ExitCode.CheckFailed,
-    data: { path: relativePath, passed: failures.length === 0, failures, served_at: servedAt, lifespan },
+    data: { path: relativePath, passed: failures.length === 0, failures, served_at: servedAt, lifespan, pdfs },
     findings: [],
     humanSummary:
       failures.length === 0
-        ? `${relativePath}${lifespanTag}: all checks passed.${sentence}`
-        : `${relativePath}${lifespanTag}: ${failures.length} failing check(s): ${failures.map(summaryLabel).join(', ')}.${sentence}`,
+        ? `${relativePath}${lifespanTag}: all checks passed.${pdfTag}${sentence}`
+        : `${relativePath}${lifespanTag}: ${failures.length} failing check(s): ${failures.map(summaryLabel).join(', ')}.${pdfTag}${sentence}`,
     storeRoot: store.root,
     schemaVersion: store.config.schema_version,
   };

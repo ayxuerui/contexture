@@ -96,7 +96,8 @@ this choice. Why: a page filed under a word that names nothing helps no reader.
 
 Never start the page's own name with a date (`YYYY-` or `YYYY-MM-DD-`). That naming is reserved for
 the frozen pages that `ctxr publish new --disposable` makes. The rule applies to the final segment, not
-to the folders above it. The command refuses to overwrite an existing folder. If a folder already
+to the folders above it. It does not apply to a PDF file in the page's folder, which starts with its
+render date (step 8). The command refuses to overwrite an existing folder. If a folder already
 exists for this subject, edit its files directly. Do not run `publish new` again. Why: a rename or an
 overwrite breaks a link that somebody already has.
 
@@ -133,6 +134,7 @@ Run `ctxr publish check <path>`. It runs the mechanical half of the checklist:
   with a real date at the start of its name;
 - for a permanent page, the note it represents (`represented-note`) and that note's recorded hash
   (`represented-note-hash`).
+- for each PDF at the page folder's root, a file name that starts with a real date (`pdf-name`).
 
 The command reports the page's lifespan. It exits non-zero and names every failing check. Fix all of
 them before you report the page as ready. The command answers only what the files can show. Why: the
@@ -185,6 +187,28 @@ changed after the stamp. To confirm a stale page, do these steps in order:
 
 `ctxr publish stamp` never overwrites a marker. Why: a stamp without a review confirms nothing, so
 the stale report stays until somebody removes the marker.
+
+**A PDF of the page.** Make a PDF only when you send the page as a document. Why: every PDF is
+kept, so a PDF for each edit fills the folder.
+
+Write the PDF into the page's folder, next to `index.html`. Start its file name with the date you
+render it: `<YYYY-MM-DD>-<name>.pdf`. `ctxr publish check` fails a PDF at the folder root that has no
+real date (`pdf-name`). `ctxr publish check --json` lists each PDF with its address. Give that address
+when you hand on the PDF.
+
+A PDF is never a page on its own. A document that you send as a PDF still needs an `index.html`, and
+you print the PDF from it. Why: every command that reads pages finds a page by its `index.html`. The
+stamp on its README then reports the page and its PDFs as stale together.
+
+When the page changes, write a new dated PDF. Do not change or remove an earlier PDF. Why: an earlier
+file can be the one a recipient got, and the folder then shows what you sent on each date.
+
+Put a PDF that the page uses, but that you did not render, in the page's `assets/` folder. Why:
+`ctxr publish check` reads only the PDFs at the folder root as the page's renderings.
+
+The store chooses how to make the PDF. You can print `index.html`, which already has a print rule.
+You can also use the store's own document skill, if it keeps its styled HTML as `index.html`.
+Contexture does not render PDFs.
 
 Never revise a disposable page after it lands. Why: it is a snapshot of one moment, and its link
 shows that moment. Make a new disposable page instead. Do not remove a disposable page yourself.
