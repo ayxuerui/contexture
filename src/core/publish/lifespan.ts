@@ -40,17 +40,22 @@ export function lifespanOf(relativePath: string, publishPath: string): PageLifes
   return firstSegment === DISPOSABLE_SEGMENT ? 'disposable' : 'permanent';
 }
 
-/** The `YYYY-MM-DD-` lead a disposable page's folder name carries, stamped by `ctxr publish new --disposable`. */
-const DISPOSABLE_DATE_RE = /^(\d{4})-(\d{2})-(\d{2})-./;
+/**
+ * The `YYYY-MM-DD-` lead of a dated name: a disposable page's folder, stamped
+ * by `ctxr publish new --disposable`, and a page's PDF rendering without its
+ * `.pdf` extension (file-pdfs-beside-their-page D4). At least one character
+ * must follow the date.
+ */
+const LEADING_DATE_RE = /^(\d{4})-(\d{2})-(\d{2})-./;
 
 /**
- * The calendar date leading a disposable page's folder name, as `YYYY-MM-DD`,
- * or `null` when the name carries none or the date is not a real one
- * (`2026-13-45`, `2026-02-30`). Round-tripping through `Date.UTC` is what
- * rejects a day the month does not have.
+ * The calendar date leading a dated name, as `YYYY-MM-DD`, or `null` when the
+ * name carries none or the date is not a real one (`2026-13-45`,
+ * `2026-02-30`). Round-tripping through `Date.UTC` is what rejects a day the
+ * month does not have.
  */
-export function parseDisposableDate(folderName: string): string | null {
-  const match = DISPOSABLE_DATE_RE.exec(folderName);
+export function parseLeadingDate(name: string): string | null {
+  const match = LEADING_DATE_RE.exec(name);
   if (!match) return null;
   const [year, month, day] = [Number(match[1]), Number(match[2]), Number(match[3])];
   const date = new Date(Date.UTC(year, month - 1, day));

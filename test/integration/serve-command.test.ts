@@ -382,6 +382,43 @@ const COUNT_LABELS: Readonly<Record<string, string>> = {
   sources_cited: 'Notes citing new sources',
 };
 
+describe('ctxr serve PDFs (real CLI) — file-pdfs-beside-their-page', () => {
+  it('serves a page\'s PDF as application/pdf, byte-verbatim, on the publish and preview routes alike', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const env = hermeticGitEnv();
+      expect((await runCli(['init'], { cwd: tmp.root, env })).exitCode).toBe(0);
+
+      // Bytes that are not valid UTF-8, so a text decode anywhere on the way out would show.
+      const pdf = Buffer.from([0x25, 0x50, 0x44, 0x46, 0x2d, 0x31, 0x2e, 0x34, 0x0a, 0xe2, 0xe3, 0xcf, 0xd3, 0x0a, 0x25, 0x25, 0x45, 0x4f, 0x46, 0x0a]);
+      await writeNote(tmp.root, '.contexture/publish/ctx-a/brief/index.html', '<!doctype html><title>Brief</title>');
+      await writeFile(path.join(tmp.root, '.contexture/publish/ctx-a/brief/2026-01-15-brief.pdf'), pdf);
+
+      const started = await runCli(['--json', 'session', 'start'], { cwd: tmp.root, env });
+      expect(started.exitCode).toBe(0);
+      const worktree = (JSON.parse(started.stdout) as { data: { worktree: string } }).data.worktree;
+      const worktreeName = path.basename(worktree);
+      await writeNote(worktree, '.contexture/publish/ctx-a/draft/index.html', '<!doctype html><title>Draft</title>');
+      await writeFile(path.join(worktree, '.contexture/publish/ctx-a/draft/2026-03-02-draft.pdf'), pdf);
+
+      const { child, firstLine } = await runCliBackground(['serve', '--port', '0', '--json'], { cwd: tmp.root, env });
+      try {
+        const baseUrl = (JSON.parse(firstLine) as { data: { url: string } }).data.url;
+        for (const route of ['publish/ctx-a/brief/2026-01-15-brief.pdf', `preview/${worktreeName}/ctx-a/draft/2026-03-02-draft.pdf`]) {
+          const res = await fetch(`${baseUrl}${route}`);
+          expect(res.status).toBe(200);
+          expect(res.headers.get('content-type')).toBe('application/pdf');
+          expect(Buffer.from(await res.arrayBuffer()).equals(pdf)).toBe(true);
+        }
+      } finally {
+        await stopCliBackground(child);
+      }
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+});
+
 describe('ctxr serve review view of a session worktree (real CLI)', () => {
   it('renders the same facts graph diff reports, derived from the delta alone, and touches nothing', async () => {
     const tmp = await makeTmpDir();
