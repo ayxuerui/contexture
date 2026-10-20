@@ -16,7 +16,7 @@ import type { Store } from '../store.js';
 import { packagedTemplate } from '../templates.js';
 import type { LinkResolver } from './link-resolver.js';
 import { escapeHtml, renderNoteBody, type RenderedBody } from './render.js';
-import { createMemo } from './memo.js';
+import { configStamp, createMemo } from './memo.js';
 import { renderReview } from './review.js';
 import { resolveRange } from '../graph/diff.js';
 import type { FileDiff } from '../approval/file-diff.js';
@@ -224,7 +224,7 @@ async function renderChangePage(store: Store, server: ApprovalServer, kit: PageK
   const [state, facts, parts] = await Promise.all([
     forgeRead(() => reviewStateOf(server.git, located.worktreePath, base, server.forge, server.approval.recording_login, pull)),
     renderReview(server.git, store, name, null, kit.linkFor, kit.resolveLink, head),
-    changeParts.get(`${name}\0${prefix}\0${mergeBase}\0${head}`, async () => {
+    changeParts.get(`${configStamp(store.config)}\0${name}\0${prefix}\0${mergeBase}\0${head}`, async () => {
       const [log, pages, files] = await Promise.all([
         server.git.run(['log', '--reverse', '--no-color', '--format=%H%x1f%B%x1e', range], { cwd: located.worktreePath }),
         pageUrlsFor({ root: worktreeStoreRoot, config: store.config }, [range]),
@@ -339,8 +339,11 @@ async function decide(store: Store, server: ApprovalServer, makeKit: () => Promi
 
 /**
  * Answers every request under the approval prefix. `server` is null when the
- * store declares no change approval, and then every such path is `404`.
- * `makeKit` builds the browsing surface's shell only after the requester is known.
+ * store declares no change approval, and then every such path is `404` —
+ * unless `unavailable` says the block is declared but its surface could not be
+ * built after startup (serve-follows-config-changes D4), and then every such
+ * path is `503`, naming why. `makeKit` builds the browsing surface's shell only
+ * after the requester is known.
  */
 export async function handleApprove(
   store: Store,
@@ -349,7 +352,9 @@ export async function handleApprove(
   method: string,
   pathname: string,
   makeKit: () => Promise<PageKit>,
+  unavailable: string | null = null,
 ): Promise<Reply> {
+  if (server === null && unavailable !== null) return text(503, `the approval page is unavailable: ${unavailable}`);
   if (server === null) return text(404, 'not found');
 
   const verified = await server.verifier.verify(req.headers[server.approval.identity.header.toLowerCase()]);

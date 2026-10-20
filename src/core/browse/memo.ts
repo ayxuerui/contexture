@@ -9,6 +9,25 @@
  * Process memory only, and bounded. `ctxr serve` is the one long-running
  * process; every other command computes once and exits.
  */
+/**
+ * serve-follows-config-changes: a short stamp for one loaded configuration
+ * object. What a memo caches is fixed by its commits *and* the configuration
+ * it was computed with (taxonomy, publish path, derived paths), and the server
+ * now swaps configuration while it runs, so every key carries this stamp. Each
+ * reload yields a new object, hence a new stamp, so nothing computed under the
+ * old configuration is served under the new one.
+ */
+const stamps = new WeakMap<object, number>();
+let nextStamp = 1;
+export function configStamp(config: object): number {
+  let stamp = stamps.get(config);
+  if (stamp === undefined) {
+    stamp = nextStamp++;
+    stamps.set(config, stamp);
+  }
+  return stamp;
+}
+
 export interface Memo<V> {
   get(key: string, compute: () => Promise<V>): Promise<V>;
   readonly size: number;

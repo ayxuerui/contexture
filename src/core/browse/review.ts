@@ -6,7 +6,7 @@ import { storePrefix } from '../graph/tree.js';
 import type { Store } from '../store.js';
 import { packagedTemplate } from '../templates.js';
 import type { LinkResolver } from './link-resolver.js';
-import { createMemo } from './memo.js';
+import { configStamp, createMemo } from './memo.js';
 import { escapeHtml, renderNoteBody, type RenderedBody } from './render.js';
 
 /**
@@ -51,7 +51,7 @@ export async function renderReview(
   });
   const since = remote.exitCode === 0 ? `origin/${defaultBranch}` : defaultBranch;
   const range = await resolveRange(git, worktreeStoreRoot, since, until);
-  const delta = await deltas.get(`${prefix}\0${range.base}\0${range.head}`, () => computeGraphDelta(git, worktreeStoreRoot, range, store.config));
+  const delta = await deltas.get(`${configStamp(store.config)}\0${prefix}\0${range.base}\0${range.head}`, () => computeGraphDelta(git, worktreeStoreRoot, range, store.config));
 
   const html: string[] = [];
   if (recordedHead !== null && recordedHead !== delta.head) {
