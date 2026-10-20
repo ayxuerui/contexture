@@ -16,7 +16,11 @@ import type { Store } from '../store.js';
 import { packagedTemplate } from '../templates.js';
 import type { LinkResolver } from './link-resolver.js';
 import { escapeHtml, renderNoteBody, type RenderedBody } from './render.js';
+import { configStamp, createMemo } from './memo.js';
 import { renderReview } from './review.js';
+import { resolveRange } from '../graph/diff.js';
+import type { FileDiff } from '../approval/file-diff.js';
+import type { PageUrlEntry } from '../../commands/publish-urls.js';
 
 /**
  * change-approval spec: the approval index, one session's approval page, and
@@ -99,17 +103,50 @@ interface Located {
   pull: PullRequest | null;
 }
 
+/**
+ * Page views reuse the open pull requests for a few seconds — the index and
+ * then a change are one visit, and listing them is a forge call. A decision
+ * never uses this: it drops the cache first, so the head it checks against,
+ * and any page it renders after, are read fresh.
+ */
+const OPEN_PULLS_TTL_MS = 15_000;
+const openPullsCache = new WeakMap<ApprovalServer, { at: number; pulls: Promise<PullRequest[]> }>();
+
+function openPulls(server: ApprovalServer): Promise<PullRequest[]> {
+  const now = Date.now();
+  const cached = openPullsCache.get(server);
+  if (cached !== undefined && now - cached.at < OPEN_PULLS_TTL_MS) return cached.pulls;
+  const pulls = server.forge.openPulls();
+  openPullsCache.set(server, { at: now, pulls });
+  pulls.catch(() => {
+    if (openPullsCache.get(server)?.pulls === pulls) openPullsCache.delete(server);
+  });
+  return pulls;
+}
+
+/**
+ * What a change page shows that one pair of commits fixes: the commit
+ * messages, the changed pages and the line diff. Keyed by worktree (preview
+ * addresses carry its name), store prefix, merge base and head.
+ */
+interface ChangeParts {
+  commits: { sha: string; message: string }[];
+  pages: PageUrlEntry[];
+  files: FileDiff[];
+}
+const changeParts = createMemo<ChangeParts>(64);
+
 async function locate(store: Store, server: ApprovalServer, name: string): Promise<Located | null> {
   const worktree = (await sessionWorktrees(server.git, store.root, store.config)).find((w) => w.name === name);
   if (worktree === undefined) return null;
-  const open = await forgeRead(() => server.forge.openPulls());
+  const open = await forgeRead(() => openPulls(server));
   return { name, worktreePath: worktree.path, branch: worktree.branch, pull: open.find((p) => p.headRef === worktree.branch) ?? null };
 }
 
 async function indexPage(store: Store, server: ApprovalServer, kit: PageKit): Promise<Reply> {
   const html = [`<h1>${escapeHtml(copy('index-heading'))}</h1>`];
   try {
-    const pulls = await sessionPulls(server.git, store.root, store.config, server.forge, server.approval.recording_login);
+    const pulls = await sessionPulls(server.git, store.root, store.config, server.forge, server.approval.recording_login, () => openPulls(server));
     if (pulls.length === 0) {
       html.push(`<p class="ctxr-empty">${escapeHtml(copy('index-empty'))}</p>`);
     } else {
@@ -181,7 +218,29 @@ async function renderChangePage(store: Store, server: ApprovalServer, kit: PageK
   const base = await baseRef(server.git, located.worktreePath, store.config.git.default_branch);
   const prefix = await storePrefix(server.git, store.root);
   const worktreeStoreRoot = path.join(located.worktreePath, prefix);
-  const state = await forgeRead(() => reviewStateOf(server.git, located.worktreePath, base, server.forge, server.approval.recording_login, pull));
+  const mergeBase = (await resolveRange(server.git, located.worktreePath, base, head)).base;
+  const range = `${mergeBase}..${head}`;
+  // The decision state is read fresh every time; everything the commits fix is computed once per pair.
+  const [state, facts, parts] = await Promise.all([
+    forgeRead(() => reviewStateOf(server.git, located.worktreePath, base, server.forge, server.approval.recording_login, pull)),
+    renderReview(server.git, store, name, null, kit.linkFor, kit.resolveLink, head),
+    changeParts.get(`${configStamp(store.config)}\0${name}\0${prefix}\0${mergeBase}\0${head}`, async () => {
+      const [log, pages, files] = await Promise.all([
+        server.git.run(['log', '--reverse', '--no-color', '--format=%H%x1f%B%x1e', range], { cwd: located.worktreePath }),
+        pageUrlsFor({ root: worktreeStoreRoot, config: store.config }, [range]),
+        readFileDiffs(server.git, worktreeStoreRoot, mergeBase, head, store.config.derived.paths),
+      ]);
+      const commits = log.stdout
+        .split('\x1e')
+        .map((entry) => entry.trim())
+        .filter(Boolean)
+        .map((entry) => {
+          const [sha, message] = entry.split('\x1f') as [string, string];
+          return { sha, message: message.trim() };
+        });
+      return { commits, pages, files };
+    }),
+  ]);
   let hasDiagram = false;
 
   html.push(`<p>Pull request <a href="${escapeHtml(pull.url)}">#${pull.number}</a>, commit <code>${escapeHtml(head)}</code>. ${escapeHtml(copy('state-line').replace('__STATE__', STATE_LABEL[state.state]))}</p>`);
@@ -189,15 +248,9 @@ async function renderChangePage(store: Store, server: ApprovalServer, kit: PageK
   // The author's account: labelled as such, and kept apart from everything computed below.
   const authorBody = renderNoteBody(pull.body, kit.resolveLink);
   hasDiagram ||= authorBody.hasDiagram;
-  const log = await server.git.run(['log', '--reverse', '--no-color', '--format=%H%x1f%B%x1e', `${base}..${head}`], { cwd: located.worktreePath });
-  const commits = log.stdout
-    .split('\x1e')
-    .map((entry) => entry.trim())
-    .filter(Boolean)
-    .map((entry) => {
-      const [sha, message] = entry.split('\x1f') as [string, string];
-      return `<li><code>${escapeHtml(sha.slice(0, 7))}</code><pre class="ctxr-commit-message">${escapeHtml(message.trim())}</pre></li>`;
-    });
+  const commits = parts.commits.map(
+    (c) => `<li><code>${escapeHtml(c.sha.slice(0, 7))}</code><pre class="ctxr-commit-message">${escapeHtml(c.message)}</pre></li>`,
+  );
   html.push(
     `<section class="ctxr-author-account"><h2>${escapeHtml(copy('author-heading'))}</h2>`,
     `<p class="ctxr-summary">${escapeHtml(copy('author-note'))}</p>`,
@@ -207,11 +260,10 @@ async function renderChangePage(store: Store, server: ApprovalServer, kit: PageK
     '</section>',
   );
 
-  const facts = await renderReview(store, name, null, kit.linkFor, kit.resolveLink, head);
   hasDiagram ||= facts.hasDiagram;
   html.push(`<section class="ctxr-derived"><h2>${escapeHtml(copy('facts-heading'))}</h2>`, facts.html, '</section>');
 
-  const pages = await pageUrlsFor({ root: worktreeStoreRoot, config: store.config }, [`${base}...${head}`]);
+  const pages = parts.pages;
   if (pages.length > 0) {
     const link = (address: { route: string; url: string | null } | null): string =>
       address === null ? '—' : `<a href="${escapeHtml(address.url ?? address.route)}">${escapeHtml(address.url ?? address.route)}</a>`;
@@ -226,7 +278,7 @@ async function renderChangePage(store: Store, server: ApprovalServer, kit: PageK
     );
   }
 
-  const files = await readFileDiffs(server.git, worktreeStoreRoot, base, head, store.config.derived.paths);
+  const files = parts.files;
   html.push(
     `<section class="ctxr-changed-files"><h2>${escapeHtml(copy('diff-heading'))}</h2>`,
     renderFileDiffs(files, { binary: copy('diff-binary'), noFiles: copy('diff-empty') }),
@@ -246,8 +298,10 @@ async function renderChangePage(store: Store, server: ApprovalServer, kit: PageK
   return shell(notice.status ?? 200, html, hasDiagram);
 }
 
-async function decide(store: Store, server: ApprovalServer, kit: PageKit, req: IncomingMessage, name: string, email: string): Promise<Reply> {
+async function decide(store: Store, server: ApprovalServer, makeKit: () => Promise<PageKit>, req: IncomingMessage, name: string, email: string): Promise<Reply> {
   if (req.headers.origin !== server.origin) return text(403, 'cross-site decision refused');
+  // A decision checks the head against the forge as it is now, never a cached list.
+  openPullsCache.delete(server);
   const form = await readForm(req);
   if (form === null) return text(413, 'decision too large');
   const decision = form.get('decision');
@@ -261,12 +315,12 @@ async function decide(store: Store, server: ApprovalServer, kit: PageKit, req: I
     located = await locate(store, server, name);
   } catch (err) {
     if (!(err instanceof ForgeUnreachableError)) throw err;
-    return renderChangePage(store, server, kit, name, { status: 502, message: copy('record-failed') });
+    return renderChangePage(store, server, await makeKit(), name, { status: 502, message: copy('record-failed') });
   }
   if (located === null) return text(404, 'not found');
-  if (located.pull === null || located.pull.state !== 'open') return renderChangePage(store, server, kit, name, { status: 409, message: copy('not-open') });
-  if (located.pull.headSha !== head) return renderChangePage(store, server, kit, name, { status: 409, movedFrom: head });
-  if (decision === 'request-changes' && comment === '') return renderChangePage(store, server, kit, name, { status: 400, message: copy('comment-required') });
+  if (located.pull === null || located.pull.state !== 'open') return renderChangePage(store, server, await makeKit(), name, { status: 409, message: copy('not-open') });
+  if (located.pull.headSha !== head) return renderChangePage(store, server, await makeKit(), name, { status: 409, movedFrom: head });
+  if (decision === 'request-changes' && comment === '') return renderChangePage(store, server, await makeKit(), name, { status: 400, message: copy('comment-required') });
 
   const kind: DecisionKind = decision;
   try {
@@ -277,7 +331,7 @@ async function decide(store: Store, server: ApprovalServer, kit: PageKit, req: I
     });
   } catch (err) {
     if (!(err instanceof ForgeRequestError)) throw err;
-    return renderChangePage(store, server, kit, name, { status: 502, message: copy('record-failed') });
+    return renderChangePage(store, server, await makeKit(), name, { status: 502, message: copy('record-failed') });
   }
   // Post/redirect/get: the page the decider lands on reads the recorded state back from the forge.
   return { status: 303, contentType: 'text/plain; charset=utf-8', body: 'recorded\n', headers: { Location: approveRoute(name) } };
@@ -285,8 +339,11 @@ async function decide(store: Store, server: ApprovalServer, kit: PageKit, req: I
 
 /**
  * Answers every request under the approval prefix. `server` is null when the
- * store declares no change approval, and then every such path is `404`.
- * `makeKit` builds the browsing surface's shell only after the requester is known.
+ * store declares no change approval, and then every such path is `404` —
+ * unless `unavailable` says the block is declared but its surface could not be
+ * built after startup (serve-follows-config-changes D4), and then every such
+ * path is `503`, naming why. `makeKit` builds the browsing surface's shell only
+ * after the requester is known.
  */
 export async function handleApprove(
   store: Store,
@@ -295,7 +352,9 @@ export async function handleApprove(
   method: string,
   pathname: string,
   makeKit: () => Promise<PageKit>,
+  unavailable: string | null = null,
 ): Promise<Reply> {
+  if (server === null && unavailable !== null) return text(503, `the approval page is unavailable: ${unavailable}`);
   if (server === null) return text(404, 'not found');
 
   const verified = await server.verifier.verify(req.headers[server.approval.identity.header.toLowerCase()]);
@@ -305,7 +364,8 @@ export async function handleApprove(
   const decisionMatch = DECISION_ROUTE.exec(pathname);
   if (method === 'POST') {
     if (decisionMatch === null) return text(405, 'method not allowed');
-    return decide(store, server, await makeKit(), req, decisionMatch[1]!, verified.email);
+    // The shell reads the whole store, and an accepted decision only redirects, so it is built on the error paths alone.
+    return decide(store, server, makeKit, req, decisionMatch[1]!, verified.email);
   }
   if (pathname === '/approve' || pathname === APPROVE_ROUTE_PREFIX) return indexPage(store, server, await makeKit());
   const pageMatch = PAGE_ROUTE.exec(pathname);
