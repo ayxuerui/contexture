@@ -16,5 +16,5 @@
 ## 3. Docs and close-out
 
 - [x] 3.1 README: the approval section says `serve` lands by itself, names `land: manual` and the lock, and keeps `ctxr land` for manual use; drop the scheduler instructions
-- [ ] 3.2 File the contexture-images follow-up: remove `land-cron` and the `approvals` profile, make `serve`'s store mount writable, keep the key out of `agents`
+- [x] 3.2 File the contexture-images follow-up: remove `land-cron` and the `approvals` profile, make `serve`'s store mount writable, keep the key out of `agents`
 - [x] 3.3 `npm run build && npm test && openspec validate serve-lands-approved-changes --strict` all exit 0
