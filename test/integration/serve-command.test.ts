@@ -382,8 +382,8 @@ const COUNT_LABELS: Readonly<Record<string, string>> = {
   sources_cited: 'Notes citing new sources',
 };
 
-describe('ctxr serve PDFs (real CLI) — file-pdfs-beside-their-page', () => {
-  it('serves a page\'s PDF as application/pdf, byte-verbatim, on the publish and preview routes alike', async () => {
+describe('ctxr serve send copies (real CLI) — send-copies-beside-their-page', () => {
+  it('serves each send copy with its format\'s content type, byte-verbatim, on the publish and preview routes alike', async () => {
     const tmp = await makeTmpDir();
     try {
       const env = hermeticGitEnv();
@@ -393,6 +393,7 @@ describe('ctxr serve PDFs (real CLI) — file-pdfs-beside-their-page', () => {
       const pdf = Buffer.from([0x25, 0x50, 0x44, 0x46, 0x2d, 0x31, 0x2e, 0x34, 0x0a, 0xe2, 0xe3, 0xcf, 0xd3, 0x0a, 0x25, 0x25, 0x45, 0x4f, 0x46, 0x0a]);
       await writeNote(tmp.root, '.contexture/publish/ctx-a/brief/index.html', '<!doctype html><title>Brief</title>');
       await writeFile(path.join(tmp.root, '.contexture/publish/ctx-a/brief/2026-01-15-brief.pdf'), pdf);
+      await writeFile(path.join(tmp.root, '.contexture/publish/ctx-a/brief/2026-01-15-model.xlsx'), pdf);
 
       const started = await runCli(['--json', 'session', 'start'], { cwd: tmp.root, env });
       expect(started.exitCode).toBe(0);
@@ -400,14 +401,21 @@ describe('ctxr serve PDFs (real CLI) — file-pdfs-beside-their-page', () => {
       const worktreeName = path.basename(worktree);
       await writeNote(worktree, '.contexture/publish/ctx-a/draft/index.html', '<!doctype html><title>Draft</title>');
       await writeFile(path.join(worktree, '.contexture/publish/ctx-a/draft/2026-03-02-draft.pdf'), pdf);
+      await writeFile(path.join(worktree, '.contexture/publish/ctx-a/draft/2026-03-02-draft.docx'), pdf);
 
       const { child, firstLine } = await runCliBackground(['serve', '--port', '0', '--json'], { cwd: tmp.root, env });
       try {
         const baseUrl = (JSON.parse(firstLine) as { data: { url: string } }).data.url;
-        for (const route of ['publish/ctx-a/brief/2026-01-15-brief.pdf', `preview/${worktreeName}/ctx-a/draft/2026-03-02-draft.pdf`]) {
+        const cases: [string, string][] = [
+          ['publish/ctx-a/brief/2026-01-15-brief.pdf', 'application/pdf'],
+          ['publish/ctx-a/brief/2026-01-15-model.xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'],
+          [`preview/${worktreeName}/ctx-a/draft/2026-03-02-draft.pdf`, 'application/pdf'],
+          [`preview/${worktreeName}/ctx-a/draft/2026-03-02-draft.docx`, 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'],
+        ];
+        for (const [route, contentType] of cases) {
           const res = await fetch(`${baseUrl}${route}`);
           expect(res.status).toBe(200);
-          expect(res.headers.get('content-type')).toBe('application/pdf');
+          expect(res.headers.get('content-type')).toBe(contentType);
           expect(Buffer.from(await res.arrayBuffer()).equals(pdf)).toBe(true);
         }
       } finally {
