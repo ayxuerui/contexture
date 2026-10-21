@@ -4,14 +4,16 @@
 
 Governs how store content — retrievable notes, the catalog, the graph's human-readable document, and
 published pages — is addressed by URL, rendered for a browser, and cross-linked, for a human reading
-their own store. This capability defines no requester concept and enforces no per-requester filtering,
+their own store. This capability's routes define no requester concept and enforce no per-requester filtering,
 which is what makes serving possible without first building a filtered per-requester materialization
 (see `context-projection`, proposed separately) — a fact that holds regardless of which address the
 server is bound to. It binds to loopback by default; an operator MAY widen that bind address explicitly
 when they have arranged their own trusted front end (a firewall, a tunnel, a reverse proxy) to account
 for the filtering this capability still does not do. A networked, requester-scoped serving mode with its
 own filtering is out of scope here and would need its own capability built on that materialization, not
-an extension of this one's default.
+an extension of this one's default. The `/approve/` routes `ctxr serve` also answers are not this
+capability's: `change-approval` governs them, and they verify who is asking — to decide who may record a
+decision, not to filter what anyone may read.
 
 ## Requirements
 
@@ -570,3 +572,19 @@ resolved from the same choice the server already applied to the page, never from
 - **WHEN** the theme follows the operating system and the browser's light/dark preference changes while a page with a
   drawn diagram is open
 - **THEN** the diagram is redrawn in the palette matching the new preference, without the page being reloaded
+
+### Requirement: A published PDF is served as a PDF
+A request under the publish route, or under a session worktree's preview route, that names a file
+ending in `.pdf` SHALL be answered with the content type `application/pdf`, so a browser displays it
+in place rather than downloading it. The body SHALL remain byte-identical to the file on disk, as
+for every published file.
+
+#### Scenario: A page's PDF opens in the browser
+- **WHEN** a `GET` request names `2026-01-15-brief.pdf` in a published page's folder
+- **THEN** the response is `200` with content type `application/pdf`, and its body is
+  byte-identical to the file
+
+#### Scenario: A previewed PDF is served the same way
+- **WHEN** a `GET` request names a PDF in a page folder held in a session worktree, under that
+  worktree's preview route
+- **THEN** the response carries content type `application/pdf`

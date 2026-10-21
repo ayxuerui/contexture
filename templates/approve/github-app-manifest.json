@@ -1,0 +1,15 @@
+{
+  "name": "<owner>-ctx-approvals",
+  "url": "https://github.com/<owner>/<store>",
+  "description": "Records approvals made on a contexture store's review page, and lands the approved changes.",
+  "public": false,
+  "hook_attributes": { "active": false },
+  "request_oauth_on_install": false,
+  "default_permissions": {
+    "contents": "write",
+    "issues": "write",
+    "pull_requests": "write",
+    "metadata": "read"
+  },
+  "default_events": []
+}
