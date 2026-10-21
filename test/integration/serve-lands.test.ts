@@ -1,4 +1,5 @@
-import { access } from 'node:fs/promises';
+import { access, readFile } from 'node:fs/promises';
+import path from 'node:path';
 import { createServer, request, type Server } from 'node:http';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { makeApprovalStore, recordApproval, type ApprovalStore } from '../helpers/approval-store.js';
@@ -41,9 +42,10 @@ function approve(url: string, name: string, head: string): Promise<number> {
   });
 }
 
-function getStatus(url: string): Promise<number> {
+function getStatus(url: string, email?: string): Promise<number> {
   return new Promise((resolve, reject) => {
-    request(url, (res) => {
+    const headers: Record<string, string> = email === undefined ? {} : { 'cf-access-jwt-assertion': signer.token({ iss: ISSUER, aud: ['aud-1'], email }) };
+    request(url, { headers }, (res) => {
       res.resume();
       res.on('end', () => resolve(res.statusCode ?? 0));
     }).on('error', reject).end();
@@ -116,6 +118,23 @@ describe('ctxr serve lands what was approved (real CLI, fake forge)', () => {
       });
       const list = await runCli(['review', 'list', '--json'], { cwd: store.root, env: store.env });
       expect(JSON.parse(list.stdout).data.sessions[0].state).toBe('approved');
+    } finally {
+      await store.tmp.cleanup();
+    }
+  });
+
+  it('a configuration change merged elsewhere reaches the running server within a sweep', async () => {
+    const store = await storeWith();
+    try {
+      const configFile = path.join(store.root, 'contexture.yaml');
+      const withNewDecider = (await readFile(configFile, 'utf8')).replace('deciders: ["@example.com"]', 'deciders: ["@example.com", "b@other.example"]');
+      await withServe(store, async (url, stderr) => {
+        const asB = () => getStatus(new URL('/approve/', url).toString(), 'b@other.example');
+        expect(await asB()).toBe(403);
+        // Merged on the forge by a person, not by ctxr land: nothing else moves the canonical clone.
+        await store.advanceMain({ 'contexture.yaml': withNewDecider }, 'add a decider');
+        expect(await until(async () => (await asB()) === 200, 30_000), stderr()).toBe(true);
+      });
     } finally {
       await store.tmp.cleanup();
     }
