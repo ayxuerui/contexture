@@ -42,8 +42,8 @@ export function lifespanOf(relativePath: string, publishPath: string): PageLifes
 
 /**
  * The `YYYY-MM-DD-` lead of a dated name: a disposable page's folder, stamped
- * by `ctxr publish new --disposable`, and a page's PDF rendering without its
- * `.pdf` extension (file-pdfs-beside-their-page D4). At least one character
+ * by `ctxr publish new --disposable`, and a page's send copy without its
+ * extension (file-pdfs-beside-their-page D4). At least one character
  * must follow the date.
  */
 const LEADING_DATE_RE = /^(\d{4})-(\d{2})-(\d{2})-./;
