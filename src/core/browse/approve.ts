@@ -57,6 +57,8 @@ export interface Reply {
   contentType: string;
   body: string;
   headers?: Record<string, string>;
+  /** Set on an accepted approval: the server starts a landing run (serve-lands-approved-changes). */
+  landingRequested?: boolean;
 }
 
 const text = (status: number, message: string): Reply => ({ status, contentType: 'text/plain; charset=utf-8', body: `${message}\n` });
@@ -334,7 +336,13 @@ async function decide(store: Store, server: ApprovalServer, makeKit: () => Promi
     return renderChangePage(store, server, await makeKit(), name, { status: 502, message: copy('record-failed') });
   }
   // Post/redirect/get: the page the decider lands on reads the recorded state back from the forge.
-  return { status: 303, contentType: 'text/plain; charset=utf-8', body: 'recorded\n', headers: { Location: approveRoute(name) } };
+  return {
+    status: 303,
+    contentType: 'text/plain; charset=utf-8',
+    body: 'recorded\n',
+    headers: { Location: approveRoute(name) },
+    landingRequested: kind === 'approve',
+  };
 }
 
 /**

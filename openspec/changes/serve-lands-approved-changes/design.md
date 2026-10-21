@@ -54,7 +54,10 @@ waits on a landing run.
 ### D4. The lock lives in git's common directory
 
 `ctxr land` writes `<git-common-dir>/ctxr-land.lock` with `O_EXCL`, containing its pid and host name, and
-removes it on exit. A lock whose pid no longer exists on the same host is stale and is taken over. The common
+removes it on exit, including when it is stopped by `SIGTERM` or `SIGINT`. A lock whose pid no longer exists on the
+same host is stale and is taken over. Only the host that wrote a lock can tell whether its process is alive, and
+each container has its own host name, so a lock written by another host counts as stale once it is two hours
+old. That is longer than any landing run, and it covers a container that was recreated while holding the lock. The common
 directory is shared by all worktrees and by every container that mounts the store, so `serve`, a person in the
 `agents` container, and a leftover `land-cron` all see one lock.
 
@@ -91,9 +94,10 @@ the recording identity is out of agents' reach, which this decision keeps.
 
 ### D6. Committer identity on a bare host
 
-When `git var GIT_COMMITTER_IDENT` fails in the checkout, `ctxr land` sets `GIT_COMMITTER_NAME` to the recording
-login and `GIT_COMMITTER_EMAIL` to `<recording login without [bot]>@users.noreply.github.com`, in the rebase
-process's environment only. The author of each commit is untouched, so the change stays attributed to whoever
+When no committer is configured, `ctxr land` sets `GIT_COMMITTER_NAME` to the recording login. "Configured" means
+`user.email` in the checkout's git configuration, or `GIT_COMMITTER_EMAIL` or `EMAIL` in the environment. `git var`
+does not decide this, because git guesses an identity from the host name (`ubuntu@<fqdn>` on the maintainer's
+host) rather than failing, and that guess names an account that does not exist. `ctxr land` likewise sets and `GIT_COMMITTER_EMAIL` to `<recording login without [bot]>@users.noreply.github.com`, in the rebase process's environment only. A resolver also gets the same author variables, since it makes new commits. The author of each commit is untouched, so the change stays attributed to whoever
 wrote it.
 
 ## Risks / Trade-offs
