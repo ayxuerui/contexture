@@ -12,6 +12,10 @@ import { buildRouteTable } from '../core/browse/routes.js';
 import { readDiagramScript, readStylesheet, renderShell } from '../core/browse/templates.js';
 import type { CommandOutcome, CommandRequires } from '../core/command.js';
 import type { RunEnv } from '../core/env.js';
+import type { GitRunner } from '../core/git/exec.js';
+import { createServingState, type ServingStateHolder } from '../core/browse/serving-state.js';
+import { readConfig } from '../config/load.js';
+import { MIGRATION_STEPS } from '../config/migrations.js';
 import { ExitCode } from '../core/exit-codes.js';
 import { listSessionWorktreeDirs } from '../core/session.js';
 import type { Store } from '../core/store.js';
@@ -57,6 +61,7 @@ const CONTENT_TYPES: Readonly<Record<string, string>> = {
   '.json': 'application/json; charset=utf-8',
   '.svg': 'image/svg+xml',
   '.png': 'image/png',
+  '.pdf': 'application/pdf',
   '.jpg': 'image/jpeg',
   '.jpeg': 'image/jpeg',
   '.gif': 'image/gif',
@@ -113,14 +118,22 @@ async function readDerivedDocument(absolutePath: string): Promise<{ text: string
   }
 }
 
-async function handleRequest(store: Store, approval: ApprovalServer | null, stderr: NodeJS.WritableStream, req: IncomingMessage, res: ServerResponse): Promise<void> {
+async function handleRequest(
+  holder: ServingStateHolder,
+  git: GitRunner,
+  stderr: NodeJS.WritableStream,
+  req: IncomingMessage,
+  res: ServerResponse,
+): Promise<void> {
+  // serve-follows-config-changes: one state per request, so a request never mixes two configurations.
+  const { store, approval, approvalError } = await holder.current();
   const method = req.method ?? 'GET';
   const url = new URL(req.url ?? '/', 'http://localhost');
   const pathname = decodeURIComponent(url.pathname);
   stderr.write(`${method} ${pathname}\n`);
 
   // context-browsing spec: the one exception to read-only is a POST to the decision route of a store that declares change approval.
-  const decisionPost = method === 'POST' && approval !== null && isDecisionRoute(pathname);
+  const decisionPost = method === 'POST' && (approval !== null || approvalError !== null) && isDecisionRoute(pathname);
   if (method !== 'GET' && method !== 'HEAD' && !decisionPost) {
     send(res, method, 405, 'text/plain; charset=utf-8', 'method not allowed\n');
     return;
@@ -174,7 +187,7 @@ async function handleRequest(store: Store, approval: ApprovalServer | null, stde
         resolveLink: buildLinkResolver([...table.notes.values()]),
       };
     };
-    const reply = await handleApprove(store, approval, req, method, pathname, makeKit);
+    const reply = await handleApprove(store, approval, req, method, pathname, makeKit, approvalError);
     const replyHeaders = reply.contentType.startsWith('text/html') ? { ...headers, ...reply.headers } : { 'Cache-Control': 'no-store', ...reply.headers };
     send(res, method, reply.status, reply.contentType, reply.body, replyHeaders);
     return;
@@ -259,7 +272,7 @@ async function handleRequest(store: Store, approval: ApprovalServer | null, stde
       return;
     }
     const linkFor = (notePath: string): string | null => (table.notes.has(notePath) ? `/notes/${encodeURI(notePath)}` : null);
-    const body = await renderReview(store, name, url.searchParams.get(REVIEW_HEAD_PARAM), linkFor, resolveLink);
+    const body = await renderReview(git, store, name, url.searchParams.get(REVIEW_HEAD_PARAM), linkFor, resolveLink);
     send(res, method, 200, 'text/html; charset=utf-8', await renderShell(`review — ${name}`, body, renderNav(table), shellState), headers);
     return;
   }
@@ -305,9 +318,17 @@ async function approvalServer(env: RunEnv, store: Store): Promise<ApprovalServer
 }
 
 export async function execute(env: RunEnv, store: Store, flags: ServeFlags): Promise<CommandOutcome<ServeData>> {
+  // Startup still fails fast on a recording-login mismatch or an unreachable forge; only later changes degrade.
   const approval = await approvalServer(env, store);
+  const holder = await createServingState({
+    initial: store,
+    initialApproval: approval,
+    load: (root) => readConfig(root, env.migrationSteps ?? MIGRATION_STEPS),
+    buildApproval: (next) => approvalServer(env, next),
+    log: (line) => env.io.stderr.write(`${line}\n`),
+  });
   const server = createServer((req, res) => {
-    handleRequest(store, approval, env.io.stderr, req, res).catch((err: unknown) => {
+    handleRequest(holder, env.git, env.io.stderr, req, res).catch((err: unknown) => {
       env.io.stderr.write(`serve: ${err instanceof Error ? err.message : String(err)}\n`);
       if (!res.headersSent) send(res, req.method ?? 'GET', 500, 'text/plain; charset=utf-8', 'internal error\n');
       else res.end();

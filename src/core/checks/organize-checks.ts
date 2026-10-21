@@ -9,7 +9,7 @@ import { SOURCE_TYPE_FIELD } from '../ingest/identity.js';
 import { missingRequiredSection } from '../ingest/required-sections.js';
 import { parseNote } from '../notes/parse.js';
 import { PUBLISH_INDEX_FILE } from '../browse/routes.js';
-import { DISPOSABLE_REVIEW_DAYS, daysBetween, lifespanOf, parseDisposableDate } from '../publish/lifespan.js';
+import { DISPOSABLE_REVIEW_DAYS, daysBetween, lifespanOf, parseLeadingDate } from '../publish/lifespan.js';
 import { assessRepresentation, readReadme } from '../publish/represents.js';
 import { findStaleRollups } from '../rollup.js';
 import { defineCheck } from './types.js';
@@ -356,7 +356,7 @@ export const disposablePageDueCheck = defineCheck({
     const findings: Finding[] = [];
     for (const folder of await publishedPageFolders(ctx.storeRoot, publishPath)) {
       if (lifespanOf(`${folder}/${PUBLISH_INDEX_FILE}`, publishPath) !== 'disposable') continue;
-      const date = parseDisposableDate(path.posix.basename(folder));
+      const date = parseLeadingDate(path.posix.basename(folder));
       if (date === null) continue;
       const age = daysBetween(date, today);
       if (age <= DISPOSABLE_REVIEW_DAYS) continue;

@@ -76,6 +76,7 @@ describe('publish check', () => {
         passed: true,
         failures: [],
         lifespan: 'permanent',
+        pdfs: [],
         served_at: {
           area: 'publish',
           route: '/publish/ctx-a/good/index.html',
@@ -515,6 +516,140 @@ describe('publish check — two-kinds-of-published-page lifespans', () => {
       expect(outcome.exitCode).toBe(ExitCode.CheckFailed);
       expect(outcome.data?.failures.map((f) => f.check)).toEqual(['represented-note-hash']);
       expect(outcome.data?.failures[0]?.message).toContain('stale');
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+});
+
+describe('publish check — file-pdfs-beside-their-page', () => {
+  const PDF_BYTES = '%PDF-1.4\n%%EOF\n';
+
+  async function pageWithPdfs(pdfs: readonly string[], slug = 'ctx-a/brief', readme: (root: string) => Promise<string> = stampedReadme) {
+    const tmp = await makeTmpDir();
+    const store: Store = { root: tmp.root, config: makeConfig() };
+    const htmlPath = await writePage(tmp.root, slug, GOOD_HTML, await readme(tmp.root));
+    for (const pdf of pdfs) {
+      const pdfPath = path.join(path.dirname(htmlPath), pdf);
+      await mkdir(path.dirname(pdfPath), { recursive: true });
+      await writeFile(pdfPath, PDF_BYTES);
+    }
+    return { tmp, store, htmlPath };
+  }
+
+  it('passes a dated PDF beside the index page and lists it with its address', async () => {
+    const { tmp, store, htmlPath } = await pageWithPdfs(['2026-01-15-brief.pdf']);
+    try {
+      const outcome = await executeCheck(store, { path: htmlPath });
+      expect(outcome.exitCode).toBe(ExitCode.Ok);
+      expect(outcome.data?.failures).toEqual([]);
+      expect(outcome.data?.pdfs).toEqual([
+        {
+          path: 'publish/ctx-a/brief/2026-01-15-brief.pdf',
+          served_at: { area: 'publish', route: '/publish/ctx-a/brief/2026-01-15-brief.pdf', url: null, worktree: null, after_landing: null },
+        },
+      ]);
+      expect(outcome.humanSummary).toContain('1 PDF rendering(s).');
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('fails pdf-name for an undated PDF at the folder root, naming it, alongside every other check', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const store: Store = { root: tmp.root, config: makeConfig() };
+      const htmlPath = await writePage(tmp.root, 'ctx-a/brief', GOOD_HTML.replace('<title>Good Page</title>', ''), await stampedReadme(tmp.root));
+      await writeFile(path.join(path.dirname(htmlPath), 'brief.pdf'), PDF_BYTES);
+      const outcome = await executeCheck(store, { path: htmlPath });
+      expect(outcome.exitCode).toBe(ExitCode.CheckFailed);
+      expect(outcome.data?.failures.map((f) => f.check).sort()).toEqual(['pdf-name', 'title']);
+      expect(outcome.data?.failures.find((f) => f.check === 'pdf-name')?.message).toContain('"brief.pdf"');
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  for (const name of ['2026-02-30-brief.pdf', '2026-01-15-.pdf', '2026-01-15.pdf']) {
+    it(`fails pdf-name for ${name}`, async () => {
+      const { tmp, store, htmlPath } = await pageWithPdfs([name]);
+      try {
+        const outcome = await executeCheck(store, { path: htmlPath });
+        expect(outcome.data?.failures.map((f) => f.check)).toEqual(['pdf-name']);
+      } finally {
+        await tmp.cleanup();
+      }
+    });
+  }
+
+  it('treats a PDF under assets/ as an input: no pdf-name result and not listed', async () => {
+    const { tmp, store, htmlPath } = await pageWithPdfs(['assets/kickoff.pdf']);
+    try {
+      const outcome = await executeCheck(store, { path: htmlPath });
+      expect(outcome.exitCode).toBe(ExitCode.Ok);
+      expect(outcome.data?.pdfs).toEqual([]);
+      expect(outcome.humanSummary).not.toContain('PDF');
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('lists each earlier rendering beside the newest, in date order', async () => {
+    const { tmp, store, htmlPath } = await pageWithPdfs(['2026-03-02-brief.pdf', '2026-01-15-brief.pdf']);
+    try {
+      const outcome = await executeCheck(store, { path: htmlPath });
+      expect(outcome.data?.pdfs.map((pdf) => pdf.path)).toEqual(['publish/ctx-a/brief/2026-01-15-brief.pdf', 'publish/ctx-a/brief/2026-03-02-brief.pdf']);
+      expect(outcome.data?.pdfs[1]?.served_at?.route).toBe('/publish/ctx-a/brief/2026-03-02-brief.pdf');
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('checks the page when the path names one of its PDFs', async () => {
+    const { tmp, store, htmlPath } = await pageWithPdfs(['2026-01-15-brief.pdf']);
+    try {
+      const outcome = await executeCheck(store, { path: path.join(path.dirname(htmlPath), '2026-01-15-brief.pdf') });
+      expect(outcome).toEqual(await executeCheck(store, { path: htmlPath }));
+      expect(outcome.data?.path).toBe('publish/ctx-a/brief/index.html');
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('throws PublishPageNotFoundError for the index page when a named PDF has none beside it', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const store: Store = { root: tmp.root, config: makeConfig() };
+      const dir = path.join(tmp.root, 'publish', 'ctx-a', 'loose');
+      await mkdir(dir, { recursive: true });
+      await writeFile(path.join(dir, '2026-01-15-brief.pdf'), PDF_BYTES);
+      await expect(executeCheck(store, { path: path.join(dir, '2026-01-15-brief.pdf') })).rejects.toThrow(PublishPageNotFoundError);
+      await expect(executeCheck(store, { path: path.join(dir, '2026-01-15-brief.pdf') })).rejects.toThrow('publish/ctx-a/loose/index.html');
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('keeps a stale page stale when a newer PDF is added without restamping', async () => {
+    const { tmp, store, htmlPath } = await pageWithPdfs(['2026-01-15-brief.pdf']);
+    try {
+      await writeFile(path.join(tmp.root, 'notes', 'ctx-note.md'), `${NOTE_BODY}\nA new fact.\n`);
+      await writeFile(path.join(path.dirname(htmlPath), '2026-03-02-brief.pdf'), PDF_BYTES);
+      const outcome = await executeCheck(store, { path: htmlPath });
+      expect(outcome.exitCode).toBe(ExitCode.CheckFailed);
+      expect(outcome.data?.failures.map((f) => f.check)).toEqual(['represented-note-hash']);
+      expect(outcome.data?.failures[0]?.message).toContain('stale');
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('fails pdf-name on a disposable page too', async () => {
+    const { tmp, store, htmlPath } = await pageWithPdfs(['brief.pdf'], 'disposable/2026-10-13-agent-week', async () => '# page\n');
+    try {
+      const outcome = await executeCheck(store, { path: htmlPath });
+      expect(outcome.data?.lifespan).toBe('disposable');
+      expect(outcome.data?.failures.map((f) => f.check)).toEqual(['pdf-name']);
     } finally {
       await tmp.cleanup();
     }
