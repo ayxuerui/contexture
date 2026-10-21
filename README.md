@@ -355,7 +355,9 @@ change_approval:
 
 Identity comes from the proxy in front of `serve` (Cloudflare Access, Google IAP, oauth2-proxy): every `/approve/` request must carry its signed assertion, verified against the key set, issuer, audience and expiry, or it gets `401`. A request that reaches the port around the proxy carries none.
 
-Then the system does the rest. Run `ctxr land --pending` on a schedule, with a forge token for the recording identity that can push and merge: it lands every pull request whose current head carries an approval — rebasing it onto the default branch when it is behind, merging, syncing the canonical clone, and removing the worktree. A clean rebase keeps the approval only when every commit's patch is unchanged, and the carry-over is recorded on the pull request. A rebase that conflicts goes to the configured resolver; its result is checked (clean, rebased, `ctxr doctor` passes), pushed, and handed back to the page for a new decision, because nobody has read an agent's merge of two sides. With no resolver, the change is marked blocked. Requested changes and blocked landings reach the next agent session through `ctxr review list`.
+Then the system does the rest, inside `ctxr serve` itself — no scheduler. Right after an Approve, and every five minutes as a sweep (once ten seconds after startup, for approvals made while it was down), `serve` runs `ctxr land --pending` as a child process. That lands every pull request whose current head carries an approval — rebasing it onto the default branch when it is behind, merging, syncing the canonical clone, and removing the worktree. A clean rebase keeps the approval only when every commit's patch is unchanged, and the carry-over is recorded on the pull request. A rebase that conflicts goes to the configured resolver; its result is checked (clean, rebased, `ctxr doctor` passes), pushed, and handed back to the page for a new decision, because nobody has read an agent's merge of two sides. With no resolver, the change is marked blocked. Requested changes and blocked landings reach the next agent session through `ctxr review list`.
+
+Runs never overlap, and only one landing runs per repository at a time: `ctxr land` holds a lock in the repository's git directory, so `serve`, a second `serve` and a person running `ctxr land` by hand never race. A run's output goes to `serve`'s stderr, prefixed `land:`, and a failed run never affects a page. On a host with no git identity, the catch-up rebase commits as the recording login. `serve` needs write access to the store for this. Set `change_approval.land: manual` to turn it off, for a deployment that runs `ctxr land --pending` some other way; `ctxr land` stays available for landing by hand.
 
 Outside the store, set up the recording identity (below) and, where your plan allows it, a branch protection rule requiring one approving review.
 
@@ -369,18 +371,18 @@ Decisions and landings are recorded on the pull request by one forge identity, t
 2. Generate a private key on the App's page, and keep the `.pem` outside every repository, readable only by the user that runs `serve` (`chmod 600`).
 3. Install the App on the store's repository, selecting only that repository.
 4. Set `recording_login` to the App's slug followed by `[bot]`, e.g. `ctx-a-approvals[bot]`.
-5. Give `ctxr serve` and the scheduled `ctxr land --pending` these, and nothing else needs a forge credential:
+5. Give `ctxr serve` these, and nothing else needs a forge credential:
 
 ```sh
 CONTEXTURE_GITHUB_APP_ID=<the App ID>             # or its client ID
 CONTEXTURE_GITHUB_APP_PRIVATE_KEY_FILE=/run/secrets/ctx-approvals.pem   # or CONTEXTURE_GITHUB_APP_PRIVATE_KEY=<the PEM text>
 ```
 
-contexture finds the installation from the store's github.com `origin` (or from `CONTEXTURE_GITHUB_REPOSITORY=owner/repo` when `origin` is not a github.com URL), and `ctxr land` fetches and pushes as the App too, handing git the token for that one command only. Every envelope reports `credential: github-app` and never the credential itself.
+contexture finds the installation from the store's github.com `origin` (or from `CONTEXTURE_GITHUB_REPOSITORY=owner/repo` when `origin` is not a github.com URL), and landing fetches and pushes as the App too, handing git the token for that one command only. Every envelope reports `credential: github-app` and never the credential itself.
 
 **One App per key holder.** Whoever holds the key can act on every repository the App is installed on, so share an App only across stores *you* run. To serve several of your stores under different owners, make the App installable on any account and install it on each owner with only that store's repository selected. A store someone else runs uses their own App.
 
-**Where the key may live.** Only in the environments of `ctxr serve` and the land runner — never anywhere an agent runs commands, such as a harness gateway. An agent that can read the key can act on every store the App is installed on. If a key leaks, delete it on the App's page; that revokes it at once.
+**Where the key may live.** Only in the environment of `ctxr serve`, which lands too — never anywhere an agent runs commands, such as a harness gateway; keep `serve` in a process or container of its own. An agent that can read the key can act on every store the App is installed on. If a key leaks, delete it on the App's page; that revokes it at once.
 
 **A token for an account.** Without the App variables, `serve`, `land` and `review list` use `gh`'s own credential (`GH_TOKEN` or its credential file), so a dedicated machine account with a fine-grained token (Contents, Issues and Pull requests read and write on the store's repository) also works. It needs a rotation whenever the token expires.
 

@@ -8,7 +8,8 @@ import { carriesOver, forgeRead, reviewStateOf, sessionPulls, sessionWorktrees, 
 import type { CommandOutcome, CommandRequires } from '../core/command.js';
 import type { Finding } from '../core/envelope.js';
 import type { RunEnv } from '../core/env.js';
-import { ChangeApprovalNotDeclaredError, LandFlagsError, LandRefusedError } from '../core/errors.js';
+import { ChangeApprovalNotDeclaredError, LandBusyError, LandFlagsError, LandRefusedError } from '../core/errors.js';
+import { acquireLandLock } from '../core/git/land-lock.js';
 import { ExitCode } from '../core/exit-codes.js';
 import { credentialsFor, ghCredentials, type CredentialKind, type ForgeCredentials } from '../core/forge/credentials.js';
 import { createGhForgeClient, ForgeRequestError, type ForgeClient, type MergeMethod, type PullRequest } from '../core/forge/github.js';
@@ -169,13 +170,28 @@ async function checkoutFor(ctx: Context, session: SessionWorktree | undefined, h
   };
 }
 
+/**
+ * write-lifecycle spec ("Landing commits on a host with no git identity"),
+ * design.md D6: when nothing configures who commits, the rebase (and a resolver)
+ * commit as the recording login, through the process environment only. "Configured"
+ * means config or the environment — never git's own guess from the host name, which
+ * would sign commits as an account that does not exist.
+ */
+async function fallbackIdentity(ctx: Context, cwd: string): Promise<Record<string, string>> {
+  const email = await git(ctx, ['config', '--get', 'user.email'], cwd, true);
+  if (email.stdout.trim() !== '' || ctx.env.env.GIT_COMMITTER_EMAIL || ctx.env.env.EMAIL) return {};
+  const login = ctx.recordingLogin ?? 'ctxr-land';
+  const address = `${login.replace(/\[bot\]$/, '')}@users.noreply.github.com`;
+  return { GIT_COMMITTER_NAME: login, GIT_COMMITTER_EMAIL: address, GIT_AUTHOR_NAME: login, GIT_AUTHOR_EMAIL: address };
+}
+
 /** Runs the configured resolver in `cwd` with the playbook as its last argument; resolves to its exit code. */
 async function runResolverFor(ctx: Context, cwd: string, pull: PullRequest): Promise<number> {
   return runResolver({
     argv: ctx.resolver!,
     prompt: resolverPrompt(pull.number, ctx.base, ctx.defaultBranch),
     cwd,
-    env: { ...ctx.env.env, CTXR_LAND_PR: String(pull.number), CTXR_LAND_BASE: ctx.base },
+    env: { ...ctx.env.env, ...(await fallbackIdentity(ctx, cwd)), CTXR_LAND_PR: String(pull.number), CTXR_LAND_BASE: ctx.base },
     output: ctx.env.io.stderr,
   });
 }
@@ -223,7 +239,13 @@ async function catchUp(ctx: Context, result: LandResult, pull: PullRequest, sess
 
   const checkout = await checkoutFor(ctx, session, pull.headSha);
   try {
-    const rebase = await git(ctx, ['-c', 'core.editor=true', 'rebase', '--quiet', ctx.base], checkout.cwd, true);
+    // A rebase keeps each commit's author; only the committer can be missing, and the fallback names it.
+    const identity = await fallbackIdentity(ctx, checkout.cwd);
+    const rebase = await ctx.env.git.run(['-c', 'core.editor=true', 'rebase', '--quiet', ctx.base], {
+      cwd: checkout.cwd,
+      allowFailure: true,
+      ...(Object.keys(identity).length === 0 ? {} : { env: { ...ctx.env.env, GIT_COMMITTER_NAME: identity.GIT_COMMITTER_NAME, GIT_COMMITTER_EMAIL: identity.GIT_COMMITTER_EMAIL } }),
+    });
     if (rebase.exitCode === 0) {
       const rebased = (await git(ctx, ['rev-parse', 'HEAD'], checkout.cwd)).stdout.trim();
       const same = approvedHead === null || (await carriesOver(ctx.env.git, checkout.cwd, ctx.base, approvedHead, rebased));
@@ -425,6 +447,34 @@ export async function execute(env: RunEnv, store: Store, flags: LandFlags, forge
   const approval = store.config.change_approval;
   if (flags.pending && approval === undefined) throw new ChangeApprovalNotDeclaredError('ctxr land --pending');
 
+  // Before any forge call: a sweep that finds another landing running steps aside without reading anything.
+  const lock = await acquireLandLock(env.git, store.root);
+  if (!lock.acquired) {
+    if (!flags.pending) throw new LandBusyError(lock.holder.pid, lock.holder.host);
+    return {
+      exitCode: ExitCode.Ok,
+      data: null,
+      findings: [],
+      humanSummary: `Another landing is running against this repository (process ${lock.holder.pid} on ${lock.holder.host}); this sweep stepped aside.`,
+      notices: [`land: another landing is running (process ${lock.holder.pid} on ${lock.holder.host}); stepped aside.`],
+      storeRoot: store.root,
+      schemaVersion: store.config.schema_version,
+    };
+  }
+  try {
+    return await landHoldingLock(env, store, flags, approval, forge);
+  } finally {
+    await lock.release();
+  }
+}
+
+async function landHoldingLock(
+  env: RunEnv,
+  store: Store,
+  flags: LandFlags,
+  approval: Store['config']['change_approval'],
+  forge: ForgeClient | undefined,
+): Promise<CommandOutcome<LandData>> {
   const credentials = forge === undefined ? await credentialsFor(env, store.root) : ghCredentials(env.env);
   const client = forge ?? createGhForgeClient(store.root, credentials);
   const canonical = await mainWorktreePath(env.git, store.root);

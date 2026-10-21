@@ -390,6 +390,27 @@ describe('readConfig', () => {
     }
   });
 
+  it('reads change_approval.land as auto or manual, absent when undeclared, and refuses anything else', async () => {
+    for (const [value, ok] of [['auto', true], ['manual', true], ['never', false]] as const) {
+      const tmp = await makeTmpDir();
+      try {
+        const text = `${minimalConfig()}serve: { base_url: "https://ctx-a.example.test" }\n${CHANGE_APPROVAL_BLOCK}  land: ${value}\n`;
+        await writeFile(path.join(tmp.root, CONFIG_FILE_NAME), text);
+        if (ok) expect((await readConfig(tmp.root)).change_approval?.land).toBe(value);
+        else await expect(readConfig(tmp.root)).rejects.toThrow(InvalidConfigError);
+      } finally {
+        await tmp.cleanup();
+      }
+    }
+    const tmp = await makeTmpDir();
+    try {
+      await writeFile(path.join(tmp.root, CONFIG_FILE_NAME), `${minimalConfig()}serve: { base_url: "https://ctx-a.example.test" }\n${CHANGE_APPROVAL_BLOCK}`);
+      expect((await readConfig(tmp.root)).change_approval?.land).toBeUndefined();
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
   it('refuses a decider entry that is neither an email nor an @domain', async () => {
     const tmp = await makeTmpDir();
     try {

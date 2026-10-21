@@ -785,6 +785,18 @@ export class LandRefusedError extends ContextureError {
   }
 }
 
+/** write-lifecycle spec ("One landing runs per repository at a time"): a named pull request is not landed while another landing runs. */
+export class LandBusyError extends ContextureError {
+  constructor(pid: number, host: string) {
+    super(ExitCode.CheckFailed, {
+      code: 'land.busy',
+      severity: 'error',
+      message: `Another landing is running against this repository (process ${pid} on ${host}); nothing was done. Try again when it finishes.`,
+      details: { pid, host },
+    });
+  }
+}
+
 /** write-lifecycle spec: `--pending` lands only recorded approvals, so `--confirm` cannot ride along. */
 export class LandFlagsError extends ContextureError {
   constructor(message: string) {

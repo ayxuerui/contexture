@@ -14,6 +14,8 @@ import type { CommandOutcome, CommandRequires } from '../core/command.js';
 import type { RunEnv } from '../core/env.js';
 import type { GitRunner } from '../core/git/exec.js';
 import { createServingState, type ServingStateHolder } from '../core/browse/serving-state.js';
+import { createLander, type Lander } from '../core/approval/lander.js';
+import type { StoreConfig } from '../config/schema.js';
 import { readConfig } from '../config/load.js';
 import { MIGRATION_STEPS } from '../config/migrations.js';
 import { ExitCode } from '../core/exit-codes.js';
@@ -120,6 +122,7 @@ async function readDerivedDocument(absolutePath: string): Promise<{ text: string
 
 async function handleRequest(
   holder: ServingStateHolder,
+  landing: LandingControl,
   git: GitRunner,
   stderr: NodeJS.WritableStream,
   req: IncomingMessage,
@@ -127,6 +130,7 @@ async function handleRequest(
 ): Promise<void> {
   // serve-follows-config-changes: one state per request, so a request never mixes two configurations.
   const { store, approval, approvalError } = await holder.current();
+  landing.sync(store.config);
   const method = req.method ?? 'GET';
   const url = new URL(req.url ?? '/', 'http://localhost');
   const pathname = decodeURIComponent(url.pathname);
@@ -190,6 +194,8 @@ async function handleRequest(
     const reply = await handleApprove(store, approval, req, method, pathname, makeKit, approvalError);
     const replyHeaders = reply.contentType.startsWith('text/html') ? { ...headers, ...reply.headers } : { 'Cache-Control': 'no-store', ...reply.headers };
     send(res, method, reply.status, reply.contentType, reply.body, replyHeaders);
+    // After the response: the decider's redirect never waits on a landing run.
+    if (reply.landingRequested === true) landing.trigger();
     return;
   }
 
@@ -317,6 +323,42 @@ async function approvalServer(env: RunEnv, store: Store): Promise<ApprovalServer
   };
 }
 
+/**
+ * change-approval spec ("The server lands what was approved"): one lander per
+ * server, running while the loaded configuration declares change_approval and
+ * does not say `land: manual`. It follows configuration changes like every
+ * other part of the server, so turning approval on or off at runtime starts or
+ * stops it.
+ */
+interface LandingControl {
+  sync(config: StoreConfig): void;
+  trigger(): void;
+  stop(): Promise<void>;
+}
+
+function createLandingControl(env: RunEnv, root: string): LandingControl {
+  let lander: Lander | null = null;
+  // Exactly the command a person would run: this Node binary and this CLI's entry script.
+  const command = [env.execPath, process.argv[1]!];
+  return {
+    sync(config) {
+      const wanted = config.change_approval !== undefined && config.change_approval.land !== 'manual';
+      if (wanted && lander === null) lander = createLander({ command, root, env: env.env, output: env.io.stderr });
+      if (!wanted && lander !== null) {
+        void lander.stop();
+        lander = null;
+      }
+    },
+    trigger() {
+      lander?.trigger();
+    },
+    async stop() {
+      await lander?.stop();
+      lander = null;
+    },
+  };
+}
+
 export async function execute(env: RunEnv, store: Store, flags: ServeFlags): Promise<CommandOutcome<ServeData>> {
   // Startup still fails fast on a recording-login mismatch or an unreachable forge; only later changes degrade.
   const approval = await approvalServer(env, store);
@@ -327,8 +369,16 @@ export async function execute(env: RunEnv, store: Store, flags: ServeFlags): Pro
     buildApproval: (next) => approvalServer(env, next),
     log: (line) => env.io.stderr.write(`${line}\n`),
   });
+  const landing = createLandingControl(env, store.root);
+  landing.sync(store.config);
+  // Stopping serve stops a landing run in progress; landing is resumable, so the next start finishes it.
+  const shutdown = (signal: NodeJS.Signals): void => {
+    void landing.stop().finally(() => process.exit(signal === 'SIGINT' ? 130 : 143));
+  };
+  process.once('SIGTERM', shutdown);
+  process.once('SIGINT', shutdown);
   const server = createServer((req, res) => {
-    handleRequest(holder, env.git, env.io.stderr, req, res).catch((err: unknown) => {
+    handleRequest(holder, landing, env.git, env.io.stderr, req, res).catch((err: unknown) => {
       env.io.stderr.write(`serve: ${err instanceof Error ? err.message : String(err)}\n`);
       if (!res.headersSent) send(res, req.method ?? 'GET', 500, 'text/plain; charset=utf-8', 'internal error\n');
       else res.end();

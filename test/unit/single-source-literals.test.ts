@@ -144,7 +144,9 @@ describe('single-source-literals guard', () => {
     // approve-from-the-review-page, and core/forge/github.ts is its one home
     // (design.md D10) — as core code, not the forge adapter
     // session-keeps-only-what-git-cannot-do removed. The store's configured
-    // conflict resolver is spawned only from core/approval/resolver.ts. The
+    // conflict resolver is spawned only from core/approval/resolver.ts, and
+    // serve's own landing runs (`ctxr land --pending`) only from
+    // core/approval/lander.ts (serve-lands-approved-changes D2). The
     // invariant this guards is "no ad hoc, scattered subprocess spawning,"
     // not "only one file in the whole codebase may ever spawn anything."
     const allow = [
@@ -153,6 +155,7 @@ describe('single-source-literals guard', () => {
       'core/harness/isolated-run.ts',
       'core/forge/github.ts',
       'core/approval/resolver.ts',
+      'core/approval/lander.ts',
     ];
     const hits = new Set([
       ...filesContainingSubstring("'node:child_process'", allow),

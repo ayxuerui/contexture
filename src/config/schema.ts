@@ -193,6 +193,13 @@ const ChangeApprovalSchema = z.object({
   /** design.md D6: the argument vector `ctxr land` runs on a conflict; absent means a conflict blocks. */
   resolver: z.array(z.string().min(1)).min(1).optional(),
   merge_method: z.enum(['squash', 'merge', 'rebase']).optional(),
+  /**
+   * serve-lands-approved-changes: whether `ctxr serve` lands approved changes
+   * itself. No shipped default; absent means `auto`, because an Approve button
+   * that lands nothing is the failure this exists to prevent. `manual` is for a
+   * deployment that runs `ctxr land` some other way.
+   */
+  land: z.enum(['auto', 'manual']).optional(),
 });
 
 /**
