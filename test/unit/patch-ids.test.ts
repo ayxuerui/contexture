@@ -38,6 +38,10 @@ describe('patchIds', () => {
       expect(before).toHaveLength(1);
       expect(after).toEqual(before);
 
+      // Under load patch-id can close before log does; every concurrent call must still agree.
+      const concurrent = await Promise.all(Array.from({ length: 40 }, () => patchIds(tmp.root, `main..${rebased}`)));
+      expect(concurrent.every((ids) => ids.length === 1 && ids[0] === before[0])).toBe(true);
+
       await write('a.md', 'one changed differently\n');
       await git('commit', '-q', '--amend', '-am', 'edit a');
       expect(await patchIds(tmp.root, `main..HEAD`)).not.toEqual(before);
