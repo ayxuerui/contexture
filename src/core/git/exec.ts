@@ -132,14 +132,14 @@ export async function patchIds(cwd: string, range: string): Promise<string[]> {
     log.stdout.pipe(patchId.stdin);
     const chunks: Buffer[] = [];
     patchId.stdout.on('data', (chunk: Buffer) => chunks.push(chunk));
-    let logCode: number | null = null;
     log.on('error', reject);
     patchId.on('error', reject);
-    log.on('close', (code) => {
-      logCode = code;
-    });
-    patchId.on('close', (code) => {
-      if (code !== 0 || logCode !== 0) {
+    // Both exit codes, whichever process closes last: patch-id can finish before log's close
+    // event arrives, and judging then read a successful log as a failed one.
+    const closed = (child: { on(event: 'close', listener: (code: number | null) => void): unknown }): Promise<number | null> =>
+      new Promise((done) => child.on('close', done));
+    Promise.all([closed(log), closed(patchId)]).then(([logCode, patchCode]) => {
+      if (logCode !== 0 || patchCode !== 0) {
         reject(new Error(`git patch-id over ${range} failed`));
         return;
       }
@@ -149,7 +149,7 @@ export async function patchIds(cwd: string, range: string): Promise<string[]> {
         if (id && commit) map.set(commit, id);
       }
       resolve(map);
-    });
+    }, reject);
   });
   // A commit with an empty patch has no patch id; it still counts, as an empty one.
   return commits.map((commit) => byCommit.get(commit) ?? '');
