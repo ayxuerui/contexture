@@ -77,7 +77,8 @@ async function withServe(store: ApprovalStore, body: (url: string, stderr: () =>
 
 const storeWith = (extra = '') => makeApprovalStore({ baseUrl: BASE, identity: { issuer: ISSUER, audience: 'aud-1', jwksUrl }, approvalExtra: extra });
 
-describe('ctxr serve lands what was approved (real CLI, fake forge)', () => {
+// These wait on real sweeps (the first fires 10 s after start), so the default per-test limit is too tight under load.
+describe('ctxr serve lands what was approved (real CLI, fake forge)', { timeout: 90_000 }, () => {
   it('an Approve on the page merges the change and removes its worktree, with no other lander', async () => {
     const store = await storeWith();
     try {
@@ -86,7 +87,8 @@ describe('ctxr serve lands what was approved (real CLI, fake forge)', () => {
         expect(await approve(url, s.name, s.head)).toBe(303);
         expect(await until(merged(store, 7), 30_000), stderr()).toBe(true);
         expect(await until(gone(s.worktree), 10_000)).toBe(true);
-        expect(stderr()).toContain('land: ');
+        // The run's own output arrives when the child exits, a moment after the merge it reports.
+        expect(await until(async () => stderr().includes('land: '), 10_000), stderr()).toBe(true);
       });
     } finally {
       await store.tmp.cleanup();
@@ -152,7 +154,7 @@ describe('ctxr serve lands what was approved (real CLI, fake forge)', () => {
           return JSON.parse(list.stdout).data.sessions[0]?.state === 'blocked';
         };
         expect(await until(blocked, 30_000), stderr()).toBe(true);
-        expect(stderr()).toContain('land: the landing run exited 3');
+        expect(await until(async () => stderr().includes('land: the landing run exited 3'), 10_000), stderr()).toBe(true);
         expect(await getStatus(new URL('/', url).toString())).toBe(200);
         expect(await merged(store, 7)()).toBe(false);
       });

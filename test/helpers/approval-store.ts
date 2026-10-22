@@ -65,8 +65,9 @@ export async function makeApprovalStore(opts: ApprovalStoreOptions = {}): Promis
   await execFileAsync('git', ['init', '-q', '--bare', '-b', 'main', origin], { env: env as NodeJS.ProcessEnv });
   await mkdir(root, { recursive: true });
   await git(['init', '-q', '-b', 'main']);
-  const init = await runCli(['init'], { cwd: root, env });
-  if (init.exitCode !== 0) throw new Error(`init failed: ${init.stderr}`);
+  // A generous limit: under load `init` can pass the 10 s default and be killed with no output.
+  const init = await runCli(['init'], { cwd: root, env, timeoutMs: 60_000 });
+  if (init.exitCode !== 0) throw new Error(`init failed (exit ${init.exitCode}): ${init.stderr}${init.stdout}`);
 
   const identity = opts.identity ?? { issuer: 'https://ctx-a.example.test', audience: 'aud-1', jwksUrl: 'https://ctx-a.example.test/certs' };
   const block = opts.noApproval
@@ -103,7 +104,7 @@ export async function makeApprovalStore(opts: ApprovalStoreOptions = {}): Promis
       return git(['rev-parse', 'HEAD'], worktree);
     },
     async openSession(label, number, files, pull = {}) {
-      const started = await runCli(['session', 'start', label, '--json'], { cwd: root, env });
+      const started = await runCli(['session', 'start', label, '--json'], { cwd: root, env, timeoutMs: 60_000 });
       if (started.exitCode !== 0) throw new Error(`session start failed: ${started.stdout}${started.stderr}`);
       const data = JSON.parse(started.stdout).data as { worktree: string; branch: string };
       const head = await store.commitInWorktree(data.worktree, files, `add ${label}`);
