@@ -581,22 +581,6 @@ resolved from the same choice the server already applied to the page, never from
   drawn diagram is open
 - **THEN** the diagram is redrawn in the palette matching the new preference, without the page being reloaded
 
-### Requirement: A published PDF is served as a PDF
-A request under the publish route, or under a session worktree's preview route, that names a file
-ending in `.pdf` SHALL be answered with the content type `application/pdf`, so a browser displays it
-in place rather than downloading it. The body SHALL remain byte-identical to the file on disk, as
-for every published file.
-
-#### Scenario: A page's PDF opens in the browser
-- **WHEN** a `GET` request names `2026-01-15-brief.pdf` in a published page's folder
-- **THEN** the response is `200` with content type `application/pdf`, and its body is
-  byte-identical to the file
-
-#### Scenario: A previewed PDF is served the same way
-- **WHEN** a `GET` request names a PDF in a page folder held in a session worktree, under that
-  worktree's preview route
-- **THEN** the response carries content type `application/pdf`
-
 ### Requirement: The server follows changes to the store's configuration
 While it runs, `ctxr serve` SHALL check the store's configuration file before it answers each request. It SHALL
 compare the file's modification time, size and file identity with the values from its last read. When any of
@@ -628,3 +612,26 @@ At startup a configuration that does not load still stops the command before it 
 #### Scenario: An unchanged file is not read again
 - **WHEN** a running server answers ten requests and the configuration file does not change
 - **THEN** the file is read once in all, at startup
+
+### Requirement: A published send copy is served with its format's content type
+A request under the publish route, or under a session worktree's preview route, that names a file
+ending in `.pdf`, `.docx`, `.xlsx` or `.pptx` SHALL be answered with that format's registered content
+type: `application/pdf`; `application/vnd.openxmlformats-officedocument.wordprocessingml.document`;
+`application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`; and
+`application/vnd.openxmlformats-officedocument.presentationml.presentation`, respectively. The body
+SHALL remain byte-identical to the file on disk, as for every published file.
+
+#### Scenario: A page's PDF opens in the browser
+- **WHEN** a `GET` request names `2026-01-15-brief.pdf` in a published page's folder
+- **THEN** the response is `200` with content type `application/pdf`, and its body is
+  byte-identical to the file
+
+#### Scenario: An office send copy carries its own content type
+- **WHEN** a `GET` request names `2026-01-15-model.xlsx` in a published page's folder
+- **THEN** the response is `200` with the spreadsheet content type above, and its body is
+  byte-identical to the file
+
+#### Scenario: A previewed send copy is served the same way
+- **WHEN** a `GET` request names a `.docx` send copy in a page folder held in a session worktree,
+  under that worktree's preview route
+- **THEN** the response carries the word-processing content type above
