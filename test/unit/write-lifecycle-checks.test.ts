@@ -10,6 +10,7 @@ import {
   stagedPathAllowlistCheck,
   stagedSchemaConformanceCheck,
   stagedSecretScanCheck,
+  stagedSendCopiesCheck,
 } from '../../src/core/checks/write-lifecycle-checks.js';
 import type { CheckContext, StagedFile } from '../../src/core/checks/types.js';
 import { commentFence } from '../../src/core/markers.js';
@@ -366,5 +367,115 @@ describe('hooksHealthCheck', () => {
     } finally {
       await tmp.cleanup();
     }
+  });
+});
+
+describe('stagedSendCopiesCheck (send-copies-gated-at-commit)', () => {
+  /** A real store root holding pages on disk, so the page-folder test reads the resulting tree. */
+  async function withPages(pages: readonly string[], run: (root: string) => Promise<void>): Promise<void> {
+    const tmp = await makeTmpDir();
+    try {
+      const { mkdir, writeFile } = await import('node:fs/promises');
+      for (const page of pages) {
+        await mkdir(path.join(tmp.root, 'publish', page), { recursive: true });
+        await writeFile(path.join(tmp.root, 'publish', page, 'index.html'), '<!doctype html>');
+      }
+      await run(tmp.root);
+    } finally {
+      await tmp.cleanup();
+    }
+  }
+  const check = (root: string, staged: StagedFile[]) => stagedSendCopiesCheck.run({ ...makeStagedCtx(staged), storeRoot: root });
+  const codes = (result: Awaited<ReturnType<typeof check>>) => result.findings.map((f) => [f.code, f.subject]);
+
+  it('refuses an undated send copy added beside a page', async () => {
+    await withPages(['ctx-a/brief'], async (root) => {
+      const result = await check(root, [file({ path: 'publish/ctx-a/brief/brief.pdf', status: 'A' })]);
+      expect(result.status).toBe('fail');
+      expect(codes(result)).toEqual([['staged.send_copies.undated', 'publish/ctx-a/brief/brief.pdf']]);
+      expect(result.findings[0]?.message).toContain('<YYYY-MM-DD>-<name>.<extension>');
+    });
+  });
+
+  it('accepts a dated send copy added beside a page, in any format and case', async () => {
+    await withPages(['ctx-a/brief'], async (root) => {
+      const result = await check(root, [
+        file({ path: 'publish/ctx-a/brief/2026-01-15-brief.pdf', status: 'A' }),
+        file({ path: 'publish/ctx-a/brief/2026-01-15-model.XLSX', status: 'A' }),
+      ]);
+      expect(result.status).toBe('pass');
+    });
+  });
+
+  it('refuses a committed send copy changed in place, saying to write a new dated file', async () => {
+    await withPages(['ctx-a/brief'], async (root) => {
+      const result = await check(root, [file({ path: 'publish/ctx-a/brief/2026-01-15-brief.pdf', status: 'M' })]);
+      expect(codes(result)).toEqual([['staged.send_copies.modified', 'publish/ctx-a/brief/2026-01-15-brief.pdf']]);
+      expect(result.findings[0]?.message).toContain('new dated file');
+    });
+  });
+
+  it('accepts a send copy moved unchanged, between pages or from outside the publish path', async () => {
+    await withPages(['ctx-a/one', 'ctx-a/two'], async (root) => {
+      const result = await check(root, [
+        file({ path: 'publish/ctx-a/two/2026-01-15-brief.pdf', status: 'R', renameScore: 100 }),
+        file({ path: 'publish/ctx-a/one/2026-02-01-memo.docx', status: 'R', renameScore: 100 }),
+      ]);
+      expect(result.status).toBe('pass');
+    });
+  });
+
+  it('refuses a send copy renamed with changed bytes, and one whose rename score is unknown', async () => {
+    await withPages(['ctx-a/two'], async (root) => {
+      const result = await check(root, [
+        file({ path: 'publish/ctx-a/two/2026-01-15-brief.pdf', status: 'R', renameScore: 87 }),
+        file({ path: 'publish/ctx-a/two/2026-01-16-brief.pdf', status: 'R' }),
+      ]);
+      expect(codes(result).map(([code]) => code)).toEqual(['staged.send_copies.modified', 'staged.send_copies.modified']);
+    });
+  });
+
+  it('refuses an undated send copy moved unchanged into a page', async () => {
+    await withPages(['ctx-a/brief'], async (root) => {
+      const result = await check(root, [file({ path: 'publish/ctx-a/brief/brief.pdf', status: 'R', renameScore: 100 })]);
+      expect(codes(result)).toEqual([['staged.send_copies.undated', 'publish/ctx-a/brief/brief.pdf']]);
+    });
+  });
+
+  it('accepts the deletion of a page with its send copies', async () => {
+    await withPages([], async (root) => {
+      const result = await check(root, [
+        file({ path: 'publish/ctx-a/gone/index.html', status: 'D' }),
+        file({ path: 'publish/ctx-a/gone/2026-01-15-brief.pdf', status: 'D' }),
+      ]);
+      expect(result.status).toBe('pass');
+    });
+  });
+
+  it("leaves a changed file in a page's assets alone", async () => {
+    await withPages(['ctx-a/brief'], async (root) => {
+      const result = await check(root, [file({ path: 'publish/ctx-a/brief/assets/kickoff.pdf', status: 'M' })]);
+      expect(result.status).toBe('pass');
+    });
+  });
+
+  it('checks a page and its first send copy staged together', async () => {
+    await withPages([], async (root) => {
+      const result = await check(root, [
+        file({ path: 'publish/ctx-a/new/index.html', status: 'A' }),
+        file({ path: 'publish/ctx-a/new/brief.pdf', status: 'A' }),
+      ]);
+      expect(codes(result)).toEqual([['staged.send_copies.undated', 'publish/ctx-a/new/brief.pdf']]);
+    });
+  });
+
+  it('leaves an office file outside a page folder alone', async () => {
+    await withPages([], async (root) => {
+      const result = await check(root, [
+        file({ path: 'projects/model.xlsx', status: 'M' }),
+        file({ path: 'publish/ctx-a/loose/brief.pdf', status: 'A' }),
+      ]);
+      expect(result.status).toBe('pass');
+    });
   });
 });

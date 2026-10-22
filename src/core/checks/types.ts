@@ -40,6 +40,8 @@ export interface CheckResult {
 export interface StagedFile {
   path: string;
   status: 'A' | 'M' | 'D' | 'R' | '?';
+  /** A rename's similarity score (`R087` → 87); 100 is a pure move. Undefined for any other status. */
+  renameScore?: number;
   addedLines: number | null;
   removedLines: number | null;
   /** Staged (index) content, for non-deleted text files; undefined for deletions or unread files. */

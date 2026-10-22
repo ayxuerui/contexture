@@ -1,5 +1,5 @@
 import { existsSync } from 'node:fs';
-import { readdir, readFile } from 'node:fs/promises';
+import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { pageServedAt, type ServedAt, servedAtSentence } from '../core/browse/page-url.js';
 import type { CommandOutcome, CommandRequires } from '../core/command.js';
@@ -11,7 +11,7 @@ import { parseNoteText } from '../core/notes/parse.js';
 import { DISPOSABLE_SEGMENT, lifespanOf, type PageLifespan, parseLeadingDate } from '../core/publish/lifespan.js';
 import { assessRepresentation } from '../core/publish/represents.js';
 import { checkScriptSyntax } from '../core/publish/script-check.js';
-import { sendCopyExtension } from '../core/publish/send-copies.js';
+import { sendCopiesAtPageRoot, sendCopyExtension, sendCopyNameProblem } from '../core/publish/send-copies.js';
 import type { Store } from '../core/store.js';
 
 export const requires: CommandRequires = { store: 'required' };
@@ -180,26 +180,11 @@ function summaryLabel(failure: PublishCheckFailure): string {
   return `${failure.check} (${failure.message.startsWith('stale') ? 'stale' : 'not stamped'})`;
 }
 
-/**
- * file-pdfs-beside-their-page D2: a send copy's name leads with the date it
- * was made, so a new send adds a file beside the one a recipient holds instead
- * of replacing it. The date reader is the disposable folder's (D4), applied to
- * the name without its extension; the check is named for no one format
- * (send-copies-beside-their-page D2).
- */
 function checkSendCopyNames(sendCopyFileNames: readonly string[]): PublishCheckFailure[] {
-  return sendCopyFileNames
-    .filter((name) => parseLeadingDate(name.slice(0, -sendCopyExtension(name)!.length)) === null)
-    .map((name) => ({ check: 'send-copy-name', message: `"${name}" is not named "<YYYY-MM-DD>-<name>.<extension>" with a real date` }));
-}
-
-/** The send copies directly in a page folder, by file name. Subfolders hold inputs (file-pdfs-beside-their-page D3). */
-async function sendCopiesAtPageRoot(pageDir: string): Promise<string[]> {
-  const entries = await readdir(pageDir, { withFileTypes: true });
-  return entries
-    .filter((entry) => entry.isFile() && sendCopyExtension(entry.name) !== null)
-    .map((entry) => entry.name)
-    .sort();
+  return sendCopyFileNames.flatMap((name) => {
+    const problem = sendCopyNameProblem(name);
+    return problem === null ? [] : [{ check: 'send-copy-name', message: problem }];
+  });
 }
 
 function checkProvenanceLine(html: string): PublishCheckFailure[] {
