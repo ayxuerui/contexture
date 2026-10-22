@@ -182,6 +182,11 @@ describe('the MCP surface of ctxr serve (real CLI, fake forge, real signatures)'
           structuredContent: { error: { code: string } };
         };
         expect(refused).toMatchObject({ isError: true, structuredContent: { error: { code: 'mcp.insufficient_scope' } } });
+        const noEdit = (await rpc(url, token, 'tools/call', { name: 'Edit', arguments: { file_path: 'projects/kestrel.md', old_string: 'March', new_string: 'April' } })).json.result as {
+          isError: boolean;
+          structuredContent: { error: { code: string } };
+        };
+        expect(noEdit).toMatchObject({ isError: true, structuredContent: { error: { code: 'mcp.insufficient_scope' } } });
 
         const foreign = await http(new URL('/mcp', url).toString(), {
           method: 'POST',

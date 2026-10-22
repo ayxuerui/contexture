@@ -35,8 +35,9 @@ function pkce(): { verifier: string; challenge: string } {
 
 describe('mcp scopes from the configuration', () => {
   it('maps readers and capturers to scopes, with @domain matching that domain only', () => {
-    const mcp: McpConfig = { readers: ['@ctx-a.example'], capturers: ['b@ctx-b.example'] };
+    const mcp: McpConfig = { readers: ['@ctx-a.example'], capturers: ['b@ctx-b.example'], editors: ['e@ctx-a.example'] };
     expect(scopesFor('a@ctx-a.example', mcp)).toEqual(['read']);
+    expect(scopesFor('e@ctx-a.example', mcp)).toEqual(['read', 'edit']);
     expect(scopesFor('b@ctx-b.example', mcp)).toEqual(['capture']);
     expect(scopesFor('a@ctx-a.example.evil.test', mcp)).toEqual([]);
     expect(scopesFor('a@ctx-a.example', undefined)).toEqual([]);

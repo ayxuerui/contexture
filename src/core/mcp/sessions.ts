@@ -109,11 +109,22 @@ export async function startSession(deps: WriteDeps, label: string): Promise<Sess
     allowFailure: true,
   });
   const hasRemote = (await deps.git.run(['rev-parse', '--verify', '--quiet', `refs/remotes/origin/${defaultBranch}`], { cwd: deps.canonicalRoot, allowFailure: true })).exitCode === 0;
-  const branch = generateSessionBranchName(deps.config, deps.now(), slug);
+  // Names carry a timestamp to the second, and a closed pull request's branch stays on the remote: step past any taken name.
+  let branch = generateSessionBranchName(deps.config, deps.now(), slug);
+  for (let step = 1; step <= 60 && (await branchTaken(deps, branch)); step += 1) {
+    branch = generateSessionBranchName(deps.config, new Date(deps.now().getTime() + step * 1000), slug);
+  }
   const dir = worktreePathFor({ root: deps.canonicalRoot, config: deps.config }, branch);
   const added = await addWorktree(deps.git, deps.canonicalRoot, dir, branch, hasRemote ? `origin/${defaultBranch}` : defaultBranch, { allowFailure: true });
   if (added.exitCode !== 0) throw new WriteRefusal('mcp.session_not_started', `A session could not be started: ${firstLines(added.stderr)}`);
   return { name: path.basename(dir), path: dir, branch, label: slug };
+}
+
+async function branchTaken(deps: WriteDeps, branch: string): Promise<boolean> {
+  const local = await deps.git.run(['rev-parse', '--verify', '--quiet', `refs/heads/${branch}`], { cwd: deps.canonicalRoot, allowFailure: true });
+  if (local.exitCode === 0) return true;
+  const remote = await runRemoteGit(deps.git, deps.credentials, deps.env, ['ls-remote', '--exit-code', 'origin', `refs/heads/${branch}`], { cwd: deps.canonicalRoot, allowFailure: true });
+  return remote.exitCode === 0;
 }
 
 /** The store-relative path's location inside the repository, for `git show <branch>:<path>`. */

@@ -417,9 +417,9 @@ describe('readConfig', () => {
     try {
       await writeFile(path.join(tmp.root, CONFIG_FILE_NAME), minimalConfig());
       expect((await readConfig(tmp.root)).mcp).toBeUndefined();
-      const text = `${minimalConfig()}serve: { base_url: "https://ctx-a.example.test" }\n${CHANGE_APPROVAL_BLOCK}mcp: { readers: ["@ctx-a.example"], capturers: ["a@ctx-a.example"] }\n`;
+      const text = `${minimalConfig()}serve: { base_url: "https://ctx-a.example.test" }\n${CHANGE_APPROVAL_BLOCK}mcp: { readers: ["@ctx-a.example"], capturers: ["a@ctx-a.example"], editors: ["e@ctx-a.example"] }\n`;
       await writeFile(path.join(tmp.root, CONFIG_FILE_NAME), text);
-      expect((await readConfig(tmp.root)).mcp).toEqual({ readers: ['@ctx-a.example'], capturers: ['a@ctx-a.example'] });
+      expect((await readConfig(tmp.root)).mcp).toEqual({ readers: ['@ctx-a.example'], capturers: ['a@ctx-a.example'], editors: ['e@ctx-a.example'] });
     } finally {
       await tmp.cleanup();
     }

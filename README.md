@@ -403,6 +403,34 @@ contexture finds the installation from the store's github.com `origin` (or from 
 
 GitHub Free cannot protect a private repository on a personal account, so such a store has no required-review rule; `ctxr land`'s consent check is what gates the merge either way. Where branch protection is available, require one approving review and leave **"Require approval of the most recent reviewable push"** off: the runner pushes a rebase and then approves the carry-over as the same identity.
 
+## Connecting chat apps (MCP)
+
+People who never open a terminal can still use a store, from the Claude or ChatGPT apps on the web, desktop or phone. With an `mcp` block declared, `ctxr serve` is also a remote MCP server at `/mcp`, on the same port and hostname as the approval page. It needs `change_approval`, because it signs people in with the same identity and opens pull requests with the same forge credential.
+
+```yaml
+mcp:
+  readers: ["@example.com"]       # find, gather, Read, Grep, Glob
+  capturers: ["a@example.com"]    # capture
+  editors: ["a@example.com"]      # Edit, Write
+```
+
+What a connected app gets, with no model running on the server:
+
+- **`find`** matches a phrase literally across the notes and returns each match's gloss, matching lines and a link, in path order with no score. Material not yet filed into a note comes back separately as `unfiled`. With no phrase, `find` returns the catalog as a map of the store. **`gather`** runs the retrieval pass from those notes and returns their full text along with the notes linked to and from them.
+- **`Read`, `Grep` and `Glob`** carry the names and parameters of Claude Code's own tools. Paths are store-relative. `Grep` and `Glob` run ripgrep (`rg` must be on the `PATH` of `serve`), and configuration, derived files and tool-owned folders are never read.
+- **`capture`** saves one item of outside material into the inbox as its own session pull request. **`Edit`** and **`Write`** collect a person's changes to notes in one draft pull request of their own. All of these appear on the approval page like any session, and nothing lands until a decider approves it.
+
+**Sign-in.** Someone connecting an app goes through the access proxy's login and then a consent page naming the app, where it will be sent back to, their email and what it may do. They are admitted only if `readers`, `capturers` or `editors` lists them. Nothing is stored on the server: client registrations, codes and 30-day tokens are all signed, and every call re-checks the configuration, so removing someone from the lists refuses their next call. With a GitHub App as the recording identity, the signing key is derived from the App's key, so rotating the App key signs everyone out. With `gh`'s own credential, people sign in again after every restart.
+
+**The access proxy.** Keep `/authorize` behind it, because that is where the identity comes from. Exempt exactly these, because the apps' servers call them directly and cannot pass a proxy login: `/mcp`, `/token`, `/register`, `/.well-known/oauth-protected-resource`, `/.well-known/oauth-protected-resource/mcp`, `/.well-known/oauth-authorization-server` and `/.well-known/openid-configuration`. With Cloudflare Access, that means a self-hosted application for those paths with a **Bypass** policy, alongside the application covering the rest of the hostname. Check it from outside:
+
+```sh
+curl -i https://ctx.example.com/.well-known/oauth-authorization-server   # 200, JSON naming your base URL
+curl -i -X POST https://ctx.example.com/mcp                              # 401 with WWW-Authenticate: Bearer resource_metadata=…
+```
+
+**Connecting.** In Claude: Settings → Connectors → *Add custom connector*, with the URL `https://ctx.example.com/mcp`. In ChatGPT, turn on developer mode and add a connector with the same URL and OAuth. Reads come from a checkout `serve` keeps for itself under `.contexture/cache/mcp/view`, brought up to date from `origin` at most once a minute. It never touches the checkout your agents work in. Each MCP request writes one line to `serve`'s stderr, naming the person, the method and the tool, but never the arguments or the results.
+
 ## Keeping a store current
 
 ```sh

@@ -34,7 +34,8 @@ function run(args: readonly string[], cwd: string): Promise<RipgrepOutcome> {
   return new Promise((resolve) => {
     execFile('rg', [...args], { cwd, timeout: RIPGREP_TIMEOUT_MS, maxBuffer: RIPGREP_MAX_OUTPUT_BYTES, killSignal: 'SIGKILL' }, (err, stdout, stderr) => {
       if (err === null) {
-        resolve({ kind: 'ok', lines: stdout.split('\n').filter((line) => line.length > 0) });
+        // Always searched from an explicit `.` (below), which ripgrep echoes back as a `./` prefix on every path.
+        resolve({ kind: 'ok', lines: stdout.split('\n').filter((line) => line.length > 0).map((line) => line.replace(/^\.\//, '')) });
         return;
       }
       const e = err as Error & { code?: number | string; killed?: boolean };
@@ -76,8 +77,8 @@ export function grep(cwd: string, params: GrepParams, searchPath: string | null,
   if (params.type !== undefined) args.push('--type', params.type);
   // Last: ripgrep lets a later --glob override an earlier one, so a caller's glob must never follow an exclusion.
   args.push(...exclusionArgs(hidden));
-  args.push('--', params.pattern);
-  if (searchPath !== null) args.push(searchPath);
+  // An explicit path always: given none and a stdin that is not a terminal, ripgrep searches stdin and waits.
+  args.push('--', params.pattern, searchPath ?? '.');
   return run(args, cwd);
 }
 
@@ -85,6 +86,6 @@ export function grep(cwd: string, params: GrepParams, searchPath: string | null,
 export function glob(cwd: string, pattern: string, searchPath: string | null, hidden: readonly string[]): Promise<RipgrepOutcome> {
   // Exclusions after the caller's pattern: a later --glob takes precedence in ripgrep.
   const args = [...BASE_ARGS, '--files', '--glob', pattern, ...exclusionArgs(hidden)];
-  if (searchPath !== null) args.push('--', searchPath);
+  args.push('--', searchPath ?? '.');
   return run(args, cwd);
 }
