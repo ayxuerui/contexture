@@ -1,7 +1,8 @@
 // A stand-in for `gh`, answering only the `gh api` calls src/core/forge/github.ts makes.
 // State lives in the JSON file $FAKE_GH_STATE:
 //   { login, pulls: [{ number, title, body, head, base, user, state, merged, merge_commit_sha, mergeable? }],
-//     reviews: { "<n>": [...] }, comments: { "<n>": [...] }, fail?: { "<endpoint substring>": status } }
+//     reviews: { "<n>": [...] }, comments: { "<n>": [...] }, fail?: { "<endpoint substring>": status },
+//     failCreatePull?: <count of pull-request creations to refuse> }
 // Head commits are read live from the bare repository $FAKE_GH_ORIGIN, so a push is seen at once,
 // and a merge really lands on the base branch there.
 import { execFileSync } from 'node:child_process';
@@ -83,8 +84,27 @@ const [, kind, numberText, sub] = match;
 const number = numberText === undefined ? null : Number(numberText);
 const pull = number === null ? null : (state.pulls ?? []).find((p) => p.number === number);
 
+if (kind === 'pulls' && number === null && method === 'POST') {
+  // `failCreatePull`: how many creations to refuse before one succeeds (failure injection for retry tests).
+  if ((state.failCreatePull ?? 0) > 0) {
+    state.failCreatePull -= 1;
+    save();
+    fail(502, 'forced failure creating a pull request');
+  }
+  const created = { number: Math.max(0, ...(state.pulls ?? []).map((p) => p.number)) + 1, title: input.title, body: input.body, head: input.head, base: input.base, user: state.login, state: 'open' };
+  (state.pulls ??= []).push(created);
+  reply(render(created));
+}
 if (kind === 'pulls' && number === null) {
-  reply((state.pulls ?? []).filter((p) => (p.state ?? 'open') === 'open').map(render));
+  const query = new URLSearchParams(endpoint.split('?')[1] ?? '');
+  const wanted = query.get('state') ?? 'open';
+  const head = query.get('head');
+  reply(
+    (state.pulls ?? [])
+      .filter((p) => wanted === 'all' || (p.state ?? 'open') === wanted)
+      .filter((p) => head === null || p.head === head.slice(head.indexOf(':') + 1))
+      .map(render),
+  );
 }
 if (pull === undefined) fail(404, 'Not Found');
 

@@ -11,7 +11,7 @@ import type { RunEnv } from '../core/env.js';
 import { ChangeApprovalNotDeclaredError, LandBusyError, LandFlagsError, LandRefusedError } from '../core/errors.js';
 import { acquireLandLock } from '../core/git/land-lock.js';
 import { ExitCode } from '../core/exit-codes.js';
-import { credentialsFor, ghCredentials, type CredentialKind, type ForgeCredentials } from '../core/forge/credentials.js';
+import { credentialsFor, ghCredentials, runRemoteGit, type CredentialKind, type ForgeCredentials } from '../core/forge/credentials.js';
 import { createGhForgeClient, ForgeRequestError, type ForgeClient, type MergeMethod, type PullRequest } from '../core/forge/github.js';
 import { storePrefix } from '../core/graph/tree.js';
 import { addDetachedWorktree, mainWorktreePath, pruneWorktrees, removeWorktree } from '../core/git/worktree.js';
@@ -106,24 +106,9 @@ async function git(ctx: Context, args: readonly string[], cwd: string, allowFail
   return ctx.env.git.run(args, { cwd, allowFailure });
 }
 
-/**
- * write-lifecycle spec ("In App mode, landing's git transport authenticates as
- * the App"; design.md D4): a fetch or push against `origin`. With an App, the
- * host's credential helpers are cleared for this one command and replaced by
- * one that answers with the installation token, read from this process's
- * environment only — never a remote URL, a config file, or the command line.
- * Otherwise git uses the credential it already has.
- */
-const TOKEN_HELPER = '!f() { echo username=x-access-token; echo "password=$CTXR_GIT_TOKEN"; }; f';
-
+/** A fetch or push against `origin`, authenticated as the App when there is one (`runRemoteGit`). */
 async function remoteGit(ctx: Context, args: readonly string[], cwd: string, allowFailure = false) {
-  const token = await ctx.credentials.gitToken();
-  if (token === null) return git(ctx, args, cwd, allowFailure);
-  return ctx.env.git.run(['-c', 'credential.helper=', '-c', `credential.helper=${TOKEN_HELPER}`, ...args], {
-    cwd,
-    allowFailure,
-    env: { ...ctx.env.env, CTXR_GIT_TOKEN: token, GIT_TERMINAL_PROMPT: '0' },
-  });
+  return runRemoteGit(ctx.env.git, ctx.credentials, ctx.env.env, args, { cwd, allowFailure });
 }
 
 /** write-lifecycle spec: a record goes on the pull request only under the recording login; otherwise only into the envelope. */

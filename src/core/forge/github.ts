@@ -54,6 +54,10 @@ export interface ForgeClient {
   login(): Promise<string>;
   pull(number: number): Promise<PullRequest>;
   openPulls(): Promise<PullRequest[]>;
+  /** Every pull request, open or closed, whose head is `branch` in this repository. */
+  pullsForHead(branch: string): Promise<PullRequest[]>;
+  /** serve-the-store-over-mcp D9, D13: opens a pull request for `head` against `base`. */
+  createPull(input: { head: string; base: string; title: string; body: string }): Promise<PullRequest>;
   reviews(number: number): Promise<Review[]>;
   comments(number: number): Promise<IssueComment[]>;
   createReview(number: number, input: { event: ReviewEvent; body: string; commitId: string }): Promise<void>;
@@ -142,6 +146,12 @@ export function createGhForgeClient(cwd: string, credentials: ForgeCredentials):
     },
     async openPulls() {
       return ((await api(`${repo}/pulls?state=open&per_page=100`)) as RawPull[]).map(toPull);
+    },
+    async pullsForHead(branch) {
+      return ((await api(`${repo}/pulls?state=all&per_page=100&head={owner}:${encodeURIComponent(branch)}`)) as RawPull[]).map(toPull);
+    },
+    async createPull(input) {
+      return toPull((await api(`${repo}/pulls`, { method: 'POST', input: { head: input.head, base: input.base, title: input.title, body: input.body } })) as RawPull);
     },
     async reviews(number) {
       const raw = (await api(`${repo}/pulls/${number}/reviews?per_page=100`)) as {

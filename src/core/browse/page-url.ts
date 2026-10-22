@@ -29,6 +29,14 @@ export function publishRoute(filePath: string): string {
   return `${PUBLISH_ROUTE_PREFIX}${encodeURI(filePath)}`;
 }
 
+/**
+ * The browsing surface's route for one note — the address `serve.ts` answers
+ * under its `/notes/` branch. Same `encodeURI` round trip as `publishRoute`.
+ */
+export function noteRoute(notePath: string): string {
+  return `/notes/${encodeURI(notePath)}`;
+}
+
 /** `worktree` is the session worktree's directory name — the key `buildPreviews` inserts. */
 export function previewRoute(worktree: string, filePath: string): string {
   return `${PREVIEW_ROUTE_PREFIX}${encodeURI(`${worktree}/${filePath}`)}`;
@@ -62,7 +70,7 @@ export interface ServedAt extends ServedAtRoute {
  * wrong URL with no error. Stripping the base's trailing slashes and appending
  * a route that always begins with "/" preserves whatever path the base carries.
  */
-function joinBaseUrl(baseUrl: string | undefined, route: string): string | null {
+export function joinBaseUrl(baseUrl: string | undefined, route: string): string | null {
   if (baseUrl === undefined) return null;
   return `${baseUrl.replace(/\/+$/, '')}${route}`;
 }

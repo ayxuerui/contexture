@@ -162,6 +162,14 @@ const ServeSchema = z.object({
   previews: z.enum(['local', 'none']).optional(),
 });
 
+/** An exact email address or an `@domain` suffix — the one form every list of people in this file takes. */
+const PersonEntrySchema = z
+  .string()
+  .min(2)
+  .refine((entry) => /^@[^@\s]+$/.test(entry) || /^[^@\s]+@[^@\s]+$/.test(entry), {
+    message: 'must be an email address or an @domain entry',
+  });
+
 /**
  * approve-from-the-review-page (change-approval spec): the opt-in block that
  * turns on the approval page and the landing path. No shipped default and
@@ -178,16 +186,7 @@ const ChangeApprovalSchema = z.object({
     jwks_url: z.string().min(1).refine(isAbsoluteHttpBase, { message: 'must be an absolute http(s) URL' }),
   }),
   /** Each entry is an exact email address or an `@domain` suffix. */
-  deciders: z
-    .array(
-      z
-        .string()
-        .min(2)
-        .refine((entry) => /^@[^@\s]+$/.test(entry) || /^[^@\s]+@[^@\s]+$/.test(entry), {
-          message: 'must be an email address or an @domain entry',
-        }),
-    )
-    .min(1),
+  deciders: z.array(PersonEntrySchema).min(1),
   /** design.md D4: the forge login whose reviews count as decisions; never the login that opens pull requests. */
   recording_login: z.string().min(1),
   /** design.md D6: the argument vector `ctxr land` runs on a conflict; absent means a conflict blocks. */
@@ -218,6 +217,22 @@ const CirclebackSchema = z.object({
   other_tags: z.array(z.string().min(1)).optional(),
   decline_tag: z.string().min(1).optional(),
 });
+
+/**
+ * serve-the-store-over-mcp (remote-access spec): who may use the MCP surface
+ * `ctxr serve` adds — `readers` reach `find`, `gather`, `Read`, `Grep` and
+ * `Glob`, `capturers` reach `capture`, `editors` reach `Edit` and `Write`. Optional with no shipped default, like `change_approval`, whose
+ * identity settings and forge credential it reuses (design.md D4).
+ */
+const McpSchema = z
+  .object({
+    readers: z.array(PersonEntrySchema).optional(),
+    capturers: z.array(PersonEntrySchema).optional(),
+    editors: z.array(PersonEntrySchema).optional(),
+  })
+  .refine((value) => (value.readers?.length ?? 0) + (value.capturers?.length ?? 0) + (value.editors?.length ?? 0) > 0, {
+    message: 'name at least one entry in readers, capturers or editors',
+  });
 
 /**
  * harness-portability spec (vendored-craft-skills): which vendored
@@ -468,6 +483,7 @@ export const StoreConfigSchema = z
     serve: ServeSchema.optional(),
     change_approval: ChangeApprovalSchema.optional(),
     circleback: CirclebackSchema.optional(),
+    mcp: McpSchema.optional(),
     templates: TemplatesSchema.prefault({}),
     skills: SkillsSchema.prefault({}),
     update_check: UpdateCheckSchema.prefault({}),
@@ -484,6 +500,22 @@ export const StoreConfigSchema = z
         code: 'custom',
         path: ['change_approval'],
         message: 'change_approval requires serve.base_url, which the decision route checks each request\'s Origin against',
+      });
+    }
+    // remote-access spec: the MCP surface signs members in with change approval's identity and opens pull requests with its credential.
+    if (value.mcp !== undefined && value.change_approval === undefined) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['mcp'],
+        message: 'mcp requires change_approval, whose identity settings and forge credential the MCP surface uses',
+      });
+    }
+    // remote-access spec: the MCP surface's issuer and resource are serve.base_url's origin, so a path there would be lost.
+    if (value.mcp !== undefined && value.serve?.base_url !== undefined && new URL(value.serve.base_url).pathname.replace(/\/+$/, '') !== '') {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['mcp'],
+        message: 'mcp needs serve.base_url to be an origin with no path (e.g. https://ctx.example.com), because sign-in is served at the root of that origin',
       });
     }
     /**
@@ -510,3 +542,4 @@ export type GraphSettingsConfig = z.infer<typeof GraphSettingsSchema>;
 export type AdapterDeclaration = z.infer<typeof AdapterDeclarationSchema>;
 export type ChangeApprovalConfig = z.infer<typeof ChangeApprovalSchema>;
 export type CirclebackConfig = z.infer<typeof CirclebackSchema>;
+export type McpConfig = z.infer<typeof McpSchema>;

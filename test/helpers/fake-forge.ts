@@ -25,6 +25,8 @@ export interface FakeForgeState {
   comments?: Record<string, { user: { login: string }; body: string; created_at: string }[]>;
   fail?: Record<string, number>;
   failAfterMerge?: boolean;
+  /** How many pull-request creations to refuse before one succeeds. */
+  failCreatePull?: number;
   /** App mode: refuse any call whose GH_TOKEN does not start with this, and record the tokens seen. */
   expectTokenPrefix?: string;
 }

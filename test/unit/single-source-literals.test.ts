@@ -156,6 +156,8 @@ describe('single-source-literals guard', () => {
       'core/forge/github.ts',
       'core/approval/resolver.ts',
       'core/approval/lander.ts',
+      // serve-the-store-over-mcp D12: ripgrep, for the MCP surface's Grep and Glob.
+      'core/mcp/ripgrep.ts',
     ];
     const hits = new Set([
       ...filesContainingSubstring("'node:child_process'", allow),
