@@ -388,27 +388,32 @@ const RESEARCH: SkillSeed = {
 };
 
 /**
- * circleback-sweep: the first opt-in owned skill, and the first that names a
- * capture source. It exists only in a store that declares a `circleback`
- * block, so the generic capture skill stays source-neutral. Named for the
- * source rather than a command: there is no `ctxr circleback`. Its runner
- * drives Circleback's own CLI, which holds its own credential; nothing here
- * reads or stores one. `settings.json` is rendered because the runner, being
- * stdlib-only, cannot parse `contexture.yaml`.
+ * circleback-sweep, revised by capture-circleback-is-retrieval: the first
+ * opt-in owned skill, and the first that names a capture source. It is the
+ * capture skill's retrieval step for Circleback — it decides which meetings
+ * this store owes and writes each as the verbatim record — and hands back to
+ * `ctxr-capture` at step 2, so there is one capture procedure. Named into the
+ * capture family (`ctxr-capture-<source>`), which `ctxr-capture` step 1
+ * delegates to without naming any source. There is no `ctxr capture` command,
+ * so the name claims none. It exists only in a store that declares a
+ * `circleback` block. Its runner drives Circleback's own CLI, which holds its
+ * own credential; nothing here reads or stores one. `settings.json` is
+ * rendered because the runner, being stdlib-only, cannot parse
+ * `contexture.yaml`.
  */
-const CIRCLEBACK: SkillSeed = {
-  file: 'ctxr-circleback',
-  name: 'Circleback',
+const CAPTURE_CIRCLEBACK: SkillSeed = {
+  file: 'ctxr-capture-circleback',
+  name: 'Capture from Circleback',
   description:
-    "Find the Circleback meetings this store's tag says it owes, render their captures into the inbox on a review branch, add the speaker judgment, and open the pull request.",
+    "Retrieve the Circleback meetings this store's tag says it owes, written into the inbox as verbatim records with their identity, then continue with ctxr-capture from step 2.",
   body: (config) =>
-    skillTemplate('ctxr-circleback')
+    skillTemplate('ctxr-capture-circleback')
       .replaceAll('__SKILLS_PATH__', config.harness.skills_path.replace(/\/+$/, ''))
       .replaceAll('__INBOX_PATH__', config.ingest.inbox_path)
       .replaceAll('__DEFAULT_BRANCH__', config.git.default_branch)
       .split('\n'),
   supportingFiles: (config) => {
-    const files = new Map(skillSupportingFiles('ctxr-circleback'));
+    const files = new Map(skillSupportingFiles('ctxr-capture-circleback'));
     files.set('settings.json', circlebackSettings(config));
     return files;
   },
@@ -431,7 +436,7 @@ function circlebackSettings(config: StoreConfig): string {
 }
 
 /** Owned skills a store gets only by opting in; each carries `enabled`. */
-export const OPTIONAL_SKILLS: readonly SkillSeed[] = [CIRCLEBACK];
+export const OPTIONAL_SKILLS: readonly SkillSeed[] = [CAPTURE_CIRCLEBACK];
 
 /** Every owned skill this store is shipped: the full set plus the opt-in ones its config enables. */
 export function activeSkillSeeds(config: StoreConfig): SkillSeed[] {

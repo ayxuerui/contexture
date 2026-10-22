@@ -203,7 +203,7 @@ const ChangeApprovalSchema = z.object({
 
 /**
  * circleback-sweep (harness-portability spec): the opt-in block that turns on
- * the `ctxr-circleback` owned skill. One Circleback account can feed several
+ * the `ctxr-capture-circleback` owned skill. One Circleback account can feed several
  * stores, and a Circleback tag decides which store a meeting belongs to:
  * `tag` is this store's, `other_tags` are the tags that send a meeting
  * somewhere else, and `decline_tag` marks a meeting no store captures.

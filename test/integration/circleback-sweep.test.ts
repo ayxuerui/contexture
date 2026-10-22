@@ -6,11 +6,11 @@ import { describe, expect, it } from 'vitest';
 import { makeTmpDir } from '../helpers/tmp-store.js';
 
 /**
- * circleback-sweep: the ctxr-circleback runner, run for real against a git store with a bare origin and stand-in
+ * circleback-sweep: the ctxr-capture-circleback runner, run for real against a git store with a bare origin and stand-in
  * `cb` and `gh` commands. It must route by tag, read tags from `cb meetings read` (search returns none), and
  * render only what the store owes.
  */
-const RUNNER = fileURLToPath(new URL('../../templates/skills/ctxr-circleback/sweep.mjs', import.meta.url));
+const RUNNER = fileURLToPath(new URL('../../templates/skills/ctxr-capture-circleback/sweep.mjs', import.meta.url));
 const NOW = Date.now();
 const daysAgo = (days: number): string => new Date(NOW - days * 86_400_000).toISOString();
 
@@ -53,7 +53,7 @@ process.stdout.write(JSON.stringify(out));
   chmodSync(path.join(dir, 'gh'), 0o755);
 }
 
-describe('ctxr-circleback runner', () => {
+describe('ctxr-capture-circleback runner', () => {
   it('routes by tag, renders only what the store owes, and reports the rest', async () => {
     const tmp = await makeTmpDir();
     try {
@@ -96,7 +96,7 @@ describe('ctxr-circleback runner', () => {
       expect(report.split('TAGGED FOR MORE THAN ONE STORE')[1]).toMatch(/bothE5 .*\(also beta-store\)/);
       expect(report.split('DECLINED IN THE LAST 8 DAYS')[1]).toMatch(/declF6/);
 
-      const worktree = path.join(scratch, 'ctxr-circleback-store');
+      const worktree = path.join(scratch, 'ctxr-capture-circleback-store');
       expect(git(worktree, 'rev-parse', '--abbrev-ref', 'HEAD').trim()).toBe('circleback-capture');
       const inbox = path.join(worktree, 'raw', 'inbox');
       const files = readdirSync(inbox);

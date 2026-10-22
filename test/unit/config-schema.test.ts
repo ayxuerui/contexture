@@ -623,7 +623,7 @@ describe('renderStoreConfig (config-defaults-as-the-convention)', () => {
   });
 
   /**
-   * circleback-sweep: the opt-in block that ships the `ctxr-circleback` skill.
+   * circleback-sweep: the opt-in block that ships the `ctxr-capture-circleback` skill.
    * Optional with no shipped default, like `serve`, and its own optional keys
    * stay absent, so a rewritten config never gains a key the store did not write.
    */

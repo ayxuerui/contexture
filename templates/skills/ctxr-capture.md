@@ -4,7 +4,12 @@ answering it here is how a capture quietly turns into someone's paraphrase of a 
 
 ## 1. Find the material
 
-Work with whatever the harness has actually connected — a tool that can read the source system, a file
+If this store ships a `ctxr-capture-<source>` skill for the material's source, retrieve through it. Such a
+skill knows which of that source's items this store owes, and writes each one into the inbox as the verbatim
+record, already carrying its identity. Then continue here at step 2 with what it wrote: everything below still
+applies to it, and a record you did not write yourself is checked, not trusted.
+
+Otherwise, work with whatever the harness has actually connected — a tool that can read the source system, a file
 on disk, a URL the user handed you. Do not assume any particular one is available, and do not guess at
 one: look at what is there, and if nothing can reach the material, say so and ask rather than
 reconstructing it from memory or from what the user said about it.
@@ -43,9 +48,10 @@ string matching misses the same speech transcribed twice — and when they share
 capture and name which governs. A fact appearing in both is never corroborated by the pair. Where one
 rendering is demonstrably worse, keep it and record its specific errors rather than discarding it.
 
-When a source does not separate speakers, say so in the capture as a caveat on the whole file. Any
-attribution built from it is inference, and a service's own summary attributing positions to named people
-is not the record.
+When a source does not separate speakers, or labels them generically ("Participant 2"), or its own summary
+gives a position or a role to the wrong person, say so in the capture as a caveat on the whole file. Name who
+a label most likely is only where the record itself makes it clear. Any attribution built from it is inference,
+and a service's own summary attributing positions to named people is not the record.
 
 A slide deck is read as images, not extracted text: render its pages and read those, since a deck's meaning
 lives in its layout.
