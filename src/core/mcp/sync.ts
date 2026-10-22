@@ -1,7 +1,15 @@
-import { ContextureError } from '../errors.js';
-import { ExitCode } from '../exit-codes.js';
+import { existsSync } from 'node:fs';
+import path from 'node:path';
+import { readConfig } from '../../config/load.js';
+import { MIGRATION_STEPS } from '../../config/migrations.js';
+import type { StoreConfig } from '../../config/schema.js';
+import { sessionWorktrees } from '../approval/sessions.js';
+import type { ForgeCredentials } from '../forge/credentials.js';
+import { runRemoteGit } from '../forge/credentials.js';
+import type { ForgeClient } from '../forge/github.js';
 import { isUnderAnyPrefix } from '../fs/prefix.js';
 import type { GitRunner } from '../git/exec.js';
+import { pruneWorktrees } from '../git/worktree.js';
 import { renderGraphDocument } from '../graph/document.js';
 import { buildGraphFromNotes, graphBuildOptions } from '../graph/model.js';
 import { readGraph, writeGraph, writeGraphDocument } from '../graph/persist.js';
@@ -11,20 +19,23 @@ import { ToolRefusal } from './jsonrpc.js';
 import { ReadWriteLock } from './rwlock.js';
 
 /**
- * serve-the-store-over-mcp design.md D8: the server's checkout follows the
- * remote default branch by fast-forward only, at most once per interval, and
- * every tool call reads one commit under a shared lock. A sync that cannot
- * finish leaves the checkout and its graph together at the last good commit,
- * or — when even that cannot be restored — refuses calls until a sync works.
+ * serve-the-store-over-mcp design.md D6 (remote-access spec, *The surface
+ * reads from a checkout of its own*): the canonical checkout `serve` was
+ * started on is shared with the agents and moved by `ctxr land`, so the MCP
+ * surface never changes it. It reads from a detached worktree of its own
+ * under the derived cache path, which it moves by forced checkout to the
+ * remote default branch at most once per interval, with its own graph. A
+ * reader-writer lock keeps every tool call on one commit; a sync that cannot
+ * finish restores the view and its graph together, or refuses calls until a
+ * sync works.
  */
 
-export const REMOTE = 'origin';
-/** Matches the branch prefix `capture` pushes to and `check-branch` gates (design.md D5). */
-export const CAPTURE_BRANCH_PREFIX = 'capture/';
+export const DEFAULT_SYNC_INTERVAL_SECONDS = 60;
 
-/** An inbox file waiting on a `capture/` branch whose tip the default branch does not yet contain. */
+/** An inbox file added by a session branch that has an open pull request — a capture awaiting a decision. */
 export interface PendingCapture {
   branch: string;
+  /** Store-relative. */
   path: string;
   text: string;
 }
@@ -36,85 +47,56 @@ export interface StoreState {
 
 export interface Snapshot {
   head: string;
+  /** The view as a store: its own root, and the configuration committed at `head`. */
+  store: Store;
   pending: readonly PendingCapture[];
 }
 
-export interface SyncOptions {
-  /** Seconds between syncs; 0 never fetches. */
-  pullIntervalSeconds: number;
-  now(): Date;
+/** What a sync needs from the server's current state — re-read per request, so configuration reloads apply. */
+export interface SyncDeps {
+  /** The configuration `serve` loaded for the canonical checkout (session prefix, default branch). */
+  config: StoreConfig;
+  credentials: ForgeCredentials;
+  forge: ForgeClient;
+  env: Readonly<Record<string, string | undefined>>;
 }
 
-function syncError(code: string, message: string, details?: Record<string, unknown>): ContextureError {
-  return new ContextureError(ExitCode.Usage, { code, severity: 'error', message, ...(details ? { details } : {}) });
+export interface ViewOptions {
+  git: GitRunner;
+  /** The store root `serve` was started on. */
+  canonicalRoot: string;
+  intervalSeconds?: number;
+  now(): Date;
 }
 
 function firstLine(text: string): string {
   return text.trim().split('\n')[0] ?? '';
 }
 
-export class StoreSync {
+/** Where the view's worktree lives: under the canonical checkout's derived cache, beside the graph. */
+export function viewWorktreeDir(canonicalRoot: string): string {
+  return path.join(canonicalRoot, '.contexture', 'cache', 'mcp', 'view');
+}
+
+export class McpView {
   private readonly lock = new ReadWriteLock();
+  private readonly intervalMs: number;
   private head = '';
   private lastError: string | null = null;
   private unavailable = false;
   private lastSyncAt: number | undefined;
   private syncing: Promise<void> | undefined;
   private pending: PendingCapture[] = [];
-  /** The store root's path inside the repository ("" at the top level, else "sub/dir/") — git reports repository-relative paths. */
-  private repoPrefix = '';
+  private viewStore: Store | undefined;
+  /** The canonical store root's path inside its repository ("" at the top level, else "sub/dir/"). */
+  private repoPrefix: string | undefined;
 
-  constructor(
-    private readonly git: GitRunner,
-    private readonly store: Store,
-    private readonly options: SyncOptions,
-  ) {}
-
-  private run(args: readonly string[]) {
-    return this.git.run(args, { cwd: this.store.root, allowFailure: true });
+  constructor(private readonly options: ViewOptions) {
+    this.intervalMs = (options.intervalSeconds ?? DEFAULT_SYNC_INTERVAL_SECONDS) * 1000;
   }
 
-  private get defaultBranch(): string {
-    return this.store.config.git.default_branch;
-  }
-
-  /** remote-access spec: refuses unless the root is a clean checkout of the default branch. */
-  async start(): Promise<void> {
-    const branch = await this.run(['symbolic-ref', '--short', 'HEAD']);
-    if (branch.exitCode !== 0 || branch.stdout.trim() !== this.defaultBranch) {
-      throw syncError(
-        'mcp.not_on_default_branch',
-        `The MCP server serves a checkout of the default branch "${this.defaultBranch}", but "${this.store.root}" is on ${branch.exitCode === 0 ? `"${branch.stdout.trim()}"` : 'a detached HEAD'}. Use a dedicated clone.`,
-      );
-    }
-
-    this.repoPrefix = (await this.run(['rev-parse', '--show-prefix'])).stdout.trim();
-    const status = await this.run(['status', '--porcelain=v1', '--untracked-files=all']);
-    const dirty = status.stdout
-      .split('\n')
-      .filter((line) => line.length > 3)
-      .map((line) => line.slice(3).replace(/^"|"$/g, ''))
-      .map((p) => (p.startsWith(this.repoPrefix) ? p.slice(this.repoPrefix.length) : p))
-      .filter((p) => !isUnderAnyPrefix(p, this.store.config.derived.paths));
-    if (dirty.length > 0) {
-      throw syncError(
-        'mcp.checkout_dirty',
-        `The MCP server's checkout must have no uncommitted change, but ${dirty.length} path(s) differ: ${dirty.slice(0, 5).join(', ')}${dirty.length > 5 ? ', …' : ''}.`,
-        { paths: dirty },
-      );
-    }
-
-    if (this.options.pullIntervalSeconds > 0) {
-      const remote = await this.run(['remote', 'get-url', REMOTE]);
-      if (remote.exitCode !== 0) {
-        throw syncError('mcp.no_remote', `The checkout has no "${REMOTE}" remote to follow; add one, or pass --pull-interval 0 to serve it as it stands.`);
-      }
-    }
-
-    this.head = (await this.run(['rev-parse', 'HEAD'])).stdout.trim();
-    if ((await readGraph(this.store)) === null) await this.rebuildGraph();
-    this.pending = await this.readPending();
-    if (this.options.pullIntervalSeconds > 0) await this.lock.write(() => this.syncOnce());
+  private run(args: readonly string[], cwd: string) {
+    return this.options.git.run(args, { cwd, allowFailure: true });
   }
 
   get state(): StoreState {
@@ -122,109 +104,163 @@ export class StoreSync {
   }
 
   /** Runs `fn` against one commit, after a sync if one is due, and stamps the result with what it read. */
-  async read<T extends object>(fn: (snapshot: Snapshot) => Promise<T>): Promise<T & { store: StoreState }> {
-    await this.maybeSync();
+  async read<T extends object>(deps: SyncDeps, fn: (snapshot: Snapshot) => Promise<T>): Promise<T & { store: StoreState }> {
+    await this.maybeSync(deps, false);
     return this.lock.read(async () => {
-      if (this.unavailable) {
-        throw new ToolRefusal('mcp.store_unavailable', `The store is unavailable until a sync succeeds: ${this.lastError ?? 'the last sync failed'}.`);
+      if (this.unavailable || this.viewStore === undefined) {
+        throw new ToolRefusal('mcp.store_unavailable', `The store cannot be read until a sync succeeds: ${this.lastError ?? 'it has not been read yet'}.`);
       }
-      const result = await fn({ head: this.head, pending: this.pending });
+      const result = await fn({ head: this.head, store: this.viewStore, pending: this.pending });
       return { ...result, store: this.state };
     });
   }
 
-  /** For `capture`: a sync forced now, so the duplicate check sees branches pushed a moment ago (design.md D5). */
-  async refresh(): Promise<void> {
-    this.lastSyncAt = undefined;
-    await this.maybeSync(true);
+  /** For `capture`: a sync forced now, so the duplicate check sees what was pushed and opened a moment ago (design.md D9). */
+  async refresh(deps: SyncDeps): Promise<void> {
+    await this.maybeSync(deps, true);
   }
 
-  private async maybeSync(force = false): Promise<void> {
-    if (this.options.pullIntervalSeconds <= 0 && !force) return;
+  private async maybeSync(deps: SyncDeps, force: boolean): Promise<void> {
     const now = this.options.now().getTime();
-    if (!force && this.lastSyncAt !== undefined && now - this.lastSyncAt < this.options.pullIntervalSeconds * 1000) return;
-    this.syncing ??= this.lock.write(() => this.syncOnce()).finally(() => {
+    const due = force || this.lastSyncAt === undefined || now - this.lastSyncAt >= this.intervalMs;
+    if (!due) return;
+    this.syncing ??= this.lock.write(() => this.syncOnce(deps)).finally(() => {
       this.syncing = undefined;
     });
     await this.syncing;
   }
 
+  private async ensureView(startRef: string): Promise<string> {
+    const canonical = this.options.canonicalRoot;
+    this.repoPrefix ??= (await this.run(['rev-parse', '--show-prefix'], canonical)).stdout.trim();
+    const dir = viewWorktreeDir(canonical);
+    if (!existsSync(path.join(dir, '.git'))) {
+      // A view deleted with the derived cache leaves a registration behind; clear it before adding another.
+      await pruneWorktrees(this.options.git, canonical);
+      const added = await this.run(['worktree', 'add', '--detach', '--force', dir, startRef], canonical);
+      if (added.exitCode !== 0) throw new Error(`could not create the read view: ${firstLine(added.stderr)}`);
+    }
+    return path.join(dir, this.repoPrefix);
+  }
+
   /** Exclusive: no tool call is reading while this runs. */
-  private async syncOnce(): Promise<void> {
+  private async syncOnce(deps: SyncDeps): Promise<void> {
     this.lastSyncAt = this.options.now().getTime();
-    const fetch = await this.run([
-      'fetch',
-      '--prune',
-      '--quiet',
-      REMOTE,
-      `+refs/heads/${this.defaultBranch}:refs/remotes/${REMOTE}/${this.defaultBranch}`,
-      `+refs/heads/${CAPTURE_BRANCH_PREFIX}*:refs/remotes/${REMOTE}/${CAPTURE_BRANCH_PREFIX}*`,
-    ]);
-    if (fetch.exitCode !== 0) {
-      this.lastError = `fetch failed: ${firstLine(fetch.stderr) || `exit ${fetch.exitCode}`}`;
+    const canonical = this.options.canonicalRoot;
+    const branch = deps.config.git.default_branch;
+    const remoteRef = `refs/remotes/origin/${branch}`;
+
+    const fetched = await runRemoteGit(this.options.git, deps.credentials, deps.env, ['fetch', '--quiet', 'origin', `+refs/heads/${branch}:${remoteRef}`], {
+      cwd: canonical,
+      allowFailure: true,
+    });
+    const fetchError = fetched.exitCode === 0 ? null : `fetch failed: ${firstLine(fetched.stderr) || `exit ${fetched.exitCode}`}`;
+    const hasRemoteRef = (await this.run(['rev-parse', '--verify', '--quiet', `${remoteRef}^{commit}`], canonical)).exitCode === 0;
+    const target = hasRemoteRef ? remoteRef : branch;
+
+    let viewRoot: string;
+    try {
+      viewRoot = await this.ensureView(target);
+    } catch (err) {
+      this.lastError = err instanceof Error ? err.message : String(err);
+      this.unavailable = this.viewStore === undefined;
       return;
     }
 
     const previous = this.head;
-    const merge = await this.run(['merge', '--ff-only', '--quiet', `${REMOTE}/${this.defaultBranch}`]);
-    if (merge.exitCode !== 0) {
-      this.lastError = `fast-forward failed: ${firstLine(merge.stderr) || `exit ${merge.exitCode}`}`;
+    const moved = await this.checkout(viewRoot, target);
+    if (moved !== null) {
+      this.lastError = moved;
+      this.unavailable = this.viewStore === undefined;
       return;
     }
-    const next = (await this.run(['rev-parse', 'HEAD'])).stdout.trim();
+    const next = (await this.run(['rev-parse', 'HEAD'], viewRoot)).stdout.trim();
 
-    if (next !== previous || (await readGraph(this.store)) === null) {
+    if (next !== previous || this.viewStore === undefined || (await readGraph(this.viewStore)) === null) {
       try {
-        await this.rebuildGraph();
+        this.viewStore = await this.rebuild(viewRoot);
       } catch (err) {
         const reason = err instanceof Error ? err.message : String(err);
-        const reset = await this.run(['reset', '--hard', '--quiet', previous]);
-        try {
-          if (reset.exitCode !== 0) throw new Error(firstLine(reset.stderr));
-          await this.rebuildGraph();
-          this.head = previous;
-          this.lastError = `graph rebuild failed at ${next.slice(0, 12)} (${reason}); serving ${previous.slice(0, 12)}`;
+        const restored = previous === '' ? 'nothing to restore' : await this.restore(viewRoot, previous);
+        if (restored === null) {
+          this.lastError = `the read view could not be built at ${next.slice(0, 12)} (${reason}); serving ${previous.slice(0, 12)}`;
           this.unavailable = false;
-        } catch {
+        } else {
+          this.lastError = `the read view could not be built at ${next.slice(0, 12)} (${reason}), and restoring the previous commit failed (${restored})`;
           this.unavailable = true;
-          this.lastError = `graph rebuild failed at ${next.slice(0, 12)} (${reason}), and restoring ${previous.slice(0, 12)} failed too`;
         }
-        this.pending = await this.readPending();
+        await this.readPending(deps);
         return;
       }
     }
 
     this.head = next;
-    this.pending = await this.readPending();
-    this.lastError = null;
     this.unavailable = false;
+    const pendingError = await this.readPending(deps);
+    this.lastError = fetchError ?? pendingError;
   }
 
-  private async rebuildGraph(): Promise<void> {
-    const notes = await listNotes(this.store.root, this.store.config);
-    const graph = buildGraphFromNotes(notes, graphBuildOptions(this.store.config));
-    await writeGraph(this.store, graph);
-    await writeGraphDocument(this.store, renderGraphDocument(graph, this.store.config.retrieval.graph).text);
+  /** Forced, detached, and cleaned of untracked files — the view is this surface's alone. Null on success. */
+  private async checkout(viewRoot: string, ref: string): Promise<string | null> {
+    const checkedOut = await this.run(['checkout', '--quiet', '--detach', '--force', ref], viewRoot);
+    if (checkedOut.exitCode !== 0) return `the read view could not check out ${ref}: ${firstLine(checkedOut.stderr)}`;
+    await this.run(['clean', '-fdq'], viewRoot);
+    return null;
   }
 
-  /** remote-access spec: a `capture/` branch is pending only while its tip is not an ancestor of the default branch. */
-  private async readPending(): Promise<PendingCapture[]> {
-    const refs = await this.run(['for-each-ref', '--format=%(refname)', `refs/remotes/${REMOTE}/${CAPTURE_BRANCH_PREFIX}`]);
-    const inbox = this.store.config.ingest.inbox_path;
+  /** The configuration committed at the view's commit, and that commit's graph. */
+  private async rebuild(viewRoot: string): Promise<Store> {
+    const config = await readConfig(viewRoot, MIGRATION_STEPS);
+    const store: Store = { root: viewRoot, config };
+    const notes = await listNotes(store.root, store.config);
+    const graph = buildGraphFromNotes(notes, graphBuildOptions(store.config));
+    await writeGraph(store, graph);
+    await writeGraphDocument(store, renderGraphDocument(graph, store.config.retrieval.graph).text);
+    return store;
+  }
+
+  /** Back to `commit` with its graph; null on success, else why not. */
+  private async restore(viewRoot: string, commit: string): Promise<string | null> {
+    const failed = await this.checkout(viewRoot, commit);
+    if (failed !== null) return failed;
+    try {
+      this.viewStore = await this.rebuild(viewRoot);
+      return null;
+    } catch (err) {
+      return err instanceof Error ? err.message : String(err);
+    }
+  }
+
+  /**
+   * design.md D6–D7: "pending" means what the approval index means by it — a
+   * session branch with an open pull request. Returns an error line when the
+   * forge could not be read, keeping the previous list.
+   */
+  private async readPending(deps: SyncDeps): Promise<string | null> {
+    let open: Set<string>;
+    try {
+      open = new Set((await deps.forge.openPulls()).map((p) => p.headRef));
+    } catch (err) {
+      return `open pull requests could not be read: ${err instanceof Error ? firstLine(err.message) : String(err)}`;
+    }
+    const canonical = this.options.canonicalRoot;
+    const prefix = this.repoPrefix ?? '';
+    const inbox = deps.config.ingest.inbox_path;
+    const base = `refs/remotes/origin/${deps.config.git.default_branch}`;
     const found: PendingCapture[] = [];
-    for (const ref of refs.stdout.split('\n').filter((r) => r.length > 0).sort()) {
-      if ((await this.run(['merge-base', '--is-ancestor', ref, 'HEAD'])).exitCode === 0) continue;
-      const added = await this.run(['diff', '--name-only', '--diff-filter=A', '--no-renames', `HEAD...${ref}`]);
+    const sessions = (await sessionWorktrees(this.options.git, canonical, deps.config)).filter((s) => open.has(s.branch));
+    for (const session of sessions.sort((a, b) => (a.branch < b.branch ? -1 : 1))) {
+      const added = await this.run(['diff', '--name-only', '--diff-filter=A', '--no-renames', `${base}...${session.branch}`], canonical);
       if (added.exitCode !== 0) continue;
       for (const repoPath of added.stdout.split('\n').filter((p) => p.length > 0)) {
-        if (!repoPath.startsWith(this.repoPrefix)) continue;
-        const filePath = repoPath.slice(this.repoPrefix.length);
+        if (!repoPath.startsWith(prefix)) continue;
+        const filePath = repoPath.slice(prefix.length);
         if (!filePath.endsWith('.md') || !isUnderAnyPrefix(filePath, [inbox])) continue;
-        const shown = await this.run(['show', `${ref}:${repoPath}`]);
-        if (shown.exitCode !== 0) continue;
-        found.push({ branch: ref.slice(`refs/remotes/${REMOTE}/`.length), path: filePath, text: shown.stdout });
+        const shown = await this.run(['show', `${session.branch}:${repoPath}`], canonical);
+        if (shown.exitCode === 0) found.push({ branch: session.branch, path: filePath, text: shown.stdout });
       }
     }
-    return found;
+    this.pending = found;
+    return null;
   }
 }

@@ -23,8 +23,6 @@ import * as reviewListCommand from './commands/review-list.js';
 import * as sessionCaptureCommand from './commands/session-capture.js';
 import * as sessionListCommand from './commands/session-list.js';
 import * as serveCommand from './commands/serve.js';
-import * as mcpMemberCommand from './commands/mcp-member.js';
-import * as mcpServeCommand from './commands/mcp-serve.js';
 import * as sessionStartCommand from './commands/session-start.js';
 import * as rollupGatherCommand from './commands/rollup-gather.js';
 import * as rollupStaleCommand from './commands/rollup-stale.js';
@@ -660,83 +658,6 @@ export async function run(argv: readonly string[], env: RunEnv): Promise<ExitCod
       result = await runCommand('serve', runEnv, jsonMode, async () => {
         const store = await openStore(runEnv, { root });
         return serveCommand.execute(runEnv, store, { port: cmdOpts.port, host: cmdOpts.host });
-      });
-    });
-
-  const mcpCommand = program.command('mcp').description('serve the store to chat apps (Claude, ChatGPT) over the Model Context Protocol, and manage who may connect');
-
-  const parseInteger = (v: string): number => Number.parseInt(v, 10);
-
-  mcpCommand
-    .command('serve')
-    .description('serve find and capture over MCP (Streamable HTTP) from a dedicated, clean checkout of the default branch, with built-in sign-in by member access code')
-    .option('--host <address>', 'address to bind; anything but loopback needs --public-url', mcpServeCommand.DEFAULT_MCP_HOST)
-    .option('--port <n>', 'port to bind (0: OS-assigned)', parseInteger, mcpServeCommand.DEFAULT_MCP_PORT)
-    .option('--public-url <url>', 'the https origin clients reach (a Tailscale Funnel or reverse proxy): the sign-in issuer and the base of the /mcp address')
-    .option('--state-dir <path>', 'where the member list and signing key live (default: under ~/.contexture/mcp/); never inside the store')
-    .option('--pull-interval <seconds>', 'fast-forward the checkout from origin at most this often (0: never)', parseInteger, mcpServeCommand.DEFAULT_PULL_INTERVAL_SECONDS)
-    .option('--gather-max-bytes <n>', 'byte budget for the note bodies one gather call returns', parseInteger, mcpServeCommand.DEFAULT_GATHER_MAX_BYTES)
-    .option('--trust-proxy', 'behind a proxy on loopback, key sign-in throttling on the rightmost X-Forwarded-For address')
-    .option('--no-auth', 'admit every request as the operator, with every scope; refused on any bind but loopback')
-    .action(
-      async (
-        cmdOpts: { host: string; port: number; publicUrl?: string; stateDir?: string; pullInterval: number; gatherMaxBytes: number; trustProxy?: boolean; auth: boolean },
-        cmd: Command,
-      ) => {
-        const { runEnv, jsonMode, root } = deriveRunEnv(env, cmd);
-        result = await runCommand('mcp.serve', runEnv, jsonMode, async () => {
-          const store = await openStore(runEnv, { root });
-          return mcpServeCommand.execute(runEnv, store, {
-            host: cmdOpts.host,
-            port: cmdOpts.port,
-            publicUrl: cmdOpts.publicUrl,
-            stateDir: cmdOpts.stateDir,
-            pullInterval: cmdOpts.pullInterval,
-            gatherMaxBytes: cmdOpts.gatherMaxBytes,
-            trustProxy: Boolean(cmdOpts.trustProxy),
-            auth: cmdOpts.auth,
-          });
-        });
-      },
-    );
-
-  const mcpMemberGroup = mcpCommand.command('member').description('who may connect to `ctxr mcp serve`: members, their scopes, and their access codes');
-
-  mcpMemberGroup
-    .command('add <name>')
-    .description('add a member and print their access code, the only time it is shown')
-    .option('--scope <list>', 'comma-separated scopes: read (find, gather), capture (capture)', 'read')
-    .option('--email <address>', 'an email to record beside the name')
-    .option('--state-dir <path>', 'the MCP state directory (default: under ~/.contexture/mcp/)')
-    .action(async (name: string, cmdOpts: { scope: string; email?: string; stateDir?: string }, cmd: Command) => {
-      const { runEnv, jsonMode, root } = deriveRunEnv(env, cmd);
-      result = await runCommand('mcp.member.add', runEnv, jsonMode, async () => {
-        const store = await openStore(runEnv, { root });
-        return mcpMemberCommand.add(runEnv, store, { name, scope: cmdOpts.scope, email: cmdOpts.email, stateDir: cmdOpts.stateDir });
-      });
-    });
-
-  mcpMemberGroup
-    .command('remove <name>')
-    .description('remove a member; every token issued to them is refused from their next call')
-    .option('--state-dir <path>', 'the MCP state directory (default: under ~/.contexture/mcp/)')
-    .action(async (name: string, cmdOpts: { stateDir?: string }, cmd: Command) => {
-      const { runEnv, jsonMode, root } = deriveRunEnv(env, cmd);
-      result = await runCommand('mcp.member.remove', runEnv, jsonMode, async () => {
-        const store = await openStore(runEnv, { root });
-        return mcpMemberCommand.remove(runEnv, store, { name, stateDir: cmdOpts.stateDir });
-      });
-    });
-
-  mcpMemberGroup
-    .command('list')
-    .description('list members and their scopes (never a code)')
-    .option('--state-dir <path>', 'the MCP state directory (default: under ~/.contexture/mcp/)')
-    .action(async (cmdOpts: { stateDir?: string }, cmd: Command) => {
-      const { runEnv, jsonMode, root } = deriveRunEnv(env, cmd);
-      result = await runCommand('mcp.member.list', runEnv, jsonMode, async () => {
-        const store = await openStore(runEnv, { root });
-        return mcpMemberCommand.list(runEnv, store, { stateDir: cmdOpts.stateDir });
       });
     });
 

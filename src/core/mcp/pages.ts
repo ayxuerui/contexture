@@ -2,13 +2,14 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { escapeHtml } from '../browse/render.js';
-import type { AuthorizePageView } from './oauth.js';
+import type { McpScope } from './members.js';
+import type { ConsentPageView } from './oauth.js';
 
 /**
- * The authorisation page is markup, not a markdown fragment, so it is read
- * the way `browse/templates.ts` reads the serve shell rather than through
- * `packagedTemplate()`. Every substituted value is escaped here; the
- * template itself carries no script.
+ * The consent page is markup, not a markdown fragment, so it is read the way
+ * `browse/templates.ts` reads the serve shell rather than through
+ * `packagedTemplate()`. Every substituted value is escaped here; the template
+ * carries no script.
  */
 function templatesDir(): string {
   return fileURLToPath(new URL('../../../templates/mcp', import.meta.url));
@@ -16,27 +17,28 @@ function templatesDir(): string {
 
 let cached: string | undefined;
 
-async function authorizeTemplate(): Promise<string> {
-  cached ??= await readFile(path.join(templatesDir(), 'authorize.html'), 'utf8');
-  return cached;
-}
+/** What each scope lets an app do, in the member's terms. */
+const SCOPE_TEXT: Readonly<Record<McpScope, string>> = {
+  read: 'search and read the store’s notes',
+  capture: 'save material into the store’s inbox, where it waits for approval before it lands',
+};
 
-export async function renderAuthorizePage(storeName: string, issuer: string, view: AuthorizePageView): Promise<string> {
-  const hidden = Object.entries(view.hiddenFields)
-    .map(([name, value]) => `<input type="hidden" name="${escapeHtml(name)}" value="${escapeHtml(value)}">`)
-    .join('\n');
-  const error = view.error === null ? '' : `<p class="error" role="alert">${escapeHtml(view.error)}</p>`;
+export async function renderConsentPage(storeName: string, view: ConsentPageView): Promise<string> {
+  cached ??= await readFile(path.join(templatesDir(), 'consent.html'), 'utf8');
   const replacements: Record<string, string> = {
     __STORE_NAME__: escapeHtml(storeName),
     __CLIENT_NAME__: escapeHtml(view.clientName),
-    __ISSUER__: escapeHtml(issuer),
-    __ERROR__: error,
-    __HIDDEN_FIELDS__: hidden,
+    __EMAIL__: escapeHtml(view.email),
+    __REDIRECT_HOST__: escapeHtml(view.redirectHost),
+    __SCOPE_ITEMS__: view.scopes.map((s) => `<li>${escapeHtml(SCOPE_TEXT[s])}</li>`).join('\n'),
+    __HIDDEN_FIELDS__: Object.entries(view.hiddenFields)
+      .map(([name, value]) => `<input type="hidden" name="${escapeHtml(name)}" value="${escapeHtml(value)}">`)
+      .join('\n'),
   };
-  // One pass over the template, so a substituted value containing a token is never substituted again.
-  return (await authorizeTemplate()).replace(/__[A-Z_]+__/g, (token) => {
+  // One pass, so a substituted value that happens to contain a token is never substituted again.
+  return cached.replace(/__[A-Z_]+__/g, (token) => {
     const value = replacements[token];
-    if (value === undefined) throw new Error(`templates/mcp/authorize.html carries an unknown placeholder ${token}`);
+    if (value === undefined) throw new Error(`templates/mcp/consent.html carries an unknown placeholder ${token}`);
     return value;
   });
 }

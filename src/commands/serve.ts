@@ -27,6 +27,7 @@ import { createIdentityVerifier } from '../core/approval/identity.js';
 import { ForgeUnreachableError, RecordingLoginMismatchError } from '../core/errors.js';
 import { credentialsFor, type CredentialKind } from '../core/forge/credentials.js';
 import { createGhForgeClient, ForgeRequestError } from '../core/forge/github.js';
+import { isMcpPath, McpSurface } from '../core/mcp/surface.js';
 
 export const requires: CommandRequires = { store: 'required' };
 
@@ -126,6 +127,7 @@ async function readDerivedDocument(absolutePath: string): Promise<{ text: string
 async function handleRequest(
   holder: ServingStateHolder,
   landing: LandingControl,
+  mcp: McpSurface,
   git: GitRunner,
   stderr: NodeJS.WritableStream,
   req: IncomingMessage,
@@ -138,6 +140,12 @@ async function handleRequest(
   const url = new URL(req.url ?? '/', 'http://localhost');
   const pathname = decodeURIComponent(url.pathname);
   stderr.write(`${method} ${pathname}\n`);
+
+  // remote-access spec: the MCP surface answers its own paths, methods included (context-browsing's second exception).
+  if (isMcpPath(pathname)) {
+    await mcp.handle({ store, approval, approvalError }, req, res, pathname);
+    return;
+  }
 
   // context-browsing spec: the one exception to read-only is a POST to the decision route of a store that declares change approval.
   const decisionPost = method === 'POST' && (approval !== null || approvalError !== null) && isDecisionRoute(pathname);
@@ -320,6 +328,7 @@ async function approvalServer(env: RunEnv, store: Store): Promise<ApprovalServer
     // The schema requires serve.base_url alongside change_approval.
     origin: new URL(store.config.serve!.base_url!).origin,
     forge,
+    credentials,
     verifier: createIdentityVerifier(approval.identity),
     git: env.git,
     now: () => env.now(),
@@ -373,6 +382,7 @@ export async function execute(env: RunEnv, store: Store, flags: ServeFlags): Pro
     log: (line) => env.io.stderr.write(`${line}\n`),
   });
   const landing = createLandingControl(env, store.root);
+  const mcp = new McpSurface({ git: env.git, canonicalRoot: store.root, env: env.env, now: () => env.now(), log: (line) => env.io.stderr.write(`${line}\n`) });
   landing.sync(store.config);
   // Stopping serve stops a landing run in progress; landing is resumable, so the next start finishes it.
   const shutdown = (signal: NodeJS.Signals): void => {
@@ -381,7 +391,7 @@ export async function execute(env: RunEnv, store: Store, flags: ServeFlags): Pro
   process.once('SIGTERM', shutdown);
   process.once('SIGINT', shutdown);
   const server = createServer((req, res) => {
-    handleRequest(holder, landing, env.git, env.io.stderr, req, res).catch((err: unknown) => {
+    handleRequest(holder, landing, mcp, env.git, env.io.stderr, req, res).catch((err: unknown) => {
       env.io.stderr.write(`serve: ${err instanceof Error ? err.message : String(err)}\n`);
       if (!res.headersSent) send(res, req.method ?? 'GET', 500, 'text/plain; charset=utf-8', 'internal error\n');
       else res.end();

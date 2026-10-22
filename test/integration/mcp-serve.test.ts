@@ -1,154 +1,226 @@
-import type { ChildProcess } from 'node:child_process';
 import { createHash, randomBytes } from 'node:crypto';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { git, makeServedStore, writeStoreFile, type ServedStore } from '../helpers/mcp-store.js';
-import { runCli, runCliBackground, stopCliBackground } from '../helpers/run-cli.js';
+import { readFile, writeFile } from 'node:fs/promises';
+import { createServer, request, type Server } from 'node:http';
+import path from 'node:path';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { makeApprovalStore, type ApprovalStore } from '../helpers/approval-store.js';
+import { makeTestSigner } from '../helpers/identity-keys.js';
+import { runCliBackground, stopCliBackground } from '../helpers/run-cli.js';
 
+const BASE = 'https://ctx-a.example.test';
+const ISSUER = 'https://ctx-a.cloudflareaccess.example.test';
+const AUDIENCE = 'aud-1';
+const HEADER = 'cf-access-jwt-assertion';
 const REDIRECT = 'https://client.example/callback';
+const MCP_BLOCK = 'mcp:\n  readers: ["@example.com"]\n  capturers: ["a@example.com"]\n';
 
-interface ServeEnvelope {
-  exitCode: number;
-  data: { url: string; port: number; auth: boolean; members: number; head: string };
+const signer = makeTestSigner();
+let jwksServer: Server;
+let jwksUrl: string;
+
+beforeAll(async () => {
+  jwksServer = createServer((_req, res) => {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(signer.jwks));
+  });
+  await new Promise<void>((resolve) => jwksServer.listen(0, '127.0.0.1', resolve));
+  jwksUrl = `http://127.0.0.1:${(jwksServer.address() as { port: number }).port}/certs`;
+});
+
+afterAll(async () => {
+  await new Promise<void>((resolve) => jwksServer.close(() => resolve()));
+});
+
+interface Reply {
+  status: number;
+  headers: Record<string, string | string[] | undefined>;
+  body: string;
 }
 
-describe('ctxr mcp serve (real CLI)', () => {
-  let fixture: ServedStore;
-  let child: ChildProcess | undefined;
+/** node:http rather than fetch: fetch refuses to send an Origin header of our choosing. */
+function http(url: string, opts: { method?: string; headers?: Record<string, string>; body?: string } = {}): Promise<Reply> {
+  return new Promise((resolve, reject) => {
+    const req = request(url, { method: opts.method ?? 'GET', headers: opts.headers }, (res) => {
+      const chunks: Buffer[] = [];
+      res.on('data', (c: Buffer) => chunks.push(c));
+      res.on('end', () => resolve({ status: res.statusCode ?? 0, headers: res.headers, body: Buffer.concat(chunks).toString('utf8') }));
+    });
+    req.on('error', reject);
+    req.end(opts.body);
+  });
+}
+
+const assertion = (email: string) => signer.token({ iss: ISSUER, aud: [AUDIENCE], email });
+
+async function withServer(store: ApprovalStore, body: (url: string, stderr: () => string) => Promise<void>): Promise<void> {
+  const { child, firstLine } = await runCliBackground(['serve', '--port', '0', '--json'], { cwd: store.root, env: store.env });
   let stderr = '';
-
-  beforeEach(async () => {
-    fixture = await makeServedStore();
-    await writeStoreFile(fixture.author, 'work/kestrel.md', '# Kestrel\n\nThe Kestrel launch moved to March.\n');
-    await fixture.publish('add kestrel');
-    await git(fixture.served, fixture.env, 'pull', '-q', '--ff-only');
-    stderr = '';
+  child.stderr?.on('data', (chunk: Buffer) => {
+    stderr += chunk.toString('utf8');
   });
-
-  afterEach(async () => {
-    if (child) await stopCliBackground(child);
-    child = undefined;
-    await fixture.cleanup();
-  });
-
-  async function addMember(name: string, scope: string): Promise<string> {
-    const res = await runCli(['mcp', 'member', 'add', name, '--scope', scope, '--state-dir', fixture.stateDir, '--json'], { cwd: fixture.served, env: fixture.env });
-    expect(res.exitCode).toBe(0);
-    return (JSON.parse(res.stdout) as { data: { code: string } }).data.code;
+  try {
+    await body((JSON.parse(firstLine) as { data: { url: string } }).data.url, () => stderr);
+  } finally {
+    await stopCliBackground(child);
   }
+}
 
-  async function serve(extra: string[] = []): Promise<ServeEnvelope> {
-    const started = await runCliBackground(['mcp', 'serve', '--port', '0', '--state-dir', fixture.stateDir, '--json', ...extra], { cwd: fixture.served, env: fixture.env });
-    child = started.child;
-    child.stderr?.on('data', (chunk: Buffer) => {
-      stderr += chunk.toString('utf8');
-    });
-    return JSON.parse(started.firstLine) as ServeEnvelope;
+async function signIn(url: string, email: string): Promise<string> {
+  const registration = await http(new URL('/register', url).toString(), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ redirect_uris: [REDIRECT], client_name: 'Test client' }),
+  });
+  expect(registration.status).toBe(201);
+  const clientId = (JSON.parse(registration.body) as { client_id: string }).client_id;
+  const verifier = randomBytes(32).toString('base64url');
+  const params = new URLSearchParams({
+    response_type: 'code',
+    client_id: clientId,
+    redirect_uri: REDIRECT,
+    code_challenge: createHash('sha256').update(verifier).digest('base64url'),
+    code_challenge_method: 'S256',
+    resource: `${BASE}/mcp`,
+  });
+  const consent = await http(new URL(`/authorize?${params.toString()}`, url).toString(), { headers: { [HEADER]: assertion(email) } });
+  expect(consent.status).toBe(200);
+  expect(consent.body).toContain(email);
+  params.set('decision', 'allow');
+  const confirmed = await http(new URL('/authorize', url).toString(), {
+    method: 'POST',
+    headers: { [HEADER]: assertion(email), Origin: BASE, 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: params.toString(),
+  });
+  expect(confirmed.status).toBe(302);
+  const code = new URL(confirmed.headers.location as string).searchParams.get('code')!;
+  const token = await http(new URL('/token', url).toString(), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ grant_type: 'authorization_code', code, client_id: clientId, redirect_uri: REDIRECT, code_verifier: verifier }).toString(),
+  });
+  expect(token.status).toBe(200);
+  return (JSON.parse(token.body) as { access_token: string }).access_token;
+}
+
+async function rpc(url: string, token: string, method: string, params?: unknown): Promise<{ status: number; json: { result?: Record<string, unknown>; error?: { code: number } } }> {
+  const reply = await http(new URL('/mcp', url).toString(), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json, text/event-stream', Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, ...(params === undefined ? {} : { params }) }),
+  });
+  return { status: reply.status, json: reply.body === '' ? {} : JSON.parse(reply.body) };
+}
+
+async function approvalStore(withMcp: boolean): Promise<ApprovalStore> {
+  const store = await makeApprovalStore({ baseUrl: BASE, identity: { issuer: ISSUER, audience: AUDIENCE, jwksUrl } });
+  if (withMcp) {
+    await writeFile(path.join(store.root, 'contexture.yaml'), `${await readFile(path.join(store.root, 'contexture.yaml'), 'utf8')}${MCP_BLOCK}`);
+    await store.git(['commit', '-qam', 'declare mcp', '--no-verify']);
+    await store.git(['push', '-q', '--no-verify', 'origin', 'main']);
   }
+  return store;
+}
 
-  async function signIn(mcpUrl: string, code: string): Promise<string> {
-    const origin = new URL(mcpUrl).origin;
-    const registration = (await (await fetch(`${origin}/register`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ redirect_uris: [REDIRECT] }) })).json()) as { client_id: string };
-    const verifier = randomBytes(32).toString('base64url');
-    const form = new URLSearchParams({
-      response_type: 'code',
-      client_id: registration.client_id,
-      redirect_uri: REDIRECT,
-      code_challenge: createHash('sha256').update(verifier).digest('base64url'),
-      code_challenge_method: 'S256',
-      resource: mcpUrl,
-      access_code: code,
-    });
-    const redirect = await fetch(`${origin}/authorize`, { method: 'POST', redirect: 'manual', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: form.toString() });
-    expect(redirect.status).toBe(302);
-    const authCode = new URL(redirect.headers.get('location')!).searchParams.get('code')!;
-    const token = await fetch(`${origin}/token`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({ grant_type: 'authorization_code', code: authCode, client_id: registration.client_id, redirect_uri: REDIRECT, code_verifier: verifier }).toString(),
-    });
-    expect(token.status).toBe(200);
-    return ((await token.json()) as { access_token: string }).access_token;
-  }
+describe('the MCP surface of ctxr serve (real CLI, fake forge, real signatures)', () => {
+  it('signs a member in through the verified identity and serves find and the capture stub', async () => {
+    const store = await approvalStore(true);
+    try {
+      await store.advanceMain({ 'projects/kestrel.md': '# Kestrel\n\nThe Kestrel launch moved to March.\n' }, 'add kestrel');
+      await withServer(store, async (url, stderr) => {
+        const meta = await http(new URL('/.well-known/oauth-authorization-server', url).toString());
+        expect(meta.status).toBe(200);
+        expect(JSON.parse(meta.body)).toMatchObject({ issuer: BASE, registration_endpoint: `${BASE}/register` });
 
-  async function rpc(mcpUrl: string, token: string, method: string, params?: unknown): Promise<{ result?: Record<string, unknown>; error?: { code: number } }> {
-    const res = await fetch(mcpUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Accept: 'application/json, text/event-stream', Authorization: `Bearer ${token}` },
-      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, ...(params === undefined ? {} : { params }) }),
-    });
-    expect(res.status).toBe(200);
-    return (await res.json()) as { result?: Record<string, unknown>; error?: { code: number } };
-  }
+        const anonymous = await rpc(url, '', 'tools/list');
+        expect(anonymous.status).toBe(401);
 
-  it('signs a member in and serves find and the capture stub, logging each call', async () => {
-    const both = await addMember('ctx-a', 'read,capture');
-    const reader = await addMember('ctx-b', 'read');
-    const envelope = await serve();
-    expect(envelope.data.url).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/mcp$/);
-    expect(envelope.data).toMatchObject({ auth: true, members: 2 });
+        const token = await signIn(url, 'a@example.com');
+        const init = await rpc(url, token, 'initialize', { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'test', version: '0' } });
+        expect(init.json.result).toMatchObject({ protocolVersion: '2025-06-18', serverInfo: { name: 'contexture' } });
 
-    const unauthenticated = await fetch(envelope.data.url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
-    expect(unauthenticated.status).toBe(401);
+        const tools = (await rpc(url, token, 'tools/list')).json.result as { tools: { name: string; annotations: { readOnlyHint: boolean } }[] };
+        expect(tools.tools.map((t) => [t.name, t.annotations.readOnlyHint])).toEqual([
+          ['find', true],
+          ['capture', false],
+        ]);
 
-    const token = await signIn(envelope.data.url, both);
-    const init = await rpc(envelope.data.url, token, 'initialize', { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'test', version: '0' } });
-    expect(init.result).toMatchObject({ protocolVersion: '2025-06-18', serverInfo: { name: 'contexture' } });
-    expect(String(init.result!.instructions)).toContain('find');
+        const found = (await rpc(url, token, 'tools/call', { name: 'find', arguments: { text: 'kestrel' } })).json.result as {
+          isError: boolean;
+          structuredContent: { notes: { path: string; url: string }[]; store: { head: string } };
+        };
+        expect(found.isError).toBe(false);
+        expect(found.structuredContent.notes.map((n) => n.path)).toEqual(['projects/kestrel.md']);
+        expect(found.structuredContent.notes[0]!.url).toBe(`${BASE}/notes/projects/kestrel.md`);
+        expect(found.structuredContent.store.head).toBe(await store.git(['rev-parse', 'origin/main']));
 
-    const tools = (await rpc(envelope.data.url, token, 'tools/list')).result as { tools: { name: string; annotations: { readOnlyHint: boolean } }[] };
-    expect(tools.tools.map((t) => [t.name, t.annotations.readOnlyHint])).toEqual([
-      ['find', true],
-      ['capture', false],
-    ]);
+        const captured = (await rpc(url, token, 'tools/call', { name: 'capture', arguments: { title: 'Call', body: 'Notes as written.', source_type: 'meeting' } })).json.result as {
+          isError: boolean;
+          structuredContent: { saved: boolean };
+        };
+        expect(captured).toMatchObject({ isError: false, structuredContent: { saved: false } });
 
-    const found = (await rpc(envelope.data.url, token, 'tools/call', { name: 'find', arguments: { text: 'kestrel' } })).result as {
-      isError: boolean;
-      structuredContent: { notes: { path: string }[]; store: { head: string } };
-    };
-    expect(found.isError).toBe(false);
-    expect(found.structuredContent.notes.map((n) => n.path)).toEqual(['work/kestrel.md']);
-    expect(found.structuredContent.store.head).toBe((await git(fixture.served, fixture.env, 'rev-parse', 'HEAD')).trim());
+        const reader = await signIn(url, 'b@example.com');
+        const refused = (await rpc(url, reader, 'tools/call', { name: 'capture', arguments: { title: 'x', body: 'y', source_type: 'email' } })).json.result as {
+          isError: boolean;
+          structuredContent: { error: { code: string } };
+        };
+        expect(refused).toMatchObject({ isError: true, structuredContent: { error: { code: 'mcp.insufficient_scope' } } });
 
-    const captured = (await rpc(envelope.data.url, token, 'tools/call', { name: 'capture', arguments: { title: 'Call', body: 'Notes as written.', source_type: 'meeting' } })).result as {
-      isError: boolean;
-      structuredContent: { saved: boolean };
-    };
-    expect(captured).toMatchObject({ isError: false, structuredContent: { saved: false } });
-    expect((await git(fixture.served, fixture.env, 'status', '--porcelain')).trim()).toBe('');
+        const foreign = await http(new URL('/mcp', url).toString(), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}`, Origin: 'https://evil.example' },
+          body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'ping' }),
+        });
+        expect(foreign.status).toBe(403);
 
-    const readerToken = await signIn(envelope.data.url, reader);
-    const refused = (await rpc(envelope.data.url, readerToken, 'tools/call', { name: 'capture', arguments: { title: 'x', body: 'y', source_type: 'email' } })).result as {
-      isError: boolean;
-      structuredContent: { error: { code: string } };
-    };
-    expect(refused).toMatchObject({ isError: true, structuredContent: { error: { code: 'mcp.insufficient_scope' } } });
-
-    await new Promise((resolve) => setTimeout(resolve, 50));
-    expect(stderr).toContain('mcp ctx-a: tools/list');
-    expect(stderr).toContain('mcp ctx-a: tools/call find');
-    expect(stderr).toContain('mcp ctx-a: tools/call capture');
+        expect((await store.git(['status', '--porcelain'])).trim()).toBe('');
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        expect(stderr()).toContain('mcp a@example.com: tools/list');
+        expect(stderr()).toContain('mcp a@example.com: tools/call find');
+        expect(stderr()).toContain('per-process key');
+      });
+    } finally {
+      await store.tmp.cleanup();
+    }
   });
 
-  it('refuses a wide bind without --public-url, and --no-auth off loopback', async () => {
-    const wide = await runCli(['mcp', 'serve', '--host', '0.0.0.0', '--port', '0', '--state-dir', fixture.stateDir, '--json'], { cwd: fixture.served, env: fixture.env });
-    expect(wide.exitCode).toBe(2);
-    expect(JSON.parse(wide.stdout).findings[0].code).toBe('mcp.public_url_required');
-    const noAuth = await runCli(['mcp', 'serve', '--host', '0.0.0.0', '--public-url', 'https://store.example', '--no-auth', '--json'], { cwd: fixture.served, env: fixture.env });
-    expect(noAuth.exitCode).toBe(2);
-    expect(JSON.parse(noAuth.stdout).findings[0].code).toBe('mcp.no_auth_off_loopback');
+  it('is absent without the block, and follows the block being added and removed with no restart', async () => {
+    const store = await approvalStore(false);
+    try {
+      await withServer(store, async (url) => {
+        const metaUrl = new URL('/.well-known/oauth-authorization-server', url).toString();
+        expect((await http(metaUrl)).status).toBe(404);
+        expect((await http(new URL('/mcp', url).toString(), { method: 'POST', body: '{}' })).status).toBe(405);
+
+        const configPath = path.join(store.root, 'contexture.yaml');
+        const without = await readFile(configPath, 'utf8');
+        await writeFile(`${configPath}.next`, `${without}${MCP_BLOCK}`);
+        await import('node:fs/promises').then((fs) => fs.rename(`${configPath}.next`, configPath));
+        expect((await http(metaUrl)).status).toBe(200);
+        expect((await http(new URL('/notes/', url).toString())).status).not.toBe(500);
+
+        await writeFile(`${configPath}.next`, without);
+        await import('node:fs/promises').then((fs) => fs.rename(`${configPath}.next`, configPath));
+        expect((await http(metaUrl)).status).toBe(404);
+      });
+    } finally {
+      await store.tmp.cleanup();
+    }
   });
 
-  it('refuses to start on a checkout with an uncommitted note', async () => {
-    await writeStoreFile(fixture.served, 'work/kestrel.md', 'edited on the server\n');
-    const res = await runCli(['mcp', 'serve', '--port', '0', '--state-dir', fixture.stateDir, '--json'], { cwd: fixture.served, env: fixture.env });
-    expect(res.exitCode).toBe(2);
-    expect(JSON.parse(res.stdout).findings[0]).toMatchObject({ code: 'mcp.checkout_dirty' });
-  });
-
-  it('under --no-auth on loopback, admits the operator with every tool', async () => {
-    const envelope = await serve(['--no-auth', '--pull-interval', '0']);
-    expect(envelope.data.auth).toBe(false);
-    const tools = (await rpc(envelope.data.url, '', 'tools/list')).result as { tools: { name: string }[] };
-    expect(tools.tools.map((t) => t.name)).toEqual(['find', 'capture']);
+  it('refuses sign-in without a verified assertion, and for a verified non-member', async () => {
+    const store = await approvalStore(true);
+    try {
+      await withServer(store, async (url) => {
+        const registration = await http(new URL('/register', url).toString(), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ redirect_uris: [REDIRECT] }) });
+        const clientId = (JSON.parse(registration.body) as { client_id: string }).client_id;
+        const params = new URLSearchParams({ response_type: 'code', client_id: clientId, redirect_uri: REDIRECT, code_challenge: 'a'.repeat(43), code_challenge_method: 'S256' });
+        const authorize = new URL(`/authorize?${params.toString()}`, url).toString();
+        expect((await http(authorize)).status).toBe(401);
+        expect((await http(authorize, { headers: { [HEADER]: assertion('z@elsewhere.example') } })).status).toBe(403);
+      });
+    } finally {
+      await store.tmp.cleanup();
+    }
   });
 });

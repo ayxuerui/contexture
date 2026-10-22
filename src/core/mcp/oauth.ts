@@ -1,39 +1,48 @@
 import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'node:http';
+import type { McpConfig } from '../../config/schema.js';
+import type { IdentityVerifier } from '../approval/identity.js';
 import { BodyTooLargeError, readBody, sendJson, sendText, type Authentication } from './http.js';
-import { MCP_SCOPES, type McpScope, type Member, type MemberRegistry } from './state.js';
+import { MCP_SCOPES, scopesFor, type McpScope } from './members.js';
 
 /**
- * serve-the-store-over-mcp design.md D3: the server is the OAuth 2.1
- * authorisation server for its own `/mcp` resource, and it stores nothing it
- * issues. Client ids, authorisation codes and access tokens are all
- * HMAC-signed payloads; the only state is the member list the operator writes
- * and the signing key. Authorisation codes are additionally single use: each
- * carries a nonce recorded in memory when redeemed, and codes are signed
- * under a per-process key, so a restart invalidates outstanding codes rather
- * than forgetting which were spent.
+ * serve-the-store-over-mcp design.md D4–D5: `ctxr serve` is the OAuth 2.1
+ * authorisation server for its own `/mcp`, and it stores nothing it issues.
+ * Client ids, authorisation codes and access tokens are HMAC-signed payloads.
+ * Who may sign in is decided by the access proxy's verified identity — the
+ * assertion `change_approval.identity` configures, checked on every
+ * `/authorize` request exactly as the approval routes check it — and by the
+ * `mcp` block the server last loaded, consulted again on every `/mcp`
+ * request, so removing someone there refuses their next call.
  */
 
 export const ACCESS_TOKEN_TTL_SECONDS = 30 * 24 * 60 * 60;
 export const AUTHORIZATION_CODE_TTL_SECONDS = 10 * 60;
-export const THROTTLE_MAX_FAILURES = 5;
-export const THROTTLE_WINDOW_MS = 15 * 60 * 1000;
 const MAX_FORM_BYTES = 64 * 1024;
 const MAX_REDIRECT_URIS = 10;
 const MAX_REDIRECT_URI_LENGTH = 2000;
 
 export const PROTECTED_RESOURCE_METADATA_PATH = '/.well-known/oauth-protected-resource';
 export const AUTHORIZATION_SERVER_METADATA_PATH = '/.well-known/oauth-authorization-server';
-const OPENID_CONFIGURATION_PATH = '/.well-known/openid-configuration';
+export const OPENID_CONFIGURATION_PATH = '/.well-known/openid-configuration';
 export const REGISTER_PATH = '/register';
 export const AUTHORIZE_PATH = '/authorize';
 export const TOKEN_PATH = '/token';
 
-/** Who an admitted request acts as. `scopes` is already narrowed to what the member holds right now. */
+/** Every path the OAuth side of the MCP surface answers. */
+export const OAUTH_PATHS: readonly string[] = [
+  PROTECTED_RESOURCE_METADATA_PATH,
+  `${PROTECTED_RESOURCE_METADATA_PATH}/mcp`,
+  AUTHORIZATION_SERVER_METADATA_PATH,
+  OPENID_CONFIGURATION_PATH,
+  REGISTER_PATH,
+  AUTHORIZE_PATH,
+  TOKEN_PATH,
+];
+
+/** Who an admitted `/mcp` request acts as. `scopes` is already narrowed to what the email holds right now. */
 export interface Principal {
-  memberId: string;
-  name: string;
-  email: string | null;
+  email: string;
   scopes: McpScope[];
 }
 
@@ -41,7 +50,12 @@ function b64url(buffer: Buffer): string {
   return buffer.toString('base64url');
 }
 
-/** `kind.payload.mac` — the kind is inside the MAC, so a client id can never be replayed as a token. */
+/**
+ * `kind.payload.mac`, the kind inside the MAC so a client id can never be
+ * replayed as a token. Authorisation codes are signed under a key that mixes
+ * in a per-process nonce: a restart invalidates outstanding codes instead of
+ * forgetting which were spent (design.md D5).
+ */
 export class Signer {
   private readonly codeKey: Buffer;
 
@@ -87,7 +101,7 @@ interface CodePayload {
   /** PKCE S256 challenge. */
   cc: string;
   rs: string;
-  m: string;
+  e: string;
   s: McpScope[];
   /** Expiry, seconds since the epoch. */
   x: number;
@@ -96,86 +110,56 @@ interface CodePayload {
 }
 
 interface TokenPayload {
-  m: string;
+  e: string;
   s: McpScope[];
   rs: string;
   x: number;
 }
 
-/** Five failures per address per fifteen minutes; an address over the limit is refused for the rest of its window. */
-export class FailureThrottle {
-  private readonly windows = new Map<string, { start: number; failures: number }>();
-
-  constructor(private readonly now: () => Date) {}
-
-  blocked(address: string): boolean {
-    const entry = this.windows.get(address);
-    if (entry === undefined) return false;
-    if (this.now().getTime() - entry.start >= THROTTLE_WINDOW_MS) {
-      this.windows.delete(address);
-      return false;
-    }
-    return entry.failures >= THROTTLE_MAX_FAILURES;
-  }
-
-  fail(address: string): void {
-    const now = this.now().getTime();
-    const entry = this.windows.get(address);
-    if (entry === undefined || now - entry.start >= THROTTLE_WINDOW_MS) this.windows.set(address, { start: now, failures: 1 });
-    else entry.failures += 1;
-  }
-}
-
-function isLoopbackAddress(address: string | undefined): boolean {
-  if (address === undefined) return false;
-  return address === '::1' || address.startsWith('127.') || address.startsWith('::ffff:127.');
-}
-
-/**
- * design.md D3: the socket's peer, unless the operator declared a proxy in
- * front (`--trust-proxy`) and the peer is loopback — then the rightmost
- * `X-Forwarded-For` entry, the address the proxy itself saw. Without the
- * flag the header is ignored, so no caller can choose its own address.
- */
-export function clientAddress(req: IncomingMessage, trustProxy: boolean): string {
-  const peer = req.socket.remoteAddress ?? 'unknown';
-  if (!trustProxy || !isLoopbackAddress(peer)) return peer;
-  const header = req.headers['x-forwarded-for'];
-  const value = Array.isArray(header) ? header.join(',') : header;
-  const hops = (value ?? '')
-    .split(',')
-    .map((h) => h.trim())
-    .filter((h) => h.length > 0);
-  return hops.at(-1) ?? peer;
+export interface ConsentPageView {
+  clientName: string;
+  redirectHost: string;
+  email: string;
+  scopes: McpScope[];
+  hiddenFields: Record<string, string>;
 }
 
 export interface OAuthOptions {
-  /** The public origin clients reach, without a trailing slash: the issuer. */
+  /** The origin of `serve.base_url`: the issuer, and the only `Origin` a consent `POST` may carry. */
   issuer: string;
-  /** The `/mcp` endpoint's absolute URL: the one resource tokens are bound to. */
+  /** `<issuer>/mcp`: the one resource tokens are bound to. */
   resource: string;
-  members: MemberRegistry;
+  /** `change_approval.identity.header`. */
+  identityHeader: string;
+  verifier: IdentityVerifier;
+  /** The `mcp` block of the configuration the server last loaded. */
+  mcp(): McpConfig | undefined;
   signer: Signer;
+  /** Nonces of redeemed codes, kept by the server across configuration reloads. */
+  spentCodes: Map<string, number>;
   now(): Date;
-  trustProxy: boolean;
-  /** Renders the authorisation page (templates/mcp/authorize.html). */
-  renderAuthorizePage(view: AuthorizePageView): Promise<string>;
+  renderConsentPage(view: ConsentPageView): Promise<string>;
 }
 
-export interface AuthorizePageView {
+interface AuthorizeRequest {
+  clientId: string;
   clientName: string;
-  hiddenFields: Record<string, string>;
-  error: string | null;
+  redirectUri: string;
+  state: string | null;
+  challenge: string;
+  scopes: McpScope[] | null;
 }
 
-/** The OAuth endpoints plus the per-process state single-use codes and throttling need. */
-export class AuthorizationServer {
-  private readonly spentCodes = new Map<string, number>();
-  private readonly throttle: FailureThrottle;
+type AuthorizeVerdict =
+  | { kind: 'fatal'; message: string }
+  | { kind: 'redirect-error'; redirectUri: string; state: string | null; error: string; description: string }
+  | { kind: 'ok'; request: AuthorizeRequest };
 
-  constructor(private readonly options: OAuthOptions) {
-    this.throttle = new FailureThrottle(options.now);
-  }
+type MemberVerdict = { kind: 'member'; email: string; scopes: McpScope[] } | { kind: 'refused'; status: number; message: string } | { kind: 'no-scope' };
+
+/** The OAuth endpoints of the MCP surface. Built per request from the loaded configuration; holds no state of its own. */
+export class AuthorizationServer {
+  constructor(private readonly options: OAuthOptions) {}
 
   private nowSeconds(): number {
     return Math.floor(this.options.now().getTime() / 1000);
@@ -213,20 +197,11 @@ export class AuthorizationServer {
 
   /** Handles every OAuth path; returns false for anything else. */
   async handle(req: IncomingMessage, res: ServerResponse, pathname: string): Promise<boolean> {
+    if (!OAUTH_PATHS.includes(pathname)) return false;
     const method = req.method ?? 'GET';
-    const isOAuthPath =
-      pathname === PROTECTED_RESOURCE_METADATA_PATH ||
-      pathname === `${PROTECTED_RESOURCE_METADATA_PATH}/mcp` ||
-      pathname === AUTHORIZATION_SERVER_METADATA_PATH ||
-      pathname === OPENID_CONFIGURATION_PATH ||
-      pathname === REGISTER_PATH ||
-      pathname === AUTHORIZE_PATH ||
-      pathname === TOKEN_PATH;
-    if (!isOAuthPath) return false;
 
-    // Browser-based clients (the MCP inspector) read metadata and call
-    // registration and the token endpoint cross-origin; none of these use
-    // cookies, so a wildcard origin grants nothing a direct request lacks.
+    // Browser-based clients (the MCP inspector) read metadata and call registration and the token
+    // endpoint cross-origin; none of them use cookies, so a wildcard origin grants nothing a direct request lacks.
     const cors: Record<string, string> = pathname === AUTHORIZE_PATH ? {} : { 'Access-Control-Allow-Origin': '*' };
     if (method === 'OPTIONS' && pathname !== AUTHORIZE_PATH) {
       res.writeHead(204, {
@@ -241,7 +216,7 @@ export class AuthorizationServer {
 
     try {
       if (pathname.startsWith('/.well-known/')) {
-        if (method !== 'GET') return methodNotAllowed(res, 'GET');
+        if (method !== 'GET' && method !== 'HEAD') return methodNotAllowed(res, 'GET');
         const body = pathname.startsWith(PROTECTED_RESOURCE_METADATA_PATH) ? this.protectedResourceMetadata() : this.authorizationServerMetadata();
         sendJson(res, 200, body, cors);
         return true;
@@ -252,8 +227,8 @@ export class AuthorizationServer {
         return true;
       }
       if (pathname === AUTHORIZE_PATH) {
-        if (method === 'GET') await this.authorizeForm(new URL(req.url ?? '/', 'http://localhost').searchParams, res);
-        else if (method === 'POST') await this.authorizeSubmit(req, res);
+        if (method === 'GET' || method === 'HEAD') await this.authorizeForm(req, res);
+        else if (method === 'POST') await this.authorizeConfirm(req, res);
         else return methodNotAllowed(res, 'GET, POST');
         return true;
       }
@@ -293,12 +268,11 @@ export class AuthorizationServer {
     }
     const name = typeof metadata.client_name === 'string' ? metadata.client_name.slice(0, 100) : undefined;
     const payload: ClientPayload = { r: uris as string[], ...(name ? { n: name } : {}) };
-    const clientId = this.options.signer.sign('client', payload);
     sendJson(
       res,
       201,
       {
-        client_id: clientId,
+        client_id: this.options.signer.sign('client', payload),
         client_id_issued_at: this.nowSeconds(),
         redirect_uris: payload.r,
         ...(name ? { client_name: name } : {}),
@@ -310,27 +284,25 @@ export class AuthorizationServer {
     );
   }
 
-  // ---- authorization ------------------------------------------------------
+  // ---- authorization --------------------------------------------------------
 
   /**
-   * Validates an authorisation request. Until the client and redirect URI
-   * are known good, an error is shown on the page and never redirected —
-   * redirecting to an unverified URI is how an open redirector is built.
+   * Until the client and redirect URI are known good, an error is shown and
+   * never redirected — redirecting to an unverified URI is how an open
+   * redirector is built.
    */
-  private validateAuthorizeRequest(params: URLSearchParams):
-    | { kind: 'fatal'; message: string }
-    | { kind: 'redirect-error'; redirectUri: string; state: string | null; error: string; description: string }
-    | { kind: 'ok'; request: AuthorizeRequest } {
+  private validateAuthorizeRequest(params: URLSearchParams): AuthorizeVerdict {
     const clientId = params.get('client_id') ?? '';
     const client = this.options.signer.verify<ClientPayload>('client', clientId);
-    if (client === undefined || !Array.isArray(client.r)) return { kind: 'fatal', message: 'This sign-in link names a client this server never registered. Start the connection again from your app.' };
-
+    if (client === undefined || !Array.isArray(client.r)) {
+      return { kind: 'fatal', message: 'This sign-in link names a client this store never registered. Start connecting again from your app.' };
+    }
     const requestedRedirect = params.get('redirect_uri');
     const redirectUri = requestedRedirect ?? (client.r.length === 1 ? client.r[0]! : '');
     if (!client.r.includes(redirectUri)) return { kind: 'fatal', message: 'This sign-in link names a redirect address the client did not register.' };
 
     const state = params.get('state');
-    const fail = (error: string, description: string) => ({ kind: 'redirect-error' as const, redirectUri, state, error, description });
+    const fail = (error: string, description: string): AuthorizeVerdict => ({ kind: 'redirect-error', redirectUri, state, error, description });
 
     if (params.get('response_type') !== 'code') return fail('unsupported_response_type', 'Only response_type=code is supported.');
     const challenge = params.get('code_challenge') ?? '';
@@ -340,17 +312,26 @@ export class AuthorizationServer {
     const resource = params.get('resource');
     if (resource !== null && !sameResource(resource, this.options.resource)) return fail('invalid_target', `This server issues tokens only for ${this.options.resource}.`);
 
-    let requestedScopes: McpScope[] | null = null;
+    let requested: McpScope[] | null = null;
     const scope = params.get('scope');
     if (scope !== null && scope.trim().length > 0) {
-      requestedScopes = MCP_SCOPES.filter((s) => scope.split(/\s+/).includes(s));
-      if (requestedScopes.length === 0) return fail('invalid_scope', `Request any of: ${MCP_SCOPES.join(' ')}.`);
+      const words = scope.split(/\s+/);
+      const known = MCP_SCOPES.filter((s) => words.includes(s));
+      if (known.length === 0) return fail('invalid_scope', `Request any of: ${MCP_SCOPES.join(' ')}.`);
+      requested = known;
     }
+    return { kind: 'ok', request: { clientId, clientName: client.n ?? 'An app', redirectUri, state, challenge, scopes: requested } };
+  }
 
-    return {
-      kind: 'ok',
-      request: { clientId, clientName: client.n ?? 'Your app', redirectUri, state, challenge, scopes: requestedScopes },
-    };
+  /** The verified member and the scopes this request would grant, or why there is none. */
+  private async member(req: IncomingMessage, request: AuthorizeRequest): Promise<MemberVerdict> {
+    const verified = await this.options.verifier.verify(req.headers[this.options.identityHeader.toLowerCase()]);
+    if (!verified.ok) return { kind: 'refused', status: 401, message: 'Open this page through the store’s sign-in (its access proxy), then try connecting again.' };
+    const held = scopesFor(verified.email, this.options.mcp());
+    if (held.length === 0) return { kind: 'refused', status: 403, message: `${verified.email} may not connect apps to this store. Ask whoever runs it to add you.` };
+    const requested = request.scopes;
+    const scopes = requested === null ? held : held.filter((s) => requested.includes(s));
+    return scopes.length === 0 ? { kind: 'no-scope' } : { kind: 'member', email: verified.email, scopes };
   }
 
   private hiddenFieldsFor(params: URLSearchParams): Record<string, string> {
@@ -362,42 +343,46 @@ export class AuthorizationServer {
     return fields;
   }
 
-  private async authorizeForm(params: URLSearchParams, res: ServerResponse): Promise<void> {
+  private async authorizeForm(req: IncomingMessage, res: ServerResponse): Promise<void> {
+    const params = new URL(req.url ?? '/', 'http://localhost').searchParams;
     const verdict = this.validateAuthorizeRequest(params);
     if (verdict.kind === 'fatal') return sendText(res, 400, `${verdict.message}\n`);
     if (verdict.kind === 'redirect-error') return redirectWithError(res, verdict, this.options.issuer);
-    await this.sendPage(res, 200, { clientName: verdict.request.clientName, hiddenFields: this.hiddenFieldsFor(params), error: null });
+    const who = await this.member(req, verdict.request);
+    if (who.kind === 'refused') return sendText(res, who.status, `${who.message}\n`);
+    if (who.kind === 'no-scope') return redirectWithError(res, { ...verdict.request, error: 'invalid_scope', description: 'You hold none of the requested scopes.' }, this.options.issuer);
+    const html = await this.options.renderConsentPage({
+      clientName: verdict.request.clientName,
+      redirectHost: new URL(verdict.request.redirectUri).host || verdict.request.redirectUri,
+      email: who.email,
+      scopes: who.scopes,
+      hiddenFields: this.hiddenFieldsFor(params),
+    });
+    sendPage(res, html);
   }
 
-  private async authorizeSubmit(req: IncomingMessage, res: ServerResponse): Promise<void> {
+  /** The member's confirmation: only from a page this server rendered (`Origin`), only for a verified member. */
+  private async authorizeConfirm(req: IncomingMessage, res: ServerResponse): Promise<void> {
+    if (req.headers.origin !== this.options.issuer) return sendText(res, 403, 'This confirmation did not come from this store’s own page.\n');
     const params = new URLSearchParams(await readBody(req, MAX_FORM_BYTES));
     const verdict = this.validateAuthorizeRequest(params);
     if (verdict.kind === 'fatal') return sendText(res, 400, `${verdict.message}\n`);
     if (verdict.kind === 'redirect-error') return redirectWithError(res, verdict, this.options.issuer);
     const request = verdict.request;
-    const view = (error: string): AuthorizePageView => ({ clientName: request.clientName, hiddenFields: this.hiddenFieldsFor(params), error });
-
-    const address = clientAddress(req, this.options.trustProxy);
-    if (this.throttle.blocked(address)) {
-      return this.sendPage(res, 429, view('Too many wrong codes. Wait fifteen minutes, then try again.'));
-    }
-    const member = await this.options.members.byCode(params.get('access_code') ?? '');
-    if (member === undefined) {
-      this.throttle.fail(address);
-      return this.sendPage(res, 401, view('That access code is not recognised. Check it with whoever runs this store.'));
+    const who = await this.member(req, request);
+    if (who.kind === 'refused') return sendText(res, who.status, `${who.message}\n`);
+    if (who.kind === 'no-scope') return redirectWithError(res, { ...request, error: 'invalid_scope', description: 'You hold none of the requested scopes.' }, this.options.issuer);
+    if (params.get('decision') !== 'allow') {
+      return redirectWithError(res, { ...request, error: 'access_denied', description: 'The member declined to connect this app.' }, this.options.issuer);
     }
 
-    const scopes = request.scopes === null ? member.scopes : member.scopes.filter((s) => request.scopes!.includes(s));
-    if (scopes.length === 0) {
-      return redirectWithError(res, { redirectUri: request.redirectUri, state: request.state, error: 'invalid_scope', description: 'You do not hold any of the requested scopes.' }, this.options.issuer);
-    }
     const code = this.options.signer.sign('code', {
       c: digest(request.clientId),
       r: request.redirectUri,
       cc: request.challenge,
       rs: this.options.resource,
-      m: member.id,
-      s: scopes,
+      e: who.email,
+      s: who.scopes,
       x: this.nowSeconds() + AUTHORIZATION_CODE_TTL_SECONDS,
       n: randomBytes(16).toString('hex'),
     } satisfies CodePayload);
@@ -409,29 +394,12 @@ export class AuthorizationServer {
     res.end();
   }
 
-  private async sendPage(res: ServerResponse, status: number, view: AuthorizePageView): Promise<void> {
-    const html = await this.options.renderAuthorizePage(view);
-    const buffer = Buffer.from(html, 'utf8');
-    res.writeHead(status, {
-      'Content-Type': 'text/html; charset=utf-8',
-      'Content-Length': buffer.length,
-      'Cache-Control': 'no-store',
-      // The page is the one place a member types a secret: never framed, never scripted.
-      'X-Frame-Options': 'DENY',
-      // No form-action: browsers apply it to the redirect that follows the submit, which must reach the client's own callback.
-      'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'none'",
-      'Referrer-Policy': 'no-referrer',
-    });
-    res.end(buffer);
-  }
-
-  // ---- token endpoint -----------------------------------------------------
+  // ---- token endpoint -------------------------------------------------------
 
   private async token(req: IncomingMessage, res: ServerResponse, cors: Record<string, string>): Promise<void> {
     const text = await readBody(req, MAX_FORM_BYTES);
-    const contentType = req.headers['content-type'] ?? '';
     let params: URLSearchParams;
-    if (contentType.includes('application/json')) {
+    if ((req.headers['content-type'] ?? '').includes('application/json')) {
       try {
         params = new URLSearchParams(Object.entries(JSON.parse(text) as Record<string, unknown>).map(([k, v]): [string, string] => [k, String(v)]));
       } catch {
@@ -440,17 +408,16 @@ export class AuthorizationServer {
     } else {
       params = new URLSearchParams(text);
     }
-    const refuse = (error: string, description: string, status = 400) => sendJson(res, status, { error, error_description: description }, cors);
+    const refuse = (error: string, description: string) => sendJson(res, 400, { error, error_description: description }, cors);
 
     if (params.get('grant_type') !== 'authorization_code') return refuse('unsupported_grant_type', 'Only grant_type=authorization_code is supported.');
     const code = this.options.signer.verify<CodePayload>('code', params.get('code') ?? '');
     if (code === undefined || code.x <= this.nowSeconds()) return refuse('invalid_grant', 'The authorization code is invalid or has expired.');
 
-    // Spent before any other check and before any await: two redemptions
-    // racing for one code cannot both get past this line.
+    // Spent before any other check and before any await: two redemptions racing for one code cannot both pass.
     this.pruneSpent();
-    if (this.spentCodes.has(code.n)) return refuse('invalid_grant', 'The authorization code has already been used.');
-    this.spentCodes.set(code.n, code.x);
+    if (this.options.spentCodes.has(code.n)) return refuse('invalid_grant', 'The authorization code has already been used.');
+    this.options.spentCodes.set(code.n, code.x);
 
     const clientId = params.get('client_id');
     if (clientId === null || digest(clientId) !== code.c) return refuse('invalid_grant', 'The authorization code was issued to another client.');
@@ -462,60 +429,44 @@ export class AuthorizationServer {
     const resource = params.get('resource');
     if (resource !== null && !sameResource(resource, code.rs)) return refuse('invalid_target', `This server issues tokens only for ${code.rs}.`);
 
-    const member = await this.options.members.byId(code.m);
-    if (member === undefined) return refuse('invalid_grant', 'The member this code was issued to no longer exists.');
-    const scopes = code.s.filter((s) => member.scopes.includes(s));
-    if (scopes.length === 0) return refuse('invalid_scope', 'The member no longer holds any of the granted scopes.');
+    const held = scopesFor(code.e, this.options.mcp());
+    const scopes = code.s.filter((s) => held.includes(s));
+    if (scopes.length === 0) return refuse('invalid_grant', 'The member this code was issued to may no longer connect.');
 
-    const accessToken = this.options.signer.sign('token', { m: member.id, s: scopes, rs: code.rs, x: this.nowSeconds() + ACCESS_TOKEN_TTL_SECONDS } satisfies TokenPayload);
+    const accessToken = this.options.signer.sign('token', { e: code.e, s: scopes, rs: code.rs, x: this.nowSeconds() + ACCESS_TOKEN_TTL_SECONDS } satisfies TokenPayload);
     sendJson(res, 200, { access_token: accessToken, token_type: 'Bearer', expires_in: ACCESS_TOKEN_TTL_SECONDS, scope: scopes.join(' ') }, { ...cors, Pragma: 'no-cache' });
   }
 
   private pruneSpent(): void {
     const now = this.nowSeconds();
-    for (const [nonce, expiry] of this.spentCodes) if (expiry <= now) this.spentCodes.delete(nonce);
+    for (const [nonce, expiry] of this.options.spentCodes) if (expiry <= now) this.options.spentCodes.delete(nonce);
   }
 
-  // ---- bearer verification --------------------------------------------------
+  // ---- bearer verification ----------------------------------------------------
 
-  /** remote-access spec, *Admission is decided by the operator and denied by default*. */
+  /** remote-access spec: every `/mcp` request carries a token this server issued, narrowed to what its email holds now. */
   async authenticate(req: IncomingMessage): Promise<Authentication<Principal>> {
-    const header = req.headers.authorization ?? '';
-    const match = /^Bearer\s+(\S+)$/i.exec(header);
+    const match = /^Bearer\s+(\S+)$/i.exec(req.headers.authorization ?? '');
     const challenge = (error?: string): Record<string, string> => ({
       'WWW-Authenticate': `Bearer resource_metadata="${this.protectedResourceMetadataUrl}"${error ? `, error="${error}"` : ''}`,
     });
     if (match === null) {
       return { kind: 'refused', status: 401, headers: challenge(), body: { error: 'invalid_token', error_description: 'This store needs you to sign in.' } };
     }
-    const principal = await this.principalFor(match[1]!);
+    const principal = this.principalFor(match[1]!);
     if (principal === undefined) {
-      return { kind: 'refused', status: 401, headers: challenge('invalid_token'), body: { error: 'invalid_token', error_description: 'The token is invalid, expired, or its member was removed.' } };
+      return { kind: 'refused', status: 401, headers: challenge('invalid_token'), body: { error: 'invalid_token', error_description: 'The token is invalid or expired, or its member may no longer connect.' } };
     }
     return { kind: 'admitted', principal };
   }
 
-  /** Verifies a token and narrows its scopes to what the member holds now; undefined when it no longer admits anyone. */
-  async principalFor(token: string): Promise<Principal | undefined> {
+  principalFor(token: string): Principal | undefined {
     const payload = this.options.signer.verify<TokenPayload>('token', token);
     if (payload === undefined || payload.x <= this.nowSeconds() || !sameResource(payload.rs, this.options.resource)) return undefined;
-    const member = await this.options.members.byId(payload.m);
-    if (member === undefined) return undefined;
-    return principalOf(member, payload.s);
+    const held = scopesFor(payload.e, this.options.mcp());
+    const scopes = payload.s.filter((s) => held.includes(s));
+    return scopes.length === 0 ? undefined : { email: payload.e, scopes };
   }
-}
-
-export function principalOf(member: Member, granted: readonly McpScope[]): Principal {
-  return { memberId: member.id, name: member.name, email: member.email ?? null, scopes: member.scopes.filter((s) => granted.includes(s)) };
-}
-
-interface AuthorizeRequest {
-  clientId: string;
-  clientName: string;
-  redirectUri: string;
-  state: string | null;
-  challenge: string;
-  scopes: McpScope[] | null;
 }
 
 function digest(value: string): string {
@@ -536,8 +487,7 @@ function acceptableRedirectUri(uri: string): boolean {
   } catch {
     return false;
   }
-  if (parsed.hash !== '') return false;
-  if (FORBIDDEN_SCHEMES.has(parsed.protocol)) return false;
+  if (parsed.hash !== '' || FORBIDDEN_SCHEMES.has(parsed.protocol)) return false;
   if (parsed.protocol === 'http:') return ['localhost', '127.0.0.1', '[::1]'].includes(parsed.hostname);
   return true;
 }
@@ -554,6 +504,21 @@ function redirectWithError(
   target.searchParams.set('iss', issuer);
   res.writeHead(302, { Location: target.toString(), 'Cache-Control': 'no-store' });
   res.end();
+}
+
+/** The consent page: never framed, never scripted, never cached. */
+function sendPage(res: ServerResponse, html: string): void {
+  const buffer = Buffer.from(html, 'utf8');
+  res.writeHead(200, {
+    'Content-Type': 'text/html; charset=utf-8',
+    'Content-Length': buffer.length,
+    'Cache-Control': 'no-store',
+    'X-Frame-Options': 'DENY',
+    // No form-action: browsers apply it to the redirect that follows the submit, which must reach the client's callback.
+    'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'none'",
+    'Referrer-Policy': 'no-referrer',
+  });
+  res.end(buffer);
 }
 
 function methodNotAllowed(res: ServerResponse, allow: string): true {

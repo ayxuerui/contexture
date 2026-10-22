@@ -8,6 +8,7 @@ import type { IdentityVerifier } from '../approval/identity.js';
 import { readLandingRecord } from '../approval/landing-record.js';
 import { baseRef, forgeRead, reviewStateOf, sessionPulls, sessionWorktrees } from '../approval/sessions.js';
 import { ForgeUnreachableError } from '../errors.js';
+import type { ForgeCredentials } from '../forge/credentials.js';
 import type { ForgeClient, PullRequest } from '../forge/github.js';
 import { ForgeRequestError } from '../forge/github.js';
 import type { GitRunner } from '../git/exec.js';
@@ -40,6 +41,8 @@ export interface ApprovalServer {
   /** The origin of `serve.base_url`, which a decision's `Origin` header must equal (design.md D9). */
   origin: string;
   forge: ForgeClient;
+  /** The credential behind `forge` — the MCP surface derives its signing key from it and pushes with its git token. */
+  credentials: ForgeCredentials;
   verifier: IdentityVerifier;
   git: GitRunner;
   now(): Date;

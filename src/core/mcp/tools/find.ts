@@ -5,7 +5,6 @@ import { catalogSectionsFor, sectionForNote } from '../../catalog/model.js';
 import { isUnderAnyPrefix } from '../../fs/prefix.js';
 import { listCaptures, listNotes } from '../../notes/list.js';
 import { readCatalogGlosses } from '../../records.js';
-import type { Store } from '../../store.js';
 import { ToolRefusal } from '../jsonrpc.js';
 import type { Snapshot } from '../sync.js';
 
@@ -105,8 +104,9 @@ function matchLines(text: string, needle: string): { lines: MatchingLine[]; coun
 
 const byPath = (a: { path: string }, b: { path: string }): number => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0);
 
-export async function find(store: Store, snapshot: Snapshot, args: FindArgs): Promise<FindResult> {
-  const baseUrl = store.config.serve?.base_url;
+/** `baseUrl` is `serve.base_url` from the configuration `serve` loaded: links point at the browsing surface it answers. */
+export async function find(snapshot: Snapshot, args: FindArgs, baseUrl: string | undefined): Promise<FindResult> {
+  const store = snapshot.store;
   const linkFor = (notePath: string): string | null => joinBaseUrl(baseUrl, noteRoute(notePath));
   const glosses = await readCatalogGlosses(store);
   const scope = (p: string): boolean => args.under === undefined || isUnderAnyPrefix(p, [args.under]);

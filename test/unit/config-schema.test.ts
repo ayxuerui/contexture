@@ -411,6 +411,45 @@ describe('readConfig', () => {
     }
   });
 
+  /** serve-the-store-over-mcp: opt-in, no shipped default, and only alongside change_approval. */
+  it('leaves mcp undeclared when the store says nothing, and reads readers and capturers when declared', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      await writeFile(path.join(tmp.root, CONFIG_FILE_NAME), minimalConfig());
+      expect((await readConfig(tmp.root)).mcp).toBeUndefined();
+      const text = `${minimalConfig()}serve: { base_url: "https://ctx-a.example.test" }\n${CHANGE_APPROVAL_BLOCK}mcp: { readers: ["@ctx-a.example"], capturers: ["a@ctx-a.example"] }\n`;
+      await writeFile(path.join(tmp.root, CONFIG_FILE_NAME), text);
+      expect((await readConfig(tmp.root)).mcp).toEqual({ readers: ['@ctx-a.example'], capturers: ['a@ctx-a.example'] });
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('refuses mcp without change_approval, naming both keys', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      await writeFile(path.join(tmp.root, CONFIG_FILE_NAME), `${minimalConfig()}serve: { base_url: "https://ctx-a.example.test" }\nmcp: { readers: ["@ctx-a.example"] }\n`);
+      const error = await readConfig(tmp.root).catch((err: unknown) => err);
+      expect(error).toBeInstanceOf(InvalidConfigError);
+      expect((error as InvalidConfigError).message).toContain('mcp');
+      expect((error as InvalidConfigError).message).toContain('change_approval');
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('refuses an empty mcp block and an entry that is neither an email nor an @domain', async () => {
+    for (const block of ['mcp: {}', 'mcp: { readers: [] }', 'mcp: { readers: ["nobody"] }']) {
+      const tmp = await makeTmpDir();
+      try {
+        await writeFile(path.join(tmp.root, CONFIG_FILE_NAME), `${minimalConfig()}serve: { base_url: "https://ctx-a.example.test" }\n${CHANGE_APPROVAL_BLOCK}${block}\n`);
+        await expect(readConfig(tmp.root)).rejects.toThrow(InvalidConfigError);
+      } finally {
+        await tmp.cleanup();
+      }
+    }
+  });
+
   it('refuses a decider entry that is neither an email nor an @domain', async () => {
     const tmp = await makeTmpDir();
     try {

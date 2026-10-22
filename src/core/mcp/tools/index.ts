@@ -1,35 +1,33 @@
-import path from 'node:path';
 import { packagedTemplate } from '../../templates.js';
-import type { Store } from '../../store.js';
 import type { ToolDefinition } from '../jsonrpc.js';
 import type { Principal } from '../oauth.js';
-import type { StoreSync } from '../sync.js';
+import type { McpView, SyncDeps } from '../sync.js';
 import { capture, CAPTURE_INPUT_SCHEMA, parseCaptureArgs } from './capture.js';
 import { find, FIND_INPUT_SCHEMA, parseFindArgs } from './find.js';
 
 /**
  * The remote surface's tool set and the prose that describes it
- * (templates/mcp/, shipped-prose-lives-in-templates). Every tool reads
- * through `sync.read`, so it sees one commit and its result names it.
+ * (templates/mcp/, shipped-prose-lives-in-templates). Built per request from
+ * the server's current state; every tool reads through `view.read`, so it
+ * sees one commit and its result names it.
  */
 
-function storeName(store: Store): string {
-  return path.basename(store.root);
-}
-
-function withStoreName(text: string, store: Store): string {
-  return text.replaceAll('__STORE_NAME__', storeName(store));
-}
-
-/** Present while the build stops at the real-client checkpoint (tasks group 4); removed with the capture stub in task 6.1. */
+/** Present while the build stops at the real-client checkpoint (tasks group 5); removed with the capture stub in task 7.3. */
 const CHECKPOINT_BUILD = true;
 
-export function serverInstructions(store: Store): string {
-  const base = withStoreName(packagedTemplate('mcp', 'server-instructions'), store);
+export function serverInstructions(storeName: string): string {
+  const base = packagedTemplate('mcp', 'server-instructions').replaceAll('__STORE_NAME__', storeName);
   return CHECKPOINT_BUILD ? `${base}\n\n${packagedTemplate('mcp', 'instructions-checkpoint')}` : base;
 }
 
-export function buildTools(store: Store, sync: StoreSync): ToolDefinition<Principal>[] {
+export interface ToolContext {
+  view: McpView;
+  deps: SyncDeps;
+  /** `serve.base_url` from the loaded configuration. */
+  baseUrl: string | undefined;
+}
+
+export function buildTools(ctx: ToolContext): ToolDefinition<Principal>[] {
   const captureDescription = packagedTemplate('mcp', 'capture');
   return [
     {
@@ -41,7 +39,7 @@ export function buildTools(store: Store, sync: StoreSync): ToolDefinition<Princi
       readOnly: true,
       run: (args) => {
         const parsed = parseFindArgs(args);
-        return sync.read((snapshot) => find(store, snapshot, parsed));
+        return ctx.view.read(ctx.deps, (snapshot) => find(snapshot, parsed, ctx.baseUrl));
       },
     },
     {
@@ -53,7 +51,7 @@ export function buildTools(store: Store, sync: StoreSync): ToolDefinition<Princi
       readOnly: false,
       run: (args) => {
         const parsed = parseCaptureArgs(args);
-        return sync.read(() => capture(store, parsed));
+        return ctx.view.read(ctx.deps, (snapshot) => capture(snapshot.store, parsed));
       },
     },
   ];

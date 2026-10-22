@@ -1,7 +1,7 @@
-import { createPrivateKey, sign, type KeyObject } from 'node:crypto';
+import { createPrivateKey, hkdfSync, sign, type KeyObject } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { ForgeCredentialsError } from '../errors.js';
-import type { GitRunner } from '../git/exec.js';
+import type { GitResult, GitRunner } from '../git/exec.js';
 
 /**
  * github-app-recording-identity (design.md D3): the one place every
@@ -22,6 +22,13 @@ export interface ForgeCredentials {
   botLogin(): Promise<string | null>;
   /** A token for git's transport (design.md D4); null when git keeps whatever credential it has. */
   gitToken(): Promise<string | null>;
+  /**
+   * serve-the-store-over-mcp design.md D5: 32 bytes derived (HKDF-SHA256) from
+   * the App's private key for `info`, so a secret stable across restarts needs
+   * no key of its own and rotates with the App's. Null with `gh`'s credential,
+   * which has no key to derive from. The key itself never leaves this module.
+   */
+  derivedSecret(info: string): Buffer | null;
 }
 
 export const APP_ID_VAR = 'CONTEXTURE_GITHUB_APP_ID';
@@ -63,6 +70,7 @@ export function ghCredentials(env: Env): ForgeCredentials {
     env: async () => env,
     botLogin: async () => null,
     gitToken: async () => null,
+    derivedSecret: () => null,
   };
 }
 
@@ -251,5 +259,35 @@ function createAppCredentials(inputs: AppInputs): ForgeCredentials {
       return `${slug}[bot]`;
     },
     gitToken: token,
+    derivedSecret(info) {
+      const material = inputs.key.export({ type: 'pkcs8', format: 'der' });
+      return Buffer.from(hkdfSync('sha256', material, Buffer.alloc(0), Buffer.from(info, 'utf8'), 32));
+    },
   };
+}
+
+/**
+ * write-lifecycle spec ("In App mode, landing's git transport authenticates as
+ * the App"; design.md D4): a fetch or push against `origin`. With an App, the
+ * host's credential helpers are cleared for this one command and replaced by
+ * one that answers with the installation token, read from this process's
+ * environment only — never a remote URL, a config file, or the command line.
+ * Otherwise git uses the credential it already has. Shared by `ctxr land` and
+ * the MCP surface's fetch and push (serve-the-store-over-mcp D6, D9).
+ */
+const TOKEN_HELPER = '!f() { echo username=x-access-token; echo "password=$CTXR_GIT_TOKEN"; }; f';
+
+export async function runRemoteGit(
+  git: GitRunner,
+  credentials: ForgeCredentials,
+  env: Env,
+  args: readonly string[],
+  opts: { cwd: string; allowFailure?: boolean },
+): Promise<GitResult> {
+  const token = await credentials.gitToken();
+  if (token === null) return git.run(args, opts);
+  return git.run(['-c', 'credential.helper=', '-c', `credential.helper=${TOKEN_HELPER}`, ...args], {
+    ...opts,
+    env: { ...env, CTXR_GIT_TOKEN: token, GIT_TERMINAL_PROMPT: '0' },
+  });
 }

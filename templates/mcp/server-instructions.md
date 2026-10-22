@@ -10,6 +10,6 @@ How to look something up:
 
 `find` also lists matching items in `unfiled`. Those are raw captures nobody has filed into a note yet; some are still waiting to be merged. Never present them as what the store says. Mention them as unfiled material when they are relevant, and use them to notice that something was already captured.
 
-How to save something: call `capture` when the person asks you to save, keep or record material in the store. Pass the material itself in its own words — a transcript, an email, a document, meeting notes as written — not your summary of it. One item per call. The capture lands in the inbox for review and filing; it does not change any note.
+How to save something: call `capture` when the person asks you to save, keep or record material in the store. Pass the material itself in its own words — a transcript, an email, a document, meeting notes as written — not your summary of it. One item per call. The capture waits on the store's approval page until someone approves it, then lands in the inbox for filing; it does not change any note. Tell the person it is awaiting approval, and give them the approval link the call returns.
 
 Every result carries `store.head`, the commit it was read from, and `store.sync_error` when the server could not fetch the latest version; mention that the answer may be out of date if it is set.
