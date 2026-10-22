@@ -29,6 +29,8 @@ describe('mcp Read, Grep and Glob', () => {
     const range = await read({ file_path: 'projects/a.md', offset: 3, limit: 2 });
     expect(range.content).toBe('     3\tline three\n     4\tkestrel launch');
     expect(renderRead(range)).toContain('Showing lines 3–4 of 5');
+    expect(range.url).toBe('https://ctx-a.example.test/notes/projects/a.md');
+    expect(renderRead(range)).toContain('at https://ctx-a.example.test/notes/projects/a.md');
   });
 
   it('reads a capture marked as one, and the entry document', async () => {

@@ -1,6 +1,7 @@
 import { readFile, stat } from 'node:fs/promises';
 import path from 'node:path';
 import type { StoreConfig } from '../../../config/schema.js';
+import { joinBaseUrl, noteRoute } from '../../browse/page-url.js';
 import { isUnderAnyPrefix } from '../../fs/prefix.js';
 import { admitsNotePath, excludedPrefixesFor } from '../../notes/list.js';
 import { CONFIG_FILE_NAME } from '../../root.js';
@@ -82,6 +83,8 @@ export interface ReadResult {
   last_line: number;
   draft: boolean;
   capture: boolean;
+  /** The note's page on the browsing surface, for citing; null for a capture or the entry document. */
+  url: string | null;
 }
 
 function numbered(text: string, offset: number | undefined, limit: number | undefined): { content: string; total: number; first: number; last: number } {
@@ -107,7 +110,7 @@ export async function readTool(snapshot: Snapshot, write: WriteDeps, email: stri
   const drafted = draft === null ? null : await draftVersion(write, draft, rel);
   if (drafted !== null) {
     const n = numbered(drafted, args.offset, args.limit);
-    return { file_path: rel, content: n.content, total_lines: n.total, first_line: n.first, last_line: n.last, draft: true, capture: false };
+    return { file_path: rel, content: n.content, total_lines: n.total, first_line: n.first, last_line: n.last, draft: true, capture: false, url: null };
   }
 
   if (!admitted && !isCapture && rel !== ENTRY_DOCUMENT) {
@@ -117,7 +120,8 @@ export async function readTool(snapshot: Snapshot, write: WriteDeps, email: stri
   const info = await stat(absolute).catch(() => null);
   if (info === null || !info.isFile()) throw new ToolRefusal('mcp.file_not_found', `"${rel}" does not exist in the store.`);
   const n = numbered(await readFile(absolute, 'utf8'), args.offset, args.limit);
-  return { file_path: rel, content: n.content, total_lines: n.total, first_line: n.first, last_line: n.last, draft: false, capture: isCapture };
+  const url = admitted ? joinBaseUrl(write.baseUrl, noteRoute(rel)) : null;
+  return { file_path: rel, content: n.content, total_lines: n.total, first_line: n.first, last_line: n.last, draft: false, capture: isCapture, url };
 }
 
 export function renderRead(data: unknown): string {
@@ -125,6 +129,7 @@ export function renderRead(data: unknown): string {
   const notes: string[] = [];
   if (r.draft) notes.push('This is your pending draft of this note (awaiting approval), not the version in the store.');
   if (r.capture) notes.push('This is a capture: raw material not yet filed into a note. Do not present it as what the store says.');
+  if (r.url !== null) notes.push(`${r.file_path}, at ${r.url}. Include this link when you cite the note.`);
   if (r.last_line < r.total_lines) notes.push(`Showing lines ${r.first_line}–${r.last_line} of ${r.total_lines}.`);
   return [...notes.map((n) => `[${n}]`), r.content].join('\n');
 }

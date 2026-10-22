@@ -4,4 +4,6 @@ With text: returns `notes` in path order — each with its path, its one-line gl
 
 Without text: returns every section of the store's catalog with the notes it lists and their glosses — use it to find the right words or the right notes to pass to `gather` as seeds.
 
+When you cite a note, include its link, so the person can open it.
+
 Use `under` to look in one folder only. Search for the distinctive word (a name, a project, a term), not a whole question.
