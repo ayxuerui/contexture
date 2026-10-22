@@ -52,6 +52,23 @@ It reports each session with its open pull request and the decision made on the 
 - `unknown`: the forge could not be reached. Say so once, and read the decisions again later.
 - Report nothing for the other states. Why: they need no work from a session.
 
+## Mounted stores
+
+Skip this section when the store mounts no other stores under `shared/`.
+
+- After you bring the canonical clone up to date, run `ctxr shared-stores sync`. It clones a missing mount and fast-forwards the others.
+- Report a mount that sync left alone, with its reason. Do not reset, stash or force it. Why: local work in a mount is somebody's session.
+- To write a note into a mount, change into `shared/<name>` and run `ctxr session start` there. Why: the session, its pull request and its approval then belong to that store.
+- Keep one session per store. A change that touches this store and a mount is two sessions and two pull requests.
+
+To move a note from this store into a mount:
+
+1. List the links the note carries. Find each target that stays in this store.
+2. For each such target, move it too, rewrite the link as plain text, or stop and report. Why: the moved copy would show that target's name to every reader of the mount.
+3. Add the note in a session inside the mount. Submit and land that pull request first.
+4. Then, in a session of this store, delete the original. Rewrite links to it as path links, such as `[[shared/<name>/<path>]]`.
+5. Tell the operator that the move cannot be undone for past readers. Why: the note stays in the mount's history and in every reader's clone.
+
 ## Between turns
 
 A session is not a turn. The worktree persists across as many exchanges as the work takes, and ending a

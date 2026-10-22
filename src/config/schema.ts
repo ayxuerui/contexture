@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { isStrictlyUnderPrefix } from '../core/fs/prefix.js';
+import { slugifySegment } from '../core/slug.js';
 import { SHIPPED_DEFAULTS } from './defaults.js';
 
 /**
@@ -233,6 +234,18 @@ const McpSchema = z
   .refine((value) => (value.readers?.length ?? 0) + (value.capturers?.length ?? 0) + (value.editors?.length ?? 0) > 0, {
     message: 'name at least one entry in readers, capturers or editors',
   });
+
+/**
+ * mount-shared-stores (shared-stores spec): the stores this store mounts, each
+ * cloned at the fixed `shared/<name>` (D3, and the critique's first revision —
+ * path links carry the location into note content, so it cannot vary by store).
+ * `.optional()` with no shipped default, like `serve`: a store that never
+ * declares mounts never carries the key, and nothing writes it for them.
+ */
+const SharedStoreSchema = z.object({
+  name: z.string().min(1),
+  url: z.string().min(1),
+});
 
 /**
  * harness-portability spec (vendored-craft-skills): which vendored
@@ -484,6 +497,7 @@ export const StoreConfigSchema = z
     change_approval: ChangeApprovalSchema.optional(),
     circleback: CirclebackSchema.optional(),
     mcp: McpSchema.optional(),
+    shared_stores: z.array(SharedStoreSchema).optional(),
     templates: TemplatesSchema.prefault({}),
     skills: SkillsSchema.prefault({}),
     update_check: UpdateCheckSchema.prefault({}),
@@ -527,6 +541,25 @@ export const StoreConfigSchema = z
      * tested for. It existed only while migrations had to write configs at
      * earlier versions back to disk.
      */
+    // shared-stores spec: a mount name is one slug-stable segment, and names are unique.
+    const seenMountNames = new Set<string>();
+    for (const [index, mount] of (value.shared_stores ?? []).entries()) {
+      if (mount.name.includes('/') || slugifySegment(mount.name) !== mount.name) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['shared_stores', index, 'name'],
+          message: `"${mount.name}" must be a single path segment that slugification leaves unchanged (lowercase letters, digits and "-")`,
+        });
+      }
+      if (seenMountNames.has(mount.name)) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['shared_stores', index, 'name'],
+          message: `"${mount.name}" is declared more than once; each mount needs its own name`,
+        });
+      }
+      seenMountNames.add(mount.name);
+    }
     if (!isStrictlyUnderPrefix(value.ingest.inbox_path, value.ingest.capture_root)) {
       ctx.addIssue({
         code: 'custom',
@@ -543,3 +576,4 @@ export type AdapterDeclaration = z.infer<typeof AdapterDeclarationSchema>;
 export type ChangeApprovalConfig = z.infer<typeof ChangeApprovalSchema>;
 export type CirclebackConfig = z.infer<typeof CirclebackSchema>;
 export type McpConfig = z.infer<typeof McpSchema>;
+export type SharedStoreConfig = z.infer<typeof SharedStoreSchema>;

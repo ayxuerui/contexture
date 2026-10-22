@@ -2,7 +2,7 @@ import { mkdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { GraphCarriesExcludedNoteError, GraphNotBuiltError } from '../errors.js';
 import { writeFileAtomic } from '../fs/atomic.js';
-import { listNotes } from '../notes/list.js';
+import { listReadView } from '../shared-stores.js';
 import type { Store } from '../store.js';
 import type { GraphBuildResult } from './model.js';
 
@@ -54,7 +54,8 @@ export async function readGraph(store: Store): Promise<GraphBuildResult | null> 
 export async function readAdmittedGraph(store: Store): Promise<GraphBuildResult> {
   const graph = await readGraph(store);
   if (!graph) throw new GraphNotBuiltError();
-  const admitted = new Set((await listNotes(store.root, store.config)).map((note) => note.path));
+  // mount-shared-stores: each node is admitted by the store that owns it, which is what the read view enumerates.
+  const admitted = new Set((await listReadView(store.root, store.config)).notes.map((note) => note.path));
   const excluded = graph.nodes.filter((node) => !admitted.has(node.id)).map((node) => node.id);
   if (excluded.length > 0) throw new GraphCarriesExcludedNoteError(excluded);
   return graph;

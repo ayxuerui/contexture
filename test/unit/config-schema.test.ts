@@ -694,3 +694,44 @@ describe('adapters', () => {
   });
 
 });
+
+describe('shared_stores (mount-shared-stores)', () => {
+  async function load(extra: string) {
+    const tmp = await makeTmpDir();
+    try {
+      await writeFile(path.join(tmp.root, CONFIG_FILE_NAME), `${minimalConfig()}${extra}`);
+      return await readConfig(tmp.root);
+    } finally {
+      await tmp.cleanup();
+    }
+  }
+
+  it('is absent when undeclared, and rendering does not add it', async () => {
+    const config = await load('');
+    expect(config.shared_stores).toBeUndefined();
+    expect(renderStoreConfig(config)).not.toContain('shared_stores');
+  });
+
+  it('loads declared mounts and round-trips them', async () => {
+    const config = await load('shared_stores:\n  - { name: ctx-b, url: "https://example.test/ctx-b.git" }\n');
+    expect(config.shared_stores).toEqual([{ name: 'ctx-b', url: 'https://example.test/ctx-b.git' }]);
+    expect(renderStoreConfig(config)).toContain('shared_stores');
+  });
+
+  for (const [what, name] of [
+    ['contains a /', 'ctx/b'],
+    ['changes under slugification', 'Ctx B'],
+  ] as const) {
+    it(`refuses a mount name that ${what}, naming the entry`, async () => {
+      const err = await load(`shared_stores:\n  - { name: "${name}", url: u }\n`).catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(InvalidConfigError);
+      expect(String((err as InvalidConfigError).message)).toContain(name);
+    });
+  }
+
+  it('refuses two mounts with one name', async () => {
+    const err = await load('shared_stores:\n  - { name: ctx-b, url: u1 }\n  - { name: ctx-b, url: u2 }\n').catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(InvalidConfigError);
+    expect(String((err as InvalidConfigError).message)).toContain('more than once');
+  });
+});

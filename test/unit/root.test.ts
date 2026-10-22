@@ -290,3 +290,46 @@ describe('resolveRootForInit', () => {
     expect(resolveRootForInit(env, { root: '/flag-root' })).toBe('/flag-root');
   });
 });
+
+describe('root resolution: the mount step (mount-shared-stores)', () => {
+  async function mountedLayout() {
+    const tmp = await makeTmpDir();
+    const named = path.join(tmp.root, 'ctx-a');
+    await mkdir(path.join(named, 'shared', 'ctx-b', 'work'), { recursive: true });
+    await mkdir(path.join(named, 'shared', 'ctx-c'), { recursive: true });
+    await writeFile(path.join(named, CONFIG_FILE_NAME), 'schema_version: 1\nshared_stores:\n  - { name: ctx-b, url: u }\n');
+    await writeFile(path.join(named, 'shared', 'ctx-b', CONFIG_FILE_NAME), 'schema_version: 1\n');
+    await writeFile(path.join(named, 'shared', 'ctx-c', CONFIG_FILE_NAME), 'schema_version: 1\n');
+    return { tmp, named };
+  }
+
+  it('sends a command run inside a declared mount to the mount, under CONTEXTURE_STORE_ROOT', async () => {
+    const { tmp, named } = await mountedLayout();
+    try {
+      const env = makeFakeEnv({ cwd: path.join(named, 'shared', 'ctx-b', 'work'), env: { CONTEXTURE_STORE_ROOT: named } });
+      expect(resolveExistingRoot(env, {})).toBe(path.join(named, 'shared', 'ctx-b'));
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('does not redirect into a clone under shared/ that the store does not declare', async () => {
+    const { tmp, named } = await mountedLayout();
+    try {
+      const env = makeFakeEnv({ cwd: path.join(named, 'shared', 'ctx-c'), env: { CONTEXTURE_STORE_ROOT: named } });
+      expect(resolveExistingRoot(env, {})).toBe(named);
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('still lets --root win over a mount the caller stands in', async () => {
+    const { tmp, named } = await mountedLayout();
+    try {
+      const env = makeFakeEnv({ cwd: path.join(named, 'shared', 'ctx-b'), env: { CONTEXTURE_STORE_ROOT: named } });
+      expect(resolveExistingRoot(env, { root: named })).toBe(named);
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+});

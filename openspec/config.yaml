@@ -17,7 +17,10 @@ context: |
   Every shipped or generated instruction to run a command names `ctxr`, never
   `contexture`.
 
-  Tenancy: single-owner context store. There is no access-control axis —
+  Tenancy: one audience per store — everyone who can clone a store reads all
+  of it. Privacy between people is a store boundary, never a field on a note:
+  a person's store mounts the stores they read with others under `shared/`
+  (mount-shared-stores). There is no access-control axis inside a store —
   retire-the-access-axes removed the visibility and disclosure fields and
   declined to add scope, on the reasoning recorded in that change's design.md.
   Narrowing is positional (`--under`, taxonomy layers, retrieval.exclude_paths),
