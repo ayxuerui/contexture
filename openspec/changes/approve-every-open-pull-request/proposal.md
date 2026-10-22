@@ -20,9 +20,9 @@ opened it.
   it. The existing worktree-named address keeps working for reading: a `GET` redirects to the pull request's address,
   so links already in pull request bodies and connector replies stay valid. Decisions are posted only at the pull
   request's address.
-- **The page's diff comes from the remote-tracking ref when there is no local worktree.** When the head commit is
-  not yet in the repository, rendering may fetch exactly that branch from `origin` into its remote-tracking ref,
-  touching no worktree, local branch or index. That relaxes the rule that rendering fetches nothing. Published-page
+- **Everything a page shows, and the head its decision submits, is the commit the forge reports,** never a branch
+  name. When that commit is not yet in the repository, rendering may fetch exactly its branch from `origin` into the
+  remote-tracking ref, only to obtain the objects, touching no worktree, local branch or index. That relaxes the rule that rendering fetches nothing. Published-page
   previews still need a session worktree, so such a page lists changed pages with their published addresses and
   says there is no preview.
 - **`ctxr review list` and `ctxr land --pending` cover the same set:** every open pull request on the store's
