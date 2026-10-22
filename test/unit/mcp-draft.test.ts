@@ -120,4 +120,21 @@ describe('mcp Edit and Write into a member draft', () => {
     expect(a.pull_request.number).not.toBe(b.pull_request.number);
     expect(await drafts()).toHaveLength(2);
   });
+
+  it('never reports a wrong-text deletion as already applied (review finding)', async () => {
+    await edit({ file_path: 'projects/b.md', old_string: 'Status: draft.', new_string: 'Status: final.' });
+    await expect(edit({ file_path: 'projects/b.md', old_string: 'no such text', new_string: '' })).rejects.toMatchObject({ code: 'mcp.edit_failed' });
+    await expect(edit({ file_path: 'projects/b.md', old_string: 'no such text', new_string: '#' })).rejects.toMatchObject({ code: 'mcp.edit_failed' });
+  });
+
+  it('clears a draft left with no commit by a crash, instead of failing every later edit (review finding)', async () => {
+    const { startSession } = await import('../../src/core/mcp/sessions.js');
+    const { draftLabel } = await import('../../src/core/mcp/drafts.js');
+    await startSession(f.write, draftLabel(MEMBER));
+    expect(await drafts()).toHaveLength(1);
+    const result = await edit({ file_path: 'projects/b.md', old_string: 'Status: draft.', new_string: 'Status: final.' });
+    expect(result.changed).toBe(true);
+    expect(await drafts()).toHaveLength(1);
+    expect(await pulls()).toHaveLength(1);
+  });
 });

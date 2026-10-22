@@ -28,14 +28,40 @@ export interface GrepParams {
   multiline?: boolean;
 }
 
-export type RipgrepOutcome = { kind: 'ok'; lines: string[] } | { kind: 'no-match' } | { kind: 'error'; message: string };
+/**
+ * One output entry: the file it belongs to, and the rest of ripgrep's line after the path (null for a bare path).
+ * Read from `--null` output, where a NUL ends every path, so a path containing `:` or `-` is never split wrongly. A
+ * context-group separator (`--`) has no path.
+ */
+export interface RipgrepEntry {
+  path: string | null;
+  rest: string | null;
+}
 
-function run(args: readonly string[], cwd: string): Promise<RipgrepOutcome> {
+export type RipgrepOutcome = { kind: 'ok'; entries: RipgrepEntry[] } | { kind: 'no-match' } | { kind: 'error'; message: string };
+
+function strip(p: string): string {
+  return p.replace(/^\.\//, '');
+}
+
+/** `--null` output: bare paths are NUL-separated; lines with content are `path NUL rest`, newline-separated. */
+function parse(stdout: string, barePaths: boolean): RipgrepEntry[] {
+  if (barePaths) return stdout.split('\0').map((p) => p.trim()).filter((p) => p.length > 0).map((p) => ({ path: strip(p), rest: null }));
+  return stdout
+    .split('\n')
+    .filter((line) => line.length > 0)
+    .map((line) => {
+      const nul = line.indexOf('\0');
+      return nul === -1 ? { path: null, rest: line } : { path: strip(line.slice(0, nul)), rest: line.slice(nul + 1) };
+    });
+}
+
+function run(args: readonly string[], cwd: string, barePaths: boolean): Promise<RipgrepOutcome> {
   return new Promise((resolve) => {
     execFile('rg', [...args], { cwd, timeout: RIPGREP_TIMEOUT_MS, maxBuffer: RIPGREP_MAX_OUTPUT_BYTES, killSignal: 'SIGKILL' }, (err, stdout, stderr) => {
       if (err === null) {
         // Always searched from an explicit `.` (below), which ripgrep echoes back as a `./` prefix on every path.
-        resolve({ kind: 'ok', lines: stdout.split('\n').filter((line) => line.length > 0).map((line) => line.replace(/^\.\//, '')) });
+        resolve({ kind: 'ok', entries: parse(stdout, barePaths) });
         return;
       }
       const e = err as Error & { code?: number | string; killed?: boolean };
@@ -56,7 +82,7 @@ function exclusionArgs(hidden: readonly string[]): string[] {
   });
 }
 
-const BASE_ARGS = ['--no-config', '--color', 'never', '--sort', 'path', '--no-messages'];
+const BASE_ARGS = ['--no-config', '--color', 'never', '--sort', 'path', '--no-messages', '--null'];
 
 /** Claude Code's Grep, mapped flag for flag. `searchPath` is store-relative, already confined to the store. */
 export function grep(cwd: string, params: GrepParams, searchPath: string | null, hidden: readonly string[]): Promise<RipgrepOutcome> {
@@ -79,7 +105,7 @@ export function grep(cwd: string, params: GrepParams, searchPath: string | null,
   args.push(...exclusionArgs(hidden));
   // An explicit path always: given none and a stdin that is not a terminal, ripgrep searches stdin and waits.
   args.push('--', params.pattern, searchPath ?? '.');
-  return run(args, cwd);
+  return run(args, cwd, mode === 'files_with_matches');
 }
 
 /** Claude Code's Glob: files matching `pattern`, under `searchPath`, sorted by path. */
@@ -87,5 +113,5 @@ export function glob(cwd: string, pattern: string, searchPath: string | null, hi
   // Exclusions after the caller's pattern: a later --glob takes precedence in ripgrep.
   const args = [...BASE_ARGS, '--files', '--glob', pattern, ...exclusionArgs(hidden)];
   args.push('--', searchPath ?? '.');
-  return run(args, cwd);
+  return run(args, cwd, true);
 }

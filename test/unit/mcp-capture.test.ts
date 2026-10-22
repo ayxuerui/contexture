@@ -125,4 +125,16 @@ describe('mcp capture through the approval page', () => {
     expect(second.pull_request.number).not.toBe(first.pull_request.number);
     expect(await sessions()).toHaveLength(1);
   });
+
+  it('writes inside the inbox when inbox_path has no trailing slash (review finding)', async () => {
+    const configPath = path.join(f.store.root, 'contexture.yaml');
+    const config = await readFile(configPath, 'utf8');
+    await writeFile(configPath, config.includes('inbox_path') ? config.replace(/inbox_path: .*/, 'inbox_path: raw/inbox') : config.replace(/^ingest:\n/m, 'ingest:\n  inbox_path: raw/inbox\n'));
+    if (!(await readFile(configPath, 'utf8')).includes('inbox_path: raw/inbox')) await writeFile(configPath, `${config}ingest:\n  inbox_path: raw/inbox\n`);
+    await f.store.git(['commit', '-qam', 'inbox without slash', '--no-verify']);
+    await f.store.git(['push', '-q', '--no-verify', 'origin', 'main']);
+    f.tick(61);
+    const result = await capture({});
+    expect(result.path).toMatch(/^raw\/inbox\/2026-01-01-pricing-call-[0-9a-f]{6}\.md$/);
+  });
 });

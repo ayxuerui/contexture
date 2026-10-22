@@ -90,4 +90,21 @@ describe('mcp Read, Grep and Glob', () => {
     expect(theirs.draft).toBe(false);
     expect(theirs.content).not.toContain('revised');
   });
+
+  it('never follows a symbolic link, and Grep and Glob return only what Read would read (review findings)', async () => {
+    await f.store.advanceMain({ 'scripts/deploy.sh': 'echo kestrel secret\n' });
+    const scratch = `${f.store.tmp.root}/link-scratch`;
+    await f.store.git(['clone', '-q', f.store.origin, scratch], f.store.tmp.root);
+    const { symlink } = await import('node:fs/promises');
+    await symlink('../../../../etc/hostname', `${scratch}/projects/evil.md`);
+    await f.store.git(['add', '-A'], scratch);
+    await f.store.git(['commit', '-q', '--no-verify', '-m', 'link'], scratch);
+    await f.store.git(['push', '-q', '--no-verify', 'origin', 'HEAD:main'], scratch);
+    f.tick(61);
+    await expect(read({ file_path: 'projects/evil.md' })).rejects.toMatchObject({ code: 'mcp.path_not_readable' });
+    const leaked = await grep({ pattern: 'secret', output_mode: 'content' });
+    expect(leaked.lines).toEqual([]);
+    const listed = (await f.call('Glob', { pattern: '**/*' })) as { files: string[] };
+    expect(listed.files).not.toContain('scripts/deploy.sh');
+  });
 });

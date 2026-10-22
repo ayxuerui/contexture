@@ -9,6 +9,7 @@ import { missingRequiredSection } from '../../ingest/required-sections.js';
 import { listCaptures, listNotes } from '../../notes/list.js';
 import { parseNoteText } from '../../notes/parse.js';
 import { slugifySegment } from '../../slug.js';
+import { isUnderAnyPrefix } from '../../fs/prefix.js';
 import { ToolRefusal } from '../jsonrpc.js';
 import {
   approvalUrl,
@@ -108,7 +109,7 @@ async function sessionCapture(write: WriteDeps, session: Session, inbox: string)
   for (const repoPath of added.stdout.split('\n').filter((p) => p.length > 0)) {
     if (!repoPath.startsWith(prefix)) continue;
     const rel = repoPath.slice(prefix.length);
-    if (!rel.startsWith(inbox) || !rel.endsWith('.md')) continue;
+    if (!isUnderAnyPrefix(rel, [inbox]) || !rel.endsWith('.md')) continue;
     const shown = await write.git.run(['show', `HEAD:${repoPath}`], { cwd: session.path, allowFailure: true });
     if (shown.exitCode !== 0) return null;
     try {
@@ -148,8 +149,12 @@ function resultFor(write: WriteDeps, session: Session, pull: { number: number; u
 export async function capture(ctx: CaptureContext, email: string, args: CaptureArgs): Promise<CaptureResult> {
   // A sync forced now, so the duplicate check sees what was pushed and opened a moment ago.
   await ctx.view.refresh(ctx.syncDeps);
-  const viewStore = (await ctx.view.read(ctx.syncDeps, async (snapshot) => ({ viewStore: snapshot.store }))).viewStore;
-  const config = viewStore.config;
+  // The identity records are read under the view's lock, so a sync cannot move the view mid-read.
+  const { viewConfig, viewRecords } = await ctx.view.read(ctx.syncDeps, async (snapshot) => ({
+    viewConfig: snapshot.store.config,
+    viewRecords: [...(await listCaptures(snapshot.store.root, snapshot.store.config)), ...(await listNotes(snapshot.store.root, snapshot.store.config))] as IdentityRecord[],
+  }));
+  const config = viewConfig;
   const inbox = config.ingest.inbox_path;
 
   const missing = missingRequiredSection(config, args.source_type, args.body);
@@ -180,7 +185,7 @@ export async function capture(ctx: CaptureContext, email: string, args: CaptureA
     if (state.kind === 'open') pending.push({ path: `${record.path} (pull request #${state.pull.number}, awaiting approval)`, frontmatter: record.frontmatter });
   }
 
-  const records: IdentityRecord[] = [...(await listCaptures(viewStore.root, config)), ...(await listNotes(viewStore.root, config)), ...pending];
+  const records: IdentityRecord[] = [...viewRecords, ...pending];
   const verdict = evaluateSourceCheck(records, hash, sourceId, config.ingest.tracking_params);
   if (verdict.verdict !== 'new') {
     throw new ToolRefusal('mcp.already_captured', `This material is already in the store or awaiting approval (${verdict.verdict.replace(/_/g, ' ')}): ${verdict.matches.join(', ')}. Nothing was saved.`, {
@@ -193,7 +198,8 @@ export async function capture(ctx: CaptureContext, email: string, args: CaptureA
   const slug = slugifySegment(args.title).slice(0, 40).replace(/-+$/, '') || 'capture';
   const id = randomBytes(3).toString('hex');
   const session = await startSession(ctx.write, `${CAPTURE_LABEL_PREFIX}${slug.slice(0, 30)}-${id}`);
-  const rel = `${inbox}${date}-${slug}-${id}.md`;
+  // posix join: the schema accepts an inbox path with or without its trailing slash.
+  const rel = path.posix.join(inbox, `${date}-${slug}-${id}.md`);
   const repoPath = await repoPathOf(ctx.write, rel);
   const absolute = path.join(session.path, repoPath);
   await mkdir(path.dirname(absolute), { recursive: true });

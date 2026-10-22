@@ -27,6 +27,8 @@ export interface WriteDeps {
   recordingLogin: string;
   /** `serve.base_url`, for the approval page address a tool returns. */
   baseUrl: string;
+  /** The store root's path inside its repository, when the caller has already resolved it; asked of git otherwise. */
+  repoPrefix?: string;
 }
 
 export interface Session {
@@ -129,7 +131,7 @@ async function branchTaken(deps: WriteDeps, branch: string): Promise<boolean> {
 
 /** The store-relative path's location inside the repository, for `git show <branch>:<path>`. */
 export async function repoPathOf(deps: WriteDeps, storeRelative: string): Promise<string> {
-  const prefix = (await deps.git.run(['rev-parse', '--show-prefix'], { cwd: deps.canonicalRoot, allowFailure: true })).stdout.trim();
+  const prefix = deps.repoPrefix ?? (await deps.git.run(['rev-parse', '--show-prefix'], { cwd: deps.canonicalRoot, allowFailure: true })).stdout.trim();
   return `${prefix}${storeRelative}`;
 }
 

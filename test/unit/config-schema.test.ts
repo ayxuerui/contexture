@@ -438,6 +438,18 @@ describe('readConfig', () => {
     }
   });
 
+  it('refuses mcp when serve.base_url carries a path', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      await writeFile(path.join(tmp.root, CONFIG_FILE_NAME), `${minimalConfig()}serve: { base_url: "https://ctx-a.example.test/store" }\n${CHANGE_APPROVAL_BLOCK}mcp: { readers: ["@ctx-a.example"] }\n`);
+      const error = await readConfig(tmp.root).catch((err: unknown) => err);
+      expect(error).toBeInstanceOf(InvalidConfigError);
+      expect((error as InvalidConfigError).message).toContain('origin with no path');
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
   it('refuses an empty mcp block and an entry that is neither an email nor an @domain', async () => {
     for (const block of ['mcp: {}', 'mcp: { readers: [] }', 'mcp: { readers: ["nobody"] }']) {
       const tmp = await makeTmpDir();

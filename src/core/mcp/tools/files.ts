@@ -1,11 +1,11 @@
-import { readFile, stat } from 'node:fs/promises';
+import { lstat, readFile, realpath } from 'node:fs/promises';
 import path from 'node:path';
 import type { StoreConfig } from '../../../config/schema.js';
 import { joinBaseUrl, noteRoute } from '../../browse/page-url.js';
 import { isUnderAnyPrefix } from '../../fs/prefix.js';
 import { admitsNotePath, excludedPrefixesFor } from '../../notes/list.js';
 import { CONFIG_FILE_NAME } from '../../root.js';
-import { draftVersion, findDraft } from '../drafts.js';
+import { draftVersion, findLocalDraft } from '../drafts.js';
 import { ToolRefusal } from '../jsonrpc.js';
 import { glob as ripgrepGlob, grep as ripgrepGrep, type GrepParams } from '../ripgrep.js';
 import type { WriteDeps } from '../sessions.js';
@@ -43,6 +43,12 @@ export function resolveStorePath(input: string, config: StoreConfig): string {
     throw new ToolRefusal('mcp.path_not_readable', `"${normalized}" is not something these tools read (configuration, derived files and tool-owned folders are not).`);
   }
   return normalized;
+}
+
+/** What `Read` answers for, as one predicate: a note, a markdown capture, or the entry document. Grep and Glob return nothing else. */
+export function readablePath(rel: string, config: StoreConfig): boolean {
+  if (admitsNotePath(rel, config) || rel === ENTRY_DOCUMENT) return true;
+  return rel.endsWith('.md') && isUnderAnyPrefix(rel, [config.ingest.capture_root]);
 }
 
 // ---- Read ----------------------------------------------------------------------
@@ -106,7 +112,7 @@ export async function readTool(snapshot: Snapshot, write: WriteDeps, email: stri
   const isCapture = isUnderAnyPrefix(rel, [captureRoot]);
   const admitted = admitsNotePath(rel, config);
 
-  const draft = admitted ? await findDraft(write, email) : null;
+  const draft = admitted ? await findLocalDraft(write, email) : null;
   const drafted = draft === null ? null : await draftVersion(write, draft, rel);
   if (drafted !== null) {
     const n = numbered(drafted, args.offset, args.limit);
@@ -117,8 +123,13 @@ export async function readTool(snapshot: Snapshot, write: WriteDeps, email: stri
     throw new ToolRefusal('mcp.path_not_readable', `"${rel}" is not a note, a capture or the entry document, so it cannot be read here.`);
   }
   const absolute = path.join(snapshot.store.root, rel);
-  const info = await stat(absolute).catch(() => null);
-  if (info === null || !info.isFile()) throw new ToolRefusal('mcp.file_not_found', `"${rel}" does not exist in the store.`);
+  const info = await lstat(absolute).catch(() => null);
+  if (info === null || (!info.isFile() && !info.isSymbolicLink())) throw new ToolRefusal('mcp.file_not_found', `"${rel}" does not exist in the store.`);
+  // A link is never followed: a committed symlink named like a note could otherwise read anything the server can.
+  if (info.isSymbolicLink()) throw new ToolRefusal('mcp.path_not_readable', `"${rel}" is a symbolic link, which these tools do not follow.`);
+  const real = await realpath(absolute);
+  const root = await realpath(snapshot.store.root);
+  if (path.relative(root, real).startsWith('..')) throw new ToolRefusal('mcp.path_outside_store', `"${rel}" is outside the store.`);
   const n = numbered(await readFile(absolute, 'utf8'), args.offset, args.limit);
   const url = admitted ? joinBaseUrl(write.baseUrl, noteRoute(rel)) : null;
   return { file_path: rel, content: n.content, total_lines: n.total, first_line: n.first, last_line: n.last, draft: false, capture: isCapture, url };
@@ -202,7 +213,16 @@ export async function grepTool(snapshot: Snapshot, args: GrepArgs): Promise<Grep
   const searchPath = args.path === undefined ? null : resolveStorePath(args.path, config) || null;
   const outcome = await ripgrepGrep(snapshot.store.root, args, searchPath, hiddenPrefixes(config));
   if (outcome.kind === 'error') throw new ToolRefusal('mcp.search_failed', `The search could not run: ${outcome.message}.`);
-  const all = outcome.kind === 'ok' ? outcome.lines : [];
+  // design.md D12: Grep returns only what Read would read, so it never prints a file Read refuses.
+  const entries = outcome.kind === 'ok' ? outcome.entries.filter((e) => e.path === null || readablePath(e.path, config)) : [];
+  const all: string[] = [];
+  for (const e of entries) {
+    if (e.path === null) {
+      if (all.length > 0 && all[all.length - 1] !== '--') all.push(e.rest ?? '--');
+    } else if (e.rest === null) all.push(e.path);
+    else all.push(`${e.path}${/^\d+[-]/.test(e.rest) ? '-' : ':'}${e.rest}`);
+  }
+  while (all[all.length - 1] === '--') all.pop();
   const start = args.offset ?? 0;
   const limit = Math.min(args.head_limit ?? GREP_MAX_LINES, GREP_MAX_LINES);
   const lines = all.slice(start, start + limit);
@@ -269,7 +289,7 @@ export async function globTool(snapshot: Snapshot, args: GlobArgs): Promise<{ fi
   const searchPath = args.path === undefined ? null : resolveStorePath(args.path, config) || null;
   const outcome = await ripgrepGlob(snapshot.store.root, args.pattern, searchPath, hiddenPrefixes(config));
   if (outcome.kind === 'error') throw new ToolRefusal('mcp.search_failed', `The file listing could not run: ${outcome.message}.`);
-  const files = outcome.kind === 'ok' ? outcome.lines : [];
+  const files = outcome.kind === 'ok' ? outcome.entries.map((e) => e.path).filter((p): p is string => p !== null && readablePath(p, config)) : [];
   return { files: files.slice(0, GREP_MAX_LINES), omitted: Math.max(0, files.length - GREP_MAX_LINES) };
 }
 

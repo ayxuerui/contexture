@@ -162,13 +162,6 @@ const ServeSchema = z.object({
   previews: z.enum(['local', 'none']).optional(),
 });
 
-/**
- * approve-from-the-review-page (change-approval spec): the opt-in block that
- * turns on the approval page and the landing path. No shipped default and
- * `.optional()`, like `serve`, so a store that never opts in never carries
- * the key. Tokens never live here — serve and `ctxr land` read their forge
- * credential from their own environments (design.md D10).
- */
 /** An exact email address or an `@domain` suffix — the one form every list of people in this file takes. */
 const PersonEntrySchema = z
   .string()
@@ -177,6 +170,13 @@ const PersonEntrySchema = z
     message: 'must be an email address or an @domain entry',
   });
 
+/**
+ * approve-from-the-review-page (change-approval spec): the opt-in block that
+ * turns on the approval page and the landing path. No shipped default and
+ * `.optional()`, like `serve`, so a store that never opts in never carries
+ * the key. Tokens never live here — serve and `ctxr land` read their forge
+ * credential from their own environments (design.md D10).
+ */
 const ChangeApprovalSchema = z.object({
   /** design.md D2: the signed assertion the access proxy in front forwards on every request. */
   identity: z.object({
@@ -508,6 +508,14 @@ export const StoreConfigSchema = z
         code: 'custom',
         path: ['mcp'],
         message: 'mcp requires change_approval, whose identity settings and forge credential the MCP surface uses',
+      });
+    }
+    // remote-access spec: the MCP surface's issuer and resource are serve.base_url's origin, so a path there would be lost.
+    if (value.mcp !== undefined && value.serve?.base_url !== undefined && new URL(value.serve.base_url).pathname.replace(/\/+$/, '') !== '') {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['mcp'],
+        message: 'mcp needs serve.base_url to be an origin with no path (e.g. https://ctx.example.com), because sign-in is served at the root of that origin',
       });
     }
     /**

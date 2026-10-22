@@ -60,6 +60,9 @@ export class McpSurface {
   private readonly mutex = new Mutex();
   private readonly signers = new Map<string, Signer>();
   private randomKey: Buffer | undefined;
+  /** Derived once per credential: the key never changes while a credential object lives. */
+  private readonly derived = new WeakMap<object, Buffer | null>();
+  private repoPrefix: string | undefined;
 
   constructor(private readonly options: McpSurfaceOptions) {
     this.view = new McpView({ git: options.git, canonicalRoot: options.canonicalRoot, now: options.now });
@@ -67,7 +70,8 @@ export class McpSurface {
 
   /** The App-derived key when there is an App; otherwise one random key for this process, said once. */
   private signerFor(approval: ApprovalServer): Signer {
-    let key = approval.credentials.derivedSecret(SIGNING_KEY_INFO);
+    if (!this.derived.has(approval.credentials)) this.derived.set(approval.credentials, approval.credentials.derivedSecret(SIGNING_KEY_INFO));
+    let key = this.derived.get(approval.credentials) ?? null;
     if (key === null) {
       if (this.randomKey === undefined) {
         this.randomKey = randomBytes(32);
@@ -120,6 +124,7 @@ export class McpSurface {
       return;
     }
 
+    this.repoPrefix ??= (await this.options.git.run(['rev-parse', '--show-prefix'], { cwd: this.options.canonicalRoot, allowFailure: true })).stdout.trim();
     const syncDeps = { config, credentials: approval.credentials, forge: approval.forge, env: this.options.env };
     const tools = buildTools({
       view: this.view,
@@ -131,6 +136,7 @@ export class McpSurface {
         now: this.options.now,
         recordingLogin: approval.approval.recording_login,
         baseUrl: config.serve?.base_url ?? issuer,
+        repoPrefix: this.repoPrefix,
       },
       mutex: this.mutex,
       baseUrl: config.serve?.base_url,

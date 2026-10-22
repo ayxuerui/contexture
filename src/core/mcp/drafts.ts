@@ -32,6 +32,17 @@ export async function findDraft(deps: WriteDeps, email: string): Promise<Draft |
 }
 
 /**
+ * The member's draft session on disk, without asking the forge — for `Read`, which must answer from local state
+ * alone so a forge outage or rate limit never stops a read. `land` removes a merged draft's worktree; one whose pull
+ * request closed unmerged is removed by the member's next `Edit` or `Write`.
+ */
+export async function findLocalDraft(deps: WriteDeps, email: string): Promise<Draft | null> {
+  const label = draftLabel(email);
+  const session = (await sessionsLabelled(deps, label)).find((s) => s.label === label);
+  return session === undefined ? null : { session, state: { kind: 'none' } };
+}
+
+/**
  * A file as the member's draft has committed it, when the draft's committed
  * tip changes or adds it; null otherwise. Read from the branch with
  * `git show`, never the working tree, so an edit in progress is never seen

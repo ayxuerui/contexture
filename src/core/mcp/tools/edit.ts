@@ -126,11 +126,20 @@ async function pathExists(file: string): Promise<boolean> {
   );
 }
 
-/** The member's draft as it stands, publishing anything it left unpublished; null when there is none to extend. */
+/**
+ * The member's draft as it stands, publishing anything it left unpublished; null when there is none to extend.
+ * A draft with no commit of its own (left behind by a crash between starting it and committing) is removed: the
+ * forge would refuse a pull request for it, and every later call would be refused with it.
+ */
 async function currentDraft(ctx: DraftContext, email: string): Promise<Session | null> {
   const draft = await findDraft(ctx.write, email);
   if (draft === null) return null;
   if (draft.state.kind === 'closed-unmerged' || draft.state.kind === 'merged') {
+    await removeSession(ctx.write, draft.session);
+    return null;
+  }
+  const ahead = (await ctx.write.git.run(['rev-list', '--count', `refs/remotes/origin/${ctx.write.config.git.default_branch}..HEAD`], { cwd: draft.session.path, allowFailure: true })).stdout.trim();
+  if (ahead === '0' && draft.state.kind === 'none') {
     await removeSession(ctx.write, draft.session);
     return null;
   }
@@ -154,21 +163,35 @@ async function finish(ctx: DraftContext, email: string, session: Session, rel: s
   };
 }
 
-/** Applies `next` to `rel` in the draft (starting one if needed), rebuilds the catalog, commits as the member. Under the write mutex. */
-async function applyToDraft(ctx: DraftContext, email: string, rel: string, verb: 'Edit' | 'Write', compute: (current: string | null) => { text: string } | { alreadyApplied: true }): Promise<DraftResult> {
+/** What a call is computed against: the file as the member is editing it, and, when the draft's last commit was this same call on this file, the file before it. */
+interface Basis {
+  current: string | null;
+  /** Present only when the draft's tip commit is `<verb> <rel>`: the file in that commit's parent (null when it did not exist). */
+  beforeTip?: string | null;
+}
+
+/** Applies a computed change to `rel` in the draft (starting one if needed), rebuilds the catalog, commits as the member. Under the write mutex. */
+async function applyToDraft(ctx: DraftContext, email: string, rel: string, verb: 'Edit' | 'Write', compute: (basis: Basis) => { text: string } | { alreadyApplied: true }): Promise<DraftResult> {
   await ctx.view.refresh(ctx.syncDeps);
-  const viewRoot = (await ctx.view.read(ctx.syncDeps, async (snapshot) => ({ root: snapshot.store.root }))).root;
+  // Read under the view's lock, so a sync started by another call cannot move the view mid-read.
+  const fromView = (await ctx.view.read(ctx.syncDeps, async (snapshot) => ({ text: await existing(path.join(snapshot.store.root, rel)) }))).text;
   let session = await currentDraft(ctx, email);
   const fresh = session === null;
   const repoPath = await repoPathOf(ctx.write, rel);
 
   // Decide against what the member is editing: the draft's copy when there is a draft, else the served commit.
-  const before = session === null ? await existing(path.join(viewRoot, rel)) : await existing(path.join(session.path, repoPath));
-  const outcome = compute(before);
+  const basis: Basis = { current: session === null ? fromView : await existing(path.join(session.path, repoPath)) };
+  if (session !== null) {
+    const subject = (await ctx.write.git.run(['log', '-1', '--format=%s'], { cwd: session.path, allowFailure: true })).stdout.trim();
+    if (subject === `${verb} ${rel}`) {
+      const parent = await ctx.write.git.run(['show', `HEAD~1:${repoPath}`], { cwd: session.path, allowFailure: true });
+      basis.beforeTip = parent.exitCode === 0 ? parent.stdout : null;
+    }
+  }
+  const outcome = compute(basis);
   if ('alreadyApplied' in outcome) {
-    if (session === null) throw new ToolRefusal('mcp.edit_failed', 'Nothing to apply.');
-    const tip = (await ctx.write.git.run(['rev-parse', 'HEAD'], { cwd: session.path })).stdout.trim();
-    return finish(ctx, email, session, rel, tip, true);
+    const tip = (await ctx.write.git.run(['rev-parse', 'HEAD'], { cwd: session!.path })).stdout.trim();
+    return finish(ctx, email, session!, rel, tip, true);
   }
   try {
     parseNoteText(outcome.text, rel);
@@ -199,32 +222,38 @@ async function applyToDraft(ctx: DraftContext, email: string, rel: string, verb:
   }
 }
 
+function replace(text: string, args: EditArgs): string {
+  return args.replace_all === true ? text.split(args.old_string).join(args.new_string) : text.replace(args.old_string, () => args.new_string);
+}
+
 export async function editTool(ctx: DraftContext, email: string, args: EditArgs): Promise<DraftResult> {
   const rel = editablePath(args.file_path, ctx.syncDeps.config);
-  return applyToDraft(ctx, email, rel, 'Edit', (current) => {
+  return applyToDraft(ctx, email, rel, 'Edit', ({ current, beforeTip }) => {
     if (current === null) throw new ToolRefusal('mcp.file_not_found', `"${rel}" does not exist. Use Write to create a new note.`);
     const count = current.split(args.old_string).length - 1;
     if (count === 0) {
-      if (current.includes(args.new_string)) return { alreadyApplied: true };
+      // A retry: the draft's last commit was this very replacement on this very file (design.md D13). Exact, so an
+      // empty or common new_string can never pass for an edit that was never made.
+      if (typeof beforeTip === 'string' && beforeTip.includes(args.old_string) && replace(beforeTip, args) === current) return { alreadyApplied: true };
       throw new ToolRefusal('mcp.edit_failed', `old_string was not found in "${rel}". Read the note again and copy the text exactly.`);
     }
     if (count > 1 && args.replace_all !== true) {
       throw new ToolRefusal('mcp.edit_failed', `old_string occurs ${count} times in "${rel}". Include more surrounding text to make it unique, or set replace_all.`, { occurrences: count });
     }
-    return { text: args.replace_all === true ? current.split(args.old_string).join(args.new_string) : current.replace(args.old_string, () => args.new_string) };
+    return { text: replace(current, args) };
   });
 }
 
 export async function writeTool(ctx: DraftContext, email: string, args: WriteArgs): Promise<DraftResult> {
   const rel = editablePath(args.file_path, ctx.syncDeps.config);
-  const viewRoot = (await ctx.view.read(ctx.syncDeps, async (snapshot) => ({ root: snapshot.store.root }))).root;
-  if ((await existing(path.join(viewRoot, rel))) !== null) {
+  const inView = (await ctx.view.read(ctx.syncDeps, async (snapshot) => ({ text: await existing(path.join(snapshot.store.root, rel)) }))).text;
+  if (inView !== null) {
     throw new ToolRefusal('mcp.file_exists', `"${rel}" already exists. Write only creates new notes; use Edit to change it.`);
   }
   const text = args.content.endsWith('\n') ? args.content : `${args.content}\n`;
-  return applyToDraft(ctx, email, rel, 'Write', (current) => {
+  return applyToDraft(ctx, email, rel, 'Write', ({ current, beforeTip }) => {
     if (current === null) return { text };
-    if (current === text) return { alreadyApplied: true };
+    if (current === text && beforeTip === null) return { alreadyApplied: true };
     throw new ToolRefusal('mcp.file_exists', `"${rel}" already exists in your draft. Write only creates new notes; use Edit to change it.`);
   });
 }
