@@ -158,8 +158,37 @@ jobs:
         if: needs.verify.outputs.published == 'false'
         run: npm pack --dry-run
 
-      - name: Publish to npm
+      # The verify job's check can be minutes old, and the registry answers a version
+      # that was published seconds earlier with E404: two releases merged a minute apart
+      # (#190, #191) both saw "not published", and the second publish was refused. Asking
+      # again here, minutes later, sees the first one.
+      - name: Check the npm registry again, just before publishing
+        id: recheck
         if: needs.verify.outputs.published == 'false'
+        env:
+          VERSION: ${{ needs.verify.outputs.version }}
+        run: |
+          set -euo pipefail
+          name="$(npm pkg get name | tr -d '"')"
+
+          set +e
+          output="$(npm view "${name}@${VERSION}" version 2>&1)"
+          status=$?
+          set -e
+
+          if [ "${status}" -eq 0 ]; then
+            echo "${name}@${VERSION} was published since the verify job checked - publish will be skipped"
+            echo "published=true" >> "$GITHUB_OUTPUT"
+          elif printf '%s' "${output}" | grep -q 'E404'; then
+            echo "published=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "::error::npm view failed for an unexpected reason (exit ${status}); refusing to guess"
+            printf '%s\n' "${output}"
+            exit 1
+          fi
+
+      - name: Publish to npm
+        if: needs.verify.outputs.published == 'false' && steps.recheck.outputs.published == 'false'
         run: npm publish --provenance --access public
 
       - name: Tag and create the GitHub Release
