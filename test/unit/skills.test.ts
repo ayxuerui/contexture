@@ -673,8 +673,8 @@ describe('syncShippedSkills', () => {
           'skills/ctxr-land/SKILL.md',
           'skills/ctxr-derived-artifacts/SKILL.md',
           // circleback-sweep: the skill names the branch, and so does the settings file its runner reads.
-          'skills/ctxr-circleback/SKILL.md',
-          'skills/ctxr-circleback/settings.json',
+          'skills/ctxr-capture-circleback/SKILL.md',
+          'skills/ctxr-capture-circleback/settings.json',
         ].sort(),
       );
     } finally {
@@ -1185,7 +1185,7 @@ describe('research-and-capture-identity: the research skill and capture identity
  */
 const TEMPLATES_SKILLS = fileURLToPath(new URL('../../templates/skills', import.meta.url));
 
-describe('ctxr-circleback: an owned skill a store opts into', () => {
+describe('ctxr-capture-circleback: the opt-in retrieval step for ctxr-capture', () => {
   const without = (): StoreConfig => {
     const config = makeConfig();
     delete config.circleback;
@@ -1193,12 +1193,12 @@ describe('ctxr-circleback: an owned skill a store opts into', () => {
   };
 
   it('is not part of the full set, and is shipped only when the circleback block is present', () => {
-    expect(SKILLS.some((s) => s.file === 'ctxr-circleback')).toBe(false);
-    expect(OPTIONAL_SKILLS.map((s) => s.file)).toEqual(['ctxr-circleback']);
+    expect(SKILLS.some((s) => s.file === 'ctxr-capture-circleback')).toBe(false);
+    expect(OPTIONAL_SKILLS.map((s) => s.file)).toEqual(['ctxr-capture-circleback']);
     expect(activeSkillSeeds(without()).map((s) => s.file)).toEqual(SKILLS.map((s) => s.file));
-    expect(renderSkills(without()).some((s) => s.file === 'ctxr-circleback')).toBe(false);
-    expect(renderSkills(makeConfig()).some((s) => s.file === 'ctxr-circleback')).toBe(true);
-    expect(skillPaths(without()).some((p) => p.includes('ctxr-circleback'))).toBe(false);
+    expect(renderSkills(without()).some((s) => s.file === 'ctxr-capture-circleback')).toBe(false);
+    expect(renderSkills(makeConfig()).some((s) => s.file === 'ctxr-capture-circleback')).toBe(true);
+    expect(skillPaths(without()).some((p) => p.includes('ctxr-capture-circleback'))).toBe(false);
   });
 
   it('ships its runner verbatim and renders the routing settings the runner reads', () => {
@@ -1207,9 +1207,9 @@ describe('ctxr-circleback: an owned skill a store opts into', () => {
         circleback: { tag: 'alpha-store', other_tags: ['beta-store'] },
         ingest: { inbox_path: 'raw/inbox/', capture_root: 'raw/', tracking_params: [], required_capture_sections: { circleback: 'Transcript' } },
       }),
-    ).find((s) => s.file === 'ctxr-circleback');
+    ).find((s) => s.file === 'ctxr-capture-circleback');
     expect([...(skill?.supportingFiles.keys() ?? [])].sort()).toEqual(['settings.json', 'sweep.mjs']);
-    expect(skill?.supportingFiles.get('sweep.mjs')).toBe(readFileSync(path.join(TEMPLATES_SKILLS, 'ctxr-circleback', 'sweep.mjs'), 'utf8'));
+    expect(skill?.supportingFiles.get('sweep.mjs')).toBe(readFileSync(path.join(TEMPLATES_SKILLS, 'ctxr-capture-circleback', 'sweep.mjs'), 'utf8'));
     expect(JSON.parse(skill?.supportingFiles.get('settings.json') ?? '{}')).toEqual({
       tag: 'alpha-store',
       other_tags: ['beta-store'],
@@ -1221,16 +1221,35 @@ describe('ctxr-circleback: an owned skill a store opts into', () => {
   });
 
   it('names its runner under the configured skills path, and the inbox and branch from config', () => {
-    const body = rendered()['ctxr-circleback'];
-    expect(body).toContain('node skills/ctxr-circleback/sweep.mjs');
+    const body = rendered()['ctxr-capture-circleback'];
+    expect(body).toContain('node skills/ctxr-capture-circleback/sweep.mjs');
     expect(body).toContain('`raw/inbox/`');
     expect(body).toContain('against `trunk`');
-    expect(body).toMatch(/Never edit the transcript/);
-    expect(body).toMatch(/Never merge the pull request and never ingest here/);
+    expect(body).toMatch(/Never merge it/);
+  });
+
+  /**
+   * capture-circleback-is-retrieval: one capture procedure. The Circleback
+   * skill retrieves and hands back to ctxr-capture at step 2 rather than
+   * restating its rules, and ctxr-capture's step 1 reaches it by family name.
+   */
+  it('hands back to ctxr-capture at step 2, and carries none of its judgment rules itself', () => {
+    const body = rendered()['ctxr-capture-circleback'];
+    expect(body).toMatch(/follow `ctxr-capture` from its step 2/);
+    expect(body).toMatch(/`ctxr-capture`'s step 5/);
+    expect(body).not.toMatch(/### Speaker caveat/);
+    expect(body).not.toMatch(/Never edit the transcript/);
+  });
+
+  it('ctxr-capture delegates retrieval to a ctxr-capture-<source> skill, naming no source', () => {
+    const capture = rendered()['ctxr-capture'];
+    expect(capture).toMatch(/If this store ships a `ctxr-capture-<source>` skill for the material's source, retrieve through it/);
+    expect(capture).toMatch(/continue here at step 2/);
+    expect(capture).toMatch(/labels them generically/);
   });
 
   it('runner uses the Node standard library only', () => {
-    const runner = readFileSync(path.join(TEMPLATES_SKILLS, 'ctxr-circleback', 'sweep.mjs'), 'utf8');
+    const runner = readFileSync(path.join(TEMPLATES_SKILLS, 'ctxr-capture-circleback', 'sweep.mjs'), 'utf8');
     const imports = [...runner.matchAll(/^import .* from '([^']+)';$/gm)].map((m) => m[1]);
     expect(imports.length).toBeGreaterThan(0);
     for (const specifier of imports) expect(specifier, specifier).toMatch(/^node:/);
@@ -1240,10 +1259,10 @@ describe('ctxr-circleback: an owned skill a store opts into', () => {
     const tmp = await makeTmpDir();
     try {
       const written = await syncShippedSkills(tmp.root, makeConfig());
-      expect(written).toEqual(expect.arrayContaining(['skills/ctxr-circleback/SKILL.md', 'skills/ctxr-circleback/settings.json', 'skills/ctxr-circleback/sweep.mjs']));
+      expect(written).toEqual(expect.arrayContaining(['skills/ctxr-capture-circleback/SKILL.md', 'skills/ctxr-capture-circleback/settings.json', 'skills/ctxr-capture-circleback/sweep.mjs']));
       const removed = await syncShippedSkills(tmp.root, without());
-      expect(removed).toEqual(['skills/ctxr-circleback/SKILL.md']);
-      await expect(readFile(path.join(tmp.root, 'skills/ctxr-circleback/sweep.mjs'), 'utf8')).rejects.toThrow();
+      expect(removed).toEqual(['skills/ctxr-capture-circleback/SKILL.md']);
+      await expect(readFile(path.join(tmp.root, 'skills/ctxr-capture-circleback/sweep.mjs'), 'utf8')).rejects.toThrow();
       expect(await syncShippedSkills(tmp.root, without())).toEqual([]);
     } finally {
       await tmp.cleanup();

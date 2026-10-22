@@ -1,8 +1,9 @@
 #!/usr/bin/env node
-// Work out which Circleback meetings this store owes, and render their captures on a review branch.
+// Work out which Circleback meetings this store owes, and write each into the inbox on a review branch as the
+// verbatim record, for ctxr-capture to continue from its step 2.
 //
-// Shipped by contexture as part of the ctxr-circleback skill; `ctxr update` rewrites it, so do not edit
-// it in a store. Node standard library only. It drives Circleback's own CLI (`cb`), which holds its own
+// Shipped by contexture as part of the ctxr-capture-circleback skill; `ctxr update` rewrites it, so do not
+// edit it in a store. Node standard library only. It drives Circleback's own CLI (`cb`), which holds its own
 // credential, plus `git` and `gh`; it never reads or stores a credential itself.
 //
 // The store's routing is in settings.json beside this file. The store is CONTEXTURE_STORE_ROOT, or the
@@ -95,7 +96,7 @@ function presence(root, settings) {
  * first, because an agent running unattended may not be allowed to delete it.
  */
 function prepareWorktree(root, settings) {
-  const worktree = path.join(tmpdir(), `ctxr-circleback-${path.basename(root)}`);
+  const worktree = path.join(tmpdir(), `ctxr-capture-circleback-${path.basename(root)}`);
   run('git', ['worktree', 'remove', '--force', worktree], { cwd: root, check: false });
   rmSync(worktree, { recursive: true, force: true });
   run('git', ['worktree', 'prune'], { cwd: root });
@@ -204,7 +205,7 @@ function main() {
     const inbox = path.join(worktree, settings.inbox_path);
     mkdirSync(inbox, { recursive: true });
     report.push(`\nWORKTREE: ${worktree} (branch \`${BRANCH}\`, ${continuing ? `continuing pull request #${continuing}` : `fresh from origin/${settings.default_branch}`})`);
-    report.push('CAPTURES RENDERED:');
+    report.push('RETRIEVED (verbatim records in the inbox; continue with ctxr-capture from step 2):');
     for (const meeting of owed) {
       const transcript = cb(['transcripts', 'read', meeting.id]);
       const file = path.join(inbox, captureFileName(meeting));

@@ -127,11 +127,11 @@ Every harness loads this file on every turn, so it is kept short. contexture's o
 | `ctxr-second-opinion` | Whether a plan or a taste call needs three different model families, and how to weigh what they say |
 | `ctxr-research` | How to research a question against real sources — a brief and findings ledger, perspectives, source tiers, contradictions, and every claim verified against a source it opened — with whatever web access the harness has |
 
-One more skill is opt-in. A store gets `ctxr-circleback` only when its `contexture.yaml` declares a `circleback` block, and loses it at the next `ctxr update` once the block is gone:
+One more skill is opt-in. A store gets `ctxr-capture-circleback` only when its `contexture.yaml` declares a `circleback` block, and loses it at the next `ctxr update` once the block is gone:
 
 | Skill | What it decides |
 | --- | --- |
-| `ctxr-circleback` | Which Circleback meetings this store owes a capture, by tag, when one Circleback account feeds several stores; it renders their captures on a review branch and leaves the speaker judgment and the pull request to the agent |
+| `ctxr-capture-circleback` | `ctxr-capture`'s retrieval step for Circleback: which meetings this store owes, by tag, when one Circleback account feeds several stores. It writes each into the inbox as the verbatim record and hands back to `ctxr-capture` at step 2 |
 
 ```yaml
 circleback:
@@ -140,7 +140,7 @@ circleback:
   # decline_tag: no-capture   (the default) marks a meeting no store captures
 ```
 
-Its runner, `sweep.mjs`, drives Circleback's own CLI (`cb`, signed in separately), plus `git` and `gh`, and never handles a credential. Run it from the store root with `node .agents/skills/ctxr-circleback/sweep.mjs`, or point a scheduled job at it; the skill says what to do with its report.
+`ctxr-capture` reaches it by its family name: when a store ships a `ctxr-capture-<source>` skill for the material's source, capture retrieves through it and continues from its own step 2. The runner, `sweep.mjs`, drives Circleback's own CLI (`cb`, signed in separately), plus `git` and `gh`, and never handles a credential. Run it from the store root with `node .agents/skills/ctxr-capture-circleback/sweep.mjs`, or point a scheduled job at it; the skill says what to do with its report.
 
 Your house rules go in `.contexture/guidance/`.
 
