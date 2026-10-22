@@ -508,6 +508,10 @@ describe('owned-skills-expansion: each skill carries its load-bearing rule (task
     expect(s).toMatch(/that copy is a send copy: write it, dated, into the page's folder/);
     // The dated-folder reservation names the folder, not the send copy inside it.
     expect(s).toMatch(/It does not apply to a send copy in the page's folder/);
+    // send-copies-gated-at-commit: the skill names the commit gate before an agent meets it.
+    expect(s).toMatch(/It refuses a commit that adds a send copy with no\s+date in its name/);
+    expect(s).toMatch(/It also refuses a commit that changes a send copy that is already committed/);
+    expect(s).toMatch(/To send again, write a new\s+dated file/);
   });
 
   it('two-kinds-of-published-page: organize-audit proposes removal of old disposable pages and hands drift to publish', () => {
