@@ -42,17 +42,29 @@ export interface LandResult {
   reason: string | null;
   catch_up: CatchUp | null;
   merged_commit: string | null;
-  canonical_sync: { synced: boolean; reason: string | null } | null;
+  canonical_sync: CanonicalSync | null;
   reclaim: { removed: boolean; reason: string | null } | null;
   /** Records posted on the pull request, and records this credential could not post (not the recording login). */
   records_posted: string[];
   records_reported_only: string[];
 }
 
+/** write-lifecycle spec ("Every landing run brings the canonical clone up to date when it is safe to"). */
+export interface CanonicalSync {
+  /** True when the clone is at the forge's default branch afterwards — moved, or already there (`from === to`). */
+  synced: boolean;
+  from: string | null;
+  to: string | null;
+  /** Why it was left alone; null when synced. */
+  reason: string | null;
+}
+
 export interface LandData {
   /** Which kind of forge credential the command used; never the credential. */
   credential: CredentialKind;
   results: LandResult[];
+  /** `--pending` only: the sync every run ends with, whether or not it landed anything. */
+  canonical_sync?: CanonicalSync;
 }
 
 interface Context {
@@ -317,15 +329,49 @@ async function catchUp(ctx: Context, result: LandResult, pull: PullRequest, sess
 }
 
 /** write-lifecycle spec: after the forge reports merged — sync the canonical clone, reclaim the worktree, record the landing. */
-async function afterMerge(ctx: Context, result: LandResult, pull: PullRequest, session: SessionWorktree | undefined): Promise<void> {
+/**
+ * write-lifecycle spec ("Every landing run brings the canonical clone up to
+ * date when it is safe to"), land-sweep-syncs-canonical-clone D2: fast-forward
+ * only, only on the default branch, only with no uncommitted changes to tracked
+ * files — the rule the lifecycle skill gives agents. Anything else is left
+ * exactly as it was, and the reason is returned. Untracked files do not block
+ * it; if the fast-forward would overwrite one, git refuses and that is reported.
+ */
+async function syncCanonical(ctx: Context): Promise<CanonicalSync> {
+  const head = async (ref: string): Promise<string | null> => {
+    const r = await git(ctx, ['rev-parse', '--verify', '--quiet', `${ref}^{commit}`], ctx.canonical, true);
+    return r.exitCode === 0 ? r.stdout.trim() : null;
+  };
   await remoteGit(ctx, ['fetch', '--quiet', 'origin', ctx.defaultBranch], ctx.canonical, true);
+  const from = await head('HEAD');
+  const leave = (reason: string): CanonicalSync => ({ synced: false, from, to: from, reason });
+
   const onBranch = (await git(ctx, ['symbolic-ref', '--quiet', '--short', 'HEAD'], ctx.canonical, true)).stdout.trim();
-  if (onBranch !== ctx.defaultBranch) {
-    result.canonical_sync = { synced: false, reason: `the canonical clone is on "${onBranch || 'a detached HEAD'}", not ${ctx.defaultBranch}` };
-  } else {
-    const ff = await git(ctx, ['merge', '--ff-only', '--quiet', `origin/${ctx.defaultBranch}`], ctx.canonical, true);
-    result.canonical_sync = ff.exitCode === 0 ? { synced: true, reason: null } : { synced: false, reason: `the canonical clone has diverged from origin/${ctx.defaultBranch}` };
-  }
+  if (onBranch !== ctx.defaultBranch) return leave(`the canonical clone is on "${onBranch || 'a detached HEAD'}", not ${ctx.defaultBranch}`);
+  const dirty = (await git(ctx, ['status', '--porcelain', '--untracked-files=no'], ctx.canonical, true)).stdout.trim();
+  if (dirty !== '') return leave('the canonical clone has uncommitted changes to tracked files');
+  const target = await head(`origin/${ctx.defaultBranch}`);
+  if (target === null) return leave(`origin/${ctx.defaultBranch} could not be read`);
+  if (target === from) return { synced: true, from, to: from, reason: null };
+  const behind = await git(ctx, ['merge-base', '--is-ancestor', 'HEAD', `origin/${ctx.defaultBranch}`], ctx.canonical, true);
+  if (behind.exitCode !== 0) return leave(`the canonical clone has diverged from origin/${ctx.defaultBranch}`);
+  const ff = await git(ctx, ['merge', '--ff-only', '--quiet', `origin/${ctx.defaultBranch}`], ctx.canonical, true);
+  if (ff.exitCode !== 0) return leave(`git refused the fast-forward: ${ff.stderr.trim().split('\n')[0] ?? ''}`);
+  return { synced: true, from, to: await head('HEAD'), reason: null };
+}
+
+function syncFinding(sync: CanonicalSync): Finding | null {
+  if (sync.synced) return null;
+  return { code: 'land.canonical_not_synced', severity: 'warning', message: `The canonical clone was left as it was: ${sync.reason}.` };
+}
+
+function syncLine(sync: CanonicalSync): string {
+  if (!sync.synced) return `canonical clone not synced: ${sync.reason}`;
+  return sync.from === sync.to ? 'canonical clone already current' : `canonical clone synced ${sync.from?.slice(0, 7)}..${sync.to?.slice(0, 7)}`;
+}
+
+async function afterMerge(ctx: Context, result: LandResult, pull: PullRequest, session: SessionWorktree | undefined): Promise<void> {
+  result.canonical_sync = await syncCanonical(ctx);
 
   if (session === undefined) {
     result.reclaim = { removed: false, reason: 'no session worktree for this branch' };
@@ -426,7 +472,7 @@ function summaryLine(r: LandResult): string {
   const parts = [`#${r.pull_request} ${r.outcome}`];
   if (r.catch_up !== null) parts.push(`catch-up ${r.catch_up}`);
   if (r.merged_commit !== null) parts.push(`merged as ${r.merged_commit.slice(0, 7)}`);
-  if (r.canonical_sync !== null) parts.push(r.canonical_sync.synced ? 'canonical clone synced' : `canonical clone not synced: ${r.canonical_sync.reason}`);
+  if (r.canonical_sync !== null) parts.push(syncLine(r.canonical_sync));
   if (r.reclaim !== null) parts.push(r.reclaim.removed ? 'worktree removed' : `worktree kept: ${r.reclaim.reason}`);
   if (r.reason !== null && r.outcome !== 'merged') parts.push(r.reason);
   if (r.records_reported_only.length > 0) parts.push(`not posted (credential is not the recording login): ${r.records_reported_only.join(', ')}`);
@@ -508,13 +554,23 @@ async function landHoldingLock(
     results.push(await landOne(ctx, flags.pr!, flags.confirm));
   }
 
-  const findings = results.map(findingFor).filter((f): f is Finding => f !== null);
+  // land-sweep-syncs-canonical-clone D4: last, under the lock, so it includes whatever this run merged.
+  const sweepSync = flags.pending ? await syncCanonical(ctx) : undefined;
+
+  const syncFindings = [
+    ...results.map((r) => (r.canonical_sync === null ? null : syncFinding(r.canonical_sync))),
+    sweepSync === undefined ? null : syncFinding(sweepSync),
+  ];
+  const findings = [...results.map(findingFor), ...syncFindings].filter((f): f is Finding => f !== null);
+  // D3: a sync that could not happen is a warning; the exit code reflects landings only.
   const failed = flags.pending ? results.some((r) => r.outcome !== 'merged' && r.outcome !== 'needs-reapproval') : results.some((r) => r.outcome !== 'merged');
+  const lines = results.length === 0 ? ['No approved session pull request to land.'] : results.map(summaryLine);
+  if (sweepSync !== undefined) lines.push(syncLine(sweepSync));
   return {
     exitCode: failed ? ExitCode.CheckFailed : ExitCode.Ok,
-    data: { credential: client.credential, results },
+    data: { credential: client.credential, results, ...(sweepSync === undefined ? {} : { canonical_sync: sweepSync }) },
     findings,
-    humanSummary: results.length === 0 ? 'No approved session pull request to land.' : results.map(summaryLine).join('\n'),
+    humanSummary: lines.join('\n'),
     storeRoot: store.root,
     schemaVersion: store.config.schema_version,
   };
