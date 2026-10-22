@@ -1,34 +1,39 @@
 ## Context
 
-See proposal.md, Why. The constraints that shape the approach:
+See proposal.md, Why. The constraints that shape the approach, as of 0.27.0:
 
 - **The retrieval pass leaves two acts to the agent.** Content matching is the agent's own grep (`context-retrieval`,
   *Content matching is a direct agent leg*), and reading bodies is the agent's own Read (*Results carry identities
   and evidence, never bodies*). A remote chat client can do neither.
-- **contexture is offline by construction.** `src/core/registry.ts` is the one outbound HTTP call. Every git
-  operation goes through the `GitRunner` port. `ctxr` has never pushed.
-- **The write-path guarantee contexture may assert is "nothing reaches the default branch ungated."** The CLI
-  writes onto a branch, and the forge decides what merges. The forge adapter kind was retired, so no forge API
-  lives in core.
-- **The capture tier is provenance, not notes.** `raw/` is seeded into `retrieval.exclude_paths`, and `listCaptures`
-  exists beside `listNotes` precisely so retrieval never sees a capture. The `ctxr-capture` skill nonetheless tells
-  a local agent to search the capture root by content before writing, so it does not capture the same source twice.
-- **The store is owned by one operator** and has no access axis. retire-the-access-axes removed the visibility and
-  disclosure labels on notes, and the project context expects any future access model to be roles held by people
-  (owner, editor, viewer), not labels on notes.
-- **The dependency footprint is five packages.** `ctxr serve` is built on `node:http` alone.
+- **`ctxr serve` is no longer read-only.** When a store declares `change_approval`:
+  - It verifies the access proxy's signed assertion on every `/approve/` request
+    (`core/approval/identity.ts`), and admits configured deciders only.
+  - It records decisions as the store's recording identity, usually a GitHub App whose key only `serve` holds,
+    through `core/forge/`.
+  - It runs `ctxr land --pending` after an Approve and on a five-minute sweep.
+  - It follows changes to `contexture.yaml` without a restart (`browse/serving-state.ts`).
+- **In the shared deployment (contexture-images' hermes compose), `serve` and `agents` mount one store volume.**
+  The agents work in session worktrees of it, and `land` fast-forwards its canonical checkout. The App key reaches
+  `serve` and never `agents`, so that an agent cannot approve its own change.
+- **The approval index lists every session worktree whose branch has an open pull request.** Anything that becomes
+  a session worktree with a pull request is reviewable there without further work.
+- **The capture tier is provenance, not notes.** `raw/` is excluded from retrieval, and the capture skill already
+  tells a local agent to search it by content before writing, so the same source is not captured twice.
+- **A store has a single owner and no access axis on notes** (retire-the-access-axes). Any future access model is
+  expected to be roles people hold.
 
 ## Goals / Non-Goals
 
 **Goals:**
-- A member using a native Claude or ChatGPT app can find, read and capture with no shell, no clone and no
-  GitHub account.
-- The server computes only deterministic things. Every judgement call happens in the client's model.
-- Merging a capture is gated by a check that runs in the store's CI, independent of the server.
-- No new dependency, and no new outbound HTTP call.
+- A member using a native Claude or ChatGPT app can find, read and capture with no shell, no clone, no GitHub
+  account and no code to type. Their existing access-proxy login is the whole sign-in.
+- Every computation on the server is deterministic, and every judgement happens in the client's model.
+- A capture reaches the default branch only by the reviewed path the store already uses: a session pull request a
+  decider approves, landed by `serve`.
+- No new dependency, no new kind of outbound call, and no MCP state outside `contexture.yaml` and the derived cache.
 
-**Non-Goals:** see proposal.md, Non-goals. One design-level boundary is added here. The server serves one store
-from one checkout. Serving several stores means running several processes.
+**Non-Goals:** see proposal.md, Non-goals. One design-level boundary is added here: one `serve` serves one store, so
+one MCP surface serves one store.
 
 ## Decisions
 
@@ -36,362 +41,364 @@ from one checkout. Serving several stores means running several processes.
 
 Three surfaces were considered:
 
-1. **Mirrored file and shell tools in a sandbox** (`bash`, the text-editor schema, `apply_patch`). Models are trained
-   on these shapes, and every shipped skill would run unchanged.
+1. **Mirrored file and shell tools in a sandbox.** Models are trained on these shapes, and every skill would run
+   unchanged.
 2. **High-level verbs computed deterministically.**
-3. **Wrapping Claude Code**, so the client model converses with an agent on the server.
+3. **Wrapping a full harness**, so the client model talks to an agent on the server.
 
-**The case for (1)** is the strongest of the alternatives: no tool has to be designed, skill fidelity is complete,
-and the most capable model does all the work. It loses on its audience and on operations. People who are not
-engineers do not edit by string replacement. Short tool loops are what chat clients handle reliably. And containers
-per session on a publicly reachable host are the heaviest thing a team could be asked to run. All three
-second-opinion critics independently cut it from v1.
+**The case for (1):** no tool to design, and skill fidelity is complete. It loses on its audience and on
+operations. People who are not engineers do not edit by string replacement, chat clients run short tool loops
+reliably and long ones poorly, and a sandbox per session is heavy to run.
 
-**The case for (3)** is total capability from a phone. It loses on the conversation itself. Two agents relaying to
+**The case for (3):** total capability from a phone. It loses on the conversation itself. Two agents relaying to
 each other lose information, the inner agent cannot be steered, every action pays for two models, calls run for
 minutes and hit client timeouts, and the server must hold model keys.
 
-**Chose (2):**
-- `find`, `gather` and `capture` reduce to commands contexture already computes: content matching, the retrieval
-  pass, and an inbox write.
-- Synthesis, deciding what is worth capturing and placement remain judgements made by the client model, or later
-  by ingest.
+**Chose (2).** `find`, `gather` and `capture` reduce to things contexture already computes: content matching, the
+retrieval pass, and an inbox write onto a session branch.
 
-**What would flip it:** evidence from the prototype that engineers want the store from chat apps, or that client
-models cannot drive selectors well enough. Either reopens (1) as a separate image that can be deployed on its own.
+**What would flip it:** evidence from the checkpoint that engineers want the store from chat apps, or that client
+models cannot drive selectors well. Either reopens (1) as a separate change.
 
 ### D2. A hand-rolled MCP subset on `node:http`, not the SDK
 
 The server implements:
-- JSON-RPC 2.0 over the Streamable HTTP transport, at `POST /mcp`, with an `application/json` response and no SSE
-  stream;
+- JSON-RPC 2.0 over Streamable HTTP, at `POST /mcp`, answering with plain JSON and no SSE;
 - the methods `initialize`, `ping`, `tools/list` and `tools/call`;
-- an answer of 202 to any notification;
-- `-32601` for any other method;
-- `GET` and `DELETE` on `/mcp` answering 405, which the transport permits for a server that offers no stream.
+- `202` for any notification, and `-32601` for any other method;
+- `405` for `GET` and `DELETE` on `/mcp`.
 
-It is stateless and issues no `Mcp-Session-Id`. `initialize` echoes the client's `protocolVersion` when it is one of
-`2025-11-25`, `2025-06-18` or `2025-03-26`, and otherwise answers with the newest of those.
+It is stateless: no `Mcp-Session-Id`. `initialize` echoes the client's version when it is one of `2025-11-25`,
+`2025-06-18` or `2025-03-26`, and otherwise answers with the newest.
 
-**The case for the official SDK:** protocol drift becomes someone else's job, and its auth router covers the OAuth
-endpoints. It loses on footprint. It brings an HTTP framework and a schema stack for a surface of four methods. Both
-the repository's own ethos and `ctxr serve` choose `node:http`. And the auth router's provider interface would
-still need every decision in D3 to be written by hand.
+**The case for the SDK:** it is what the vendors' clients are tested against, and protocol drift becomes someone
+else's problem. It loses on footprint. The subset is about 150 lines, while the SDK brings a web framework into a
+package that keeps its dependencies few.
 
-**What would flip it:** the server needing streaming, resumability, sampling or elicitation. A protocol revision
-that breaks the hand-rolled subset would flip it too. So would **the prototype checkpoint (tasks group 4)
-failing against a real claude.ai or ChatGPT connector for a reason in the transport**. The SDK is what those clients
-are tested against, which is the strongest argument for it, so the checkpoint is where that argument gets tested
-rather than assumed. The second-opinion pragmatist argued for the SDK outright. It was overruled on footprint (the
-subset is about 150 lines; the SDK brings a web framework), with this flip condition recorded in its place.
+**What would flip it:** the server needing streaming, resumability, sampling or elicitation, or the checkpoint
+(tasks group 5) failing against a real client for a reason in the transport.
 
-### D3. The server is its own OAuth 2.1 authorisation server, with operator-issued access codes
+### D3. The MCP surface is part of `ctxr serve`, not a separate process or container
 
-The Claude and ChatGPT connector UIs speak OAuth. Neither lets a member paste a bearer token. So the server serves:
-- the protected-resource metadata (RFC 9728);
-- the authorisation-server metadata (RFC 8414);
-- open dynamic client registration (RFC 7591), for public clients only;
-- `/authorize` with PKCE S256 required, the `resource` parameter checked against the server's own resource URL, and
-  a `redirect_uri` that must exactly match one the client registered;
-- `/token`, granting `authorization_code` only.
+**The case for a separate `mcp` service** from the same image, with its own clone and a narrower forge credential:
+- A smaller blast radius. The MCP routes are the only routes the access proxy does not front (D10), so a bug in
+  them would sit in the one process that holds the App key.
+- MCP could run while approval is off.
 
-The authorisation page asks for one thing: the member's access code.
+**It loses because everything it needs, `serve` already has:**
+- the verifier for the access proxy's identity assertion;
+- the forge credential that opens and lands pull requests;
+- the approval page every capture must pass through;
+- the configuration-following state;
+- the hostname, with `serve.base_url` already pointing note links at it.
 
-Alternatives, each argued at its strongest:
+A separate service would duplicate the clone, the credential, the identity verification and a sync loop, and its
+captures would still have to reach `serve`'s approval index.
 
-- **External IdP, validating its JWTs** (Okta, Entra, Auth0, Google through a broker). This gives real SSO, MFA, and
-  offboarding that happens in one place. For a large organisation it is the better system. It loses here for three
-  reasons. Fetching the IdP's JWKS is a new outbound call. Most IdPs do not support the dynamic registration MCP
-  clients expect, so a broker is needed anyway. And it makes every adopter run an IdP before reading one note.
-  **Flips when** an adopter brings an IdP and a member count past what anyone wants to manage as codes. It would
-  arrive as an alternative `--auth` mode, not a replacement.
-- **GitHub OAuth, committing as the user.** The audit trail is free, and access is whatever the repository already
-  grants. It loses on the audience. The members this change exists for mostly have no GitHub account, and those who
-  do should not need write access to the repository just to capture.
-- **A static bearer token.** Simplest of all, and unusable from the native apps.
+**The blast-radius concern is answered by confining where the credential is used, not by pretending it is
+absent.** MCP code does use the App's credential, in exactly three places:
+- the OAuth module derives its signing key from the App key (D5);
+- the view's sync fetches the default branch with the installation git token (D6);
+- `capture` pushes its own session branch with that token and opens its pull request through `ForgeClient` (D9).
 
-Codes look like `XXXX-XXXX-XXXX-XXXX-XXXX` in Crockford base32, which is 100 bits. Only their SHA-256 is stored.
-Five failed codes from one address in fifteen minutes block that address for the rest of the window.
+Nothing else in the MCP surface touches the credential. No tool returns or logs a token, and no route accepts one
+from a client. The read checkout is separate from the one `land` writes (D6). This boundary, rather than "MCP never
+sees the key", is what a reviewer should hold the code to. It is the same boundary the approval routes already
+have.
 
-**What "address" means is defined, not assumed.** It is the socket's peer address, unless `--trust-proxy` is given.
-In that case, and only when the peer is loopback, it is the rightmost entry of `X-Forwarded-For`. Behind the recommended
-Funnel or reverse proxy every peer is the proxy, so without the flag the throttle covers the whole server. Five wrong
-codes from anyone would then pause sign-in for everyone for the rest of the window. That fails closed and is
-recoverable, and the README tells operators behind a proxy to set the flag. Trusting the header without the flag would
-let any caller pick their own address. The architect critic of round four raised this.
+**The agents container is excluded outright.** It holds model keys and a shell, and the App key must never reach it.
 
-**Nothing the server issues is stored.** Client IDs, authorisation codes and access tokens are all signed by the
-server (HMAC-SHA256 under a key kept in the state directory), so they need no store:
+**What would flip it:** members outside the access proxy's organisation, or a need for MCP while
+`change_approval` is off. Either brings back a separate service with its own sign-in.
 
-| Issued item | What it encodes | Lifetime | Extra checks |
-|---|---|---|---|
-| Client ID | the registered redirect URIs | survives restarts with no registry | none |
-| Authorisation code | client, redirect URI, PKCE challenge, resource, member, scopes, a nonce | ten minutes | single use (below) |
-| Access token | member ID, scopes, resource | 30 days | member and scopes re-checked against `members.json` on every call |
+### D4. Sign-in through the access proxy's identity, and members listed in `contexture.yaml`
 
-There is no refresh grant. When a token expires, the member enters their code again.
+`serve` is the OAuth 2.1 authorisation server for its own `/mcp`. It publishes the protected-resource metadata
+(RFC 9728) and the authorisation-server metadata (RFC 8414), and accepts dynamic client registration (RFC 7591)
+for public clients. `/authorize` requires PKCE S256, a `redirect_uri` exactly as the client registered it, and a
+`resource` equal to its own `/mcp`.
 
-**Codes are single use without being stored durably.** A signature alone would let one code be redeemed again and
-again with the same PKCE verifier until it expired. OAuth 2.1 forbids that, as the skeptic critic of round four
-pointed out. So each code also carries a random nonce, which the server records in memory, under the same lock as the
-redemption, the moment the code is redeemed. Codes are also signed under a key derived from the signing key plus a
-per-process nonce, so a restart invalidates every outstanding code instead of forgetting which were spent. The cost
-is that a member caught by a restart in their ten-minute window simply signs in again.
+`/authorize` is the one OAuth path left behind the access proxy. On every `GET` and `POST` it verifies
+`change_approval.identity` exactly as the approval routes do, then resolves the verified email against the `mcp`
+block:
 
-Members carry a random ID, so removing and re-adding someone under the same name revokes everything issued before.
+```yaml
+mcp:
+  readers: ["@ctx-a.example"]      # find, gather
+  capturers: ["a@ctx-a.example"]   # capture
+```
 
-**The case for stored, rotating refresh tokens** (the first version of this design): short-lived access tokens, reuse
-detection when a refresh token is stolen, and revoking one device without the others. It loses because the thing
-actually revoked here is a member, not a device. Membership is already checked on every call, so the store of tokens
-bought only per-device revocation, at the cost of a second state file and a rotation state machine. The
-second-opinion pragmatist proposed dropping it. The case for keeping it would be stores whose members routinely
-lose devices; for them, removing and re-adding the member is the remedy.
+Entries take the same form as `change_approval.deciders`: an exact email, or `@domain`. A person on neither list
+gets `403`. A person on either list sees a consent page naming:
+- the client, as it registered itself;
+- the redirect host;
+- the store;
+- their email;
+- the scopes they will grant.
 
-### D4. Scopes are admission to the server, not an access axis on the store
+A `POST` from that page carries an `Origin` equal to the origin of `serve.base_url`, and only then is a code
+issued. The consent step is required, not decoration. Without it, anyone could register a client whose redirect
+they control and send a member a link, and the member's existing proxy session would silently authorise that
+client.
 
-There are two scopes. `read` grants `find` and `gather`; `capture` grants `capture`. The operator assigns them per
-member. A client can only narrow them through the `scope` parameter, never widen them. `tools/list` shows only the
-tools a token's scopes reach, and `tools/call` re-checks scope and membership on every call. A removed member is
-therefore refused on their very next call, even while holding a token that has not yet expired.
+**The case for the access codes of the earlier design:**
+- They need no access proxy and no identity provider.
+- They work for people outside the proxy's organisation.
+- Revoking one person is a single command.
 
-Every admitted member reads the whole store, so nothing about this reintroduces a classification on notes, and
-retire-the-access-axes D1 stands. The project context's expected future model (owner, editor, viewer) is a set of
-roles people hold. `read` and `capture` are named for what the tool does at the point of use, which is the stronger
-argument for a token a member's client displays. If roles arrive later, they map onto these scopes.
+They lose here because the store already depends on the proxy for the approval page. Codes would give each member
+a second credential to keep and the operator a second member list to maintain, apart from `deciders`, with a
+throttle to defend it.
 
-### D5. The capture write path ends at a pushed branch, and the store's CI is the gate
+**The case for validating the identity provider's own tokens at `/mcp`:** no authorisation server at all. It fails
+on the clients. Claude's and ChatGPT's servers call `/mcp` directly and cannot present a proxy assertion, and most
+identity providers do not offer the dynamic registration these clients expect.
 
-`capture` takes these steps:
-1. Fetches the default branch and every `capture/*` branch.
-2. Runs the source check against the identity records on the default branch **and** against the captures waiting on
-   other `capture/*` branches. A capture still waiting to merge is the likeliest duplicate of all, so the check has
-   to see it.
-3. Adds a worktree under the state directory, outside the store, on a new branch: `capture/<YYYY-MM-DD>-<slug>-<id>`,
-   where `<id>` is six random hex characters.
-4. Writes `<inbox_path><YYYY-MM-DD>-<slug>-<id>.md`. The file carries the branch's own ID, so two captures can never
-   race for one name and no retry step exists. The first version picked a `-2` suffix on collision and claimed a
-   retry nobody performed; the architect critic caught that.
-5. Commits with the host's own git identity, the bot, and a `Captured-by:` trailer naming the member.
-6. Pushes that branch and removes the worktree.
+**What would flip it:** members outside the proxy's organisation (see D3), which reopens access codes for a
+separate service.
 
-Steps 1 through 6 run under a **capture mutex**. Otherwise two simultaneous captures of one source could both fetch,
-both pass the duplicate check and both push. The second capture fetches again after acquiring the mutex, so it sees
-the first one's branch. The skeptic critic of round four raised this.
+`mcp` requires `change_approval`, because it reuses its identity settings and forge credential. Configuration
+validation rejects an `mcp` block without one, naming both, just as `change_approval` requires `serve.base_url`.
+The block carries no shipped default, and adding it needs no `context-store` delta: its absence is itself
+meaningful.
 
-**"Pending" means a `capture/*` ref whose tip is not an ancestor of the default branch.** It does not mean "a path
-absent from the default branch", which a deleted or rejected branch would satisfy forever. The sample workflow
-deletes a `capture/` branch when its pull request closes, whether merged or rejected, and when the gate fails. A
-rejected capture therefore stops blocking a later capture of the same source as soon as its branch is gone. The
-architect critic of round four raised this.
+### D5. Nothing issued is stored, and membership is re-read on every call
 
-The store's hooks run as they do for any commit. The member is recorded in git and not in frontmatter, so this
-change adds no frontmatter key.
+Client IDs, authorisation codes and access tokens are HMAC-signed payloads (`kind.payload.mac`, with the kind
+inside the MAC), so no store of them exists:
 
-`ctxr mcp check-branch --base <ref>` is the gate. It passes only when every change in `<ref>...HEAD` adds a new
-`.md` file directly under the inbox path, and each added file has frontmatter carrying `source_type` and
-`source_id`, carries no `source_hash` or `ingested`, and meets the store's required-section rule for its source
-type.
+| Issued item | What it encodes | Lifetime |
+|---|---|---|
+| Client ID | the registered redirect URIs | indefinite |
+| Authorisation code | client, redirect, PKCE challenge, email, scopes, nonce | ten minutes, single use |
+| Access token | email, scopes, resource | 30 days |
 
-**It reads `contexture.yaml` from `<ref>`, never from the branch it judges.** Otherwise a branch could redefine the
-inbox path, and so the meaning of "only adds inbox files", in the same commit it is being judged on. Any change
-outside the inbox fails, and that includes CI configuration and `contexture.yaml` itself.
+There is no refresh grant.
 
-The README's sample workflow runs the check on pushes to `capture/**`, then opens a pull request and merges exactly
-the commit it checked (`gh pr merge --match-head-commit`). Whether merging is automatic or waits for a human is the
-store's own choice.
+**Single use without durable state.** A code's nonce is recorded in memory when it is redeemed, before any await.
+Codes are also signed under a key that mixes in a per-process nonce, so a restart invalidates outstanding codes
+rather than forgetting which were spent.
 
-**The gate holds only if the branch cannot rewrite the workflow that runs it.** That was the veto of the third
-critique round, which the architect reached independently. On GitHub, a workflow triggered by a push runs the
-definition on the pushed branch, so a credential able to push `capture/**` could otherwise push a workflow that skips
-the check. GitHub refuses any push that modifies `.github/workflows/` from a credential without the workflows
-permission. **The bot's credential is issued without it**, so every workflow on a `capture/` branch is the default
-branch's own.
+**The signing key** is derived with HKDF-SHA256 from the App's private key when the forge credential is an App, so
+it is stable across restarts, needs no new secret, and rotates with the App key. With `gh`'s own credential there
+is no key to derive from, so a per-process random key is used, and `serve` says once on stderr that members will
+sign in again after each restart.
 
-This is a forge property, not something contexture can check from inside the server. The README states it as a
-precondition of the sample, and `check-branch` failing on any path outside the inbox is the second wall. A forge
-without an equivalent permission needs the gate triggered from a definition on its default branch instead; the README
-says so too.
+**Revocation is a configuration edit.** Every `/mcp` request resolves the token's email against the `mcp` block
+`serve` last loaded, and narrows the token's scopes to what that email holds now. Removing someone from `readers`
+and `capturers` refuses their next call, even while their token is unexpired.
 
-**The case for having the server open and merge the PR itself** through the forge API: one moving part fewer, and a
-store with no CI still works. It loses because it puts a forge API and a forge credential in core, against the
-retired forge adapter and the single outbound call. And the gate would then be the server checking itself, which the
-second-opinion skeptic rejected by veto: a gate has to hold even if the server is wrong or compromised. With this
-design the bot's credential needs only push rights on `capture/**`, and branch protection does the rest.
+### D6. Reads come from a detached worktree the MCP surface owns
 
-**Re-arguing "every write lands via a reviewed PR"** (project context). That guarantee was written for agents with
-broad write access. The guarantee this change keeps is the one the context calls the only assertable one: nothing
-reaches the default branch ungated. A store that wants human review of every capture leaves auto-merge off in its
-workflow.
+The canonical checkout is shared:
+- The agents work beside it.
+- `land` rebases inside it and fast-forwards it.
+- Its working tree may legitimately be mid-change.
 
-### D6. `find` stands in for grep: literal, path-ordered, and it reports unfiled captures separately
+Fast-forwarding it, or resetting it after a failure, from a request handler would race all of that. So the MCP
+surface keeps its own view: a detached worktree of the same repository, at `<derived cache path>/mcp/view`. That
+location is gitignored, excluded from notes, and on the volume `serve` can already write. Being detached, it is
+never mistaken for a session worktree.
 
-- **Matching:** `find(text)` lower-cases the text and each line, and matches on substrings, over the notes the
-  store's enumeration admits (`listNotes`). There is no stemming, no fuzziness and no scoring.
-- **Each hit carries** the path, the catalog gloss, up to three matching lines with line numbers (each clipped to
-  240 characters), and a link. The link is `serve.base_url` joined to the note's route, or null when the store
-  declares no base URL.
-- **Order and budget:** results come in path order, capped at `max` (default 25, at most 100), with the omitted count
-  reported.
-- **Unfiled captures:** captures under the capture root are matched the same way and returned in `unfiled`, never in
-  `notes`, each without a link. So are inbox files waiting on unmerged `capture/*` branches, read from the fetched
-  refs and never checked out. Each unfiled entry says which: `filed: false` with `pending_merge: false` for a capture
-  on the default branch, or `pending_merge: true` with its branch for one still waiting. Without the pending ones, the
-  duplicate this field exists to prevent stays invisible exactly while it is most likely, and for longest in a store
-  that reviews merges by hand.
-- **With no text,** `find` returns the catalog's sections and the glosses for each section's notes, narrowed by an
-  optional `under`, as the map the client picks selectors from.
+Before a tool call, and at most once per interval (60 seconds), a sync does three things:
+1. Fetches the default branch from `origin`, through the forge credential's git token as `land` does.
+2. Moves the view with `git checkout --detach --force <origin/default>`.
+3. Rebuilds the view's own graph under the view's derived path, when `HEAD` moved or the graph is missing.
+4. Reads the forge's open pull requests once, so that "pending" below means exactly what the approval index means
+   by it: a session branch with an open pull request.
 
-**The case for keeping captures out entirely** (the capture-tier requirement as written): unfiled text quoted as if
-it were the store's position, and captures being where untrusted outside material first lands. It loses to two
-problems that otherwise go unsolved for this audience:
-- The commonest failure in a group is two members capturing the same meeting.
-- A member who captured something yesterday and is told today "nothing found" concludes the tool is broken.
+A linked worktree shares refs with the repository, so step 1 updates `refs/remotes/origin/<default>`, the same
+ref `land` reads. Updating it is harmless, because a fetch only ever moves it to the remote's truth. It can
+transiently contend with a concurrent `land` fetch for the ref lock; the sync reports that as `sync_error` and
+retries at the next interval. What the view never changes is the started checkout's `HEAD`, index or working tree.
 
-The local capture skill already searches the capture root for exactly the first reason. The real defences remain:
-captures stay out of `notes`, out of `gather`, out of the catalog and out of the graph. The separate field and its
-label are what the client model is told to respect.
+If the rebuild fails, the view is checked out back to the commit it served and that commit's graph is rebuilt. If
+even that fails, tools refuse with `mcp.store_unavailable` until a sync succeeds.
 
-### D7. `gather` is the pass, plus the bodies a client would otherwise read
+**Every tool call reads one commit.** A reader-writer lock guards the view. Each tool call holds a shared lock for
+all of its reads, and a sync holds the exclusive lock, so a sync waits for calls in flight and a call waits for a
+sync. Each result carries `store: {head, sync_error}`, with no wall-clock value.
 
-`gather` takes the pass's own selectors (`seeds`, `sections`, `under`, `entities`, `hops`, `direction`, `type`,
-`max_notes`) and returns its result unchanged, plus a `body` on a prefix of that result. Bodies are attached in the
-pass's order until the next one would exceed a byte budget (default 60,000, set by `--gather-max-bytes`). From that
-point on, notes carry `body: null`.
+The store configuration a tool reads with is the view's own `contexture.yaml` at that commit, so the files and the
+rules that admit them are always from the same commit. The `mcp` block that decides who may call is the one
+`serve` loaded, because admission is the server's concern and not the commit's.
 
-When the first note alone exceeds the budget, it is returned clipped to the budget and marked `body_clipped`, so a
-call never comes back with no text at all. Keeping bodies to a prefix preserves the pass's rule that the cap never
-reorders anything.
+### D7. `find` stands in for grep, literal and path-ordered, and lists unfiled captures separately
 
-A seed under the capture root is refused with `mcp.capture_not_filed` before the pass runs. Any other unknown seed
-fails as the pass already fails. The pass itself is untouched and still never returns bodies. The remote surface
-attaches them afterwards.
+**Matching:**
+- `find(text)` matches lower-cased substrings, line by line, over the raw files of the notes the view's note
+  enumeration admits.
+- There is no stemming, no fuzziness and no score.
+- Hits come in path order, capped at `max` (default 25), with the omitted count reported.
 
-### D8. Keeping the checkout current
+Each hit carries:
+- its path;
+- its catalog gloss;
+- up to three matching lines, each clipped to 240 characters;
+- a link, built from `serve.base_url` and the note route.
 
-The server requires a checkout of the default branch whose worktree is clean, ignoring derived paths. Before any
-tool call it runs, at most once per `--pull-interval` seconds (default 60; 0 never pulls):
-1. `git fetch --prune origin <default> 'refs/heads/capture/*:refs/remotes/origin/capture/*'`
-2. `git merge --ff-only origin/<default>`
+**Unfiled captures come back in `unfiled`, never in `notes`, each without a link.** That covers inbox files on the
+view's commit, and inbox files added by the branch of any session worktree with an open pull request,
+marked `pending_merge` with their branch. Captures made through this surface, and captures an agent made in its
+own session, are both session worktrees of the shared repository, so no extra fetch is needed to see them. A pending capture waiting for approval is exactly the duplicate this
+field exists to reveal. Without text, `find` returns the catalog's sections with each note's path and gloss.
 
-Whenever `HEAD` moves, or the graph has not been built, it rebuilds the derived graph.
+**The case for keeping captures out entirely:** unfiled text could be quoted as the store's position, and captures
+are where untrusted outside material first lands. It loses to two problems that otherwise stay unsolved for this
+audience. Two members capturing the same meeting is the commonest failure in a group. And "nothing found" for
+something captured yesterday reads as a broken tool. The defences that matter remain: captures stay out of
+`notes`, out of `gather`, the catalog and the graph. The separate field and its label are what the client model is
+told to respect.
 
-**Every tool call reads one commit.** A reader-writer lock guards the checkout: each tool call holds a shared lock
-for all of its reads, and a sync holds the exclusive lock across the merge and the graph rebuild. So a sync waits
-for calls already in flight, and a call arriving during a sync waits for it to finish. Serialising syncs alone, as
-the first version did, would have let a sync land midway through a call that was still reading, mixing files from
-one commit with the graph of another under a single `head`. The skeptic critic caught that.
+### D8. `gather` is the pass, plus the bodies a client would otherwise read
 
-`capture` holds the shared lock too. It reads identity records from the checkout, and it writes only in its own
-worktree.
+`gather` takes the pass's own selectors and options, runs it against the view's notes and the view's graph, and
+attaches `body` to a prefix of the pass's order until the next body would exceed the byte budget (60,000). When the
+first note alone exceeds the budget, it is clipped and marked. A seed under the capture root is refused with
+`mcp.capture_not_filed`. The pass itself is untouched, and still never returns bodies.
 
-A failed sync leaves the checkout at its last good commit, **with the graph that belongs to it**. If the
-fast-forward succeeds but the graph rebuild fails, the sync resets the checkout to the commit it started from and
-rebuilds that commit's graph. If even that fails, the server refuses tool calls with `mcp.store_unavailable` until a
-later sync succeeds, rather than serving a checkout from one commit with a graph from another. The skeptic critic of
-round four raised this. Each tool result carries `store: {head, sync_error}`,
-where `head` is the commit served and `sync_error` is the last failure or null. Neither is a wall-clock value, so the
-pass's no-wall-clock rule holds.
+### D9. A capture is a session pull request a decider approves
 
-### D9. State lives outside the store, and only the member CLI writes it
+`capture` takes these steps, all under one mutex:
+1. Refreshes the view (a sync, forced).
+2. Runs the source check against the identity records at the view's commit, plus the inbox files of pending
+   session branches, and refuses any verdict but `new`, naming the matches.
+3. Refuses a body that fails the store's required-section rule for its source type.
+4. Starts a session worktree in the canonical repository, exactly as `ctxr session start` does, with label
+   `capture-<slug>`.
+5. Writes `<inbox_path><YYYY-MM-DD>-<slug>-<6 hex>.md`, with frontmatter carrying the title, `source_type` and
+   `source_id`.
+6. Commits it with the member's verified email as author and the server's identity as committer, plus a
+   `Captured-by: <email>` trailer.
+7. Pushes the branch through the forge credential's git token.
+8. Opens a pull request titled `Capture: <title>` whose body names the member, the source and the file.
 
-The state directory defaults to `~/.contexture/mcp/<first 12 hex of sha256(store root)>/`, is overridable with
-`--state-dir`, and is refused when it falls inside the store root. It holds:
-- `members.json`: written only by `ctxr mcp member`. The server re-reads it whenever the file's mtime changes.
-- `signing.key`: 32 random bytes. It is created by whichever of `ctxr mcp member` or `ctxr mcp serve` runs first,
-  using an exclusive create, so the two can never both write it.
-- `worktrees/`: capture worktrees, removed after each push.
+It returns the pull request's number and URL, and the approval page address for the worktree.
 
-Files are mode 0600. `members.json` is written atomically by a write and rename. The server persists nothing (D3), so
-the member CLI is the only writer and nothing races.
+**A capture is idempotent by source identity, so a failure partway through resumes rather than strands.** With no
+`source_id` given, the identity is derived from the content (`<source_type>/<first 16 hex of the body's
+canonical hash>`), so a client retrying the same material reaches the same identity. Before step 4, `capture`
+looks for a capture worktree already carrying that identity:
+- **Its branch has an open pull request:** the call is refused as a duplicate, naming that pull request.
+- **It has no pull request:** a push or the pull-request call failed last time, or its response was lost. The call
+  resumes: it pushes the branch if the remote lacks it, then looks for an open pull request with that head before
+  opening one, and returns it.
 
-Deleting `signing.key` invalidates every issued client ID and token at once. That is the "sign everyone out" switch.
+**Capture worktrees are reclaimed.** `land` already removes a worktree when its pull request merges. Under the
+mutex, `capture` also removes the worktree and local branch of any `capture-` session whose pull request was
+closed without merging. A rejected capture therefore stops counting as pending, and the same material can be
+captured again. The change then
+appears on the approval index like any session, and lands through `ctxr land` when a decider approves it. The
+member, if they are a decider, can approve it themselves from their phone.
 
-### D10. Exposure is explicit
+**The case for the earlier design**, where `serve` pushed a bare branch and the store's CI auto-merged anything
+matching a mechanical inbox-only rule: captures arrive without anyone acting, which suits a group that captures
+far more than it reviews. It loses for now:
+- It needed a forge-specific workflow, a credential that cannot change workflows, and a check command. All of that
+  duplicates the reviewed path `serve` now runs itself.
+- Its premise, that core has no forge client, no longer holds.
 
-- `--host` defaults to loopback, as `ctxr serve` does.
-- `--public-url` names the HTTPS address clients reach, for example a Tailscale Funnel or a reverse proxy. It is the
-  issuer and the base of the resource URL, and it is required whenever the bind is not loopback.
-- `--no-auth` exists for local development and the MCP inspector, is refused on any bind that is not loopback, and
-  admits one operator holding every scope.
-- An `Origin` header that is present and does not match the public URL's origin, or loopback on a loopback bind, is
-  refused with 403, which is the transport's defence against DNS rebinding.
+**What would flip it:** a group whose approval queue fills with captures. That case is better served by an
+inbox-only auto-landing rule inside `land`, where the mechanical check runs on the trusted side. It is a separate
+change, recorded here so it is not rebuilt as CI.
 
-### D11. Prose and envelope
+### D10. Routes, methods and the access-proxy boundary
 
-The server's instructions, the three tool descriptions and the authorisation page live in `templates/mcp/`, and are
-read at render time with `__UPPER_SNAKE__` placeholders. The tool descriptions carry the capture skill's rules in
-short form:
+When the loaded configuration declares `mcp`:
+
+| Paths | Methods admitted | In front of them |
+|---|---|---|
+| `/mcp` | `POST` | not the proxy: the server's own bearer check |
+| `/token`, `/register` | `POST`, plus `OPTIONS` for CORS | not the proxy |
+| `/.well-known/oauth-protected-resource[/mcp]`, `/.well-known/oauth-authorization-server`, `/.well-known/openid-configuration` | `GET` | not the proxy |
+| `/authorize` | `GET`, `POST` | the proxy, plus the server's own check of its assertion |
+
+This extends `context-browsing`'s method gate. Without the block, all of these answer `404`, and anything but
+`GET` or `HEAD` still answers `405`.
+
+The README names the exact paths to exempt from the proxy. The server cannot tell whether the operator did so. It
+fails safe either way: an un-exempted `/mcp` is just unreachable to clients, and an exempted `/authorize` still
+demands a verified assertion.
+
+A request to `/mcp` with an `Origin` that is present and not the origin of `serve.base_url` gets `403`.
+
+MCP's state follows configuration reloads exactly as the approval surface does. A loaded change that adds, alters
+or removes `mcp` rebuilds or removes the surface with no restart. A surface that cannot be built, for example
+because `change_approval` was removed, makes every MCP path answer `503` while every other route keeps answering.
+
+### D11. Prose and logging
+
+These live in `templates/mcp/`, with `__UPPER_SNAKE__` placeholders:
+- the server's instructions to the client;
+- the three tool descriptions;
+- the consent page.
+
+The tool descriptions carry the capture skill's rules in short form:
 - keep the source's own words;
 - one item per capture;
 - `source_type` spelled as the store already spells it;
-- unfiled material described as unfiled.
+- describe unfiled material as unfiled.
 
-`ctxr mcp serve` emits one envelope once it is listening and then keeps serving, exactly as `ctxr serve` does.
-`member add` returns the code in `data` and in its human summary, the only time the code is ever shown.
-`check-branch` reports one finding for each violation.
+Each MCP request writes one line to `serve`'s stderr: the member's email, the method, and for a tool call, the tool
+name. Arguments and results are never logged, since they are store content.
 
 ## Risks / Trade-offs
 
-- **[A publicly reachable endpoint]** → Admission is deny by default, codes carry 100 bits, failed codes are
-  rate-limited per address, and a member is removed in one command. `--no-auth` is refused off loopback.
-- **[A stolen access token works until it expires or its member is removed]** → It lasts 30 days, it never widens
-  past the member's scopes, and removing the member kills it on the next call. There is no per-device revocation (D3).
-- **[A compromised server pushes a `capture/` branch built to pass or skip the gate]** → The bot credential has no
-  workflows permission, `check-branch` reads its configuration from the base, any path outside the inbox fails, and
-  the merge is pinned to the checked commit (D5).
-- **[An access code phished through a fake authorisation page]** → The page is served only from the issuer, and the
-  README tells members the one URL they will see. A code is revoked by removing and re-adding its member.
-- **[Open dynamic registration]** → It stores nothing, because a client ID is a signed encoding of its redirect URIs,
-  so registration spam cannot fill any file. A registered client still cannot obtain a code without a member's access
-  code.
-- **[Prompt injection carried in by captured material]** → Captures never enter `gather` and are labelled unfiled in
-  `find`. The client model treats tool output as data. That is the client vendor's boundary, and this change does
-  not claim it.
+- **[The access proxy is misconfigured]** → If `/mcp` is still behind the proxy, clients cannot connect, which is
+  loud and fails safe. If `/authorize` is exempted, the server's own assertion check refuses every request: also
+  safe and loud. The README gives the exact path list.
+- **[A stolen access token works until it expires or the member is removed]** → It lasts 30 days, it never widens
+  past the member's current scopes, and removing the member is a configuration edit that takes effect on the next
+  call. There is no per-device revocation. Rotating the App key, or restarting a `serve` without an App, signs
+  everyone out.
+- **[MCP routes in the process that holds the App key]** → No MCP route touches the key or a token directly. All
+  forge use goes through `ForgeClient`, and `capture` only pushes its own branch and opens its pull request (D3).
+- **[The approval queue fills with captures]** → Captures are labelled so they are easy to tell apart from session
+  changes on the index. An inbox-only auto-landing rule is the recorded follow-up (D9).
+- **[Prompt injection carried in by captured material]** → Captures never enter `gather` and are labelled unfiled
+  in `find`. Every capture is read by a decider before it lands.
 - **[Vendor client quirks]** (protocol version, OAuth details, write actions still in beta on ChatGPT) → Tasks
-  group 4 is a checkpoint. Transport, authorisation and `find` are built first, and the operator connects real
-  claude.ai and ChatGPT clients before `gather`, `capture` and the gate are built. A failure there reopens D2 or D3
-  before anything depends on them.
-- **[`find` scans the whole store on every call]** → The note list is cached per `HEAD`. A linear scan is acceptable
-  into the tens of thousands of notes. Anything larger would need an index, which this change does not add.
-- **[The host's git credential can push]** → The README tells operators to scope it to `capture/**` with branch
-  protection on the default branch. contexture cannot enforce that from inside the server.
+  group 5 is a checkpoint with `find` and a stub `capture`, before `gather` and the write path are built.
+- **[`find` scans the whole view on every call]** → Notes are listed once per view commit. A linear scan is fine
+  into the tens of thousands of notes.
+- **[The view worktree is deleted]** (someone clears the derived cache) → The next sync recreates it.
 
 ## Migration Plan
 
-The change is additive. Nothing changes for a store that never runs `ctxr mcp serve`. To roll back, stop the process
-and delete its state directory; pushed `capture/` branches remain ordinary branches.
+The change is additive and opt-in. Nothing changes for a store without an `mcp` block. To turn it on:
+1. Declare `mcp`, with `change_approval` already in place.
+2. Exempt the listed paths from the access proxy.
+3. Add the connector in each app.
+
+To roll back, remove the block. The view is derived and can be deleted. Open capture pull requests remain ordinary
+session pull requests.
 
 ## Revisions after critique
 
-This section overrides anything inconsistent with it. It records the third second-opinion round, run on the full
-change.
+This change was first written on 0.21.0 as a standalone `ctxr mcp serve`, with its own access codes and a branch
+gated by store CI. Four three-model critique rounds shaped that version, and their findings carry into this one:
 
-1. **The gate cannot be rewritten by the branch it judges** (the skeptic's veto, reached independently by the
-   architect). The bot credential has no workflows permission, `check-branch` reads `contexture.yaml` from the base,
-   and the merge is pinned to the checked commit. See D5.
-2. **Pending `capture/*` branches are visible to the source check and to `find`'s `unfiled` field.** Filenames carry
-   the branch ID, so there are no collisions and no retry (architect). See D5 and D6.
-3. **A reader-writer lock keeps every tool call on one commit** (skeptic). See D8.
-4. **Nothing the server issues is stored.** Signed client IDs and access tokens, no refresh grant, and no
-   `sessions.json` (pragmatist). See D3 and D9.
-5. **The real-client prototype is a checkpoint before `gather`, `capture` and the gate.** This restores the first
-   round's ordering (architect). See tasks group 4.
-6. **The pragmatist's proposal to use the MCP SDK was overruled,** and its condition for changing course is now
-   recorded in D2.
+1. **The gate must hold even if the server is wrong** (round 3's veto). Here, a decider's approval and `land` are
+   the gate. The server only opens a pull request.
+2. **Pending captures must be visible to the duplicate check and to `find`** (round 3). See D7 and D9.
+3. **Every tool call reads one commit, and a failed sync restores the view and its graph together** (rounds 3 and
+   4). See D6.
+4. **Nothing issued is stored, and codes are single use** (rounds 3 and 4). See D5.
+5. **A real-client checkpoint comes before the write path, and it exercises a write tool** (rounds 3 and 4). See
+   tasks group 5.
+6. **Captures are serialised from the duplicate check to the push** (round 4). See D9.
 
-A fourth round critiqued the revision. The pragmatist approved, and there was no veto. Its six findings are folded in:
+A fifth round critiqued this revision. The pragmatist approved, and there was no veto. Folded in:
 
-7. **Single-use authorisation codes** without durable state: an in-memory spent set, plus a per-process signing nonce
-   (skeptic). See D3.
-8. **A capture mutex** covering fetch through push (skeptic). See D5.
-9. **Checkout and graph recover together**, or the server refuses calls (skeptic). See D8.
-10. **The throttle's address is defined behind a proxy** with `--trust-proxy` (architect). See D3.
-11. **"Pending" is defined by ancestry**, and the sample workflow deletes closed or failed `capture/` branches
-    (architect). See D5.
-12. **The checkpoint exercises a write tool:** a stub `capture` that is not marked read-only and writes nothing
-    (architect). See tasks group 4.
+7. **"Pending" means an open pull request everywhere,** matching the approval index, and capture worktrees of
+   closed pull requests are reclaimed (architect). See D6, D7 and D9.
+8. **D3 states where the App credential is actually used** instead of claiming MCP never sees it (architect).
+9. **The read-checkout requirement promises what a linked worktree can keep:** the started checkout's `HEAD`,
+   index and working tree, not its shared remote-tracking refs (architect). See D6.
+10. **A capture that fails partway resumes,** keyed by its source identity, which is derived from the content when
+    none is given (skeptic). See D9.
 
-## Open Questions
-
-- Whether ChatGPT's connector UI needs Client ID Metadata Documents rather than dynamic registration. Adding them
-  later changes no spec here beyond one more accepted `client_id` form.
+Rebasing onto 0.27.0 removed that version's premises: core now has a forge client, `serve` verifies the access
+proxy's identity, and `serve` lands what is approved. So the surface moved into `serve` (D3), sign-in moved to the
+proxy's identity (D4), and captures moved to the approval page (D9). The access codes, the member CLI, the throttle
+and `check-branch` are gone.
