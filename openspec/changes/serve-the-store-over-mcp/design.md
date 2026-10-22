@@ -402,3 +402,26 @@ Rebasing onto 0.27.0 removed that version's premises: core now has a forge clien
 proxy's identity, and `serve` lands what is approved. So the surface moved into `serve` (D3), sign-in moved to the
 proxy's identity (D4), and captures moved to the approval page (D9). The access codes, the member CLI, the throttle
 and `check-branch` are gone.
+
+## Checkpoint results (tasks group 5)
+
+Run on 2026-10-22 against pkm, with a test `serve` (`pkm-mcp-test`, `land: manual`) on its own clone behind
+`brain-mcp.ruixue.ai`. The access proxy covered only `/authorize`.
+
+- **claude.ai: passed.** Registration, the access-proxy login, the consent page and the token exchange all
+  succeeded. Then `initialize`, `tools/list`, two `find` calls that returned real notes, and a `capture` call to the
+  stub, which Claude reported truthfully as not saved. Claude also calls `server/discover` first, which is answered
+  method-not-found, and asks to register for `refresh_token`, which is granted `authorization_code` only. Neither
+  blocked anything. D2 and D4 stand.
+- **Gemini: sign-in passed, tools never called.** Gemini registered (`auth=none`), consented and obtained a token,
+  then listed the tools on every message but called none. After its tool schemas were reduced to `type`,
+  `description` and `required`, it stopped contacting the server at all. This is recorded as an open question about
+  Gemini's handling of custom MCP apps, not a defect in the surface. Claude, against the same server, calls both
+  tools.
+- **ChatGPT developer mode:** not yet run.
+
+Three defects the unit tests could not see were found and fixed at the checkpoint:
+1. Under `Referrer-Policy: no-referrer`, a browser submits the consent form with `Origin: null`, which the
+   confirmation refused. The page now uses `same-origin`.
+2. Tool input schemas are now plain, with every limit enforced in code.
+3. Each OAuth request is now logged with its outcome and what the client registered for.
