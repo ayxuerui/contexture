@@ -63,6 +63,11 @@ export async function makeApprovalStore(opts: ApprovalStoreOptions = {}): Promis
     (await execFileAsync('git', [...args], { cwd, env: env as NodeJS.ProcessEnv })).stdout.trim();
 
   await execFileAsync('git', ['init', '-q', '--bare', '-b', 'main', origin], { env: env as NodeJS.ProcessEnv });
+  // Every push into the origin starts `git gc --auto` in the background (receive.autogc). `advanceMain`'s local
+  // clone copies loose object files directly, so a gc packing them mid-copy fails the clone with "failed to copy
+  // file … No such file or directory". The tests never need the origin collected.
+  await git(['config', 'receive.autogc', 'false'], origin);
+  await git(['config', 'gc.auto', '0'], origin);
   await mkdir(root, { recursive: true });
   await git(['init', '-q', '-b', 'main']);
   // A generous limit: under load `init` can pass the 10 s default and be killed with no output.
