@@ -523,7 +523,9 @@ function sendPage(res: ServerResponse, html: string): void {
     'X-Frame-Options': 'DENY',
     // No form-action: browsers apply it to the redirect that follows the submit, which must reach the client's callback.
     'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'none'",
-    'Referrer-Policy': 'no-referrer',
+    // Not no-referrer: under it a browser submits the consent form with `Origin: null`, which the confirmation's
+    // origin check must refuse. same-origin sends the real origin to this server and nothing to the client's site.
+    'Referrer-Policy': 'same-origin',
   });
   res.end(buffer);
 }

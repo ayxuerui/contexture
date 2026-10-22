@@ -179,6 +179,8 @@ describe('mcp authorisation server', () => {
     const page = await consent(authorizeParams(clientId, pkce().challenge), 'b@ctx-a.example');
     expect(page.status).toBe(200);
     expect(page.headers.get('location')).toBeNull();
+    // A browser posts the form with `Origin: null` under no-referrer, and the confirmation would refuse it.
+    expect(page.headers.get('referrer-policy')).toBe('same-origin');
     const html = await page.text();
     expect(html).toContain('Test &lt;Client&gt;');
     expect(html).not.toContain('<Client>');
@@ -187,6 +189,7 @@ describe('mcp authorisation server', () => {
     expect(html).toContain('search and read');
     expect(html).toContain('save material');
     expect(html).toContain('name="code_challenge"');
+    expect(html).not.toContain('no-referrer');
   });
 
   it('completes registration → consent → token → tools/list, listing only what the scopes reach', async () => {
