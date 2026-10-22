@@ -110,9 +110,13 @@ export class McpSurface {
       spentCodes: this.spentCodes,
       now: this.options.now,
       renderConsentPage: (view) => renderConsentPage(storeName, view),
+      log: this.options.log,
     });
 
-    if (await oauth.handle(req, res, pathname)) return;
+    if (await oauth.handle(req, res, pathname)) {
+      this.options.log(`mcp ${method} ${pathname} -> ${res.statusCode}`);
+      return;
+    }
 
     const tools = buildTools({
       view: this.view,

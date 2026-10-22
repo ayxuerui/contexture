@@ -139,6 +139,8 @@ export interface OAuthOptions {
   spentCodes: Map<string, number>;
   now(): Date;
   renderConsentPage(view: ConsentPageView): Promise<string>;
+  /** One line per registration attempt: what the client asked for and the outcome, never a secret. */
+  log?(line: string): void;
 }
 
 interface AuthorizeRequest {
@@ -257,6 +259,11 @@ export class AuthorizationServer {
     }
     const metadata = (typeof body === 'object' && body !== null ? body : {}) as Record<string, unknown>;
     const uris = metadata.redirect_uris;
+    const hosts = Array.isArray(uris) ? uris.map((u) => { try { return new URL(String(u)).host || String(u); } catch { return String(u).slice(0, 60); } }) : [];
+    this.options.log?.(
+      `mcp register "${String(metadata.client_name ?? '').slice(0, 60)}" auth=${String(metadata.token_endpoint_auth_method ?? '-')} ` +
+        `grants=${Array.isArray(metadata.grant_types) ? metadata.grant_types.join(',') : '-'} redirects=${hosts.join(',') || '-'}`,
+    );
     if (!Array.isArray(uris) || uris.length === 0 || uris.length > MAX_REDIRECT_URIS || !uris.every((u) => typeof u === 'string' && acceptableRedirectUri(u))) {
       sendJson(res, 400, { error: 'invalid_redirect_uri', error_description: `Register 1–${MAX_REDIRECT_URIS} absolute redirect URIs: https, loopback http, or an application scheme.` }, cors);
       return;
