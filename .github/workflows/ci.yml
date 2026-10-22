@@ -42,6 +42,28 @@ jobs:
       - name: Test
         run: npm test
 
+      # The tests run dist/bin.js from the checkout, where every file is present.
+      # A user runs what package.json's "files" lets into the tarball, and the
+      # release workflow only dry-runs the pack once the merge has happened. So
+      # install the real tarball outside the checkout and drive a store with it:
+      # a runtime file left out of the package fails here, before the release.
+      - name: Install the packed tarball and drive a store with it
+        run: |
+          set -euo pipefail
+          work="${RUNNER_TEMP}/packed"
+          mkdir -p "${work}/store"
+          tarball="$(npm pack --silent --pack-destination "${work}" | tail -n1)"
+          npm install --global --silent --prefix "${work}/prefix" "${work}/${tarball}"
+          ctxr="${work}/prefix/bin/ctxr"
+          "${ctxr}" --version
+          cd "${work}/store"
+          git init -q
+          git config user.email ci@example.invalid
+          git config user.name ci
+          "${ctxr}" --no-input init --profile para --harness claude-code
+          "${ctxr}" verify
+          "${ctxr}" doctor
+
   # One stable gate for branch protection to require, so the rule never names a
   # Node version. Adding or dropping a matrix leg changes nothing here; without
   # this, raising the floor silently orphans the required context and blocks
