@@ -16,31 +16,43 @@ function parseStatusLetter(code: string): StagedFile['status'] {
  * function of the CheckContext rather than re-invoking git per check.
  */
 export async function getStagedFiles(git: GitRunner, cwd: string): Promise<StagedFile[]> {
+  // `-z` keeps every path exact. Without it, `--numstat` prints a rename as
+  // "dir/{old => new}/file", which names no file and loses the rename's status.
   const [statusResult, numstatResult] = await Promise.all([
-    git.run(['diff', '--cached', '--name-status'], { cwd }),
-    git.run(['diff', '--cached', '--numstat'], { cwd }),
+    git.run(['diff', '--cached', '--name-status', '-z'], { cwd }),
+    git.run(['diff', '--cached', '--numstat', '-z'], { cwd }),
   ]);
 
-  const statusByPath = new Map<string, StagedFile['status']>();
-  for (const line of statusResult.stdout.split('\n').filter(Boolean)) {
-    const fields = line.split('\t');
-    const code = fields[0]!;
-    const targetPath = fields[fields.length - 1]!; // renames: "R100\told\tnew" — last field is the new path
-    statusByPath.set(targetPath, parseStatusLetter(code));
+  // "<code>\0<path>\0", or for a rename or copy "<code>\0<old>\0<new>\0".
+  const statusByPath = new Map<string, { status: StagedFile['status']; renameScore?: number }>();
+  const statusFields = statusResult.stdout.split('\0');
+  for (let i = 0; i < statusFields.length && statusFields[i]; ) {
+    const code = statusFields[i]!;
+    const twoPaths = code.startsWith('R') || code.startsWith('C');
+    const targetPath = statusFields[i + (twoPaths ? 2 : 1)]!;
+    const entry: { status: StagedFile['status']; renameScore?: number } = { status: parseStatusLetter(code) };
+    // send-copies-gated-at-commit D2: "R100" is a pure move; a lower score changed bytes.
+    if (code.startsWith('R') && /^R\d+$/.test(code)) entry.renameScore = Number(code.slice(1));
+    statusByPath.set(targetPath, entry);
+    i += twoPaths ? 3 : 2;
   }
 
+  // "<added>\t<removed>\t<path>\0", or for a rename "<added>\t<removed>\t\0<old>\0<new>\0".
   const files: StagedFile[] = [];
-  for (const line of numstatResult.stdout.split('\n').filter(Boolean)) {
-    const fields = line.split('\t');
-    const added = fields[0]!;
-    const removed = fields[1]!;
-    const targetPath = fields.slice(2).join('\t');
-    files.push({
+  const numstatFields = numstatResult.stdout.split('\0');
+  for (let i = 0; i < numstatFields.length && numstatFields[i]; ) {
+    const [added, removed, inlinePath] = numstatFields[i]!.split('\t');
+    const targetPath = inlinePath ? inlinePath : numstatFields[i + 2]!;
+    i += inlinePath ? 1 : 3;
+    const entry = statusByPath.get(targetPath);
+    const file: StagedFile = {
       path: targetPath,
-      status: statusByPath.get(targetPath) ?? '?',
+      status: entry?.status ?? '?',
       addedLines: added === '-' ? null : Number(added),
       removedLines: removed === '-' ? null : Number(removed),
-    });
+    };
+    if (entry?.renameScore !== undefined) file.renameScore = entry.renameScore;
+    files.push(file);
   }
 
   await Promise.all(

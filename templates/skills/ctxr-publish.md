@@ -206,6 +206,11 @@ together.
 When the page changes, write a new dated send copy. Do not change or remove an earlier one. Why: an
 earlier file can be the one a recipient got, and the folder then shows what you sent on each date.
 
+The commit gate checks both rules in every store. It refuses a commit that adds a send copy with no
+date in its name. It also refuses a commit that changes a send copy that is already committed. Why: the
+skill alone cannot stop an overwrite, and the gate runs on every commit. To send again, write a new
+dated file. You can move or delete a send copy together with its page.
+
 Put a file that the page uses, but that you did not make, in the page's `assets/` folder. Why:
 `ctxr publish check` reads only the files at the folder root as the page's send copies.
 

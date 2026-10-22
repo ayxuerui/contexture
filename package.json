@@ -13,7 +13,7 @@
     "url": "https://github.com/ayxuerui/contexture/issues"
   },
   "engines": {
-    "node": ">=22.13"
+    "node": ">=26"
   },
   "bin": {
     "ctxr": "./dist/bin.js",
