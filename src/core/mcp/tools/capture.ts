@@ -22,16 +22,16 @@ export interface CaptureArgs {
   source_id?: string;
 }
 
+/** Plain on purpose, as `FIND_INPUT_SCHEMA` is: `parseCaptureArgs` enforces every limit. */
 export const CAPTURE_INPUT_SCHEMA = {
   type: 'object',
   properties: {
-    title: { type: 'string', description: 'A short title naming the item, e.g. "Pricing review call, 14 October".', maxLength: MAX_TITLE_CHARS },
+    title: { type: 'string', description: 'A short title naming the item, e.g. "Pricing review call, 14 October".' },
     body: { type: 'string', description: 'The material itself, in its own words, as markdown.' },
-    source_type: { type: 'string', description: 'Where it came from, lowercased: email, meeting, web, document, …', pattern: SOURCE_TYPE_RE.source },
+    source_type: { type: 'string', description: 'Where it came from, lowercased: email, meeting, web, document, …' },
     source_id: { type: 'string', description: "The source system's own id for the item (a message id, a meeting id, a URL), when there is one." },
   },
   required: ['title', 'body', 'source_type'],
-  additionalProperties: false,
 } as const;
 
 export function parseCaptureArgs(args: Record<string, unknown>): CaptureArgs {

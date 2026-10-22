@@ -56,14 +56,17 @@ export type FindResult =
   | { mode: 'match'; text: string; notes: NoteHit[]; notes_omitted: number; unfiled: UnfiledHit[]; unfiled_omitted: number }
   | { mode: 'map'; sections: { id: string; notes: { path: string; gloss: string; url: string | null }[] }[]; notes_omitted: number };
 
+/**
+ * Plain on purpose: type, description and required only. Some clients (Gemini) accept a narrow subset of JSON
+ * Schema and drop a tool whose schema uses more; every limit is enforced by `parseFindArgs` instead.
+ */
 export const FIND_INPUT_SCHEMA = {
   type: 'object',
   properties: {
-    text: { type: 'string', description: 'Literal text to look for, case-insensitive. Omit it to get the map of the store instead.', maxLength: MAX_TEXT_CHARS },
+    text: { type: 'string', description: 'Literal text to look for, case-insensitive. Omit it to get the map of the store instead.' },
     under: { type: 'string', description: 'Only look under this folder of the store, e.g. "projects/".' },
-    max: { type: 'integer', minimum: 1, maximum: MAX_RESULTS, description: `How many notes to return (default ${DEFAULT_MAX_MATCHES} when matching, ${DEFAULT_MAX_MAP_NOTES} for the map).` },
+    max: { type: 'integer', description: `How many notes to return (default ${DEFAULT_MAX_MATCHES} when matching, ${DEFAULT_MAX_MAP_NOTES} for the map).` },
   },
-  additionalProperties: false,
 } as const;
 
 export function parseFindArgs(args: Record<string, unknown>): FindArgs {
