@@ -220,17 +220,18 @@ const CirclebackSchema = z.object({
 
 /**
  * serve-the-store-over-mcp (remote-access spec): who may use the MCP surface
- * `ctxr serve` adds — `readers` reach `find` and `gather`, `capturers` reach
- * `capture`. Optional with no shipped default, like `change_approval`, whose
+ * `ctxr serve` adds — `readers` reach `find`, `gather`, `Read`, `Grep` and
+ * `Glob`, `capturers` reach `capture`, `editors` reach `Edit` and `Write`. Optional with no shipped default, like `change_approval`, whose
  * identity settings and forge credential it reuses (design.md D4).
  */
 const McpSchema = z
   .object({
     readers: z.array(PersonEntrySchema).optional(),
     capturers: z.array(PersonEntrySchema).optional(),
+    editors: z.array(PersonEntrySchema).optional(),
   })
-  .refine((value) => (value.readers?.length ?? 0) + (value.capturers?.length ?? 0) > 0, {
-    message: 'name at least one entry in readers or capturers',
+  .refine((value) => (value.readers?.length ?? 0) + (value.capturers?.length ?? 0) + (value.editors?.length ?? 0) > 0, {
+    message: 'name at least one entry in readers, capturers or editors',
   });
 
 /**

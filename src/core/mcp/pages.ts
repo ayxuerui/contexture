@@ -21,6 +21,7 @@ let cached: string | undefined;
 const SCOPE_TEXT: Readonly<Record<McpScope, string>> = {
   read: 'search and read the store’s notes',
   capture: 'save material into the store’s inbox, where it waits for approval before it lands',
+  edit: 'edit and create notes in a draft that lands only once someone approves it',
 };
 
 export async function renderConsentPage(storeName: string, view: ConsentPageView): Promise<string> {

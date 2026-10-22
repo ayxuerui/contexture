@@ -42,6 +42,11 @@ export interface ToolDefinition<TPrincipal> {
   scope: string;
   readOnly: boolean;
   run(args: Record<string, unknown>, principal: TPrincipal): Promise<unknown>;
+  /**
+   * The text a client model reads, when JSON is the wrong shape for it — the file tools answer
+   * in the plain text their Claude Code namesakes do. The structured result is sent alongside either way.
+   */
+  render?(data: unknown): string;
 }
 
 /** Raised by a tool for an expected refusal; becomes an `isError` result the client model can read, never a protocol error. */
@@ -96,9 +101,9 @@ export function negotiateProtocolVersion(requested: unknown): string {
     : SUPPORTED_PROTOCOL_VERSIONS[0];
 }
 
-function toolResult(data: unknown, isError: boolean): Record<string, unknown> {
+function toolResult(data: unknown, isError: boolean, render?: (data: unknown) => string): Record<string, unknown> {
   return {
-    content: [{ type: 'text', text: JSON.stringify(data, null, 2) }],
+    content: [{ type: 'text', text: render !== undefined && !isError ? render(data) : JSON.stringify(data, null, 2) }],
     structuredContent: data,
     isError,
   };
@@ -116,7 +121,7 @@ async function callTool<TPrincipal>(id: JsonRpcId, params: unknown, ctx: Dispatc
 
   try {
     await ctx.authorizeCall(tool);
-    return { jsonrpc: '2.0', id, result: toolResult(await tool.run(args, ctx.principal), false) };
+    return { jsonrpc: '2.0', id, result: toolResult(await tool.run(args, ctx.principal), false, tool.render) };
   } catch (err) {
     const refusal = err instanceof ToolRefusal ? err : ctx.refusalFor(err);
     if (refusal === undefined) throw err;

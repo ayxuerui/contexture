@@ -122,7 +122,7 @@ async function approvalStore(withMcp: boolean): Promise<ApprovalStore> {
 }
 
 describe('the MCP surface of ctxr serve (real CLI, fake forge, real signatures)', () => {
-  it('signs a member in through the verified identity and serves find and the capture stub', async () => {
+  it('signs a member in through the verified identity, serves find, and turns a capture into a session pull request', async () => {
     const store = await approvalStore(true);
     try {
       await store.advanceMain({ 'projects/kestrel.md': '# Kestrel\n\nThe Kestrel launch moved to March.\n' }, 'add kestrel');
@@ -141,6 +141,10 @@ describe('the MCP surface of ctxr serve (real CLI, fake forge, real signatures)'
         const tools = (await rpc(url, token, 'tools/list')).json.result as { tools: { name: string; annotations: { readOnlyHint: boolean } }[] };
         expect(tools.tools.map((t) => [t.name, t.annotations.readOnlyHint])).toEqual([
           ['find', true],
+          ['gather', true],
+          ['Read', true],
+          ['Grep', true],
+          ['Glob', true],
           ['capture', false],
         ]);
 
@@ -155,9 +159,22 @@ describe('the MCP surface of ctxr serve (real CLI, fake forge, real signatures)'
 
         const captured = (await rpc(url, token, 'tools/call', { name: 'capture', arguments: { title: 'Call', body: 'Notes as written.', source_type: 'meeting' } })).json.result as {
           isError: boolean;
-          structuredContent: { saved: boolean };
+          structuredContent: { saved: boolean; path: string; pull_request: { number: number }; approval_url: string };
         };
-        expect(captured).toMatchObject({ isError: false, structuredContent: { saved: false } });
+        expect(captured.isError).toBe(false);
+        expect(captured.structuredContent.saved).toBe(true);
+        expect(captured.structuredContent.path).toMatch(/^raw\/inbox\/\d{4}-\d{2}-\d{2}-call-[0-9a-f]{6}\.md$/);
+        expect(captured.structuredContent.approval_url).toMatch(new RegExp(`^${BASE}/approve/`));
+        const pulls = (await store.forge.read()).pulls;
+        expect(pulls).toHaveLength(1);
+        expect(pulls[0]).toMatchObject({ state: 'open', title: 'Capture: Call' });
+        // The capture's session is an ordinary session: the approval index lists it, the default branch is untouched.
+        const index = await http(new URL('/approve/', url).toString(), { headers: { [HEADER]: assertion('a@example.com') } });
+        expect(index.status).toBe(200);
+        expect(index.body).toContain(captured.structuredContent.approval_url.split('/approve/')[1]!);
+        const author = await store.git(['log', '-1', '--format=%ae', pulls[0]!.head], store.root);
+        expect(author).toBe('a@example.com');
+        expect(await store.git(['ls-remote', 'origin', 'refs/heads/main'])).toContain(await store.git(['rev-parse', 'origin/main']));
 
         const reader = await signIn(url, 'b@example.com');
         const refused = (await rpc(url, reader, 'tools/call', { name: 'capture', arguments: { title: 'x', body: 'y', source_type: 'email' } })).json.result as {

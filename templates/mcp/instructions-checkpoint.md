@@ -1,1 +1,0 @@
-This server is a checkpoint build: `gather` is not available yet, so answer from `find`'s matching lines and glosses and say the full notes could not be read; `capture` checks its input but saves nothing yet.

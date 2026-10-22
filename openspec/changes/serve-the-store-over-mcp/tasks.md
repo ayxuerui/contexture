@@ -30,16 +30,16 @@
 
 ## 6. `gather`
 
-- [ ] 6.1 Add `src/core/mcp/tools/gather.ts`: refuse seeds under the capture root (`mcp.capture_not_filed`), run the pass against the view's notes and graph, attach bodies to a prefix within the byte budget, clip and mark an oversized first note
-- [ ] 6.2 Add `templates/mcp/gather.md`
-- [ ] 6.3 Tests: body prefix and clip, the pass's order kept, capture seed refused, a note pushed to the remote returned after the next sync; green under `npx vitest run test/unit/mcp-gather.test.ts`
+- [x] 6.1 Add `src/core/mcp/tools/gather.ts`: refuse seeds under the capture root (`mcp.capture_not_filed`), run the pass against the view's notes and graph, attach bodies to a prefix within the byte budget, clip and mark an oversized first note
+- [x] 6.2 Add `templates/mcp/gather.md`
+- [x] 6.3 Tests: body prefix and clip, the pass's order kept, capture seed refused, a note pushed to the remote returned after the next sync; green under `npx vitest run test/unit/mcp-gather.test.ts`
 
 ## 7. `capture` through the approval page
 
-- [ ] 7.1 Add `createPull` to `ForgeClient` (`src/core/forge/github.ts`) and to the test fakes
-- [ ] 7.2 Replace the stub in `src/core/mcp/tools/capture.ts` per design.md D9: under a mutex, force a sync; source check over the view's identity records plus pending session inbox files; required-section precheck; a session worktree started as `ctxr session start` does with label `capture-<slug>`; the inbox file; a commit authored by the member's verified email with a `Captured-by:` trailer; a push through the forge credential's git token; a pull request opened with `createPull`; return the number, the address and the approval page address; a content-derived source id when none is given; resume a capture session that has no open pull request (push if missing, find an open pull request for its head before opening one); remove capture sessions whose pull request closed unmerged
-- [ ] 7.3 Remove the checkpoint notes from the instructions and the capture description
-- [ ] 7.4 Tests against a temporary bare remote and a fake forge: a capture yields a session worktree adding one inbox file, authored by the member, with an open pull request the approval index lists as awaiting, and an unchanged remote default branch; a duplicate source id (at the served commit, and on a pending session branch) and a missing required section are refused with nothing created; two simultaneous captures of one source produce one pull request; a push failure, a pull-request failure and a lost pull-request response each resume on retry into exactly one pull request; a capture whose pull request closed unmerged is removed and can be captured again; green under `npx vitest run test/unit/mcp-capture.test.ts`
+- [x] 7.1 Add `createPull` to `ForgeClient` (`src/core/forge/github.ts`) and to the test fakes
+- [x] 7.2 Replace the stub in `src/core/mcp/tools/capture.ts` per design.md D9: under a mutex, force a sync; source check over the view's identity records plus pending session inbox files; required-section precheck; a session worktree started as `ctxr session start` does with label `capture-<slug>`; the inbox file; a commit authored by the member's verified email with a `Captured-by:` trailer; a push through the forge credential's git token; a pull request opened with `createPull`; return the number, the address and the approval page address; a content-derived source id when none is given; resume a capture session that has no open pull request (push if missing, find an open pull request for its head before opening one); remove capture sessions whose pull request closed unmerged
+- [x] 7.3 Remove the checkpoint notes from the instructions and the capture description
+- [x] 7.4 Tests against a temporary bare remote and a fake forge: a capture yields a session worktree adding one inbox file, authored by the member, with an open pull request the approval index lists as awaiting, and an unchanged remote default branch; a duplicate source id (at the served commit, and on a pending session branch) and a missing required section are refused with nothing created; two simultaneous captures of one source produce one pull request; a push failure, a pull-request failure and a lost pull-request response each resume on retry into exactly one pull request; a capture whose pull request closed unmerged is removed and can be captured again; green under `npx vitest run test/unit/mcp-capture.test.ts`
 
 ## 8. Drafts and the file-shaped read tools
 

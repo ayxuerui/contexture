@@ -166,7 +166,7 @@ describe('mcp authorisation server', () => {
 
   it('publishes both metadata documents and challenges a request without a token', async () => {
     const prm = (await (await fetch(`${base}/.well-known/oauth-protected-resource/mcp`)).json()) as Record<string, unknown>;
-    expect(prm).toMatchObject({ resource: `${base}/mcp`, authorization_servers: [base], scopes_supported: ['read', 'capture'] });
+    expect(prm).toMatchObject({ resource: `${base}/mcp`, authorization_servers: [base], scopes_supported: ['read', 'capture', 'edit'] });
     const asm = (await (await fetch(`${base}/.well-known/oauth-authorization-server`)).json()) as Record<string, unknown>;
     expect(asm).toMatchObject({ issuer: base, code_challenge_methods_supported: ['S256'], grant_types_supported: ['authorization_code'] });
     const res = await listTools('');

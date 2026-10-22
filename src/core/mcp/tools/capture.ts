@@ -1,19 +1,43 @@
-import type { Store } from '../../store.js';
+import { randomBytes } from 'node:crypto';
+import { mkdir, writeFile } from 'node:fs/promises';
+import path from 'node:path';
+import { stringify as stringifyYaml } from 'yaml';
+import { contentHash } from '../../content/canonicalize.js';
+import { SOURCE_ID_FIELD, SOURCE_TYPE_FIELD } from '../../ingest/identity.js';
+import { evaluateSourceCheck, type IdentityRecord } from '../../ingest/model.js';
+import { missingRequiredSection } from '../../ingest/required-sections.js';
+import { listCaptures, listNotes } from '../../notes/list.js';
+import { parseNoteText } from '../../notes/parse.js';
+import { slugifySegment } from '../../slug.js';
 import { ToolRefusal } from '../jsonrpc.js';
+import {
+  approvalUrl,
+  commitAs,
+  publish,
+  pullStateFor,
+  removeSession,
+  repoPathOf,
+  sessionsLabelled,
+  startSession,
+  WriteRefusal,
+  type Session,
+  type WriteDeps,
+} from '../sessions.js';
+import type { McpView, SyncDeps } from '../sync.js';
 
 /**
- * remote-access spec, *`capture` writes one new capture onto a pushed
- * branch*. This is the checkpoint stub of tasks 3.5: the tool is listed as a
- * write tool (not read-only, reached only by the `capture` scope) and checks
- * its input exactly as the real one will, but writes nothing, so a real
- * client's handling of a write tool is exercised before the write path is
- * built (design.md, Revisions after critique, item 12). Task 6.1 replaces
- * `capture()` below.
+ * remote-access spec, *`capture` opens a session pull request and never
+ * writes the default branch* (design.md D9). One new inbox file, on its own
+ * session, pushed as the App, with a pull request the approval page lists. A
+ * capture is idempotent by source identity — derived from the content when
+ * the caller names none — so a call that failed after committing resumes into
+ * the same pull request instead of being refused as its own duplicate.
  */
 
 export const MAX_CAPTURE_BODY_BYTES = 256 * 1024;
 const MAX_TITLE_CHARS = 200;
 const SOURCE_TYPE_RE = /^[a-z0-9][a-z0-9._-]{0,63}$/;
+export const CAPTURE_LABEL_PREFIX = 'capture-';
 
 export interface CaptureArgs {
   title: string;
@@ -22,7 +46,7 @@ export interface CaptureArgs {
   source_id?: string;
 }
 
-/** Plain on purpose, as `FIND_INPUT_SCHEMA` is: `parseCaptureArgs` enforces every limit. */
+/** Plain on purpose (see FIND_INPUT_SCHEMA): `parseCaptureArgs` enforces every limit. */
 export const CAPTURE_INPUT_SCHEMA = {
   type: 'object',
   properties: {
@@ -54,16 +78,137 @@ export function parseCaptureArgs(args: Record<string, unknown>): CaptureArgs {
   };
 }
 
-export interface CaptureStubResult {
-  saved: false;
-  inbox_path: string;
+export interface CaptureResult {
+  saved: true;
+  resumed: boolean;
+  path: string;
+  source_id: string;
+  pull_request: { number: number; url: string };
+  approval_url: string;
   message: string;
 }
 
-export async function capture(store: Store, args: CaptureArgs): Promise<CaptureStubResult> {
+export interface CaptureContext {
+  view: McpView;
+  syncDeps: SyncDeps;
+  write: WriteDeps;
+}
+
+/** The capture file's text: frontmatter carrying the identity the inbox requires, then the material as given. */
+function captureText(args: CaptureArgs, sourceId: string): string {
+  const frontmatter = stringifyYaml({ title: args.title, [SOURCE_TYPE_FIELD]: args.source_type, [SOURCE_ID_FIELD]: sourceId }).trimEnd();
+  return `---\n${frontmatter}\n---\n\n${args.body.replace(/\s+$/, '')}\n`;
+}
+
+/** The inbox file a capture session's committed tip adds, as an identity record; null when it adds none. */
+async function sessionCapture(write: WriteDeps, session: Session, inbox: string): Promise<IdentityRecord | null> {
+  const base = `refs/remotes/origin/${write.config.git.default_branch}`;
+  const added = await write.git.run(['diff', '--name-only', '--diff-filter=A', '--no-renames', `${base}...HEAD`], { cwd: session.path, allowFailure: true });
+  const prefix = await repoPathOf(write, '');
+  for (const repoPath of added.stdout.split('\n').filter((p) => p.length > 0)) {
+    if (!repoPath.startsWith(prefix)) continue;
+    const rel = repoPath.slice(prefix.length);
+    if (!rel.startsWith(inbox) || !rel.endsWith('.md')) continue;
+    const shown = await write.git.run(['show', `HEAD:${repoPath}`], { cwd: session.path, allowFailure: true });
+    if (shown.exitCode !== 0) return null;
+    try {
+      return { path: rel, frontmatter: parseNoteText(shown.stdout, rel).frontmatter };
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
+function pullBody(email: string, args: CaptureArgs, sourceId: string, rel: string): string {
+  return [
+    `Captured through the store's MCP connector by ${email}.`,
+    '',
+    `- Source: ${args.source_type} (\`${sourceId}\`)`,
+    `- File: \`${rel}\``,
+    '',
+    'An inbox capture only: approving it lands the file in the inbox, where it waits to be filed into notes.',
+  ].join('\n');
+}
+
+function resultFor(write: WriteDeps, session: Session, pull: { number: number; url: string }, rel: string, sourceId: string, resumed: boolean): CaptureResult {
+  const approval = approvalUrl(write, session);
   return {
-    saved: false,
-    inbox_path: store.config.ingest.inbox_path,
-    message: `Checked "${args.title}" (${args.source_type}); this checkpoint build saves nothing yet. It would land under ${store.config.ingest.inbox_path}.`,
+    saved: true,
+    resumed,
+    path: rel,
+    source_id: sourceId,
+    pull_request: { number: pull.number, url: pull.url },
+    approval_url: approval,
+    message: `Saved for approval as pull request #${pull.number}. It lands in the inbox once someone approves it at ${approval}.`,
   };
+}
+
+/** Run under the write mutex (design.md D9). */
+export async function capture(ctx: CaptureContext, email: string, args: CaptureArgs): Promise<CaptureResult> {
+  // A sync forced now, so the duplicate check sees what was pushed and opened a moment ago.
+  await ctx.view.refresh(ctx.syncDeps);
+  const viewStore = (await ctx.view.read(ctx.syncDeps, async (snapshot) => ({ viewStore: snapshot.store }))).viewStore;
+  const config = viewStore.config;
+  const inbox = config.ingest.inbox_path;
+
+  const missing = missingRequiredSection(config, args.source_type, args.body);
+  if (missing !== undefined) {
+    throw new ToolRefusal('mcp.required_section_missing', `A ${args.source_type} capture must carry a "${missing}" section with something under it; this one does not.`, { section: missing });
+  }
+
+  // The hash is over the canonical body, which the frontmatter does not enter, so any id gives the same hash.
+  const hash = contentHash(captureText(args, 'pending'), 'capture');
+  const sourceId = args.source_id ?? `${args.source_type}/${hash}`;
+  const pullText = (rel: string) => ({ title: `Capture: ${args.title}`, body: pullBody(email, args, sourceId, rel) });
+
+  // Capture sessions on disk: reclaim the closed, resume the unpublished, count the open as pending.
+  const pending: IdentityRecord[] = [];
+  for (const session of await sessionsLabelled(ctx.write, CAPTURE_LABEL_PREFIX)) {
+    const state = await pullStateFor(ctx.write, session.branch);
+    if (state.kind === 'closed-unmerged') {
+      await removeSession(ctx.write, session);
+      continue;
+    }
+    if (state.kind === 'merged') continue;
+    const record = await sessionCapture(ctx.write, session, inbox);
+    if (record === null) continue;
+    if (state.kind === 'none' && record.frontmatter?.[SOURCE_ID_FIELD] === sourceId) {
+      const pull = await publish(ctx.write, session, pullText(record.path));
+      return resultFor(ctx.write, session, pull, record.path, sourceId, true);
+    }
+    if (state.kind === 'open') pending.push({ path: `${record.path} (pull request #${state.pull.number}, awaiting approval)`, frontmatter: record.frontmatter });
+  }
+
+  const records: IdentityRecord[] = [...(await listCaptures(viewStore.root, config)), ...(await listNotes(viewStore.root, config)), ...pending];
+  const verdict = evaluateSourceCheck(records, hash, sourceId, config.ingest.tracking_params);
+  if (verdict.verdict !== 'new') {
+    throw new ToolRefusal('mcp.already_captured', `This material is already in the store or awaiting approval (${verdict.verdict.replace(/_/g, ' ')}): ${verdict.matches.join(', ')}. Nothing was saved.`, {
+      verdict: verdict.verdict,
+      matches: verdict.matches,
+    });
+  }
+
+  const date = ctx.write.now().toISOString().slice(0, 10);
+  const slug = slugifySegment(args.title).slice(0, 40).replace(/-+$/, '') || 'capture';
+  const id = randomBytes(3).toString('hex');
+  const session = await startSession(ctx.write, `${CAPTURE_LABEL_PREFIX}${slug.slice(0, 30)}-${id}`);
+  const rel = `${inbox}${date}-${slug}-${id}.md`;
+  const repoPath = await repoPathOf(ctx.write, rel);
+  const absolute = path.join(session.path, repoPath);
+  await mkdir(path.dirname(absolute), { recursive: true });
+  await writeFile(absolute, captureText(args, sourceId));
+  try {
+    await commitAs(ctx.write, session, email, [repoPath], `Capture: ${args.title}`, 'Captured-by');
+  } catch (err) {
+    await removeSession(ctx.write, session);
+    throw err;
+  }
+  const pull = await publish(ctx.write, session, pullText(rel));
+  return resultFor(ctx.write, session, pull, rel, sourceId, false);
+}
+
+/** WriteRefusal → ToolRefusal, so the client reads the reason rather than a protocol error. */
+export function asToolRefusal(err: unknown): unknown {
+  return err instanceof WriteRefusal ? new ToolRefusal(err.code, err.message, err.details) : err;
 }

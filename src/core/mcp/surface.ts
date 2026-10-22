@@ -9,6 +9,7 @@ import { handleMcpRequest, MCP_PATH, sendText } from './http.js';
 import { ToolRefusal } from './jsonrpc.js';
 import { AuthorizationServer, OAUTH_PATHS, Signer, type Principal } from './oauth.js';
 import { renderConsentPage } from './pages.js';
+import { Mutex } from './sessions.js';
 import { McpView } from './sync.js';
 import { buildTools, serverInstructions } from './tools/index.js';
 
@@ -56,6 +57,7 @@ function describeMessage(body: unknown): string {
 export class McpSurface {
   private readonly view: McpView;
   private readonly spentCodes = new Map<string, number>();
+  private readonly mutex = new Mutex();
   private readonly signers = new Map<string, Signer>();
   private randomKey: Buffer | undefined;
 
@@ -118,9 +120,19 @@ export class McpSurface {
       return;
     }
 
+    const syncDeps = { config, credentials: approval.credentials, forge: approval.forge, env: this.options.env };
     const tools = buildTools({
       view: this.view,
-      deps: { config, credentials: approval.credentials, forge: approval.forge, env: this.options.env },
+      syncDeps,
+      write: {
+        ...syncDeps,
+        git: this.options.git,
+        canonicalRoot: this.options.canonicalRoot,
+        now: this.options.now,
+        recordingLogin: approval.approval.recording_login,
+        baseUrl: config.serve?.base_url ?? issuer,
+      },
+      mutex: this.mutex,
       baseUrl: config.serve?.base_url,
     });
     const instructions = serverInstructions(storeName);
