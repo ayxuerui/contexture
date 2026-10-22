@@ -570,6 +570,31 @@ describe('renderStoreConfig (config-defaults-as-the-convention)', () => {
     const config = await resolved(`${minimalConfig()}session: { branch_prefix: work/ }\n`);
     expect(await resolved(renderStoreConfig(config))).toEqual(config);
   });
+
+  /**
+   * circleback-sweep: the opt-in block that ships the `ctxr-circleback` skill.
+   * Optional with no shipped default, like `serve`, and its own optional keys
+   * stay absent, so a rewritten config never gains a key the store did not write.
+   */
+  it('writes no circleback block for a store that declares none', async () => {
+    const config = await resolved(minimalConfig());
+    expect(config.circleback).toBeUndefined();
+    expect(renderStoreConfig(config)).not.toContain('circleback');
+  });
+
+  it('writes a declared circleback block as given, adding no key it left out', async () => {
+    const config = await resolved(`${minimalConfig()}circleback: { tag: pkm }\n`);
+    expect(config.circleback).toEqual({ tag: 'pkm' });
+    const rendered = renderStoreConfig(config);
+    expect(rendered).toContain('tag: pkm');
+    expect(rendered).not.toContain('other_tags');
+    expect(rendered).not.toContain('decline_tag');
+    expect(await resolved(rendered)).toEqual(config);
+  });
+
+  it('refuses a circleback block with no tag', async () => {
+    await expect(resolved(`${minimalConfig()}circleback: { other_tags: [readyrun] }\n`)).rejects.toThrow(/circleback/);
+  });
 });
 
 describe('adapters', () => {

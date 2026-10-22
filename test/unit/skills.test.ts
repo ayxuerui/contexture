@@ -8,7 +8,9 @@ import { describe, expect, it } from 'vitest';
 import { DEFAULT_VENDORED_SKILLS, SHIPPED_DEFAULTS } from '../../src/config/defaults.js';
 import type { StoreConfig } from '../../src/config/schema.js';
 import {
+  activeSkillSeeds,
   MANAGED_SKILL_HEADER,
+  OPTIONAL_SKILLS,
   skillPaths,
   SKILLS,
   renderSkills,
@@ -53,6 +55,8 @@ function makeConfig(overrides: Partial<StoreConfig> = {}): StoreConfig {
     organize: { archive_destination: 'archive/', rollup_stale_days: 7 },
     harness: { skills_path: 'skills/', guidance_path: 'guidance/', convention_max_bytes: 32768 },
     adapters: [],
+    // circleback-sweep: opted in, so every content guard below also covers the opt-in skill.
+    circleback: { tag: 'alpha-store', other_tags: ['beta-store'] },
     ...overrides,
   };
 }
@@ -664,6 +668,9 @@ describe('syncShippedSkills', () => {
           'skills/ctxr-submit/SKILL.md',
           'skills/ctxr-land/SKILL.md',
           'skills/ctxr-derived-artifacts/SKILL.md',
+          // circleback-sweep: the skill names the branch, and so does the settings file its runner reads.
+          'skills/ctxr-circleback/SKILL.md',
+          'skills/ctxr-circleback/settings.json',
         ].sort(),
       );
     } finally {
@@ -1165,5 +1172,77 @@ describe('research-and-capture-identity: the research skill and capture identity
     expect(capture).toMatch(/`manual\/<sha1>`/);
     expect(capture).toMatch(/refuses one that does not begin with its source type/);
     expect(capture).toMatch(/A slide deck is read as images/);
+  });
+});
+
+/**
+ * circleback-sweep (harness-portability spec): the first opt-in owned skill.
+ * The base config above opts in; these tests also render without the block.
+ */
+const TEMPLATES_SKILLS = fileURLToPath(new URL('../../templates/skills', import.meta.url));
+
+describe('ctxr-circleback: an owned skill a store opts into', () => {
+  const without = (): StoreConfig => {
+    const config = makeConfig();
+    delete config.circleback;
+    return config;
+  };
+
+  it('is not part of the full set, and is shipped only when the circleback block is present', () => {
+    expect(SKILLS.some((s) => s.file === 'ctxr-circleback')).toBe(false);
+    expect(OPTIONAL_SKILLS.map((s) => s.file)).toEqual(['ctxr-circleback']);
+    expect(activeSkillSeeds(without()).map((s) => s.file)).toEqual(SKILLS.map((s) => s.file));
+    expect(renderSkills(without()).some((s) => s.file === 'ctxr-circleback')).toBe(false);
+    expect(renderSkills(makeConfig()).some((s) => s.file === 'ctxr-circleback')).toBe(true);
+    expect(skillPaths(without()).some((p) => p.includes('ctxr-circleback'))).toBe(false);
+  });
+
+  it('ships its runner verbatim and renders the routing settings the runner reads', () => {
+    const skill = renderSkills(
+      makeConfig({
+        circleback: { tag: 'alpha-store', other_tags: ['beta-store'] },
+        ingest: { inbox_path: 'raw/inbox/', capture_root: 'raw/', tracking_params: [], required_capture_sections: { circleback: 'Transcript' } },
+      }),
+    ).find((s) => s.file === 'ctxr-circleback');
+    expect([...(skill?.supportingFiles.keys() ?? [])].sort()).toEqual(['settings.json', 'sweep.mjs']);
+    expect(skill?.supportingFiles.get('sweep.mjs')).toBe(readFileSync(path.join(TEMPLATES_SKILLS, 'ctxr-circleback', 'sweep.mjs'), 'utf8'));
+    expect(JSON.parse(skill?.supportingFiles.get('settings.json') ?? '{}')).toEqual({
+      tag: 'alpha-store',
+      other_tags: ['beta-store'],
+      decline_tag: 'no-capture',
+      inbox_path: 'raw/inbox/',
+      default_branch: 'trunk',
+      required_section: 'Transcript',
+    });
+  });
+
+  it('names its runner under the configured skills path, and the inbox and branch from config', () => {
+    const body = rendered()['ctxr-circleback'];
+    expect(body).toContain('node skills/ctxr-circleback/sweep.mjs');
+    expect(body).toContain('`raw/inbox/`');
+    expect(body).toContain('against `trunk`');
+    expect(body).toMatch(/Never edit the transcript/);
+    expect(body).toMatch(/Never merge the pull request and never ingest here/);
+  });
+
+  it('runner uses the Node standard library only', () => {
+    const runner = readFileSync(path.join(TEMPLATES_SKILLS, 'ctxr-circleback', 'sweep.mjs'), 'utf8');
+    const imports = [...runner.matchAll(/^import .* from '([^']+)';$/gm)].map((m) => m[1]);
+    expect(imports.length).toBeGreaterThan(0);
+    for (const specifier of imports) expect(specifier, specifier).toMatch(/^node:/);
+  });
+
+  it('is written when a store opts in and removed by the next sync when it opts out', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const written = await syncShippedSkills(tmp.root, makeConfig());
+      expect(written).toEqual(expect.arrayContaining(['skills/ctxr-circleback/SKILL.md', 'skills/ctxr-circleback/settings.json', 'skills/ctxr-circleback/sweep.mjs']));
+      const removed = await syncShippedSkills(tmp.root, without());
+      expect(removed).toEqual(['skills/ctxr-circleback/SKILL.md']);
+      await expect(readFile(path.join(tmp.root, 'skills/ctxr-circleback/sweep.mjs'), 'utf8')).rejects.toThrow();
+      expect(await syncShippedSkills(tmp.root, without())).toEqual([]);
+    } finally {
+      await tmp.cleanup();
+    }
   });
 });

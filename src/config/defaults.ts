@@ -85,6 +85,9 @@ export const DEFAULT_SCRATCH_PATH = '/tmp/';
 /** standardize-store-operating-guidance D5: the append-only store log at the store root. */
 export const DEFAULT_LOG_PATH = 'log.md';
 
+/** circleback-sweep: the Circleback tag meaning "no store captures this", when `circleback.decline_tag` is absent. */
+export const DEFAULT_CIRCLEBACK_DECLINE_TAG = 'no-capture';
+
 /** a-dated-mission-core D3: the inlined mission core's size budget, enforced by `ctxr doctor`. */
 export const DEFAULT_MISSION_MAX_BYTES = 2048;
 

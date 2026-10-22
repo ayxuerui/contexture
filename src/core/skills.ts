@@ -3,7 +3,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { mkdir, readdir, readFile, rm } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { DEFAULT_HOUSE_CONVENTIONS_FILE_NAME, DEFAULT_LOG_PATH, DEFAULT_MISSION_MAX_BYTES, DEFAULT_SCRATCH_PATH, RELATION_DIRECTEDNESS_NOTE, RELATION_VOCABULARY } from '../config/defaults.js';
+import { DEFAULT_CIRCLEBACK_DECLINE_TAG, DEFAULT_HOUSE_CONVENTIONS_FILE_NAME, DEFAULT_LOG_PATH, DEFAULT_MISSION_MAX_BYTES, DEFAULT_SCRATCH_PATH, RELATION_DIRECTEDNESS_NOTE, RELATION_VOCABULARY } from '../config/defaults.js';
 import type { StoreConfig, TaxonomyLayerConfig } from '../config/schema.js';
 import type { Finding } from './envelope.js';
 import { scanDocsDir, SKILL_FILE_NAME, type ScannedDoc } from './conventions.js';
@@ -82,8 +82,20 @@ export interface SkillSeed {
   description: string;
   /** The markdown body below the H1, one entry per line, rendered against the store's config. */
   body: (config: StoreConfig) => string[];
-  /** Packaged files beside SKILL.md, verbatim. Absent for a skill that is one file. */
-  supportingFiles?: () => ReadonlyMap<string, string>;
+  /**
+   * Packaged files beside SKILL.md. Absent for a skill that is one file.
+   * circleback-sweep: given the store's config, so a skill whose runner cannot
+   * read `contexture.yaml` itself (it uses the Node standard library only, which
+   * parses no YAML) can ship the settings it needs as a rendered file.
+   */
+  supportingFiles?: (config: StoreConfig) => ReadonlyMap<string, string>;
+  /**
+   * circleback-sweep: present only on an opt-in skill, which is written when
+   * this returns true for the store's config. When it turns false, the skill
+   * is no longer shipped to that store and `ctxr update` removes its managed
+   * directory like any skill the package stopped shipping.
+   */
+  enabled?: (config: StoreConfig) => boolean;
 }
 
 export const MANAGED_SKILL_HEADER =
@@ -375,6 +387,57 @@ const RESEARCH: SkillSeed = {
       .split('\n'),
 };
 
+/**
+ * circleback-sweep: the first opt-in owned skill, and the first that names a
+ * capture source. It exists only in a store that declares a `circleback`
+ * block, so the generic capture skill stays source-neutral. Named for the
+ * source rather than a command: there is no `ctxr circleback`. Its runner
+ * drives Circleback's own CLI, which holds its own credential; nothing here
+ * reads or stores one. `settings.json` is rendered because the runner, being
+ * stdlib-only, cannot parse `contexture.yaml`.
+ */
+const CIRCLEBACK: SkillSeed = {
+  file: 'ctxr-circleback',
+  name: 'Circleback',
+  description:
+    "Find the Circleback meetings this store's tag says it owes, render their captures into the inbox on a review branch, add the speaker judgment, and open the pull request.",
+  body: (config) =>
+    skillTemplate('ctxr-circleback')
+      .replaceAll('__SKILLS_PATH__', config.harness.skills_path.replace(/\/+$/, ''))
+      .replaceAll('__INBOX_PATH__', config.ingest.inbox_path)
+      .replaceAll('__DEFAULT_BRANCH__', config.git.default_branch)
+      .split('\n'),
+  supportingFiles: (config) => {
+    const files = new Map(skillSupportingFiles('ctxr-circleback'));
+    files.set('settings.json', circlebackSettings(config));
+    return files;
+  },
+  enabled: (config) => config.circleback !== undefined,
+};
+
+/** The store's Circleback routing, as the runner reads it. Only called for a store that declares the block. */
+function circlebackSettings(config: StoreConfig): string {
+  const circleback = config.circleback;
+  if (circleback === undefined) throw new Error('circleback settings rendered for a store without a circleback block');
+  const settings = {
+    tag: circleback.tag,
+    other_tags: circleback.other_tags ?? [],
+    decline_tag: circleback.decline_tag ?? DEFAULT_CIRCLEBACK_DECLINE_TAG,
+    inbox_path: config.ingest.inbox_path,
+    default_branch: config.git.default_branch,
+    required_section: config.ingest.required_capture_sections?.circleback ?? null,
+  };
+  return `${JSON.stringify(settings, null, 2)}\n`;
+}
+
+/** Owned skills a store gets only by opting in; each carries `enabled`. */
+export const OPTIONAL_SKILLS: readonly SkillSeed[] = [CIRCLEBACK];
+
+/** Every owned skill this store is shipped: the full set plus the opt-in ones its config enables. */
+export function activeSkillSeeds(config: StoreConfig): SkillSeed[] {
+  return [...SKILLS, ...OPTIONAL_SKILLS.filter((seed) => seed.enabled?.(config) === true)];
+}
+
 export const SKILLS: readonly SkillSeed[] = [
   CAPTURE,
   INGEST_ORCHESTRATION,
@@ -397,7 +460,7 @@ export const SKILLS: readonly SkillSeed[] = [
 
 /** The owned skills, rendered against one store's configuration — what `syncShippedSkills` writes. */
 export function renderSkills(config: StoreConfig): Skill[] {
-  return renderSkillSeeds(SKILLS, config);
+  return renderSkillSeeds(activeSkillSeeds(config), config);
 }
 
 function renderSkillSeeds(seeds: readonly SkillSeed[], config: StoreConfig): Skill[] {
@@ -406,7 +469,7 @@ function renderSkillSeeds(seeds: readonly SkillSeed[], config: StoreConfig): Ski
     name: seed.name,
     description: seed.description,
     content: skillDocument(seed, config),
-    supportingFiles: seed.supportingFiles?.() ?? new Map<string, string>(),
+    supportingFiles: seed.supportingFiles?.(config) ?? new Map<string, string>(),
   }));
 }
 
@@ -445,7 +508,7 @@ export function skillPaths(config: StoreConfig): string[] {
  * pruned. Returns every path it wrote or removed.
  */
 export async function syncShippedSkills(root: string, config: StoreConfig): Promise<string[]> {
-  return syncSkillSeeds(root, config, SKILLS);
+  return syncSkillSeeds(root, config, activeSkillSeeds(config));
 }
 
 export async function syncSkillSeeds(root: string, config: StoreConfig, seeds: readonly SkillSeed[]): Promise<string[]> {
@@ -515,7 +578,7 @@ export async function syncSkillSeeds(root: string, config: StoreConfig, seeds: r
  * not carry is left out here; reporting it is `syncVendoredSkills`' job.
  * Paths are store-relative and posix, the spelling `skillPaths` and git use.
  */
-export async function shippedSkillFiles(config: StoreConfig, seeds: readonly SkillSeed[] = SKILLS): Promise<Map<string, string>> {
+export async function shippedSkillFiles(config: StoreConfig, seeds: readonly SkillSeed[] = activeSkillSeeds(config)): Promise<Map<string, string>> {
   const shipped = new Map<string, string>();
   const at = (...parts: string[]): string => path.join(config.harness.skills_path, ...parts).split(path.sep).join('/');
 
