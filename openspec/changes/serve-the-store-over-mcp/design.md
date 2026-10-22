@@ -60,6 +60,12 @@ retrieval pass, and an inbox write onto a session branch.
 **What would flip it:** evidence from the checkpoint that engineers want the store from chat apps, or that client
 models cannot drive selectors well. Either reopens (1) as a separate change.
 
+**Revisited after the checkpoint** (D12, D13). The operator wants the file shapes too, and the approval page now
+makes an edit as safe as a capture. So (1) is adopted without what made it heavy: the tools are file-shaped (read,
+search, list, edit, write), computed by `serve` against its own checkouts, with no shell and no sandbox. The
+non-engineer tools stay, because "find, gather, capture" is still the right vocabulary for someone who never
+opened a terminal.
+
 ### D2. A hand-rolled MCP subset on `node:http`, not the SDK
 
 The server implements:
@@ -106,7 +112,18 @@ from a client. The read checkout is separate from the one `land` writes (D6). Th
 sees the key", is what a reviewer should hold the code to. It is the same boundary the approval routes already
 have.
 
-**The agents container is excluded outright.** It holds model keys and a shell, and the App key must never reach it.
+**The agents container is excluded outright.** The operator asked directly whether the surface should run there.
+
+The case for it: that container already has a checkout, git, and a `GH_TOKEN` that opens session pull requests,
+so `capture` and `edit` could open them exactly as an agent does, and `serve` would stay a smaller process.
+
+It loses on the boundary the deployment was built around. The MCP surface is the one public endpoint the access
+proxy does not front. Inside `agents`, a bug in it would sit beside model keys, a shell, and a token broad enough
+to push anywhere. The deployment keeps the App key out of `agents` precisely so an agent cannot approve its own
+change, and an internet-facing endpoint there would undo that kind of separation.
+
+What would flip it: wanting members to drive the agents themselves through MCP. That is a different feature,
+which would be argued as such.
 
 **What would flip it:** members outside the access proxy's organisation, or a need for MCP while
 `change_approval` is off. Either brings back a separate service with its own sign-in.
@@ -124,8 +141,9 @@ block:
 
 ```yaml
 mcp:
-  readers: ["@ctx-a.example"]      # find, gather
+  readers: ["@ctx-a.example"]      # find, gather, read, search, list
   capturers: ["a@ctx-a.example"]   # capture
+  editors: ["a@ctx-a.example"]     # edit, write
 ```
 
 Entries take the same form as `change_approval.deciders`: an exact email, or `@domain`. A person on neither list
@@ -342,6 +360,121 @@ The tool descriptions carry the capture skill's rules in short form:
 Each MCP request writes one line to `serve`'s stderr: the member's email, the method, and for a tool call, the tool
 name. Arguments and results are never logged, since they are store content.
 
+### D12. `Read`, `Grep` and `Glob`, with Claude Code's own parameters, the latter two run by ripgrep
+
+Models are trained on Read, Grep and Glob, and use them more reliably than any vocabulary designed for one server.
+At the operator's direction, the `read` scope reaches three tools carrying exactly those names and parameters, run
+against the view at the commit being served (D6).
+
+**Paths.** A `file_path` or `path` is store-relative. A leading `/` names the store root. A path that leaves the
+store root, or names something hidden from these tools, is refused. Hidden means the store's retrieval exclusions
+except the capture tier, the derived paths, configuration, skills and `.git`.
+
+**`Read(file_path, offset?, limit?)`** returns the file in Claude Code's own shape: `cat -n` numbering from 1,
+2,000 lines by default, and lines over 2,000 characters truncated. It answers for:
+- a note the note enumeration admits;
+- a file under the capture root, marked as an unfiled capture;
+- the entry document.
+
+When the calling member has an open draft (D13) whose committed tip changes or adds the file, the draft's committed
+version is returned and marked as the draft. It is read with `git show <branch>:<path>`, so a draft mid-edit is
+never seen half-done.
+
+**`Grep(pattern, path?, glob?, type?, output_mode?, -i?, -n?, -A?, -B?, -C?, multiline?, head_limit?, offset?)`**
+passes each parameter to the ripgrep flag Claude Code's own Grep maps it to: `--glob`, `--type`, `-l` / `-c` for
+the output modes, `-i`, `-n`, `-A` / `-B` / `-C`, and `-U --multiline-dotall`. The call is built as an argument
+vector with `--` before the pattern, run in the view with `--sort path`, never through a shell, and gets five seconds
+and a bounded output.
+
+Ripgrep's engine runs in time linear in its input, so a pathological pattern cannot hang the server. That removes
+the worker thread the first version of this decision needed; the pragmatist critic of round six called it more
+machinery than the guard deserved.
+
+**Hidden paths are passed as `--glob '!…'` exclusions,** so ripgrep never reads them. Ripgrep's own skipping of
+ignored and hidden files keeps out the derived cache and the dot-directories.
+
+**Captures awaiting approval are listed too.** Inbox files on session branches with an open pull request (D7) are
+matched with the same pattern and listed after ripgrep's output, under a heading marking them as awaiting approval.
+A model that reaches for `Grep` rather than `find` still sees the duplicate `find` exists to reveal; round six's
+pragmatist found that gap.
+
+**`Glob(pattern, path?)`** lists matching files with `rg --files --glob`, under the same exclusions, sorted by path.
+Claude Code sorts Glob results by modification time; here they are sorted by path, because no retrieval output may
+depend on the wall clock (context-retrieval).
+
+**Spawning a second tool.** The single-source guard allows each external tool exactly one spawning module, so
+ripgrep has one: `core/mcp/ripgrep.ts`. The operator suggested handing the parameters straight to the shell tool;
+an argument vector achieves that without a shell.
+
+**`find` and `gather` stay.** `find` carries glosses, note links and the unfiled-capture rule, and is the tool the
+server's instructions point to for a question. `Grep` is for an exact pattern.
+
+The case for keeping only `find` and `gather`: fewer tools, and every result comes with its evidence. It loses to
+the operator's call, and to the evidence that models drive their trained shapes best. The overlap is managed by the
+two tools' descriptions, not by removing either.
+
+### D13. `Edit` and `Write` collect in one draft session per member
+
+A member on `editors` can call, with Claude Code's parameters:
+- **`Edit(file_path, old_string, new_string, replace_all?)`:**
+  - `old_string` must occur exactly once unless `replace_all` is set;
+  - it must differ from `new_string`.
+- **`Write(file_path, content)`.**
+
+**What a member may change: "editable".** A path is editable when the note enumeration of the view would admit it,
+it is markdown, and it is outside the capture tier. Configuration, the entry document, skills, the catalog and
+derived files are therefore never editable.
+- **`Edit`** targets an editable path that exists at the served commit or in the member's draft.
+- **`Write`** creates an editable path that exists in neither. It never overwrites.
+
+A note the member's own draft added is editable and readable by that member. Write-then-fix is the commonest loop a
+model runs; round six's architect noted it would otherwise be refused.
+
+**The draft:**
+- **Every call lands in the member's draft,** a session worktree labelled `mcp-draft-<email slug>`, found by the
+  draft locator that `Read` also uses.
+- **The first call starts it** from the default branch, as `ctxr session start` does.
+- **Each call is one commit,** authored by the member's verified email with an `Edited-by:` trailer.
+- **The catalog follows each change.** The commit includes the store's catalog rebuilt in the draft, as an agent's
+  session would, so a new note arrives with the catalog entry the store's checks expect, and the decider can amend
+  its gloss.
+- **A rejected commit changes nothing.** If the result does not parse as a note, or the store's hooks refuse the
+  commit, the draft worktree is restored to its tip and the refusal returns the hook's output.
+- **Publishing:** the branch is pushed with the forge credential's git token, and a pull request titled
+  `Edits by <email>` is opened when none is open. Later calls update that pull request. An edit pushed after an
+  approval makes it `needs-reapproval`, as with any session.
+
+**A failure partway resumes rather than strands.** Before applying a call, the draft publishes anything left
+unpublished, pushing commits the remote lacks and opening a missing pull request (looked up by head first). A
+retried call whose effect is already in the draft is answered with the existing result and no second commit:
+- an `Edit` whose `old_string` is gone and whose `new_string` is present;
+- a `Write` whose file already holds exactly that content.
+
+Round six's skeptic raised this; it is the same recovery the capture path has (D9).
+
+**Lifecycle:**
+- **Changes requested:** the draft keeps accepting calls, which is how a member answers the review.
+- **Merged:** `land` removes the worktree, and the next call starts a new draft.
+- **Closed without merging:** the worktree and local branch are removed before the next call, as for captures
+  (D9).
+
+Edits and captures share one mutex.
+
+**Captures stay their own pull requests rather than joining the draft.** An inbox-only change is reviewed in
+seconds, and a draft can sit open for days collecting edits. Mixing them would make every capture wait for the
+slowest edit.
+
+The case for the earlier non-goal (no edits to existing notes), at its strongest: a whole-file edit by an author
+who is not an engineer, with no base revision, races other changes and leaves a reviewer to untangle conflicts.
+It loses now for three reasons:
+- **The edit is a string replacement, not a whole-file write,** so it carries its own base: `old_string` must still
+  be there.
+- **A conflict at landing is `land`'s existing rebase-and-resolver path,** blocked visibly on the approval page if it
+  cannot resolve.
+- **Nothing reaches the default branch without a decider's approval.**
+
+Deleting, moving and renaming stay out (proposal, Non-goals).
+
 ## Risks / Trade-offs
 
 - **[The access proxy is misconfigured]** → If `/mcp` is still behind the proxy, clients cannot connect, which is
@@ -357,6 +490,11 @@ name. Arguments and results are never logged, since they are store content.
   changes on the index. An inbox-only auto-landing rule is the recorded follow-up (D9).
 - **[Prompt injection carried in by captured material]** → Captures never enter `gather` and are labelled unfiled
   in `find`. Every capture is read by a decider before it lands.
+- **[An editor's draft sits open, and the default branch moves under it]** → `land` rebases at landing and blocks
+  visibly on the approval page when it cannot. Edits apply to the draft's own copy, so `old_string` is checked
+  against what the member is actually editing.
+- **[A pathological regular expression]** → Ripgrep's engine runs in linear time, and each call also gets a
+  five-second limit and a bounded output.
 - **[Vendor client quirks]** (protocol version, OAuth details, write actions still in beta on ChatGPT) → Tasks
   group 5 is a checkpoint with `find` and a stub `capture`, before `gather` and the write path are built.
 - **[`find` scans the whole view on every call]** → Notes are listed once per view commit. A linear scan is fine
@@ -397,6 +535,18 @@ A fifth round critiqued this revision. The pragmatist approved, and there was no
    index and working tree, not its shared remote-tracking refs (architect). See D6.
 10. **A capture that fails partway resumes,** keyed by its source identity, which is derived from the content when
     none is given (skeptic). See D9.
+
+A sixth round critiqued the file-shaped tools and the draft edits. There was no veto, and the operator directed
+Claude Code's exact tool names and parameters, with ripgrep doing the matching. Folded in:
+
+11. **`Grep` also lists captures awaiting approval** (pragmatist). See D12.
+12. **Ripgrep replaces the worker-thread regex runner** (pragmatist, and the operator's suggestion). See D12.
+13. **Draft calls resume after a partial failure, and are idempotent on retry** (skeptic). See D13.
+14. **A note the member's draft added is editable and readable by that member, a hook refusal restores the draft,
+    and draft reads come from the committed tip** (architect). See D12 and D13.
+15. **The draft locator is built before the tools that use it** (architect). See tasks group 8.
+16. **claude.ai is the client that gated group 7.** ChatGPT is deferred to the final verification, 11.1
+    (architect).
 
 Rebasing onto 0.27.0 removed that version's premises: core now has a forge client, `serve` verifies the access
 proxy's identity, and `serve` lands what is approved. So the surface moved into `serve` (D3), sign-in moved to the

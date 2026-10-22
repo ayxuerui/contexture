@@ -20,9 +20,10 @@ server.
 
 - **`ctxr serve` serves MCP when the store declares an `mcp` block.** It speaks the Streamable HTTP transport at
   `/mcp`, beside the browsing and approval routes, on the same port and hostname. The block names which verified
-  people may read and which may capture. It requires `change_approval`, whose identity settings and forge
+  people may read, which may capture, and which may edit. It requires `change_approval`, whose identity settings and forge
   credential it reuses. Without the block, every MCP path answers `404`.
-- **Three tools, none of which call a model.** All judgement stays in the client's own model.
+- **Tools none of which call a model.** All judgement stays in the client's own model. Three are shaped for
+  people who are not engineers:
   - `find` does literal, case-insensitive content matching over notes, standing in for the agent's grep. Results
     come in path order, with no score. Captures, including those waiting for approval, come back in a separate
     `unfiled` field. Called with no text, `find` returns the catalog as a map of the store.
@@ -32,6 +33,19 @@ server.
     member, pushes the branch as the App and opens a pull request. The change then appears on the approval page
     like any other session, and lands when a decider approves it. Before writing, it runs the source check, which
     counts captures still waiting for approval, and the store's required-section rule.
+
+  Five carry exactly the names and parameters of Claude Code's own file tools (design.md D12, D13):
+  - `Read` returns a file by path, numbered like `cat -n`, with an optional offset and limit. If the member has a
+    pending draft that changed the file, it returns the draft's version, marked as the draft.
+  - `Grep` runs ripgrep over the served commit with Claude Code's Grep parameters. It is path-ordered with no
+    score, and also lists captures awaiting approval.
+  - `Glob` lists matching files through ripgrep, in path order.
+  - `Edit` makes an exact-string replacement in a note.
+  - `Write` creates a new note.
+
+  `Edit` and `Write` collect in one draft session per member: a session worktree whose pull request is opened on
+  the first change and updated on each one after. The approval page reviews it, and `land` lands it, exactly as it
+  does any session.
 - **Sign-in goes through the same identity as the approval page.** `serve` is an OAuth 2.1 authorisation server for
   its own `/mcp`:
   - Registration is dynamic and stores nothing.
@@ -52,10 +66,12 @@ server.
 
 ## Non-goals
 
-- **Remote file and shell tools** (`bash` and editor tools in a sandbox). Engineers have local clones. A sandbox
-  per session would be the heaviest thing a store's operator could be asked to run.
-- **`propose_edit`, or any edit to an existing note.** A whole-file edit needs a base revision and a review
-  experience designed for authors who are not engineers. This change writes new captures only.
+- **A shell, or a sandbox per session.** The file-shaped tools are computed by `serve` against its own checkouts;
+  nothing runs a member's commands. A `bash` tool would make the server an execution environment for anyone with a
+  token, and a sandbox per session would be the heaviest thing a store's operator could be asked to run.
+- **Deleting, moving or renaming notes, and editing anything that is not a note.** Configuration, the entry
+  document, skills, the capture tier and derived files stay out of reach of `edit` and `write`. Restructuring
+  stays with Hermes or an engineer.
 - **Captures that land without a decision.** Every capture goes through the approval page. An inbox-only
   auto-landing rule inside `land` is a separate change (design.md D9).
 - **Curation over MCP** (jobs, polling). Curation stays with Hermes or an engineer working interactively.

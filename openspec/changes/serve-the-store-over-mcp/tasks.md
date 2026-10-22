@@ -26,7 +26,7 @@
 
 ## 5. Checkpoint: real clients (operator)
 
-- [ ] 5.1 On a store with `change_approval` (pkm): declare `mcp`, exempt `/mcp`, `/token`, `/register` and the `/.well-known/` documents from the access proxy while keeping `/authorize` behind it, add the connector in claude.ai and in ChatGPT developer mode, sign in, and confirm in `serve`'s log that each client completed `tools/list`, one `find` and one call of the stub `capture`. A failure in the transport reopens design.md D2; a failure in sign-in reopens D4; a client that refuses or gates the write tool is decided on before group 7
+- [x] 5.1 (claude.ai passed; ChatGPT deferred to 11.1; Gemini signed in but called no tool, design.md Checkpoint results) On a store with `change_approval` (pkm): declare `mcp`, exempt `/mcp`, `/token`, `/register` and the `/.well-known/` documents from the access proxy while keeping `/authorize` behind it, add the connector in claude.ai and in ChatGPT developer mode, sign in, and confirm in `serve`'s log that each client completed `tools/list`, one `find` and one call of the stub `capture`. A failure in the transport reopens design.md D2; a failure in sign-in reopens D4; a client that refuses or gates the write tool is decided on before group 7
 
 ## 6. `gather`
 
@@ -41,11 +41,26 @@
 - [ ] 7.3 Remove the checkpoint notes from the instructions and the capture description
 - [ ] 7.4 Tests against a temporary bare remote and a fake forge: a capture yields a session worktree adding one inbox file, authored by the member, with an open pull request the approval index lists as awaiting, and an unchanged remote default branch; a duplicate source id (at the served commit, and on a pending session branch) and a missing required section are refused with nothing created; two simultaneous captures of one source produce one pull request; a push failure, a pull-request failure and a lost pull-request response each resume on retry into exactly one pull request; a capture whose pull request closed unmerged is removed and can be captured again; green under `npx vitest run test/unit/mcp-capture.test.ts`
 
-## 8. Documentation and full suite
+## 8. Drafts and the file-shaped read tools
 
-- [ ] 8.1 README section: the `mcp` block and its dependence on `change_approval`; the exact paths to exempt from the access proxy and the one (`/authorize`) to keep behind it; adding the connector in Claude and ChatGPT; what a member sees (consent page, captures awaiting approval); that rotating the App key signs everyone out
-- [ ] 8.2 `npm run typecheck`, `npm run build` and `npm test` all exit zero, and `openspec validate serve-the-store-over-mcp --strict` passes
+- [ ] 8.1 Add `editors` to the `mcp` block and the `edit` scope to `members.ts`; consent text for `edit`; schema and scope tests
+- [ ] 8.2 Add `src/core/mcp/drafts.ts`: the draft locator (the member's `mcp-draft-<email slug>` session worktree, its branch, whether its pull request is open, closed unmerged or merged) and reading a file at the draft's committed tip, used by `Read` and by group 9
+- [ ] 8.3 Add `src/core/mcp/ripgrep.ts`, the one module that spawns `rg`: Claude Code's Grep parameters mapped to ripgrep flags, `--` before the pattern, `--sort path`, hidden-path exclusions as `--glob '!…'`, a five-second limit and a bounded output; `Glob` via `rg --files --glob`; allow it in the single-source guard
+- [ ] 8.4 Add `src/core/mcp/tools/files.ts` per design.md D12: `Read` (admitted notes, captures marked, the entry document; `cat -n` numbering, offset/limit, 2,000-line default, long lines truncated; the member's draft version at its committed tip), `Grep` (ripgrep output plus matching pending captures listed apart), `Glob`
+- [ ] 8.5 Add `templates/mcp/Read.md`, `templates/mcp/Grep.md`, `templates/mcp/Glob.md`
+- [ ] 8.6 Tests: a range read with numbering; configuration, derived and escaping paths refused; a capture read and marked; a member's draft returned to them only; Grep in each output mode, with context lines and glob filters, path-ordered, exclusions honoured, a pending capture listed apart; Glob path-ordered with exclusions honoured; green under `npx vitest run test/unit/mcp-files.test.ts`
 
-## 9. Final verification against real clients (operator)
+## 9. Draft edits
 
-- [ ] 9.1 Repeat 5.1 with `gather` and `capture`: confirm one call of each from claude.ai and from ChatGPT in `serve`'s log, that the capture appeared on the approval page, and that approving it landed it
+- [ ] 9.1 Add `src/core/mcp/tools/edit.ts` per design.md D13: under the shared mutex, locate or start the member's draft (removing one whose pull request closed unmerged), publish anything unpublished, answer a retry whose effect is already in the draft without a second commit, apply `Edit` (exact match, unique unless `replace_all`, differs) or `Write` (new editable path only, never overwrite), refuse a result that does not parse as a note, rebuild the catalog in the draft, commit authored by the member with an `Edited-by:` trailer, on a hook refusal restore the draft and return the hook's output, push through the forge credential's git token, open a pull request when none is open for the branch, and return the pull request and the approval page address
+- [ ] 9.2 Add `templates/mcp/Edit.md` and `templates/mcp/Write.md`
+- [ ] 9.3 Tests against a temporary bare remote and the fake forge: the first edit opens one pull request the approval index lists; Write → Edit → Read of a new note on one pull request; an ambiguous or missing `old_string` and an existing `Write` path change nothing; a push failure and a pull-request failure each resume on retry with exactly one commit; a hook refusal leaves the draft unchanged; configuration, capture-tier and derived paths refused; a reader refused; a draft whose pull request closed is replaced; green under `npx vitest run test/unit/mcp-draft.test.ts`
+
+## 10. Documentation and full suite
+
+- [ ] 10.1 README section: the `mcp` block and its dependence on `change_approval`; the exact paths to exempt from the access proxy and the one (`/authorize`) to keep behind it; adding the connector in Claude and ChatGPT; what a member sees (consent page, captures awaiting approval); that rotating the App key signs everyone out
+- [ ] 10.2 `npm run typecheck`, `npm run build` and `npm test` all exit zero, and `openspec validate serve-the-store-over-mcp --strict` passes
+
+## 11. Final verification against real clients (operator)
+
+- [ ] 11.1 Repeat 5.1 with `gather`, `capture`, `Read`, `Grep`, `Glob`, `Edit` and `Write`, and run ChatGPT developer mode (deferred from 5.1): confirm one call of each from claude.ai and from ChatGPT in `serve`'s log, that the capture appeared on the approval page, and that approving it landed it

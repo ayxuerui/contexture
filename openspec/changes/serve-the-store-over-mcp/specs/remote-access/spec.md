@@ -5,7 +5,7 @@ Lets a member who has no shell and no clone, working in a native chat app, find,
 ## ADDED Requirements
 
 ### Requirement: The MCP surface is opt-in, requires change approval, and is absent until configured
-A store SHALL enable the MCP surface only by declaring an `mcp` block in `contexture.yaml`, listing `readers` and `capturers`, each entry an exact email address or an `@domain` suffix as `change_approval.deciders` entries are. The block SHALL carry no shipped default. Configuration validation SHALL reject an `mcp` block when `change_approval` is absent, naming both keys. With no `mcp` block in the configuration `ctxr serve` has loaded, a `GET` or `HEAD` to any MCP path (`/mcp`, `/authorize`, `/token`, `/register`, and the authorisation and protected-resource metadata documents) SHALL answer `404`, and any other method SHALL answer `405`. The surface SHALL follow configuration reloads as the approval routes do: a loaded change that adds, alters or removes the block SHALL take effect with no restart, and a surface that cannot be built after startup SHALL answer `503` on every MCP path while every other route keeps answering.
+A store SHALL enable the MCP surface only by declaring an `mcp` block in `contexture.yaml`, listing `readers`, `capturers` and `editors`, each entry an exact email address or an `@domain` suffix as `change_approval.deciders` entries are. The block SHALL carry no shipped default. Configuration validation SHALL reject an `mcp` block when `change_approval` is absent, naming both keys. With no `mcp` block in the configuration `ctxr serve` has loaded, a `GET` or `HEAD` to any MCP path (`/mcp`, `/authorize`, `/token`, `/register`, and the authorisation and protected-resource metadata documents) SHALL answer `404`, and any other method SHALL answer `405`. The surface SHALL follow configuration reloads as the approval routes do: a loaded change that adds, alters or removes the block SHALL take effect with no restart, and a surface that cannot be built after startup SHALL answer `503` on every MCP path while every other route keeps answering.
 
 #### Scenario: A store without the block has no MCP surface
 - **WHEN** `ctxr serve` runs for a store whose `contexture.yaml` has no `mcp` block, and `/.well-known/oauth-authorization-server` is requested
@@ -35,7 +35,7 @@ When the loaded configuration declares `mcp`, `ctxr serve` SHALL answer `POST /m
 - **THEN** the server answers `403` and runs no tool
 
 ### Requirement: A member signs in with the verified identity the approval page uses
-Every request to `/mcp` SHALL carry a bearer token the server itself issued, or be answered `401` with a `WWW-Authenticate` header naming the server's protected-resource metadata. The server SHALL act as an OAuth 2.1 authorisation server for its own `/mcp`: it SHALL publish protected-resource and authorisation-server metadata, accept dynamic registration of public clients, require PKCE with the S256 method, refuse a redirect URI that is not exactly one the client registered, and refuse a `resource` parameter naming any resource but its own `/mcp`. Every `/authorize` request SHALL verify the identity assertion `change_approval.identity` configures, exactly as the approval routes verify it, answering `401` when it does not verify and `403` when the verified email is on neither `readers` nor `capturers`. A verified member SHALL be shown a consent page naming the client, its redirect host, the store, their email and the scopes to be granted, and a code SHALL be issued only on a `POST` from that page carrying an `Origin` equal to the origin of `serve.base_url`. An authorisation code SHALL be honoured at most once.
+Every request to `/mcp` SHALL carry a bearer token the server itself issued, or be answered `401` with a `WWW-Authenticate` header naming the server's protected-resource metadata. The server SHALL act as an OAuth 2.1 authorisation server for its own `/mcp`: it SHALL publish protected-resource and authorisation-server metadata, accept dynamic registration of public clients, require PKCE with the S256 method, refuse a redirect URI that is not exactly one the client registered, and refuse a `resource` parameter naming any resource but its own `/mcp`. Every `/authorize` request SHALL verify the identity assertion `change_approval.identity` configures, exactly as the approval routes verify it, answering `401` when it does not verify and `403` when the verified email is on none of `readers`, `capturers` or `editors`. A verified member SHALL be shown a consent page naming the client, its redirect host, the store, their email and the scopes to be granted, and a code SHALL be issued only on a `POST` from that page carrying an `Origin` equal to the origin of `serve.base_url`. An authorisation code SHALL be honoured at most once.
 
 #### Scenario: A request without a token is challenged
 - **WHEN** a client calls `/mcp` without a bearer token
@@ -46,7 +46,7 @@ Every request to `/mcp` SHALL carry a bearer token the server itself issued, or 
 - **THEN** the response is `401` and no code is issued
 
 #### Scenario: A verified non-member is refused
-- **WHEN** the assertion verifies with an email on neither `readers` nor `capturers`
+- **WHEN** the assertion verifies with an email on none of `readers`, `capturers` or `editors`
 - **THEN** the response is `403` and no code is issued
 
 #### Scenario: No code without the member's confirmation
@@ -62,14 +62,14 @@ Every request to `/mcp` SHALL carry a bearer token the server itself issued, or 
 - **THEN** the second redemption is refused and issues no token
 
 ### Requirement: Scopes follow the configuration on every call
-A member on `readers` SHALL hold the `read` scope, which reaches `find` and `gather`; a member on `capturers` SHALL hold the `capture` scope, which reaches `capture`. A token SHALL carry at most the scopes its member held when it was issued, and a client SHALL be able to request fewer but never more. On every request to `/mcp`, the token's scopes SHALL be narrowed to those its email holds in the configuration the server last loaded. `tools/list` SHALL list only the tools those scopes reach, and a `tools/call` naming a tool they do not reach SHALL be refused as insufficient scope. The server SHALL store no client registration, authorisation code or token, and SHALL read no secret from `contexture.yaml`.
+A member on `readers` SHALL hold the `read` scope, which reaches `find`, `gather`, `Read`, `Grep` and `Glob`; a member on `capturers` SHALL hold the `capture` scope, which reaches `capture`; a member on `editors` SHALL hold the `edit` scope, which reaches `Edit` and `Write`. A token SHALL carry at most the scopes its member held when it was issued, and a client SHALL be able to request fewer but never more. On every request to `/mcp`, the token's scopes SHALL be narrowed to those its email holds in the configuration the server last loaded. `tools/list` SHALL list only the tools those scopes reach, and a `tools/call` naming a tool they do not reach SHALL be refused as insufficient scope. The server SHALL store no client registration, authorisation code or token, and SHALL read no secret from `contexture.yaml`.
 
 #### Scenario: A reader cannot capture
 - **WHEN** a member on `readers` only calls `capture`
 - **THEN** the call is refused as insufficient scope and nothing is written
 
 #### Scenario: Removal from the configuration takes effect on the next call
-- **WHEN** a member's email is removed from `readers` and `capturers`, and their client then calls any tool with an unexpired token
+- **WHEN** a member's email is removed from `readers`, `capturers` and `editors`, and their client then calls any tool with an unexpired token
 - **THEN** the request is refused and no tool runs
 
 #### Scenario: A client cannot widen its grant
@@ -151,3 +151,57 @@ The MCP surface SHALL read store content from a detached worktree of the store's
 #### Scenario: A call in flight is not split across commits
 - **WHEN** a sync becomes due while a `gather` call is still reading
 - **THEN** the sync starts only after that call completes, and the call's result names the commit it read throughout
+
+### Requirement: `Read`, `Grep` and `Glob` give file-shaped access with Claude Code's parameters
+The surface SHALL offer `Read`, `Grep` and `Glob` with the names and parameters of Claude Code's own tools, reading the commit being served. Paths SHALL be store-relative, a leading `/` naming the store root; a path that leaves the store root, or lies under the store's retrieval exclusions other than the capture tier, its derived paths, its configuration, its skills or `.git`, SHALL be refused or never returned. `Read` SHALL return a note the note enumeration admits, a capture (marked as one), or the entry document, numbered from 1 with an optional offset and limit and at most 2,000 lines per call; when the calling member's open draft has committed a change to or addition of the file, it SHALL return that committed version, marked as the draft. `Grep` SHALL match a regular expression with Claude Code's Grep parameters (path, glob, type, output mode, case, line numbers, context lines, multiline, head limit, offset), ordered by path, with no score, within a fixed time and output bound, and SHALL also list matching inbox files of session branches with an open pull request, marked as awaiting approval. `Glob` SHALL list matching files ordered by path.
+
+#### Scenario: A note is read with line numbers and a range
+- **WHEN** `Read` is called for `work/a.md` with offset 3 and limit 2
+- **THEN** it returns lines 3 and 4 of that note, each with its line number
+
+#### Scenario: A path outside what may be read is refused
+- **WHEN** `Read` is called for `contexture.yaml`, for a derived file, or for `../outside.md`
+- **THEN** the call is refused and no content is returned
+
+#### Scenario: A member reads their own draft
+- **WHEN** a member whose open draft committed a change to `work/a.md` calls `Read` for it
+- **THEN** the draft's committed version is returned, marked as the draft, while another member reading it gets the version at the served commit
+
+#### Scenario: A pattern is matched in path order, with pending captures listed
+- **WHEN** `Grep` is called with `kest(rel)?` in content mode, two notes match, and an inbox file on a session branch with an open pull request matches
+- **THEN** the notes' matching lines are returned ordered by path and line with no score, the inbox file is listed apart as awaiting approval, and no excluded file appears
+
+#### Scenario: Files are listed by pattern in path order
+- **WHEN** `Glob` is called with `work/**/*.md`
+- **THEN** the matching notes are returned ordered by path, and no excluded file appears
+
+### Requirement: `Edit` and `Write` collect in one draft pull request per member
+A member holding `edit` SHALL be able to call `Edit` with a file path, an exact string to replace, its replacement and an optional replace-all flag, and `Write` with a file path and content. A path SHALL be editable only when the note enumeration would admit it, it is markdown, and it lies outside the capture tier. `Edit` SHALL apply to an editable path that exists at the served commit or in the member's draft, and SHALL be refused, changing nothing, when the string to replace does not occur, occurs more than once without replace-all, or equals its replacement. `Write` SHALL create an editable path that exists in neither and SHALL never overwrite. Either SHALL be refused, changing nothing, when its result does not parse as a note or the store's hooks refuse its commit, in which case the draft SHALL be left at its previous tip. Every accepted call SHALL be one commit, authored by the member's verified email, on the member's draft: a session worktree started as `ctxr session start` does on the first call and reused while its pull request is open, whose commit includes the store's catalog rebuilt for the change. The draft branch SHALL be pushed with the server's forge credential after each commit, and a pull request opened for it when none is open. Before applying a call, anything the draft left unpublished SHALL be published; a retried call whose effect is already in the draft SHALL be answered without a second commit. A draft whose pull request was closed without merging SHALL be removed before the next call. Neither SHALL write to, commit on or push the default branch, and draft calls and captures SHALL be serialised.
+
+#### Scenario: The first edit opens a draft pull request
+- **WHEN** a member on `editors` with no draft calls `Edit` on `work/a.md` replacing a string that occurs once
+- **THEN** a session worktree exists whose single commit changes `work/a.md` and is authored by the member, an open pull request exists for it, the approval index lists it as awaiting a decision, and the remote default branch is unchanged
+
+#### Scenario: Write, then edit, then read the new note
+- **WHEN** the same member calls `Write` for `work/new.md`, then `Edit` on `work/new.md`, then `Read` for it
+- **THEN** the draft holds two more commits on the same pull request, no second pull request is opened, and `Read` returns the edited text marked as the draft
+
+#### Scenario: An ambiguous replacement changes nothing
+- **WHEN** `Edit` is called with a string that occurs twice and no replace-all flag
+- **THEN** the call is refused naming the count, and no commit is made
+
+#### Scenario: A retry after a failed push publishes once
+- **WHEN** an `Edit` was committed but its push failed, and the same call is retried
+- **THEN** the existing commit is pushed and its pull request returned, and no second commit is made
+
+#### Scenario: A refused commit leaves the draft as it was
+- **WHEN** the store's hooks refuse an `Edit`'s commit
+- **THEN** the call returns the hook's output, the draft's tip and working tree are unchanged, and `Read` still returns the previous version
+
+#### Scenario: Configuration cannot be edited
+- **WHEN** `Edit` or `Write` names `contexture.yaml`, a path under the capture root, or a path under the derived cache
+- **THEN** the call is refused and no commit is made
+
+#### Scenario: A reader cannot edit
+- **WHEN** a member on `readers` only calls `Edit`
+- **THEN** the call is refused as insufficient scope and nothing is written
