@@ -1184,7 +1184,8 @@ the folder root; and that making a send copy of a changed page writes a new date
 every earlier one untouched, because an earlier file may be what a recipient was sent. It SHALL
 instruct that an office file which is itself the source — edited by hand and not built from any
 note — is kept in the note tree beside the note that describes it, undated, and is not published,
-and that a dated copy of it sent to someone is a send copy. It SHALL name how a send copy is produced
+and that a dated copy of it sent to someone is a send copy. It SHALL state that the commit is refused when it adds an undated send copy or changes a send copy
+already committed. It SHALL name how a send copy is produced
 as the store's choice, and SHALL NOT name a renderer contexture ships. The enforcing mechanism is the
 test over the rendered skill set.
 
@@ -1206,3 +1207,8 @@ test over the rendered skill set.
   no note
 - **THEN** it is instructed to keep the workbook beside the note that describes it, undated, and not
   to publish it, and to file any dated copy sent from it as a send copy
+
+#### Scenario: The skill names the commit gate
+- **WHEN** an agent follows the publish skill to produce a send copy
+- **THEN** it is told that a commit adding an undated send copy, or changing one already committed, is
+  refused
