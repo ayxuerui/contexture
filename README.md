@@ -127,6 +127,21 @@ Every harness loads this file on every turn, so it is kept short. contexture's o
 | `ctxr-second-opinion` | Whether a plan or a taste call needs three different model families, and how to weigh what they say |
 | `ctxr-research` | How to research a question against real sources — a brief and findings ledger, perspectives, source tiers, contradictions, and every claim verified against a source it opened — with whatever web access the harness has |
 
+One more skill is opt-in. A store gets `ctxr-circleback` only when its `contexture.yaml` declares a `circleback` block, and loses it at the next `ctxr update` once the block is gone:
+
+| Skill | What it decides |
+| --- | --- |
+| `ctxr-circleback` | Which Circleback meetings this store owes a capture, by tag, when one Circleback account feeds several stores; it renders their captures on a review branch and leaves the speaker judgment and the pull request to the agent |
+
+```yaml
+circleback:
+  tag: pkm               # meetings tagged this belong to this store
+  other_tags: [readyrun] # meetings tagged any of these belong to another store
+  # decline_tag: no-capture   (the default) marks a meeting no store captures
+```
+
+Its runner, `sweep.mjs`, drives Circleback's own CLI (`cb`, signed in separately), plus `git` and `gh`, and never handles a credential. Run it from the store root with `node .agents/skills/ctxr-circleback/sweep.mjs`, or point a scheduled job at it; the skill says what to do with its report.
+
 Your house rules go in `.contexture/guidance/`.
 
 **A file there is inlined into `AGENTS.md`'s *Store conventions* section in full**, so it loads for every harness at the start of every session. That's right for the rules that hold on every turn.

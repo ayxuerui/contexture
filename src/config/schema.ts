@@ -203,6 +203,23 @@ const ChangeApprovalSchema = z.object({
 });
 
 /**
+ * circleback-sweep (harness-portability spec): the opt-in block that turns on
+ * the `ctxr-circleback` owned skill. One Circleback account can feed several
+ * stores, and a Circleback tag decides which store a meeting belongs to:
+ * `tag` is this store's, `other_tags` are the tags that send a meeting
+ * somewhere else, and `decline_tag` marks a meeting no store captures.
+ * `.optional()` with no shipped default, like `serve` — a store that never
+ * opts in never carries the key and never gets the skill. Absent
+ * `other_tags` means none, and absent `decline_tag` means `no-capture`: both
+ * stay optional so a rewritten config never gains a key the store did not write.
+ */
+const CirclebackSchema = z.object({
+  tag: z.string().min(1),
+  other_tags: z.array(z.string().min(1)).optional(),
+  decline_tag: z.string().min(1).optional(),
+});
+
+/**
  * harness-portability spec (vendored-craft-skills): which vendored
  * third-party skills a store wants, defaulting to the shipped set so a
  * `contexture.yaml` predating this key still parses. An empty list opts
@@ -450,6 +467,7 @@ export const StoreConfigSchema = z
     // parse, render and reparse.
     serve: ServeSchema.optional(),
     change_approval: ChangeApprovalSchema.optional(),
+    circleback: CirclebackSchema.optional(),
     templates: TemplatesSchema.prefault({}),
     skills: SkillsSchema.prefault({}),
     update_check: UpdateCheckSchema.prefault({}),
@@ -491,3 +509,4 @@ export type TaxonomyLayerConfig = z.infer<typeof TaxonomyLayerSchema>;
 export type GraphSettingsConfig = z.infer<typeof GraphSettingsSchema>;
 export type AdapterDeclaration = z.infer<typeof AdapterDeclarationSchema>;
 export type ChangeApprovalConfig = z.infer<typeof ChangeApprovalSchema>;
+export type CirclebackConfig = z.infer<typeof CirclebackSchema>;
