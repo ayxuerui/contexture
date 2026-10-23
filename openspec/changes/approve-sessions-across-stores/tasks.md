@@ -1,11 +1,11 @@
 ## 1. Session identity and joined sessions
 
-- [ ] 1.1 Derive a session's identity (home forge slug and home branch) from its branch and repository; report it from `ctxr session start`
-- [ ] 1.2 Add `ctxr session start --joins <session>`: resolve the session in the mounting store, refuse outside a declared mount or an unknown session; create the worktree on `session/<owner>/<repo>/<home branch without prefix>`
-- [ ] 1.3 Add the session marker (write and parse) beside the decision marker; a missing or malformed marker means a session of one
-- [ ] 1.4 Make `ctxr session submit` append the marker to the body it composes, and refuse an agent body that already carries one
-- [ ] 1.5 Tests for joining, each refusal, marker round-trips, and submit's marker
-- [ ] 1.6 Run `npx vitest run -t "session"` and confirm it exits 0
+- [x] 1.1 Derive a session's identity (home forge slug and home branch) from its branch and repository; report it from `ctxr session start`
+- [x] 1.2 Add `ctxr session start --joins <session>`: resolve the session in the mounting store, refuse outside a declared mount or an unknown session; create the worktree on `session/<owner>/<repo>/<home branch without prefix>`
+- [x] 1.3 Add the session marker (write and parse) beside the decision marker; a missing or malformed marker means a session of one
+- [x] 1.4 Make `ctxr session submit` append the marker to the body it composes, and refuse an agent body that already carries one
+- [x] 1.5 Tests for joining, each refusal, marker round-trips, and submit's marker
+- [x] 1.6 Run `npx vitest run -t "session"` and confirm it exits 0
 
 ## 2. Finding a session's parts and their state
 

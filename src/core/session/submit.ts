@@ -6,6 +6,8 @@ import * as doctorCommand from '../../commands/doctor.js';
 import * as graphDiffCommand from '../../commands/graph-diff.js';
 import { pageUrlsFor, type PageAddress, type PageUrlEntry } from '../../commands/publish-urls.js';
 import { baseRef } from '../approval/sessions.js';
+import { findSessionMarker, identityOfWorktree, repositorySlug, sessionMarker, sessionRouteName, type SessionIdentity } from '../approval/session-marker.js';
+import { mountingStoreOf } from '../shared-stores.js';
 import { ForgeRequestError } from '../forge/github.js';
 import type { Finding } from '../envelope.js';
 import { ContextureError, SessionRefusedError } from '../errors.js';
@@ -59,6 +61,8 @@ export interface SubmitResult {
   steps: SubmitSteps;
   pull_request: { number: number; url: string };
   /** The approval page for the session, when the store declares change approval. */
+  /** The session the pull request belongs to, as its marker names it; null when the store has no `origin` to name it by. */
+  session_identity: SessionIdentity | null;
   approval_url: string | null;
 }
 
@@ -130,12 +134,29 @@ export function renderPagesSection(pages: readonly PageUrlEntry[], base: string,
   return text;
 }
 
-/** D2: the body the pull request carries — the agent's, then the Pages section when there is one, then the Knowledge changes block verbatim. */
-async function pullBody(session: SessionRef, base: string, body: string): Promise<string> {
+/**
+ * D2: the body the pull request carries — the agent's, then the Pages section when there is one, then the Knowledge
+ * changes block verbatim, then (approve-sessions-across-stores) the session marker, last, when the session has an
+ * identity.
+ */
+async function pullBody(session: SessionRef, base: string, body: string, identity: SessionIdentity | null): Promise<string> {
   const store = await openWorktreeStore(session);
   const knowledge = (await graphDiffCommand.execute(store, { since: base, until: undefined, format: 'markdown' })).humanSummary;
   const pages = renderPagesSection(await pageUrlsFor(store, [`${base}...HEAD`]), base, store.config.serve?.base_url !== undefined);
-  return [body.trim(), ...(pages === null ? [] : [pages]), knowledge].join('\n\n');
+  return [body.trim(), ...(pages === null ? [] : [pages]), knowledge, ...(identity === null ? [] : [sessionMarker(identity)])].join('\n\n');
+}
+
+/**
+ * The approval page for the session: the home store's, by the home session's name, for a session joined from a
+ * mount (approve-sessions-across-stores); otherwise this store's, by the worktree's name.
+ */
+async function sessionApprovalAddress(deps: SubmitDeps, session: SessionRef, identity: SessionIdentity | null): Promise<string | null> {
+  if (identity !== null) {
+    const mounting = await mountingStoreOf(session.path);
+    const ownSlug = await repositorySlug(deps.git, session.path);
+    if (mounting !== null && identity.home !== ownSlug) return approvalAddress(mounting.config, sessionRouteName(identity));
+  }
+  return approvalAddress(deps.config, session.name);
 }
 
 export function approvalAddress(config: Store['config'], name: string): string | null {
@@ -186,6 +207,11 @@ export async function submitSession(deps: SubmitDeps, session: SessionRef, input
   for (const [name, value] of [['--message', input.message], ['--title', input.title], ['--body', input.body]] as const) {
     if (value.trim() === '') throw stopped(ExitCode.Usage, 'argument_empty', 'arguments', {}, `${name} cannot be empty.`);
   }
+  // approve-sessions-across-stores: only the command writes the session marker, so an agent's body cannot claim a session.
+  const claimed = findSessionMarker(input.body);
+  if (claimed !== null) {
+    throw stopped(ExitCode.Usage, 'body_has_session_marker', 'arguments', {}, `The body carries a session marker (${claimed}), which \`ctxr session submit\` writes itself; leave it out of the body.`, { marker: claimed });
+  }
   const heading = headingInBody(input.body);
   if (heading !== null) {
     throw stopped(ExitCode.Usage, 'body_has_generated_section', 'arguments', {}, `The body carries a "${heading}" section, which \`ctxr session submit\` writes itself; leave it out of the body.`, { heading });
@@ -194,6 +220,8 @@ export async function submitSession(deps: SubmitDeps, session: SessionRef, input
     throw stopped(ExitCode.CheckFailed, 'rebase_in_progress', 'arguments', {}, `A rebase is in progress in "${session.name}"; finish it with \`ctxr session rebase ${session.name} --continue\` or undo it with \`ctxr session rebase ${session.name} --abort\`.`);
   }
   await checkBranchName(deps, session, input.branch);
+  // Read before any rename: a session started on a generated or joined branch keeps that identity after it is renamed.
+  const identity = await identityOfWorktree(git, deps.config, session.path, session.name, session.branch);
 
   // Revision 2: the whole index, whoever staged it, is checked before anything is staged, so a refusal leaves it as it was.
   const prefix = (await git.run(['rev-parse', '--show-prefix'], { cwd: session.storeRoot })).stdout.trim();
@@ -259,7 +287,7 @@ export async function submitSession(deps: SubmitDeps, session: SessionRef, input
 
   let published;
   try {
-    published = await publishSession(deps, target, { title: input.title, body: await pullBody(session, base, input.body) }, { update: true });
+    published = await publishSession(deps, target, { title: input.title, body: await pullBody(session, base, input.body, identity) }, { update: true });
   } catch (err) {
     if (!(err instanceof SessionRemoteError)) throw err;
     throw stopped(
@@ -279,7 +307,8 @@ export async function submitSession(deps: SubmitDeps, session: SessionRef, input
     head: (await run(['rev-parse', 'HEAD'])).stdout.trim(),
     steps: { staged, gate: 'pass', commit: completed.commit, branch: completed.branch, push: published.push, pull_request: published.pullRequest },
     pull_request: { number: published.pull.number, url: published.pull.url },
-    approval_url: approvalAddress(deps.config, session.name),
+    session_identity: identity,
+    approval_url: await sessionApprovalAddress(deps, session, identity),
   };
 }
 
