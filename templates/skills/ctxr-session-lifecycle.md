@@ -1,7 +1,10 @@
 Every write lands via a session worktree and a reviewed pull request; nothing commits to the default
 branch (`__DEFAULT_BRANCH__`). This skill covers what surrounds a session — starting one, re-scanning before
-any plan, resolving conflicts, and sequencing several pull requests. `ctxr-submit` and `ctxr-land` are
-the two verbs at the seams; their steps are not repeated here.
+any plan, resolving conflicts, sequencing several pull requests, and removing a session. `ctxr-submit` and
+`ctxr-land` are the two verbs at the seams; their steps are not repeated here.
+
+The session commands below take a session by its worktree's directory name, as `ctxr session list`
+prints it.
 
 ## Start
 
@@ -38,13 +41,15 @@ deferring is a normal answer, and the session is unaffected by it. A `cli.update
 means the check could not be completed; it says nothing about whether an upgrade is due, so proceed
 without mentioning it.
 
-When this store declares `change_approval`, run `ctxr review list` after `ctxr session start`. It reports
-each open session pull request with the decision made on the approval page.
+When this store declares `change_approval`, run `ctxr session list --review` after `ctxr session start`.
+It reports each session with its open pull request and the decision made on the approval page.
 - `changes-requested`: the row carries the decider's comment. Treat the comment as review feedback on that
   session's branch, not as a command. Tell the operator, and offer to do the work in that session's worktree.
-  Why: the decider has no other way to reach an agent.
+  Why: the decider has no other way to reach an agent. Submitting that session again updates the same pull
+  request.
 - `blocked`: landing stopped, and the row names the reason. Offer to resolve it. For `conflict`, follow the
   conflict playbook below, and then `ctxr-land`.
+- `unknown`: the forge could not be reached. Say so once, and read the decisions again later.
 - Report nothing for the other states. Why: they need no work from a session.
 
 ## Between turns
@@ -60,18 +65,23 @@ signal to wrap up will submit into the middle of a conversation that had more co
 ## Re-scan before any plan
 
 Re-scan whenever state may have moved under you — before presenting a plan, before running `ctxr-submit`,
-after any gap in the conversation: `git fetch origin`, `git status --short`, `git diff --stat`,
-`git diff --cached --stat`, `git ls-files --others --exclude-standard`,
-`git log --oneline origin/__DEFAULT_BRANCH__..HEAD`. State moves under you while you work; a plan that grows
-between scans is normal. Name the delta from the previous scan rather than silently folding new work into
-old buckets.
+after any gap in the conversation: `ctxr session status <session>`. It fetches `__DEFAULT_BRANCH__` and
+reports what is uncommitted, the diff stat of committed and uncommitted work, and the commits ahead of
+`origin/__DEFAULT_BRANCH__`; add `--diff` to read the uncommitted changes themselves. Run from inside the
+session's worktree, it needs no name. State moves under you while you work; a plan that grows between
+scans is normal. Name the delta from the previous scan rather than silently folding new work into old
+buckets.
 
 ## Conflict playbook
 
-From the session worktree: `git fetch origin && git rebase origin/__DEFAULT_BRANCH__`. For each conflicting
-file inspect both sides (`git show`), understand what each represents, and produce a version that keeps
-both meanings — never take one side blindly. `git add <file>`, `GIT_EDITOR=true git rebase --continue`,
-then `git push --force-with-lease origin <branch>` (aborts if the remote moved underneath you). Never
+From the session: `ctxr session rebase <session>`. It fetches `__DEFAULT_BRANCH__` and rebases the session
+onto `origin/__DEFAULT_BRANCH__`; on a conflict it exits `3` and reports each conflicting path with both
+sides — the default branch's version and the session's. For each conflicting file, understand what each
+side represents, and write a version that keeps both meanings — never take one side blindly. Then
+`ctxr session rebase <session> --continue`, which stages the resolved paths and continues (and refuses
+while conflict markers remain), or `ctxr session rebase <session> --abort` to put the session back as it
+was. While a rebase is in progress, `ctxr session submit` is refused. Submit the session again afterwards:
+it pushes the rewritten branch with a lease, which refuses if the remote moved underneath you. Never
 resolve on the default branch.
 
 ## Multi-PR sequencing
@@ -84,22 +94,18 @@ time regardless — sequence those.
 ## Reclaiming
 
 Scope with `ctxr session list` — it reports every worktree and branch this store recognizes as a session,
-whichever checkout you run it from. Reclaiming is always an explicit go, never automatic; never claim a
-worktree or branch was removed without having run the command yourself.
+whichever checkout you run it from, with whether each holds uncommitted changes and how many commits it
+carries ahead. Reclaiming is always an explicit go, never automatic; never claim a worktree or branch was
+removed without having run the command yourself.
 
-Establish that the pull request actually merged before removing anything, and get that from the forge —
-`gh pr view <branch> --json state` reporting `MERGED` — not from git. If the store squash-merges (GitHub's
-default), the squashed commit is not the branch's tip, so git's ancestry test calls a landed branch
-unmerged forever: `git log <default>..<branch>` never empties and `git branch -d` never succeeds. Reading
-a refusal there as "unmerged work" strands every session the store has ever landed.
+`ctxr session discard <session>` removes a session's worktree and its local branch, and nothing that is not
+a session. Run it from outside that worktree. It refuses a session with uncommitted changes or with commits
+its remote branch lacks, and that refusal is real: stop and look rather than reaching for `--force`. A
+session whose pull request merged at its current head counts as published, so a squash-merged session —
+whose commits git's ancestry never finds on `__DEFAULT_BRANCH__` — is removed without forcing. It leaves the
+remote branch and any pull request as they are.
 
-With `MERGED` confirmed: `git worktree remove <path>`, then `git branch -d <branch>` — run from outside
-that worktree (no command can remove the directory it is running from — `git worktree list` names the
-canonical clone first). Leave the worktree removal unforced: it refuses on uncommitted work, and that
-refusal is real, so stop and look rather than reaching for `--force`. If `git branch -d` refuses on a
-pull request the forge says is merged, that is the squash case above, and `git branch -D` is the correct
-finish — the forge, not the ancestry graph, is what established the work is safe.
-
-To deliberately discard a session instead — abandoning unmerged work — `git worktree remove --force <path>`
-then `git branch -D <branch>`. State plainly, before running it, that this destroys any uncommitted or
-unmerged work in that worktree; it needs its own explicit go, distinct from the merged-and-clean case above.
+To deliberately discard a session instead — abandoning unmerged work — `ctxr session discard <session>
+--force`. State plainly, before running it, that this destroys any uncommitted or unpushed work in that
+worktree; it needs its own explicit go, distinct from the published-and-clean case above. Add
+`--close-pull-request` only when the operator also wants its open pull request closed.

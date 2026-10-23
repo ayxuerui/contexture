@@ -282,7 +282,7 @@ const MISSION: SkillSeed = {
 const SUBMIT: SkillSeed = {
   file: 'ctxr-submit',
   name: 'Submit',
-  description: 'End a working session — re-scan, capture once, stage surgically, validate, gate the external side effect, and open the reviewed pull request with git and gh.',
+  description: 'End a working session — re-scan, capture once, hold one unit, validate, and open the reviewed pull request with ctxr session submit, which gates, commits, pushes and writes the generated sections.',
   body: (config) => skillTemplate('ctxr-submit').replaceAll('__DEFAULT_BRANCH__', config.git.default_branch).split('\n'),
 };
 
@@ -296,7 +296,7 @@ const LAND: SkillSeed = {
 const SESSION_LIFECYCLE: SkillSeed = {
   file: 'ctxr-session-lifecycle',
   name: 'Session lifecycle',
-  description: 'Start a session worktree, re-scan before any plan, resolve conflicts, sequence multiple pull requests, and reclaim worktrees with git — the frame ctxr-submit and ctxr-land sit inside.',
+  description: 'Start a session worktree, re-scan before any plan, resolve conflicts, sequence multiple pull requests, and reclaim worktrees with the ctxr session commands — the frame ctxr-submit and ctxr-land sit inside.',
   body: (config) => skillTemplate('ctxr-session-lifecycle').replaceAll('__DEFAULT_BRANCH__', config.git.default_branch).split('\n'),
 };
 

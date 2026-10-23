@@ -108,6 +108,10 @@ if (kind === 'pulls' && number === null) {
 }
 if (pull === undefined) fail(404, 'Not Found');
 
+if (kind === 'pulls' && sub === undefined && method === 'PATCH') {
+  for (const key of ['title', 'body', 'state']) if (input[key] !== undefined) pull[key] = input[key];
+  reply(render(pull));
+}
 if (kind === 'pulls' && sub === undefined) reply(render(pull));
 
 if (kind === 'pulls' && sub === 'reviews') {
