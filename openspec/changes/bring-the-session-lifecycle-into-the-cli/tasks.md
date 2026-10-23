@@ -1,7 +1,7 @@
 ## 1. Shared core
 
-- [ ] 1.1 `src/core/session/` with `status`, `submit`, `rebase`, `discard` and the richer list, taking an optional author override; lift the MCP surface's idempotent publish into it
-- [ ] 1.2 `npx vitest run test/unit/session-core.test.ts` passes against a bare origin and the fake `gh`, including retry-after-lost-response and the discard guards
+- [ ] 1.1 `src/core/session/` with `status`, `submit`, `rebase`, `discard` and the richer list, taking an optional author override; move the MCP surface's idempotent push, publish and remove into it and point `src/core/mcp/sessions.ts` at the core
+- [ ] 1.2 `npx vitest run test/unit/session-core.test.ts` passes against a bare origin and the fake `gh`, including retry-after-lost-response, a previously staged derived file, and the discard guards; `npx vitest run test/unit/mcp-capture.test.ts test/unit/mcp-draft.test.ts` still passes on the moved code
 
 ## 2. Commands
 

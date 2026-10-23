@@ -21,7 +21,7 @@ This reverses part of `2026-09-02-session-keeps-only-what-git-cannot-do`, which 
   - It removes a session worktree and its local branch.
   - It refuses a path that is not a session worktree, and refuses uncommitted or unpushed work without `--force`.
   - It never closes a pull request unless asked.
-- **`ctxr session list`** gains each session's uncommitted state, commits ahead, its pull request, and, when the store declares `change_approval`, the decision state that `ctxr review list` reports. `ctxr review list` stays as it is.
+- **`ctxr session list`** gains each session's uncommitted state and commits ahead, which are local and need no network. With `--review` it also gives each session's pull request and, when the store declares `change_approval`, the decision state that `ctxr review list` reports. The MCP `session_list` tool always passes `review`. `ctxr review list` stays as it is.
 - **Skills reworded around the commands.** `ctxr-submit` and `ctxr-session-lifecycle` keep every judgment step: the When and anti-trigger sections, routes, the one-unit rule, the capture pass, the rollup offer and the hand-off. Each git or gh sequence becomes the command. `ctxr-land` is unchanged.
 - **BREAKING (skill text only):** the submit skill no longer runs `git push` or `gh pr create` itself.
 
@@ -49,6 +49,7 @@ None.
   - New `src/core/session/` (`status`, `submit`, `rebase` and `discard`, used by both the CLI and the MCP surface).
   - New `src/commands/session-{status,submit,rebase,discard}.ts`.
   - `session-list.ts` is extended.
+  - `src/core/mcp/sessions.ts` now calls the core for push, publish and remove instead of its own copies, so the sharing is real in this change rather than promised for the next one.
 - **Templates:** `ctxr-submit.md` and `ctxr-session-lifecycle.md` are reworded.
 - **Tests:** they reuse the bare-origin plus fake-`gh` fixtures that `land` and the MCP write tests already have.
 - **Stores:** the reworded skills arrive with `ctxr update`, from a binary that has the commands.

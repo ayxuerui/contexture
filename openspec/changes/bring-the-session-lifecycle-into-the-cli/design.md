@@ -58,7 +58,8 @@ The agent's body is the why, the what, the route, the verification and the follo
   - Exit codes: `0` when the pull request is open, `3` when the doctor gate fails, `2` when the branch or arguments are refused.
 - `ctxr session rebase <session> [--continue | --abort] [--json]`: `3` with the conflicting paths and both sides on a conflict, `0` when clean.
 - `ctxr session discard <session> [--force] [--close-pull-request] [--json]`.
-- `ctxr session list [--json]` gains `uncommitted`, `ahead`, `pull_request {number, state}` and `review {state, comment}`. When the forge is unreachable, the forge columns read `unknown` and the command still exits `0`, because the list is an inventory, not a check.
+- `ctxr session list [--review] [--json]` gains `uncommitted` and `ahead`. These are local and offline. With `--review` it adds `pull_request {number, state}` and `review {state, comment}`; when the forge is unreachable those read `unknown` and the command still exits `0`, because the list is an inventory, not a check. Keeping the forge behind a flag means a plain list never waits on the network, the critique's point; the MCP tool passes the flag, so the two surfaces stay one operation with one option.
+- **Derived content never ships.** Before committing, `submit` checks the whole index, not only what it staged itself. If a derived path is staged from an earlier operation, it exits `3` naming it, and leaves the index and working tree as they were.
 
 A session argument is the worktree's directory name, as `session list` prints it.
 
@@ -75,5 +76,15 @@ Locally the commit uses the clone's git identity, as a hand-run `git commit` doe
 ## Migration Plan
 
 1. **Ship** the commands and the reworded skills in one release.
-2. **The MCP change builds its tools on `src/core/session/`** and deletes its private `sessions.ts` helpers.
-3. **Rollback** is the previous release. Sessions are ordinary worktrees and pull requests either way.
+2. **This change moves the MCP surface's push, publish and remove into `src/core/session/`** and points `src/core/mcp/sessions.ts` at them, so today's `capture` and drafts run on the shared core. The MCP change then adds the session tools on the same core.
+3. **Rollback** is the previous release. Sessions are ordinary worktrees and pull requests either way. A store that ran `ctxr update` on the new release has skill text naming `ctxr session submit`, so it must run `ctxr update` again on the pinned binary to restore the previous skills.
+
+## Revisions after critique
+
+A three-model critique on 2026-10-23 approved this change with changes from all three reviewers. These revisions override anything inconsistent above.
+
+1. **`session list` stays local by default**, and `--review` adds the forge columns. The MCP tool passes it.
+2. **`submit` checks the whole index** and refuses a derived path, whoever staged it.
+3. **This change moves the MCP surface's push, publish and remove into the core** and rewires `src/core/mcp/sessions.ts`, so the sharing is delivered here.
+4. **Rollback** needs a second `ctxr update` on the pinned binary.
+5. **Declined: marking the session-list requirement MODIFIED.** No existing requirement describes `ctxr session list`, so ADDED is correct.
