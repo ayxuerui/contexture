@@ -64,7 +64,7 @@ Everything else is dropped. In particular that covers `GH_*`, `GITHUB_*`, `CONTE
 
 **Opposing case (keep the whole environment):** some CLI configurations rely on variables nobody anticipated, such as a corporate proxy or a custom config directory. The allowlist could break a working setup silently. The mitigations:
 - `HTTPS_PROXY`, `HTTP_PROXY`, `NO_PROXY` and `NODE_EXTRA_CA_CERTS` join the allowlist.
-- `CTXR_SECOND_OPINION_PASS_ENV` names any further variables to pass through.
+- `CTXR_SECOND_OPINION_PASS_ENV` names any further variables to pass through. The protected prefixes `GH_`, `GITHUB_` and `CONTEXTURE_` take precedence over it. Naming one of them makes the command exit with the usage code before any CLI launches, so the guarantee cannot be configured away. A variable an operator does pass through is that operator's own responsibility.
 - A preflight failure prints the dropped variable names (names only, never values).
 
 ### D4. Prompts are package templates; the skill loses its supporting files
@@ -78,7 +78,7 @@ The skill's supporting files become empty. `ctxr update` already removes managed
 ## Risks / Trade-offs
 
 - **A store updates its skills but runs an older global `ctxr`** (the skill names a command the binary lacks). → `ctxr update` writes skills from the running binary, so new skill text arrives only from a binary that has the command.
-- **Ported behaviour diverges from `run.mjs`.** → The stub-CLI tests are ported first and run against both the old script and the new command before the script is deleted (task 2.3).
+- **Ported behaviour diverges from `run.mjs`.** → Every stub-CLI scenario of `run.mjs` is ported to the command's test suite (task 1.2). A dual run against the old script was dropped after critique: its argument shape and exit codes differ, so a shim would exist only to be deleted.
 - **The allowlist drops a variable a CLI needs.** → The pass-through variable and the preflight's dropped-names report (see D3).
 
 ## Migration Plan
@@ -86,3 +86,11 @@ The skill's supporting files become empty. `ctxr update` already removes managed
 1. **Release.** The command and the reworded skill ship together.
 2. **Each store gets it with its next `ctxr update`**, through the normal propagation chain.
 3. **Rollback** is the previous release, whose `ctxr update` restores `run.mjs`.
+
+## Revisions after critique
+
+A three-model critique on 2026-10-23 approved this change with changes from all three reviewers. These revisions override anything inconsistent above.
+
+1. **Protected prefixes take precedence over the pass-through variable**, which cannot name `GH_`, `GITHUB_` or `CONTEXTURE_` variables. This is now tested.
+2. **The tests are ported straight to the command.** The dual run against `run.mjs` is dropped: different arguments and exit codes made it a throwaway shim, and moving the prompts would have broken it anyway.
+3. **Task 2.1 names `src/core/skills.ts`** as where the supporting files are dropped.

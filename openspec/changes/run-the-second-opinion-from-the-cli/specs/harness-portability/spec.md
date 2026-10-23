@@ -8,7 +8,7 @@ The command is the enforcing mechanism for the following, each covered by a test
 - It SHALL run the critics concurrently, each in its own process and each given only the plan and its own role — never another critic's output.
 - It SHALL pass prompt content to each CLI on standard input or as a single argument vector element, never through a shell.
 - It SHALL invoke each CLI with that tool's read-only or no-tools mode where one exists, and in an empty scratch directory as its working directory in every case.
-- It SHALL give each CLI an environment built from a declared allowlist — the executable search path, home, locale and terminal variables, the model CLIs' own variable prefixes, proxy and certificate variables, its own `CTXR_SECOND_OPINION_` variables, and any names an operator lists in a declared pass-through variable — and no other variable of its own environment.
+- It SHALL give each CLI an environment built from a declared allowlist — the executable search path, home, locale and terminal variables, the model CLIs' own variable prefixes, proxy and certificate variables, its own `CTXR_SECOND_OPINION_` variables, and any names an operator lists in a declared pass-through variable, except the forge and contexture prefixes, which the pass-through cannot name — and no other variable of its own environment.
 - It SHALL bound each critic by a timeout and record a critic that times out, exits non-zero, or returns output lacking the required verdict as failed, with the cause.
 - It SHALL write each critique under a letter assigned in an order independent of the critic roster, record the letter-to-role-and-model mapping in a separate manifest, and record in that manifest the model each CLI reports having run where the CLI reports one.
 - It SHALL mark a critique whose findings cite nothing the plan contains — no step it numbers and no text quoted from it — as blind and exclude it from the count of valid critiques, while a critique that approves with no findings SHALL remain valid.
@@ -60,6 +60,10 @@ The skill SHALL state when to critique, when to poll, and when to answer directl
 #### Scenario: A forge credential is withheld
 - **WHEN** the command runs with `GH_TOKEN`, `CONTEXTURE_GITHUB_APP_PRIVATE_KEY_FILE` and `ANTHROPIC_API_KEY` set, against stub CLIs that record their environment
 - **THEN** each stub saw `ANTHROPIC_API_KEY` and neither of the other two
+
+#### Scenario: The pass-through cannot name a protected variable
+- **WHEN** `CTXR_SECOND_OPINION_PASS_ENV=GH_TOKEN` is set
+- **THEN** the command exits with the usage code naming `GH_TOKEN`, and no CLI is invoked
 
 #### Scenario: An operator passes a variable through
 - **WHEN** `CTXR_SECOND_OPINION_PASS_ENV=CORP_CONFIG` and `CORP_CONFIG` are set
