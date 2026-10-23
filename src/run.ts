@@ -726,7 +726,7 @@ export function buildProgram(env: RunEnv): { program: Command; state: { result: 
     .option('--out <dir>', 'where to write them (default: .contexture/cache/plugin/ under the store root)')
     .action(async (cmdOpts: { out?: string }, cmd: Command) => {
       const { runEnv, jsonMode, root } = deriveRunEnv(env, cmd);
-      result = await runCommand('plugin.build', runEnv, jsonMode, async () => {
+      state.result = await runCommand('plugin.build', runEnv, jsonMode, async () => {
         const store = await openStore(runEnv, { root });
         return pluginBuildCommand.execute(runEnv, store, { out: cmdOpts.out });
       });

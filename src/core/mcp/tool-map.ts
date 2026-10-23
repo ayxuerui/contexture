@@ -65,6 +65,11 @@ export const CTXR_WRITE_COMMANDS = [
   'session capture',
   'catalog build',
   'graph build',
+  // ctxr-session-capture regenerates AGENTS.md after a guidance edit. Only the
+  // entry document may change: the after-run check restores and refuses any
+  // change update makes to the skills, the hooks or the configuration, which
+  // is what a server on another ctxr version than the store's would write.
+  'update',
 ] as const;
 
 /** D3: the session commands with a typed tool of their own. */
@@ -79,9 +84,12 @@ export const SESSION_COMMAND_TOOLS = {
 
 /**
  * D6: the git and gh steps the shipped skills name, and the tool each one is in
- * this environment. A step not listed here has no counterpart over MCP.
+ * this environment; null marks the server's own work, which the agent skips (the
+ * lifecycle skill's canonical-clone refresh). A step not listed here has no
+ * counterpart over MCP, and the drift check over the MCP render refuses it. The
+ * preamble's tables are rendered from this and `SESSION_COMMAND_TOOLS`.
  */
-export const GIT_STEP_TOOLS = {
+export const GIT_STEP_TOOLS: Readonly<Record<string, string | null>> = {
   'git mv': 'Move',
   'git rm': 'Delete',
   'git status': 'session_status',
@@ -93,12 +101,13 @@ export const GIT_STEP_TOOLS = {
   'git branch -m': 'session_submit',
   'gh pr create': 'session_submit',
   'gh pr edit': 'session_submit',
-  'git fetch': 'session_rebase',
+  'git fetch': null,
+  'git merge --ff-only': null,
   'git rebase': 'session_rebase',
   'git worktree add': 'session_start',
   'git worktree list': 'session_list',
   'git worktree remove': 'session_discard',
-} as const;
+};
 
 /** The registry, in `tools/list` order. */
 export const TOOL_REGISTRY: readonly ToolEntry[] = [

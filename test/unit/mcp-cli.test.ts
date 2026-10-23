@@ -103,6 +103,18 @@ describe('mcp ctxr and ctxr_write', () => {
     expect(await readdir(path.join(worktree, '.contexture/cache/mcp')).catch(() => [])).toEqual([]);
   });
 
+  it("regenerates the entry document after a guidance edit, as ctxr-session-capture asks, changing nothing protected", async () => {
+    const guidance = f.write.config.harness.guidance_path.replace(/\/*$/, '/');
+    await f.call('Write', { file_path: `${root}${guidance}house-test.md`, content: '# House test\n\nAlways cite the source note.\n' });
+    const before = await hooks();
+    const updated = await ctxrWrite({ args: ['update'], session });
+    expect(updated.exit_code).toBe(0);
+    expect(await hooks()).toEqual(before);
+    expect(await readFile(path.join(worktree, 'AGENTS.md'), 'utf8')).toContain('Always cite the source note.');
+    const changed = (await f.store.git(['status', '--porcelain'], worktree)).split('\n').map((l) => l.replace(/^\s*\S+\s+/, '')).sort();
+    expect(changed).toEqual(['AGENTS.md', `${guidance}house-test.md`].sort());
+  });
+
   it('runs a writing command in the session, with session-root paths and @input', async () => {
     const appended = await ctxrWrite({ args: ['entry', 'append', `${root}projects/a.md`, '--region', 'log', '--text', '- filed the plan'], session });
     expect(appended).toMatchObject({ exit_code: 0, args: ['entry', 'append', 'projects/a.md', '--region', 'log', '--text', '- filed the plan'] });

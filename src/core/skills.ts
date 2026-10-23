@@ -10,6 +10,7 @@ import { scanDocsDir, SKILL_FILE_NAME, type ScannedDoc } from './conventions.js'
 import { GRAPH_DOCUMENT_RELATIVE_PATH } from './graph/persist.js';
 import { writeFileAtomic } from './fs/atomic.js';
 import { packagedTemplate } from './templates.js';
+import { GIT_STEP_TOOLS, SESSION_COMMAND_TOOLS } from './mcp/tool-map.js';
 
 /**
  * The canonical skill bodies live as plain markdown under
@@ -503,7 +504,13 @@ export function renderSkills(config: StoreConfig, target: SkillTarget = 'cli'): 
 
 /** `templates/skills/mcp/_preamble.md`, rendered against the store's configuration. */
 export function mcpPreamble(config: StoreConfig): string {
-  return packagedTemplate('skills/mcp', '_preamble').replaceAll('__WORKTREES_PATH__', config.session.worktrees_path.replace(/\/*$/, '/'));
+  // Revision 6: the tables come from the mapping module, never from a second copy here.
+  const commands = Object.entries(SESSION_COMMAND_TOOLS).map(([command, tool]) => `| \`ctxr ${command}\` | \`${tool}\` |`);
+  const gitSteps = Object.entries(GIT_STEP_TOOLS).map(([step, tool]) => `| \`${step}\` | ${tool === null ? 'none' : `\`${tool}\``} |`);
+  return packagedTemplate('skills/mcp', '_preamble')
+    .replace('__COMMAND_TABLE__', ['| Command | Tool |', '| --- | --- |', ...commands].join('\n'))
+    .replace('__GIT_STEP_TABLE__', ['| Git step | Tool |', '| --- | --- |', ...gitSteps].join('\n'))
+    .replaceAll('__WORKTREES_PATH__', config.session.worktrees_path.replace(/\/*$/, '/'));
 }
 
 /** The preamble goes below the frontmatter, which the Agent Skills format requires first, and above the CLI text. */

@@ -120,7 +120,7 @@ Rejected for three reasons:
 
 **Allowlists** (a subcommand path, matched before any option):
 - **`ctxr`:** `lint`, `doctor`, `catalog show|check`, `graph query|diff`, `context gather`, `source check|hash`, `rollup stale|gather`, `publish check|urls|gather`.
-- **`ctxr_write`:** `ingest`, `archive`, `entry append`, `rollup write`, `source stamp|add-alt`, `session capture`, `catalog build`, `graph build`.
+- **`ctxr_write`:** `ingest`, `archive`, `entry append`, `rollup write`, `source stamp|add-alt`, `session capture`, `catalog build`, `graph build`, `update`. `update` is there because `ctxr-session-capture` regenerates AGENTS.md after a guidance edit. The after-run check restores and refuses any change it makes to the skills, the hooks or the configuration, so on a server whose ctxr matches the store's only the entry document changes. The drift check found this gap.
 
 **Refused:**
 - The root flag and `--` followed by a path outside the cwd.

@@ -32,7 +32,7 @@
 
 - [x] 6.1 `renderSkills(config, 'mcp')`: the included subset from the CLI templates; CLI render byte-identical (`npx vitest run test/unit/skills.test.ts`)
 - [x] 6.2 `templates/skills/mcp/_preamble.md` with the command-to-tool and git-verb mapping tables
-- [ ] 6.3 Drift check over the MCP render (tools, allowlists, git/gh mapping) fails on a seeded bad skill and passes on the shipped set
+- [x] 6.3 Drift check over the MCP render (tools, allowlists, git/gh mapping) fails on a seeded bad skill and passes on the shipped set
 
 ## 7. Plugin build and download page
 
@@ -41,7 +41,7 @@
 
 ## 8. Whole suite
 
-- [ ] 8.1 `npm run build && npm test && npm run typecheck` exit 0; README "Connecting chat apps" updated for the session tools and the plugin
+- [x] 8.1 `npm run build && npm test && npm run typecheck` exit 0; README "Connecting chat apps" updated for the session tools and the plugin
 
 ## 9. Real clients (operator checkpoint)
 

@@ -6,14 +6,7 @@ follow it as written, and take each step it names through the tool these tables 
 
 ### Commands
 
-| Command | Tool |
-| --- | --- |
-| `ctxr session start` | `session_start` |
-| `ctxr session list` | `session_list` |
-| `ctxr session status` | `session_status` |
-| `ctxr session submit` | `session_submit` |
-| `ctxr session rebase` | `session_rebase` |
-| `ctxr session discard` | `session_discard` |
+__COMMAND_TABLE__
 
 Each of these tools takes its command's options as fields, each named for its option without the leading
 dashes, and the session the command names as `session`: the session worktree's directory name, which
@@ -27,19 +20,7 @@ pass the file's text as `input` and write `@input` in `args` where its path goes
 
 ### Git steps
 
-| Git step | Tool |
-| --- | --- |
-| `git mv` | `Move` |
-| `git rm` | `Delete` |
-| `git status` | `session_status` |
-| `git diff` | `session_status` |
-| `git add` | `session_submit` |
-| `git commit` | `session_submit` |
-| `git push` | `session_submit` |
-| `gh pr create` | `session_submit` |
-| `gh pr edit` | `session_submit` |
-| `git fetch` | none |
-| `git merge --ff-only` | none |
+__GIT_STEP_TABLE__
 
 Commits, pushes and pull requests happen only in `session_submit`. A step marked none is the server's own
 work: it keeps the store's clone current, and `session_start` branches from the freshly fetched default

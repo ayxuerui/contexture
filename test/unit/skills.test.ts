@@ -1,6 +1,7 @@
 import { RELATION_DIRECTEDNESS_NOTE, RELATION_VOCABULARY } from '../../src/config/defaults.js';
 import { packagedTemplate } from '../../src/core/templates.js';
 import { renderPagesSection } from '../../src/core/session/submit.js';
+import { GIT_STEP_TOOLS, routeForCommand, TOOL_NAMES } from '../../src/core/mcp/tool-map.js';
 import { readFileSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
@@ -1386,5 +1387,47 @@ describe('the MCP render of the owned skills', () => {
     expect(preamble).toMatch(/`args`/);
     expect(preamble).toMatch(/Commits, pushes and pull requests happen only in `session_submit`/);
     expect(preamble).toMatch(/At the\s+start of a conversation, call `session_list` and mention each open session/);
+  });
+});
+
+/**
+ * serve-the-session-lifecycle-to-chat-apps task 6.3, and the harness-portability
+ * delta "An MCP-rendered skill names only what the surface offers": every `ctxr`
+ * command an included skill names routes to a tool through the mapping module,
+ * every `git` or `gh` step is a row of its git-step table, and every tool the
+ * preamble names is one the surface registers.
+ */
+function driftProblems(skills: readonly { file: string; content: string }[]): string[] {
+  const problems: string[] = [];
+  const gitSteps = Object.keys(GIT_STEP_TOOLS);
+  for (const { file, content: rendered } of skills) {
+    // The managed header names `ctxr init` and `ctxr update` as provenance, not as a step.
+    const content = rendered.replace(MANAGED_SKILL_HEADER, '');
+    for (const m of content.matchAll(/`ctxr ([a-z][a-z-]*(?: [a-z][a-z-]*)?)/g)) {
+      if (routeForCommand(m[1]!) === null) problems.push(`${file}: ctxr ${m[1]}`);
+    }
+    for (const m of content.matchAll(/`((?:git|gh) [a-z][a-z-]*(?: (?:-{1,2}[a-z-]+|[a-z][a-z-]*))?)/g)) {
+      const step = m[1]!;
+      const known = gitSteps.some((row) => step === row || step.startsWith(`${row} `) || row === step.split(' ').slice(0, 2).join(' '));
+      if (!known) problems.push(`${file}: ${step}`);
+    }
+    for (const m of content.matchAll(/`(session_[a-z]+|ctxr_write|Move|Delete)`/g)) {
+      if (!TOOL_NAMES.includes(m[1]!)) problems.push(`${file}: tool ${m[1]}`);
+    }
+  }
+  return problems;
+}
+
+describe('the MCP render names only what the surface offers', () => {
+  const mcp = renderSkills(makeConfig(), 'mcp');
+
+  it('passes on the shipped skills', () => {
+    expect(mcp.length).toBeGreaterThan(0);
+    expect(driftProblems(mcp)).toEqual([]);
+  });
+
+  it('fails, naming the skill and the term, for an unmapped git step, an unknown command and an unknown tool', () => {
+    const seeded = { file: 'ctxr-seeded', content: 'Run `git cherry-pick`, then `ctxr session reap`, then call `session_publish`.' };
+    expect(driftProblems([seeded])).toEqual(['ctxr-seeded: ctxr session reap', 'ctxr-seeded: git cherry-pick', 'ctxr-seeded: tool session_publish']);
   });
 });

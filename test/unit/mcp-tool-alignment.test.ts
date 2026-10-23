@@ -63,7 +63,8 @@ describe('MCP tools align with ctxr commands (D9)', () => {
     expect(routeForCommand('session submit')).toEqual({ via: 'tool', tool: 'session_submit' });
     expect(routeForCommand('session capture')).toEqual({ via: 'ctxr_write' });
     expect(routeForCommand('graph query neighbors')).toEqual({ via: 'ctxr' });
-    expect(routeForCommand('update')).toBeNull();
+    expect(routeForCommand('update')).toEqual({ via: 'ctxr_write' });
+    expect(routeForCommand('init')).toBeNull();
     expect(routeForCommand('land')).toBeNull();
   });
 });
