@@ -47,6 +47,8 @@ export interface GraphBuildOptions {
   /** Relation names whose section headings type the wikilinks under them (graph-context-document D3). Empty: no typed edges. */
   /** How many leading directory segments form a node's cluster (graph-context-document D2). */
   clusterDepth?: number;
+  /** The mount locations of a read view; each note resolves links within its owning store (mount-shared-stores). */
+  scopes?: readonly string[];
 }
 
 export const DEFAULT_CLUSTER_DEPTH = 2;
@@ -163,6 +165,74 @@ export function resolveStem(stemIndex: ReadonlyMap<string, string[]>, target: st
   return { path: resolved[0]! };
 }
 
+/**
+ * mount-shared-stores (context-retrieval: links resolve within the store that
+ * owns the note). `scopes` are the location prefixes of the mounts in a read
+ * view, `shared/<name>`; a note under one is owned by that mount, every other
+ * note by the store itself. With no scopes everything is one store, and a
+ * stem resolves exactly as it always has.
+ */
+export function ownerScopeOf(notePath: string, scopes: readonly string[]): string {
+  for (const scope of scopes) if (notePath.startsWith(`${scope}/`)) return scope;
+  return '';
+}
+
+/**
+ * A path link's target, as a store-relative note path under `owner`, or null
+ * when it would leave the owning store's root. `.md` is appended unless the
+ * target already carries it.
+ */
+function pathLinkCandidate(owner: string, target: string): string | null {
+  const normalized = path.posix.normalize(target.replace(/^\/+/, ''));
+  if (normalized === '.' || normalized === '..' || normalized.startsWith('../')) return null;
+  const file = normalized.endsWith('.md') ? normalized : `${normalized}.md`;
+  return owner === '' ? file : `${owner}/${file}`;
+}
+
+export type LinkResolver = (fromPath: string, target: string) => StemResolution;
+
+/**
+ * The one resolver for a set of notes split into owning stores. A target with
+ * no `/` resolves by filename stem among the owning store's notes; a target
+ * with one resolves as a path against the owning store's root. A note owned by
+ * a mount therefore resolves nothing outside it, and the store's own notes
+ * reach a mount only by a path that starts with its location.
+ */
+export function createLinkResolver(notes: readonly Note[], scopes: readonly string[] = []): LinkResolver {
+  const byOwner = new Map<string, Note[]>();
+  for (const note of notes) {
+    const owner = ownerScopeOf(note.path, scopes);
+    const list = byOwner.get(owner) ?? [];
+    list.push(note);
+    byOwner.set(owner, list);
+  }
+  const stemIndexes = new Map<string, Map<string, string[]>>();
+  for (const [owner, owned] of byOwner) stemIndexes.set(owner, buildStemIndex(owned));
+  const paths = new Set(notes.map((note) => note.path));
+
+  return (fromPath, target) => {
+    const owner = ownerScopeOf(fromPath, scopes);
+    if (target.includes('/')) {
+      const candidate = pathLinkCandidate(owner, target);
+      return candidate !== null && paths.has(candidate) ? { path: candidate } : { reason: 'not_found' };
+    }
+    return resolveStem(stemIndexes.get(owner) ?? new Map(), target);
+  };
+}
+
+/**
+ * Whether a link `target` written in `fromPath` names `entityPath` — the
+ * backlink test `rollup gather`, `publish gather`, `archive` and the pass's
+ * entity selector share. A filename link matches by stem within the owning
+ * store, as it always has, even where the stem is ambiguous; a path link
+ * matches only when it resolves to the entity.
+ */
+export function linkNames(fromPath: string, target: string, entityPath: string, scopes: readonly string[] = []): boolean {
+  const owner = ownerScopeOf(fromPath, scopes);
+  if (target.includes('/')) return pathLinkCandidate(owner, target) === entityPath;
+  return ownerScopeOf(entityPath, scopes) === owner && path.basename(entityPath, '.md') === target;
+}
+
 export function buildGraphFromNotes(notes: readonly Note[], options: GraphBuildOptions = {}): GraphBuildResult {
   const idCounts = new Map<string, number>();
   for (const note of notes) idCounts.set(note.path, (idCounts.get(note.path) ?? 0) + 1);
@@ -171,7 +241,7 @@ export function buildGraphFromNotes(notes: readonly Note[], options: GraphBuildO
     throw new GraphIdentityCollisionError(collisions);
   }
 
-  const stemIndex = buildStemIndex(notes);
+  const resolve = createLinkResolver(notes, options.scopes ?? []);
 
   const depth = options.clusterDepth ?? DEFAULT_CLUSTER_DEPTH;
   const nodes: GraphNode[] = notes.map((n) => ({ id: n.path, path: n.path, cluster: clusterOf(n.path, depth) }));
@@ -180,7 +250,7 @@ export function buildGraphFromNotes(notes: readonly Note[], options: GraphBuildO
 
   for (const note of notes) {
     for (const { target, type } of extractLinks(note.body)) {
-      const resolution = resolveStem(stemIndex, target);
+      const resolution = resolve(note.path, target);
       if ('reason' in resolution) {
         dangling.push({ from: note.path, target, reason: resolution.reason });
       } else {

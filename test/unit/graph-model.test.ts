@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildGraphFromNotes, clusterOf, extractLinkTargets, LINK_EDGE_TYPE, ROOT_CLUSTER } from '../../src/core/graph/model.js';
+import { buildGraphFromNotes, clusterOf, extractLinkTargets, LINK_EDGE_TYPE, linkNames, ROOT_CLUSTER } from '../../src/core/graph/model.js';
 import { GraphIdentityCollisionError } from '../../src/core/errors.js';
 import type { Note } from '../../src/core/notes/list.js';
 
@@ -110,5 +110,54 @@ describe('graph-context-document: typed edges from relation sections (D3)', () =
 
   it('extractLinkTargets still returns every target regardless of section', () => {
     expect(extractLinkTargets(body)).toEqual(['intro-target', 'supported', 'still-supported', 'plain']);
+  });
+});
+
+describe('links resolve within the store that owns the note (mount-shared-stores)', () => {
+  const scopes = ['shared/ctx-b'];
+
+  it('keeps a stem link inside its own store, so a name shared across stores is not ambiguous', () => {
+    const graph = buildGraphFromNotes(
+      [note('people/ctx-person.md', ''), note('work/a.md', '[[ctx-person]]'), note('shared/ctx-b/people/ctx-person.md', '')],
+      { scopes },
+    );
+    expect(graph.edges).toEqual([{ src: 'work/a.md', dst: 'people/ctx-person.md', type: 'link' }]);
+    expect(graph.dangling).toEqual([]);
+  });
+
+  it('resolves a path link from the store into a mount', () => {
+    const graph = buildGraphFromNotes([note('work/a.md', '[[shared/ctx-b/people/ctx-person]]'), note('shared/ctx-b/people/ctx-person.md', '')], { scopes });
+    expect(graph.edges).toEqual([{ src: 'work/a.md', dst: 'shared/ctx-b/people/ctx-person.md', type: 'link' }]);
+  });
+
+  it('never resolves a mounted note\'s link into the mounting store, by stem or by path', () => {
+    const graph = buildGraphFromNotes([note('work/ctx-private.md', ''), note('shared/ctx-b/x.md', '[[ctx-private]] [[work/ctx-private]]')], { scopes });
+    expect(graph.edges).toEqual([]);
+    expect(graph.dangling.map((d) => d.reason)).toEqual(['not_found', 'not_found']);
+  });
+
+  it('resolves a mounted note\'s own stem and path links within the mount', () => {
+    const graph = buildGraphFromNotes([note('shared/ctx-b/a.md', '[[b]] [[work/b]]'), note('shared/ctx-b/work/b.md', '')], { scopes });
+    expect(graph.edges.map((e) => e.dst)).toEqual(['shared/ctx-b/work/b.md', 'shared/ctx-b/work/b.md']);
+  });
+
+  it('resolves a path link against the store root in a store with no mounts', () => {
+    const graph = buildGraphFromNotes([note('a.md', '[[work/ctx-note]] [[work/ctx-note.md]]'), note('work/ctx-note.md', '')]);
+    expect(graph.edges.map((e) => e.dst)).toEqual(['work/ctx-note.md', 'work/ctx-note.md']);
+  });
+
+  it('refuses a path link that climbs out of the owning store', () => {
+    const graph = buildGraphFromNotes([note('shared/ctx-b/a.md', '[[../../work/x]]'), note('work/x.md', '')], { scopes });
+    expect(graph.edges).toEqual([]);
+  });
+});
+
+describe('linkNames', () => {
+  it('matches a stem only within the owning store, and a path only where it resolves', () => {
+    const scopes = ['shared/ctx-b'];
+    expect(linkNames('work/a.md', 'ctx-person', 'people/ctx-person.md', scopes)).toBe(true);
+    expect(linkNames('work/a.md', 'ctx-person', 'shared/ctx-b/people/ctx-person.md', scopes)).toBe(false);
+    expect(linkNames('work/a.md', 'shared/ctx-b/people/ctx-person', 'shared/ctx-b/people/ctx-person.md', scopes)).toBe(true);
+    expect(linkNames('shared/ctx-b/x.md', 'people/ctx-person', 'people/ctx-person.md', scopes)).toBe(false);
   });
 });

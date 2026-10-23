@@ -13,5 +13,8 @@ to synthesize an entity's current state from its sources, use `ctxr-rollup`.
 5. To find the most-referenced notes, run `ctxr graph query hubs`; to find unlinked ones,
    `ctxr graph query orphans`; `ctxr graph query clusters` and `ctxr graph query bridges` show the
    cluster structure and the notes that span it.
-6. Report what the graph says — it enumerates structure and ranks nothing; judgment about which links
+6. When the store mounts other stores under `shared/`, the graph carries their notes under `shared/<name>/`.
+   Link from this store into a mount with a path link, such as `[[shared/<name>/<path>]]`.
+   A filename link resolves only inside the store that holds the note. A note in a mount never resolves a link back into this store.
+7. Report what the graph says — it enumerates structure and ranks nothing; judgment about which links
    matter is yours.

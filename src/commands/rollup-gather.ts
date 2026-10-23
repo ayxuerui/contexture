@@ -4,7 +4,7 @@ import type { CommandOutcome, CommandRequires } from '../core/command.js';
 import type { RunEnv } from '../core/env.js';
 import { NoteNotFoundError } from '../core/errors.js';
 import { ExitCode } from '../core/exit-codes.js';
-import { extractLinkTargets } from '../core/graph/model.js';
+import { extractLinkTargets, linkNames } from '../core/graph/model.js';
 import { listNotes } from '../core/notes/list.js';
 import type { Store } from '../core/store.js';
 
@@ -40,11 +40,10 @@ export async function execute(
   const relativePath = toStoreRelativePath(env, store, flags.entity);
   if (!existsSync(path.join(store.root, relativePath))) throw new NoteNotFoundError(relativePath);
 
-  const stem = path.basename(relativePath, '.md');
   const notes = await listNotes(store.root, store.config);
   const candidates = notes
     .filter((note) => note.path !== relativePath)
-    .filter((note) => extractLinkTargets(note.body).includes(stem))
+    .filter((note) => extractLinkTargets(note.body).some((target) => linkNames(note.path, target, relativePath)))
     .map((note) => note.path)
     .sort();
 
