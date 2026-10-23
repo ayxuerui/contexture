@@ -5,7 +5,8 @@ import { MIGRATION_STEPS } from '../../config/migrations.js';
 import * as doctorCommand from '../../commands/doctor.js';
 import * as graphDiffCommand from '../../commands/graph-diff.js';
 import { pageUrlsFor, type PageAddress, type PageUrlEntry } from '../../commands/publish-urls.js';
-import { baseRef, forgeRead } from '../approval/sessions.js';
+import { baseRef } from '../approval/sessions.js';
+import { ForgeRequestError } from '../forge/github.js';
 import type { Finding } from '../envelope.js';
 import { ContextureError, SessionRefusedError } from '../errors.js';
 import { ExitCode } from '../exit-codes.js';
@@ -13,7 +14,7 @@ import { hasRemote } from '../git/worktree.js';
 import type { Store } from '../store.js';
 import { packagedTemplate, substituteBlock } from '../templates.js';
 import { commitStaged, type CommitOptions } from './commit.js';
-import { publishSession, remoteTip, SessionRemoteError, type PushOutcome, type RemoteDeps } from './remote.js';
+import { firstLines, publishSession, remoteTip, SessionRemoteError, type PushOutcome, type RemoteDeps } from './remote.js';
 import { commitsAhead, rebaseInProgress, type SessionRef } from './resolve.js';
 
 /**
@@ -164,7 +165,14 @@ async function checkBranchName(deps: SubmitDeps, session: SessionRef, wanted: st
     if (onRemote !== null) throw refuse('branch_taken', `The remote already has a branch named "${wanted}"; give this session another name.`);
   }
   // Renaming a branch whose pull request is open would strand that pull request and open a second one.
-  const open = (await forgeRead(() => deps.forge.pullsForHead(session.branch))).find((p) => p.state === 'open');
+  let pulls;
+  try {
+    pulls = await deps.forge.pullsForHead(session.branch);
+  } catch (err) {
+    if (!(err instanceof ForgeRequestError)) throw err;
+    throw stopped(ExitCode.CheckFailed, 'forge_unreachable', 'arguments', {}, `The forge could not be read to check "${session.branch}" for an open pull request before renaming it (${firstLines(err.message, 2)}); nothing was done.`);
+  }
+  const open = pulls.find((p) => p.state === 'open');
   if (open !== undefined) {
     throw refuse('branch_has_pull_request', `"${session.name}" already has pull request #${open.number} open on branch "${session.branch}"; submit it again with --branch "${session.branch}".`);
   }

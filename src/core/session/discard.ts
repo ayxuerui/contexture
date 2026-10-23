@@ -1,4 +1,4 @@
-import { baseRef } from '../approval/sessions.js';
+import { baseRef, forgeRead } from '../approval/sessions.js';
 import { SessionRefusedError } from '../errors.js';
 import { ExitCode } from '../exit-codes.js';
 import { ForgeRequestError } from '../forge/github.js';
@@ -81,9 +81,10 @@ export async function discardSession(deps: RemoteDeps, session: SessionRef, opts
 
   let closed: number | null = null;
   if (opts.closePullRequest === true) {
-    const open = (await deps.forge.pullsForHead(session.branch)).find((p) => p.state === 'open');
+    // Before anything is removed, so a forge that cannot be reached leaves the session as it was.
+    const open = (await forgeRead(() => deps.forge.pullsForHead(session.branch))).find((p) => p.state === 'open');
     if (open !== undefined) {
-      await deps.forge.updatePull(open.number, { state: 'closed' });
+      await forgeRead(() => deps.forge.updatePull(open.number, { state: 'closed' }));
       closed = open.number;
     }
   }
