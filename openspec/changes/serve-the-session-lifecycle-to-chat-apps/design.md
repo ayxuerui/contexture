@@ -53,9 +53,9 @@ The cost is a long path prefix that the agent carries. The rendered skills state
 
 **Why not a short virtual root like `sessions/<label>/`?** A store may have its own `sessions/` folder, and the real worktree path can never collide with a note path, because the worktrees path is excluded from enumeration.
 
-### D2. Edits rest in the working tree; `submit` commits
+### D2. Edits rest in the working tree; `session_submit` commits
 
-`Edit`, `Write`, `Move` and `Delete` change files in the session worktree and commit nothing. `submit` does steps 3 to 8 of `ctxr-submit` on the server:
+`Edit`, `Write`, `Move` and `Delete` change files in the session worktree and commit nothing. `session_submit` does steps 3 to 8 of `ctxr-submit` on the server:
 1. It stages every change in the worktree except derived paths.
 2. It runs `ctxr doctor` in the worktree and refuses on failure, returning the report.
 3. It commits with the agent's message, authored by the member, with an `Edited-by:` trailer.
@@ -75,25 +75,30 @@ It loses because of what the lifecycle requires:
 - **Unsubmitted work is not lost.** It stays in the worktree, which sits in the store's volume, and `session_list` reports it, as `ctxr session list` does.
 - **Uncommitted rest is normal.** The lifecycle skill already says the worktree's uncommitted state between turns is its normal resting state.
 
-**Alternative: an explicit `commit` tool apart from `submit`.** Rejected because local sessions commit in submit too. A second tool would add a step with no review value.
+**Alternative: an explicit `commit` tool apart from `session_submit`.** Rejected because local sessions commit in submit too. A second tool would add a step with no review value.
 
-### D3. Typed session tools for every server-side git step
+### D3. Typed session tools for every server-side git step, shared with `ctxr session`
+
+Each session tool calls `src/core/session/`, the core that `ctxr session status|submit|rebase|discard|list` call (change `bring-the-session-lifecycle-into-the-cli`). Its parameters are the command's options, spelled as JSON fields. The MCP layer adds only three things:
+- the ownership check;
+- the member as commit author;
+- the confinement to MCP-started sessions.
 
 The session tools are:
 - **`session_start(label?)`** = `ctxr session start [label]`, with the same refusal for a taken label.
-- **`session_list()`**: the member's sessions. Each row gives:
+- **`session_list()`** = `ctxr session list`, filtered to the member's own sessions. Each row gives:
   - the root, branch and label;
   - whether there is uncommitted work;
   - commits ahead;
   - the pull request number and state;
   - the approval decision with the decider's comment, as `ctxr review list` reports it.
-- **`session_status(session)`**: the re-scan, meaning `git status --short`, the diff stat, `git log origin/<default>..HEAD`, and the unified diff of uncommitted work, bounded to 100 KB.
+- **`session_status(session, diff?)`** = `ctxr session status [--diff]`, with the diff bounded to 100 KB.
 - **`submit(session, branch, commit_message, title, body)`**, as described in D2.
-- **`session_rebase(session, action?)`**:
+- **`session_rebase(session, action?)`** = `ctxr session rebase [--continue|--abort]`:
   - With no action, it starts a rebase onto the fetched default branch. On a conflict it returns each conflicting path with both sides and leaves the rebase in progress, so that `Read` and `Edit` can resolve it.
   - `action: "continue"` stages and continues.
   - `action: "abort"` aborts.
-- **`session_discard(session)`** removes the worktree and its local branch, and closes an open pull request only when the member passes `close_pull_request: true`. It is destructive.
+- **`session_discard(session, force?, close_pull_request?)`** = `ctxr session discard`, with the same refusal of unpublished work unless `force`. It is destructive.
 
 A session argument is the session's directory name, as `session_list` returns it.
 
@@ -149,7 +154,7 @@ The read/write split keeps the annotations honest.
 - the worktrees path;
 - the managed skills path, which `ctxr update` owns.
 
-**Why the hooks directory:** `submit`'s commit runs the worktree's own hooks on the server (see Context). A hook a member wrote would be code they run on the server. Reviewing it later does not undo that.
+**Why the hooks directory:** `session_submit`'s commit runs the worktree's own hooks on the server (see Context). A hook a member wrote would be code they run on the server. Reviewing it later does not undo that.
 
 **`contexture.yaml`** is refused for a reason of its own: it grants MCP scopes, and a change to it should come from a local session that the operator controls.
 
@@ -172,14 +177,16 @@ The read/write split keeps the annotations honest.
   - `ctxr-mission`
   - `ctxr-session-capture`
   - `ctxr-research`
+  - `ctxr-second-opinion`, whose every `ctxr second-opinion` step maps to `second_opinion_critique` or `second_opinion_poll`, then `second_opinion_result`
   - `ctxr-session-lifecycle`
   - `ctxr-submit`
-- **Lifecycle skills:** `ctxr-session-lifecycle` and `ctxr-submit` come from `templates/skills/mcp/<slug>.md`. These are new texts in the same step order, naming the session tools, with the same When, anti-trigger, route and hand-off rules. The rules are shared rather than copied: the When and Routes sections move into partials included by both templates, so the parts that are judgment cannot drift.
-- **Every other included skill** is the CLI template, unchanged, with one partial prepended from `templates/skills/mcp/_preamble.md`. The preamble says:
-  - in this environment every `ctxr <command>` step runs through `ctxr`, or `ctxr_write` when it writes;
+- **Every included skill** is the CLI template, unchanged, with one partial prepended from `templates/skills/mcp/_preamble.md`. This covers the lifecycle skills too, because `bring-the-session-lifecycle-into-the-cli` rewords them around `ctxr session` commands. The preamble says:
+  - in this environment a `ctxr session <verb>` step is the tool `session_<verb>` and a `ctxr second-opinion <mode>` step is `second_opinion_<mode>` (then `second_opinion_result`); every other `ctxr <command>` step runs through `ctxr`, or through `ctxr_write` when it writes;
   - paths are under the session root `session_start` returned;
   - `git mv` is `Move`, `git rm` is `Delete`, and `git status` or `git diff` is `session_status`;
-  - commits and pushes happen only in `submit`.
+  - commits and pushes happen only in `session_submit`.
+
+An earlier draft of this decision gave the two lifecycle skills MCP-specific templates. It was dropped once the CLI gained the same commands, because one text with a tool mapping cannot drift and two texts can.
 
 **The drift guard** is a test over the MCP render that fails when an included skill:
 - names a `git` or `gh` command the preamble's mapping table does not list;
@@ -189,14 +196,9 @@ The read/write split keeps the annotations honest.
 This is the counterpart of the existing affordance check, and the allowlists and the tool names are read from the same modules the server uses.
 
 **Opposing case (conditional blocks inside each template, `<!-- target: mcp -->`):**
-- One file per skill.
-- A reader sees both forms side by side, so drift is visible.
+- A reader would see each surface's exact wording.
 
-It loses because:
-- The lifecycle skills would become two documents interleaved line by line.
-- The nine other skills need no change at all.
-
-The shared partials carry what both lifecycle texts must say identically.
+It loses because no included skill needs different wording once every step is a command, a file tool or a mapped git verb. Conditional blocks would be used only for spelling, which the preamble already covers.
 
 ### D7. `ctxr plugin build` and the `/plugin/` page
 
@@ -224,27 +226,70 @@ The shared partials carry what both lifecycle texts must say identically.
 
 ### D8. Annotations on every tool
 
-Each tool declares `title`, `readOnlyHint`, `destructiveHint`, `idempotentHint` and `openWorldHint: false`:
-- **Read-only:** `find`, `gather`, `Read`, `Grep`, `Glob`, `ctxr`, `session_list`, `session_status`.
-- **Writes that are not destructive:** `capture`, `session_start`, `Edit`, `Write`, `Move`, `ctxr_write`, `session_rebase`, `submit`. `submit` publishes, but its effect is a reviewable pull request.
+Each tool declares `title`, `readOnlyHint`, `destructiveHint`, `idempotentHint` and `openWorldHint`, which is `false` for every tool except the two second-opinion job tools:
+- **Read-only:** `find`, `gather`, `Read`, `Grep`, `Glob`, `ctxr`, `session_list`, `session_status`, `second_opinion_result`.
+- **Open-world:** `second_opinion_critique` and `second_opinion_poll` are marked `openWorldHint: true`. It is the one tool that sends store content to outside services (three model vendors), and it is not read-only, because it starts a job.
+- **Writes that are not destructive:** `capture`, `session_start`, `Edit`, `Write`, `Move`, `ctxr_write`, `session_rebase`, `session_submit`. `session_submit` publishes, but its effect is a reviewable pull request.
 - **Destructive:** `Delete` and `session_discard`.
 - **Idempotent:** the read-only tools and `session_status`.
 
 The annotation is a presentation hint only. Scope and ownership checks stay in the server.
 
+### D9. One name per operation across the CLI and MCP
+
+**The rule:** every MCP tool is exactly one of the following.
+- **A Claude Code file tool:** `Read`, `Grep`, `Glob`, `Edit`, `Write`. Or one of `Move` and `Delete`, which stand in for the harness's own file operations that a local agent performs with `git mv` and `git rm`.
+- **A `ctxr` command:** named for its command path with `_`, and taking that command's options as fields. Either it calls the command's core function, or it runs the command itself through `ctxr` or `ctxr_write`.
+- **A named exception**, each with its reason:
+  - `find`: it stands in for the content matching a local agent does with its own `Grep` together with `catalog show`. A client may lack both, and it gives a non-engineer one obvious entry.
+  - `gather`: this is `ctxr context gather` with bodies attached, which a client cannot read in one call otherwise. Its name is kept for the clients already connected.
+  - `capture`: a one-call capture for a phone, equal to `session_start`, `Write` into the inbox, `ctxr source check` and `session_submit` together.
+  - `second_opinion_result`: the transport cannot hold a minutes-long call open.
+
+**The enforcement:** a test reads the tool registry and the CLI's command registry, and fails when a tool is none of these, or when a command-named tool's fields are not that command's options.
+
+**Opposing case:** let MCP tools be shaped for chat, with fewer and coarser tools that each do several steps. That is friendlier to a model that has no skills loaded. It loses on your rule that skills and tools align. A coarse MCP-only tool is a step the CLI's skill text cannot name, which is the drift this change removes. `capture` is the one coarse tool kept, and it is named as an exception.
+
+### D10. A second opinion runs asynchronously, in a worker that holds no approval credential
+
+`second_opinion_critique(plan, session?, tier?, only?)` and `second_opinion_poll(question, tier?, only?, lens?)`, the `ctxr second-opinion critique|poll` options as fields, each write a job to a spool directory, `.contexture/cache/mcp/opinions/<id>/`:
+- the request, the member's email, and the plan or question as text;
+- for a critique of a session, the session's diff appended when `session` is given.
+
+It returns the job id at once. `second_opinion_result(id)` returns `pending`, or, once the job is done, the letters, the manifest and the exit status, exactly as the command writes them. Only the member who started a job sees it. Jobs and their results are deleted after 7 days.
+
+**The worker:** `ctxr second-opinion work --spool <dir>` takes one job at a time from the spool, runs `ctxr second-opinion critique|poll` on it, and writes the result beside the request. contexture-images runs it as an `opinions` service:
+- same image;
+- the agents container's model-CLI home mounted, so the CLIs are already signed in;
+- the store's cache spool mounted;
+- **no** App key and no forge token.
+
+**Why not run it inside `serve`** (the opposing case, steelmanned): it is one process fewer, there is no spool, and the result could be synchronous. The CLIs' containment looks sufficient on paper, since Claude runs with no tools and codex in a read-only sandbox. It loses on what "read-only" means:
+- **The key is readable.** `serve` mounts the App private key as a file (`/run/secrets/github-app-key`), and codex's read-only sandbox can read files.
+- **The plan is member text.** A prompt injection in it could make a critic quote the key back into the letters, and those letters go to the member.
+- **agy has no mode that removes its ability to act**, as the skill already says.
+
+The App key is what makes an approval trustworthy, and memory D5 of 2026-10-21 already keeps it out of every container that runs agents. A model CLI is such a process.
+
+**Why asynchronous:** a strong-tier critique took one to two minutes on a short plan, and up to ten with a deeper Claude effort. That is longer than a chat app can be relied on to hold one tool call open. The result call is cheap and idempotent, and the rendered skill tells the agent to say the critique is under way, which is what the local skill already says for long runs.
+
+**Why a spool rather than a queue service:** the store volume is already shared, and the spool is plain files with an atomic rename to claim a job. Nothing new needs to stay running in `serve`.
+
 ## Risks / Trade-offs
 
 - **The agent forgets the session root and writes outside it.** → The write is refused, never redirected. The refusal lists the open sessions with their roots, and the preamble states the rule once.
 - **Unsubmitted work piles up in the store's volume.** → `session_list` shows age and uncommitted state, the preamble tells the agent to mention open sessions at the start of a conversation, and the per-member cap of 20 bounds it. Removal stays an explicit `session_discard`. Nothing is reaped silently, because the lifecycle has no reaping.
-- **A CLI command run by `ctxr_write` writes outside the session.** → The cwd and `CONTEXTURE_STORE_ROOT` are the session worktree, root-changing options are refused, and path arguments are resolved and confined. `submit` stages only inside the worktree. Anything else is a CLI bug, and the existing integration tests cover the CLI's root confinement.
+- **A CLI command run by `ctxr_write` writes outside the session.** → The cwd and `CONTEXTURE_STORE_ROOT` are the session worktree, root-changing options are refused, and path arguments are resolved and confined. `session_submit` stages only inside the worktree. Anything else is a CLI bug, and the existing integration tests cover the CLI's root confinement.
 - **A spawned `ctxr` is slow on a large store**, because each call builds its own state. → The 30-second limit is a hard bound, and `doctor` is the slowest command. The pkm timing is measured in task 9.1 before the limit is fixed.
-- **A rebase left in progress blocks other calls on that session.** → `submit`, `Move` and `Delete` refuse during a rebase, naming `session_rebase` with `continue` or `abort`. `Read` and `Edit` work, so the conflict can be resolved.
+- **A rebase left in progress blocks other calls on that session.** → `session_submit`, `Move` and `Delete` refuse during a rebase, naming `session_rebase` with `continue` or `abort`. `Read` and `Edit` work, so the conflict can be resolved.
+- **The `opinions` service is down, or its CLIs are signed out.** → A job left unclaimed for 2 minutes makes `second_opinion_result` report `worker_unavailable`. The worker runs `preflight` at start and writes its status to the spool, and the job tools refuse at once when the last preflight failed, naming the CLIs that failed.
+- **Store content goes to three vendors.** → `openWorldHint: true` makes both apps prompt for it. The member supplies the text, and the result names the families used.
 - **The plugin formats are new and may change.** → The manifest text lives in templates, and `ctxr plugin build` has a test asserting each manifest's shape against the documented fields. Format drift is then a template change.
 - **ChatGPT's plugin admission is partly unverified** (help-center pages were read through search snippets only). → Task 9.2 installs the built zip in ChatGPT before the change is archived. If it cannot be installed, developer mode plus the server instructions is the documented fallback.
 
 ## Migration Plan
 
-1. **Ship.** `serve` adopts open `mcp-draft-*` worktrees as their members' sessions. A draft's pull request stays open and landable, and further edits to it now rest uncommitted until `submit`.
+1. **Ship.** `serve` adopts open `mcp-draft-*` worktrees as their members' sessions. A draft's pull request stays open and landable, and further edits to it now rest uncommitted until `session_submit`.
 2. **Upload once.** Members download the plugin from `/plugin/` and upload it once per app. Without the plugin the surface still works, with the server instructions only.
 3. **Rollback.** Pin the previous image. Sessions started over MCP stay ordinary sessions, which the approval page lists and `ctxr land` lands.
 

@@ -1,7 +1,7 @@
 ## 1. Sessions and ownership
 
 - [ ] 1.1 Ownership record under `.contexture/cache/mcp/sessions.json` (atomic write under the write mutex), draft adoption by label, per-member cap; unit tests
-- [ ] 1.2 `session_start`, `session_list` (with review state), `session_status`; `npx vitest run test/unit/mcp-sessions.test.ts` passes
+- [ ] 1.2 `session_start`, `session_list`, `session_status` over `src/core/session/` (from `bring-the-session-lifecycle-into-the-cli`); delete the private helpers in `src/core/mcp/sessions.ts` it replaces; `npx vitest run test/unit/mcp-sessions.test.ts` passes
 
 ## 2. File tools over session roots
 
@@ -11,8 +11,8 @@
 
 ## 3. Submit, rebase, discard
 
-- [ ] 3.1 `submit`: stage, `ctxr doctor` gate, commit as member, branch rename, push (with lease after rewrite), open or update the pull request, idempotent retry
-- [ ] 3.2 `session_rebase` (start, continue, abort, conflicting paths with both sides) and `session_discard`
+- [ ] 3.1 `session_submit` over the core submit with the member as author
+- [ ] 3.2 `session_rebase` and `session_discard` over the core, confined to owned sessions
 - [ ] 3.3 `npx vitest run test/unit/mcp-submit.test.ts` passes against the fake `gh`
 
 ## 4. CLI command tools
@@ -24,12 +24,18 @@
 
 - [ ] 5.1 Per-tool annotations in the tool definitions; update `templates/mcp/server-instructions.md` and per-tool prose for sessions
 - [ ] 5.2 `npx vitest run test/unit/mcp-protocol.test.ts` asserts every tool carries all hints
+- [ ] 5.3 Tool/command alignment check (D9) over the tool and command registries; fails on a seeded unmatched tool
 
 ## 6. Skill rendering for the MCP surface
 
-- [ ] 6.1 Extract the When, anti-trigger and Routes partials from `ctxr-submit` and `ctxr-session-lifecycle`; CLI render byte-identical (`npx vitest run test/unit/skills.test.ts`)
-- [ ] 6.2 `templates/skills/mcp/_preamble.md`, `ctxr-session-lifecycle.md`, `ctxr-submit.md`; `renderSkills(config, 'mcp')` with the included subset
+- [ ] 6.1 `renderSkills(config, 'mcp')`: the included subset from the CLI templates; CLI render byte-identical (`npx vitest run test/unit/skills.test.ts`)
+- [ ] 6.2 `templates/skills/mcp/_preamble.md` with the command-to-tool and git-verb mapping tables
 - [ ] 6.3 Drift check over the MCP render (tools, allowlists, git/gh mapping) fails on a seeded bad skill and passes on the shipped set
+
+## 6b. Second opinion
+
+- [ ] 6b.1 `ctxr second-opinion work --spool <dir>` and the spool format; `second_opinion_critique`, `second_opinion_poll`, `second_opinion_result` with ownership, retention and the worker-unavailable state; `npx vitest run test/unit/mcp-opinion.test.ts` passes with stub CLIs
+- [ ] 6b.2 contexture-images: an `opinions` service in the shared compose (same image, model-CLI home, spool mount, no App key); its CI passes
 
 ## 7. Plugin build and download page
 

@@ -42,30 +42,30 @@ A member holding `edit` SHALL be able to call `session_start` with an optional l
 - **WHEN** a member calls `Move` from `<root>/work/a.md` to `<root>/archive/a.md` and `Delete` on `<root>/work/b.md`
 - **THEN** the session's working tree shows the rename and the deletion, and nothing is committed
 
-### Requirement: `submit` validates, commits as the member and opens the pull request
-`submit` SHALL take an owned session, a branch name, a commit message, a pull-request title and a body. It SHALL stage every change in the session worktree outside derived paths, run `ctxr doctor` in that worktree at store scope and refuse, committing nothing, when it fails, returning its report. It SHALL then commit with the message, authored by the member's verified email with a trailer naming them, rename the session's branch to the given name when it differs, refusing a name the default branch or another live branch carries, push the branch with the server's forge credential (with lease when its history was rewritten), and open a pull request with the given title and body against the default branch, or update the open one's title and body. It SHALL return the pull request's number and address and, when the store declares `change_approval`, the approval page's address for the worktree. A call with nothing staged and nothing unpublished SHALL be refused. A retried call whose commit already exists SHALL publish that commit without a second one. It SHALL NOT write to, commit on or push the default branch, and SHALL NOT record a decision.
+### Requirement: `session_submit` validates, commits as the member and opens the pull request
+`session_submit` SHALL run what `ctxr session submit` runs, with the member as the commit's author. It SHALL take an owned session, a branch name, a commit message, a pull-request title and a body. It SHALL stage every change in the session worktree outside derived paths, run the store-scope check pass `ctxr doctor` runs in that worktree and refuse, committing nothing, when it fails, returning its report. It SHALL then commit with the message, authored by the member's verified email with a trailer naming them, rename the session's branch to the given name when it differs, refusing a name the default branch or another live branch carries, push the branch with the server's forge credential (with lease when its history was rewritten), and open a pull request against the default branch with the given title and a body formed from the given body followed by the generated sections `ctxr session submit` appends, or update the open one's title and body. It SHALL return the pull request's number and address and, when the store declares `change_approval`, the approval page's address for the worktree. A call with nothing staged and nothing unpublished SHALL be refused. A retried call whose commit already exists SHALL publish that commit without a second one. It SHALL NOT write to, commit on or push the default branch, and SHALL NOT record a decision.
 
 #### Scenario: A session is submitted with the agent's description
-- **WHEN** a member calls `submit` on a session with two uncommitted edits, branch `notes/intro`, and a title and body
+- **WHEN** a member calls `session_submit` on a session with two uncommitted edits, branch `notes/intro`, and a title and body
 - **THEN** one commit authored by the member holds both edits, the branch is `notes/intro` on the remote, an open pull request carries that title and body, and the result gives its address and the approval page's address
 
 #### Scenario: A failing store is not submitted
 - **WHEN** `ctxr doctor` fails in the session's worktree
-- **THEN** `submit` returns its report, and no commit, push or pull request is made
+- **THEN** `session_submit` returns its report, and no commit, push or pull request is made
 
 #### Scenario: Requested changes are answered on the same pull request
-- **WHEN** a member edits a session whose pull request is open and calls `submit` again
+- **WHEN** a member edits a session whose pull request is open and calls `session_submit` again
 - **THEN** a second commit is pushed to the same branch and no second pull request is opened
 
 ### Requirement: A member's session can be rebased or discarded
-`session_rebase` SHALL, for an owned session, fetch the default branch and rebase the session onto it; on conflict it SHALL return each conflicting path with both sides' content and leave the rebase in progress. With `continue` it SHALL stage the resolved paths and continue, and with `abort` restore the session as it was before the rebase. `session_discard` SHALL remove an owned session's worktree, local branch and ownership record, and SHALL close its open pull request only when explicitly asked to.
+`session_rebase` and `session_discard` SHALL run what `ctxr session rebase` and `ctxr session discard` run, confined to owned sessions. `session_rebase` SHALL, for an owned session, fetch the default branch and rebase the session onto it; on conflict it SHALL return each conflicting path with both sides' content and leave the rebase in progress. With `continue` it SHALL stage the resolved paths and continue, and with `abort` restore the session as it was before the rebase. `session_discard` SHALL remove an owned session's worktree, local branch and ownership record, SHALL refuse a session carrying uncommitted changes or unpushed commits unless forced, and SHALL close its open pull request only when explicitly asked to.
 
 #### Scenario: A conflict is returned for resolution
 - **WHEN** the default branch changed a line the session also changed, and the member calls `session_rebase`
-- **THEN** the conflicting path is returned with both sides, `submit` is refused naming `session_rebase`, and after an `Edit` resolving it and `session_rebase` with `continue` the session sits on the new default branch
+- **THEN** the conflicting path is returned with both sides, `session_submit` is refused naming `session_rebase`, and after an `Edit` resolving it and `session_rebase` with `continue` the session sits on the new default branch
 
 #### Scenario: A discarded session is gone
-- **WHEN** a member calls `session_discard` on a session with no pull request
+- **WHEN** a member calls `session_discard` on a clean session with no pull request
 - **THEN** its worktree and branch no longer exist and `session_list` no longer lists it
 
 ### Requirement: `ctxr` and `ctxr_write` run allowlisted CLI commands confined to one checkout
@@ -84,7 +84,7 @@ A member holding `edit` SHALL be able to call `session_start` with an optional l
 - **THEN** the call is refused and nothing runs
 
 ### Requirement: Every tool declares honest annotations
-Every tool SHALL declare a title and the read-only, destructive, idempotent and open-world hints. A tool that changes no state SHALL be marked read-only; `Delete` and `session_discard` SHALL be marked destructive; no tool SHALL be marked open-world. The hints SHALL NOT replace the server's scope and ownership checks.
+Every tool SHALL declare a title and the read-only, destructive, idempotent and open-world hints. A tool that changes no state SHALL be marked read-only; `Delete` and `session_discard` SHALL be marked destructive; `second_opinion_critique` and `second_opinion_poll` SHALL be marked open-world, and no other tool SHALL be. The hints SHALL NOT replace the server's scope and ownership checks.
 
 #### Scenario: The tool list carries the hints
 - **WHEN** a client calls `tools/list`
@@ -124,11 +124,33 @@ The surface SHALL offer `Read`, `Grep` and `Glob` with the names and parameters 
 - **WHEN** `Read` is called for a file under the store's template path
 - **THEN** its content is returned
 
+### Requirement: Every tool is a file tool, a `ctxr` command, or a named exception
+Every tool the surface offers SHALL be one of Claude Code's file tools (`Read`, `Grep`, `Glob`, `Edit`, `Write`), `Move` or `Delete`; a tool for a `ctxr` command, named for its command path with `_` between words and taking that command's options as fields; or one of the named exceptions `find`, `gather`, `capture` and `second_opinion_result`. A test over the tool registry and the CLI's command registry SHALL fail, naming the tool, when a tool is none of these or a command-named tool's fields are not options that command registers.
+
+#### Scenario: A tool with no command fails the check
+- **WHEN** a tool `session_publish` is registered and no `ctxr session publish` command exists
+- **THEN** the check exits non-zero naming `session_publish`
+
+### Requirement: A second opinion is queued to a worker that holds no approval credential
+`second_opinion_critique` and `second_opinion_poll` SHALL take the options `ctxr second-opinion critique` and `poll` take, as fields, with the plan or question as text and, for a critique, optionally an owned session whose diff is appended to the plan. They SHALL write a job, owned by the calling member, to a spool under the store's derived cache path and return its id without running any model CLI in the server's process or container. `ctxr second-opinion work` SHALL take jobs from a spool one at a time, run the requested mode, and write its letters, manifest and exit status beside the job. `second_opinion_result` SHALL return a job's state — pending, done with that output, or worker unavailable when no worker has claimed it within a declared interval — only to the member who queued it. Jobs SHALL be removed after a declared retention.
+
+#### Scenario: A critique is queued and read back
+- **WHEN** a member calls `second_opinion_critique` with a plan, and a worker running against stub CLIs processes the spool
+- **THEN** the call returns a job id at once, and `second_opinion_result` for it returns the letters and the manifest the command wrote
+
+#### Scenario: Nobody else reads the result
+- **WHEN** member b@example.com calls `second_opinion_result` with a@example.com's job id
+- **THEN** the call is refused as no such job
+
+#### Scenario: A missing worker is reported
+- **WHEN** no worker claims a job within the declared interval
+- **THEN** `second_opinion_result` reports the worker unavailable
+
 ## REMOVED Requirements
 
 ### Requirement: `Edit` and `Write` collect in one draft pull request per member
 **Reason**: A single always-published draft per member cannot keep two units apart, publishes half-finished work for approval, and carries a fixed description; the session lifecycle the owned skills teach replaces it.
-**Migration**: An existing draft worktree is adopted as its member's session; its pull request stays open and landable, and further edits rest uncommitted until `submit`.
+**Migration**: An existing draft worktree is adopted as its member's session; its pull request stays open and landable, and further edits rest uncommitted until `session_submit`.
 
 ### Requirement: `Read`, `Grep` and `Glob` give file-shaped access with Claude Code's parameters
 **Reason**: Replaced by a requirement that reads a member's own sessions by their roots and widens the readable set to what the owned skills read.

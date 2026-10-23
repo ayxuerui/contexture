@@ -1,7 +1,7 @@
 ## ADDED Requirements
 
 ### Requirement: Owned skills render for the MCP surface from the same source
-The owned skills SHALL render for a second target, the MCP surface, alongside the CLI render, which SHALL be unchanged by it. The MCP render SHALL include a declared subset of the owned skills; the session-lifecycle and submit skills SHALL render from MCP-specific templates that share their entry conditions, anti-triggers and routes with the CLI templates through common partials, and every other included skill SHALL render from its CLI template with one shared preamble naming how each command and git step maps to the surface's tools. Skills that run local programs, the land skill and the derived-artifacts skill SHALL NOT be included.
+The owned skills SHALL render for a second target, the MCP surface, alongside the CLI render, which SHALL be unchanged by it. The MCP render SHALL include a declared subset of the owned skills; every included skill SHALL render from its CLI template, unchanged, with one shared preamble naming how each command and git step maps to the surface's tools. The upgrade and Circleback skills, which run local programs, the land skill and the derived-artifacts skill SHALL NOT be included.
 
 #### Scenario: The CLI render is unchanged
 - **WHEN** the owned skills are rendered for the CLI on a store before and after this rendering exists
@@ -9,7 +9,7 @@ The owned skills SHALL render for a second target, the MCP surface, alongside th
 
 #### Scenario: A capture skill reaches the chat app
 - **WHEN** the owned skills are rendered for the MCP surface
-- **THEN** the capture skill is included with the shared preamble, the submit skill names `submit` rather than `git push`, and the upgrade and second-opinion skills are absent
+- **THEN** the capture skill is included with the shared preamble, the submit skill's text equals the CLI render's under the preamble, the second-opinion skill is included, and the upgrade and land skills are absent
 
 ### Requirement: An MCP-rendered skill names only what the surface offers
 A test over the MCP render SHALL fail, naming the skill and the term, when an included skill names a tool the surface does not register, a `ctxr` subcommand outside the surface's two command allowlists, or a `git` or `gh` command the shared preamble does not map. The tool names and allowlists SHALL be read from the same definitions the server uses.
