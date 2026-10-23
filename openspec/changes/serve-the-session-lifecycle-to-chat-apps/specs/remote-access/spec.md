@@ -84,7 +84,7 @@ A member holding `edit` SHALL be able to call `session_start` with an optional l
 - **THEN** the call is refused and nothing runs
 
 ### Requirement: Every tool declares honest annotations
-Every tool SHALL declare a title and the read-only, destructive, idempotent and open-world hints. A tool that changes no state SHALL be marked read-only; `Delete` and `session_discard` SHALL be marked destructive; `second_opinion_critique` and `second_opinion_poll` SHALL be marked open-world, and no other tool SHALL be. The hints SHALL NOT replace the server's scope and ownership checks.
+Every tool SHALL declare a title and the read-only, destructive, idempotent and open-world hints. A tool that changes no state SHALL be marked read-only; `Delete` and `session_discard` SHALL be marked destructive; no tool SHALL be marked open-world. The hints SHALL NOT replace the server's scope and ownership checks.
 
 #### Scenario: The tool list carries the hints
 - **WHEN** a client calls `tools/list`
@@ -125,26 +125,11 @@ The surface SHALL offer `Read`, `Grep` and `Glob` with the names and parameters 
 - **THEN** its content is returned
 
 ### Requirement: Every tool is a file tool, a `ctxr` command, or a named exception
-Every tool the surface offers SHALL be one of Claude Code's file tools (`Read`, `Grep`, `Glob`, `Edit`, `Write`), `Move` or `Delete`; a tool for a `ctxr` command, named for its command path with `_` between words and taking that command's options as fields; or one of the named exceptions `find`, `gather`, `capture` and `second_opinion_result`. A test over the tool registry and the CLI's command registry SHALL fail, naming the tool, when a tool is none of these or a command-named tool's fields are not options that command registers.
+Every tool the surface offers SHALL be one of Claude Code's file tools (`Read`, `Grep`, `Glob`, `Edit`, `Write`), `Move` or `Delete`; a tool for a `ctxr` command, named for its command path with `_` between words and taking that command's options as fields; the command runners `ctxr` and `ctxr_write`; or one of the named exceptions `find`, `gather` and `capture`. A command-named tool MAY add a `session` field to its command's options and no other. One mapping from command paths to tools SHALL be the only source the tool registry, the rendered skills' preamble and the checks read. A test over the tool registry and the CLI's command registry SHALL fail, naming the tool, when a tool is none of these or a command-named tool's fields other than `session` are not options that command registers.
 
 #### Scenario: A tool with no command fails the check
 - **WHEN** a tool `session_publish` is registered and no `ctxr session publish` command exists
 - **THEN** the check exits non-zero naming `session_publish`
-
-### Requirement: A second opinion is queued to a worker that holds no approval credential
-`second_opinion_critique` and `second_opinion_poll` SHALL take the options `ctxr second-opinion critique` and `poll` take, as fields, with the plan or question as text and, for a critique, optionally an owned session whose diff is appended to the plan. They SHALL write a job, owned by the calling member, to a spool under the store's derived cache path and return its id without running any model CLI in the server's process or container. `ctxr second-opinion work` SHALL take jobs from a spool one at a time, run the requested mode, and write its letters, manifest and exit status beside the job. `second_opinion_result` SHALL return a job's state — pending, done with that output, or worker unavailable when no worker has claimed it within a declared interval — only to the member who queued it. Jobs SHALL be removed after a declared retention.
-
-#### Scenario: A critique is queued and read back
-- **WHEN** a member calls `second_opinion_critique` with a plan, and a worker running against stub CLIs processes the spool
-- **THEN** the call returns a job id at once, and `second_opinion_result` for it returns the letters and the manifest the command wrote
-
-#### Scenario: Nobody else reads the result
-- **WHEN** member b@example.com calls `second_opinion_result` with a@example.com's job id
-- **THEN** the call is refused as no such job
-
-#### Scenario: A missing worker is reported
-- **WHEN** no worker claims a job within the declared interval
-- **THEN** `second_opinion_result` reports the worker unavailable
 
 ## REMOVED Requirements
 

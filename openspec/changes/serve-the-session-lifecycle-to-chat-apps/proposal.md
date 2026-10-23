@@ -16,8 +16,7 @@ Both vendors now ship plugins that bundle skills with a remote MCP server, and t
 - **BREAKING: drafts are removed.** `Edit` and `Write` (with Claude Code's own parameters, unchanged), plus new `Move` and `Delete` tools, change files inside a session the member owns. They are addressed by the session worktree's path, just as a local agent addresses them. They write the working tree; nothing commits or publishes until `session_submit`. An open `mcp-draft-*` session is adopted as its member's session, and its pull request stays landable.
 - **A wider editable set inside a session.** Inside a session, the editable set grows to what a local session may change: notes, captures, templates, house conventions and the log. Configuration, the hooks directory, `.git*` files, derived files and the managed skills stay refused. The hooks directory is refused because a commit in a session worktree runs that worktree's hooks on the server.
 - **`ctxr` and `ctxr_write` tools.** `ctxr` runs read-only CLI commands such as `lint`, `doctor`, `catalog show`, `graph query`, `graph diff`, `source check`, `rollup stale` and `publish urls`, against the served commit or one of the member's sessions. `ctxr_write` runs write commands such as `ingest`, `archive`, `entry append`, `rollup write`, `source stamp` and `session capture`, inside a session. Both take an allowlist of subcommands, pass argv with no shell, and accept no option that changes the store root. With these, a skill's "run `ctxr lint`" works unchanged.
-- **One name per operation across the surfaces.** Every MCP tool is either one of Claude Code's file tools or a `ctxr` command. A command's tool is named for its path: `ctxr session submit` is `session_submit`, and `ctxr second-opinion critique` is `second_opinion_critique`. The exceptions are named, and each has its reason. A test checks the tool registry against the CLI's command registry.
-- **A second opinion over MCP.** `second_opinion_critique` and `second_opinion_poll` queue a critique or a poll through `ctxr second-opinion`, which comes from change `run-the-second-opinion-from-the-cli` and must land first, and returns a job id. `second_opinion_result`, the one tool that exists only because a chat app cannot hold a call open for minutes, returns the letters and the manifest once the job is done. The job runs in a worker that has the model CLIs signed in and no approval credential: a new `ctxr second-opinion work` loop, run as its own service in contexture-images. `serve` never runs a model CLI, because the App key is mounted in its container and codex's read-only sandbox can read files. The plugin then includes `ctxr-second-opinion`, rendered for the tool.
+- **One name per operation across the surfaces.** Every MCP tool is either one of Claude Code's file tools or a `ctxr` command. A command's tool is named for its path: `ctxr session submit` is `session_submit`. The exceptions are named, and each has its reason. A test checks the tool registry against the CLI's command registry, and one mapping module is the only place a command is mapped to its tool.
 - **Tool annotations.** Every tool carries honest annotations (`title`, `readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint`), so each app's confirmation prompts match what a call does.
 - **One skill source, a second rendering.**
   - Owned skills render for the MCP surface as well as for the CLI.
@@ -29,8 +28,12 @@ Both vendors now ship plugins that bundle skills with a remote MCP server, and t
 ## Non-goals
 
 - **Landing from a chat app.** A decision has to be made by a verified person on the approval page, which records it against that person's identity. An agent calling a tool cannot carry that consent. `session_submit` hands off the approval page's address, as `ctxr-submit` does locally.
+- **A second opinion over MCP (deferred to its own change).** The critique vetoed the queued worker this change first proposed. A critique of member-written text runs model CLIs that can read files (codex in its read-only sandbox, and agy). One worker shared by every member would let a prompt injection read another member's queued plan or result, or the signed-in model credentials themselves. The only CLI with no file access is Claude, alone, and one model is not a second opinion. The follow-up has two candidate designs, each needing its own critique:
+  - calling the three vendors' APIs with no tools at all;
+  - one sandbox per job, under its own uid, that can see only that job.
+  `ctxr second-opinion` itself (change `run-the-second-opinion-from-the-cli`) is unaffected.
 - **Shipping every owned skill in the plugin.**
-  - `ctxr-upgrade` and `ctxr-circleback` run local programs: npm and the `cb` CLI.
+  - `ctxr-upgrade`, `ctxr-circleback` and, until the follow-up above, `ctxr-second-opinion` run local programs: npm, the `cb` CLI and the model CLIs.
   - `ctxr-derived-artifacts` is the server's own job.
   - `ctxr-land` is replaced by the approval page.
   - `ctxr-organize-audit` and `ctxr-publish` both depend on local checks that the server cannot stand in for: organize-audit moves notes at scale and then checks the move across scripts, and publish relies on a local browser preview. Both are left for a later change.
@@ -52,21 +55,18 @@ None.
   - `Read`, `Grep` and `Glob` over session roots and the wider readable set.
   - The `ctxr` and `ctxr_write` tools.
   - Tool annotations.
-  - The second-opinion tools.
   - The plugin download page.
 - `harness-portability`: owned skills render for the MCP surface, the check that the rendering names only what the surface offers, and `ctxr plugin build`.
 
 ## Impact
 
 - **Code:**
-  - `src/core/mcp/` gains `tools/sessions.ts`, `tools/cli.ts` and `tools/opinion.ts`.
-  - A new `ctxr second-opinion work` subcommand.
+  - `src/core/mcp/` gains `tools/sessions.ts`, and `tools/cli.ts`.
   - `edit.ts` and `drafts.ts` are rewritten around session roots; `files.ts` resolves session roots.
   - `surface.ts` serves `/plugin/`.
   - `src/core/skills.ts` gains a render target.
   - A new `src/commands/plugin-build.ts`.
   - New templates: `templates/skills/mcp/_preamble.md` and `templates/plugin/`.
 - **Behaviour:** existing MCP clients see new tools. `Edit` without a session root is now refused with an instruction to call `session_start`; until now it opened a draft.
-- **contexture-images:** a new `opinions` service in the shared compose. It uses the same image and the agents' signed-in model homes, mounts the spool, and does not mount the App key.
-- **Depends on:** `bring-the-session-lifecycle-into-the-cli` and `run-the-second-opinion-from-the-cli`.
+- **Depends on:** `bring-the-session-lifecycle-into-the-cli`.
 - **Deployment:** pkm keeps its configuration. Members download the plugin from `brain.ruixue.ai/plugin/` and upload it once in each app. The Cloudflare Bypass app must not cover `/plugin/`; it does not today.
