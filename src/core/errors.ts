@@ -825,3 +825,16 @@ export class SecondOpinionUsageError extends ContextureError {
     super(ExitCode.Usage, { code: 'second_opinion.usage', severity: 'error', message, ...(details ? { details } : {}) });
   }
 }
+
+/**
+ * bring-the-session-lifecycle-into-the-cli D3: a session command's refusal —
+ * the usage code for what the caller named (a session that is not one, a
+ * branch another session carries, a body with a generated section's heading),
+ * the failed-check code for what the session holds (uncommitted work discard
+ * would destroy, a derived path in the index, a rebase in progress).
+ */
+export class SessionRefusedError extends ContextureError {
+  constructor(exitCode: ExitCode, reason: string, message: string, details: Record<string, unknown> = {}, subject?: string) {
+    super(exitCode, { code: `session.${reason}`, severity: 'error', message, details, ...(subject === undefined ? {} : { subject }) });
+  }
+}

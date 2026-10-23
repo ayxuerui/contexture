@@ -22,7 +22,11 @@ import * as publishStampCommand from './commands/publish-stamp.js';
 import * as reviewListCommand from './commands/review-list.js';
 import * as secondOpinionCommand from './commands/second-opinion.js';
 import * as sessionCaptureCommand from './commands/session-capture.js';
+import * as sessionDiscardCommand from './commands/session-discard.js';
 import * as sessionListCommand from './commands/session-list.js';
+import * as sessionRebaseCommand from './commands/session-rebase.js';
+import * as sessionStatusCommand from './commands/session-status.js';
+import * as sessionSubmitCommand from './commands/session-submit.js';
 import * as serveCommand from './commands/serve.js';
 import * as sessionStartCommand from './commands/session-start.js';
 import * as rollupGatherCommand from './commands/rollup-gather.js';
@@ -796,12 +800,72 @@ export async function run(argv: readonly string[], env: RunEnv): Promise<ExitCod
 
   sessionCommand
     .command('list')
-    .description('list active session worktrees')
-    .action(async (_cmdOpts: object, cmd: Command) => {
+    .description("list active session worktrees, each with its uncommitted state and commits ahead, read locally")
+    .option('--review', "also read each session's open pull request and, when the store declares change_approval, its decision state from the forge")
+    .action(async (cmdOpts: { review?: boolean }, cmd: Command) => {
       const { runEnv, jsonMode, root } = deriveRunEnv(env, cmd);
       result = await runCommand('session.list', runEnv, jsonMode, async () => {
         const store = await openStore(runEnv, { root });
-        return sessionListCommand.execute(runEnv, store);
+        return sessionListCommand.execute(runEnv, store, { review: Boolean(cmdOpts.review) });
+      });
+    });
+
+  // bring-the-session-lifecycle-into-the-cli D3: the lifecycle's mechanical steps, shared with the MCP surface.
+  sessionCommand
+    .command('status')
+    .description('re-scan a session: its uncommitted changes, the diff stat of committed and uncommitted work, and its commits ahead of the default branch')
+    .argument('[session]', 'the session worktree\'s directory name, as `session list` prints it (default: the session containing the working directory)')
+    .option('--diff', 'also print the unified diff of uncommitted work')
+    .action(async (session: string | undefined, cmdOpts: { diff?: boolean }, cmd: Command) => {
+      const { runEnv, jsonMode, root } = deriveRunEnv(env, cmd);
+      result = await runCommand('session.status', runEnv, jsonMode, async () => {
+        const store = await openStore(runEnv, { root });
+        return sessionStatusCommand.execute(runEnv, store, { session, diff: Boolean(cmdOpts.diff) });
+      });
+    });
+
+  sessionCommand
+    .command('submit')
+    .description('stage a session\'s changes outside derived paths, gate on doctor, commit, name the branch, push, and open or update its pull request with the Pages and Knowledge changes sections appended')
+    .argument('<session>', 'the session worktree\'s directory name, as `session list` prints it')
+    .requiredOption('--branch <name>', 'the branch name the pull request carries; the session\'s branch is renamed to it')
+    .requiredOption('--message <msg>', 'the commit message')
+    .requiredOption('--title <title>', 'the pull request title')
+    .option('--body <body>', 'the pull request body: why, what changed, route, verification and follow-ups')
+    .option('--body-file <path>', 'read the pull request body from a file instead')
+    .action(async (session: string, cmdOpts: { branch: string; message: string; title: string; body?: string; bodyFile?: string }, cmd: Command) => {
+      const { runEnv, jsonMode, root } = deriveRunEnv(env, cmd);
+      result = await runCommand('session.submit', runEnv, jsonMode, async () => {
+        const store = await openStore(runEnv, { root });
+        return sessionSubmitCommand.execute(runEnv, store, { session, ...cmdOpts });
+      });
+    });
+
+  sessionCommand
+    .command('rebase')
+    .description('fetch the default branch and rebase a session onto it, reporting each conflicting path with both sides')
+    .argument('<session>', 'the session worktree\'s directory name, as `session list` prints it')
+    .option('--continue', 'stage the resolved paths and continue the rebase')
+    .option('--abort', 'abort the rebase and restore the session as it was')
+    .action(async (session: string, cmdOpts: { continue?: boolean; abort?: boolean }, cmd: Command) => {
+      const { runEnv, jsonMode, root } = deriveRunEnv(env, cmd);
+      result = await runCommand('session.rebase', runEnv, jsonMode, async () => {
+        const store = await openStore(runEnv, { root });
+        return sessionRebaseCommand.execute(runEnv, store, { session, continue: cmdOpts.continue, abort: cmdOpts.abort });
+      });
+    });
+
+  sessionCommand
+    .command('discard')
+    .description('remove a session worktree and its local branch, refusing uncommitted or unpushed work unless forced')
+    .argument('<session>', 'the session worktree\'s directory name, as `session list` prints it')
+    .option('--force', 'discard uncommitted changes and commits the remote branch lacks')
+    .option('--close-pull-request', 'also close the session\'s open pull request')
+    .action(async (session: string, cmdOpts: { force?: boolean; closePullRequest?: boolean }, cmd: Command) => {
+      const { runEnv, jsonMode, root } = deriveRunEnv(env, cmd);
+      result = await runCommand('session.discard', runEnv, jsonMode, async () => {
+        const store = await openStore(runEnv, { root });
+        return sessionDiscardCommand.execute(runEnv, store, { session, force: cmdOpts.force, closePullRequest: cmdOpts.closePullRequest });
       });
     });
 
