@@ -711,11 +711,12 @@ export async function run(argv: readonly string[], env: RunEnv): Promise<ExitCod
     .argument('[pr]', 'the pull request number to land', (v) => Number.parseInt(v, 10))
     .option('--pending', 'land every open session pull request whose current head carries an approval from the approval page')
     .option('--confirm', 'the caller already has an explicit go for this pull request; land it without a recorded approval')
-    .action(async (pr: number | undefined, cmdOpts: { pending?: boolean; confirm?: boolean }, cmd: Command) => {
+    .option('--session <session>', 'with --confirm: land every pull request of a session homed here (worktree name or branch), parts in mounted stores first, stopping at the first that does not land')
+    .action(async (pr: number | undefined, cmdOpts: { pending?: boolean; confirm?: boolean; session?: string }, cmd: Command) => {
       const { runEnv, jsonMode, root } = deriveRunEnv(env, cmd);
       result = await runCommand('land', runEnv, jsonMode, async () => {
         const store = await openStore(runEnv, { root });
-        return landCommand.execute(runEnv, store, { pr, pending: Boolean(cmdOpts.pending), confirm: Boolean(cmdOpts.confirm) });
+        return landCommand.execute(runEnv, store, { pr, pending: Boolean(cmdOpts.pending), confirm: Boolean(cmdOpts.confirm), session: cmdOpts.session });
       });
     });
 
