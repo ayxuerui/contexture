@@ -87,7 +87,7 @@ describe('a session joined across stores (real CLI, fake forges)', () => {
     expect(submitted.exitCode, submitted.stdout + submitted.stderr).toBe(0);
     const [pull] = (await pair.b.forge.read()).pulls;
     expect(pull!.body).toMatch(new RegExp(`${sessionMarker({ home: 'example/ctx-a', branch: home.branch }).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`));
-    expect(parseSessionMarker(pull!.body)).toEqual({ home: 'example/ctx-a', branch: home.branch });
+    expect(parseSessionMarker(pull!.body ?? "")).toEqual({ home: 'example/ctx-a', branch: home.branch });
     // The hand-off names the home store's approval page, by the home session's name.
     expect(submitted.json.data.approval_url).toBe(`https://ctx-a.example.test/approve/${home.name}/`);
     expect(submitted.json.data.session_identity).toEqual({ home: 'example/ctx-a', branch: home.branch });

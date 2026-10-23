@@ -47,6 +47,8 @@ describe('session identity', () => {
     expect(sessionIdentityFor({ prefix, homePrefix: prefix, ownSlug: 'example/ctx-a', worktreeName: name, branch: HOME.branch })).toEqual(HOME);
     expect(sessionIdentityFor({ prefix, homePrefix: prefix, ownSlug: 'example/ctx-a', worktreeName: name, branch: 'notes/move' })).toEqual(HOME);
     expect(sessionIdentityFor({ prefix, homePrefix: prefix, ownSlug: null, worktreeName: name, branch: HOME.branch })).toBeNull();
+    // A home branch renamed to a joined-looking name stays its own home: the worktree name decides.
+    expect(sessionIdentityFor({ prefix, homePrefix: prefix, ownSlug: 'example/ctx-a', worktreeName: name, branch: 'session/a/b/c' })).toEqual(HOME);
   });
 
   it('names the home for a joined session, from its branch and from its worktree name', () => {
