@@ -6,7 +6,7 @@ import { mainWorkingTreeRoot } from './git/repo.js';
 import { buildGraphFromNotes, graphBuildOptions, type GraphBuildResult } from './graph/model.js';
 import { listNotes, type Note } from './notes/list.js';
 import { CONFIG_FILE_NAME } from './root.js';
-import { declaresSharedStores, mountLocation, mountScopes } from './shared-stores-location.js';
+import { declaresSharedStores, mountLocation, mountScopes, SHARED_STORES_DIR as SHARED_STORES_DIR_NAME } from './shared-stores-location.js';
 
 export { mainWorkingTreeRoot } from './git/repo.js';
 export { SHARED_STORES_DIR, declaresSharedStores, mountLocation, mountScopes } from './shared-stores-location.js';
@@ -92,4 +92,35 @@ export function unavailableMounts(mounts: readonly MountState[]): UnavailableMou
     else if (mount.state === 'not_store') unavailable.push({ name: mount.name, location: mount.location, state: 'not_store', reason: mount.reason });
   }
   return unavailable;
+}
+
+export interface MountingStore {
+  /** The main working tree of the store that declares this one as a mount. */
+  root: string;
+  config: StoreConfig;
+  /** The name it declares this store under. */
+  mountName: string;
+}
+
+/**
+ * approve-sessions-across-stores: the store that mounts the store at
+ * `storeRoot`, when `storeRoot` is (or is a worktree of) a clone at
+ * `shared/<name>` of a store that declares a mount named `<name>`; null
+ * otherwise. Decided from the filesystem and that store's configuration alone.
+ */
+export async function mountingStoreOf(storeRoot: string): Promise<MountingStore | null> {
+  const clone = mainWorkingTreeRoot(storeRoot);
+  const sharedDir = path.dirname(clone);
+  if (path.basename(sharedDir) !== SHARED_STORES_DIR_NAME) return null;
+  const root = path.dirname(sharedDir);
+  if (!existsSync(path.join(root, CONFIG_FILE_NAME))) return null;
+  let config: StoreConfig;
+  try {
+    config = await readConfig(root);
+  } catch {
+    return null;
+  }
+  const mountName = path.basename(clone);
+  if (!(config.shared_stores ?? []).some((mount) => mount.name === mountName)) return null;
+  return { root, config, mountName };
 }

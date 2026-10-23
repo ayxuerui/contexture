@@ -804,11 +804,12 @@ export async function run(argv: readonly string[], env: RunEnv): Promise<ExitCod
     .command('start')
     .description('create a new session worktree off a freshly fetched default branch')
     .argument('[label]', 'a short name for what the session is for — becomes part of the branch and worktree name')
-    .action(async (label: string | undefined, _cmdOpts: object, cmd: Command) => {
+    .option('--joins <session>', 'run inside a mounted store: start a session that belongs to this live session of the store that mounts it (worktree name or branch)')
+    .action(async (label: string | undefined, cmdOpts: { joins?: string }, cmd: Command) => {
       const { runEnv, jsonMode, root } = deriveRunEnv(env, cmd);
       result = await runCommand('session.start', runEnv, jsonMode, async () => {
         const store = await openStore(runEnv, { root });
-        return sessionStartCommand.execute(runEnv, store, { label });
+        return sessionStartCommand.execute(runEnv, store, { label, ...(cmdOpts.joins === undefined ? {} : { joins: cmdOpts.joins }) });
       });
     });
 

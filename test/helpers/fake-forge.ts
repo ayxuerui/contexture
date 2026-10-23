@@ -77,3 +77,48 @@ export async function makeFakeForge(dir: string, state: FakeForgeState, originGi
   await forge.write(state);
   return forge;
 }
+
+/**
+ * One fake `gh` for several repositories (approve-sessions-across-stores): each
+ * bare origin gets its own state, and a call answers from the state of the
+ * repository whose `origin` the calling directory has — as `gh` fills
+ * `{owner}/{repo}`. The returned forges share one `binDir` and `env`.
+ */
+export async function makeFakeForges(dir: string, repos: readonly { origin: string; state: FakeForgeState }[]): Promise<{ env: Record<string, string>; forges: FakeForge[] }> {
+  const binDir = path.join(dir, 'fake-gh-bin');
+  await mkdir(binDir, { recursive: true });
+  const ghPath = path.join(binDir, 'gh');
+  await writeFile(ghPath, `#!/bin/sh\nexec "${process.execPath}" "${FAKE_GH_SCRIPT}" "$@"\n`);
+  await chmod(ghPath, 0o755);
+  const reposPath = path.join(dir, 'fake-gh-repos.json');
+  const map: Record<string, string> = {};
+  const env = { FAKE_GH_REPOS: reposPath, PATH: `${binDir}${path.delimiter}${process.env.PATH ?? ''}` };
+  const forges: FakeForge[] = [];
+  for (const [index, repo] of repos.entries()) {
+    const statePath = path.join(dir, `fake-gh-state-${index}.json`);
+    map[path.resolve(repo.origin)] = statePath;
+    const forge: FakeForge = {
+      binDir,
+      env,
+      async read() {
+        return JSON.parse(await readFile(statePath, 'utf8')) as FakeForgeState;
+      },
+      async write(next) {
+        await writeFile(statePath, JSON.stringify(next, null, 2));
+      },
+      async tokensSeen() {
+        const text = await readFile(`${statePath}.tokens`, 'utf8').catch(() => '');
+        return [...new Set(text.split('\n').filter(Boolean))];
+      },
+      async update(mutate) {
+        const current = await forge.read();
+        mutate(current);
+        await forge.write(current);
+      },
+    };
+    await forge.write(repo.state);
+    forges.push(forge);
+  }
+  await writeFile(reposPath, JSON.stringify(map, null, 2));
+  return { env, forges };
+}
