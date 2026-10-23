@@ -16,20 +16,22 @@ order.
 
 - **A session can span stores.** A session started in a store is the session's home. When the work also writes
   into a mounted store, the agent starts a joined session inside that mount with `ctxr session start --joins
-  <session>`. The joined session uses the home session's branch name, and every pull request the session opens
-  carries a marker naming the session.
+  <session>`. The joined session's branch names its home, and every pull request the session opens carries a
+  marker naming the session. The marker, not the branch name, groups a session's pull requests.
 - **A person's approval page lists their sessions across stores.** The page of the store a person's agent works
   in lists each open session with every pull request in it, in the home store and in each mount. It shows each
-  pull request's change under the store it belongs to.
+  pull request's change under the store it belongs to. A session is decided only on its home store's page; another
+  store's page shows its parts as homed elsewhere.
 - **One decision covers the whole session.** Approving records an approving review on every pull request in the
-  session. Each review's marker names the session and the head of every pull request in it. The approval stands
-  only while every one of those heads is unchanged. Requesting changes records the comment on every pull request.
+  session. Each review's marker names the session and the store, number and head of every pull request in it. That
+  list is what landing works from. The approval stands only while every one of those heads is unchanged and no new
+  part has appeared. Requesting changes records the comment on every pull request.
 - **A decider must be a decider of every store the session touches.** The page reads each mounted store's own
   `change_approval.deciders`. It refuses a session decision from someone who is not a decider of one of them.
-- **Landing follows the mounts.** A session's pull requests in mounted stores land before its pull request in the
-  home store. `ctxr land --pending` holds a home pull request back, as `waiting`, until the session's other pull
-  requests have merged. Each store's own landing sweep lands its own part, so no store's credential lands another
-  store's change.
+- **The home store lands the whole session, mounted parts first.** The home's `ctxr land --pending` lands each
+  mounted part in that mount's clone under that mount's own configuration, then the home part. A part the decision
+  names that cannot land, or was closed, blocks the session before the home part. A store's sweep leaves alone a
+  pull request whose session is homed elsewhere. A part already merged counts as landed.
 - **`ctxr land --session <session> --confirm`** lands a whole session in that order, for consent given in chat.
   It stops at the first pull request it cannot land and reports what landed.
 - **`ctxr review list` reports the session** of each pull request and its session-wide state.
@@ -69,7 +71,7 @@ order.
 - `src/commands/session-start.ts` (`--joins`), `src/core/session.ts`, a session marker module beside
   `src/core/approval/decision.ts`.
 - `src/core/approval/` (session grouping, the session decision, validity across heads), `src/core/browse/approve.ts`
-  (the index and page), `src/commands/review-list.ts`, `src/commands/land.ts` (`waiting`, `--session`).
+  (the index and page), `src/commands/review-list.ts`, `src/commands/land.ts` (landing a session homed here in order, `--session`).
 - `serve` reads the forge for each mounted store, using the same recording identity. The GitHub App must be
   installed on every store a person's sessions touch.
 - Skills: `ctxr-session-lifecycle`, `ctxr-submit`, `ctxr-land`.
