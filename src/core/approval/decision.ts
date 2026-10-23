@@ -86,7 +86,12 @@ function parseSessionFields(fields: Record<string, string>): SessionDecision | n
   return { id, session: { home, branch }, parts: refs };
 }
 
-export type LandingRecordState = 'blocked' | 'needs-reapproval';
+/**
+ * `retrying` (approve-sessions-across-stores) is a session's: recorded on its record part when a landing run left
+ * the session unfinished for a reason the next run may not meet. Readers of one pull request's state skip it, and
+ * older readers do not parse it at all.
+ */
+export type LandingRecordState = 'blocked' | 'needs-reapproval' | 'retrying';
 
 export interface LandingMark {
   state: LandingRecordState;
@@ -173,7 +178,7 @@ export function parseLandingMark(body: string): LandingMark | null {
   const fields = parseMarker(LANDING_MARKER, body);
   if (fields === null) return null;
   const { state, reason, head, at } = fields;
-  if (state !== 'blocked' && state !== 'needs-reapproval') return null;
+  if (state !== 'blocked' && state !== 'needs-reapproval' && state !== 'retrying') return null;
   if (reason === undefined || head === undefined || !SHA.test(head) || at === undefined) return null;
   return { state, reason, head, at };
 }
@@ -235,7 +240,7 @@ export function resolveReviewState(input: {
   for (const comment of input.comments) {
     if (comment.author !== input.recordingLogin) continue;
     const parsed = parseLandingMark(comment.body);
-    if (parsed === null) continue;
+    if (parsed === null || parsed.state === 'retrying') continue;
     const t = timeOf(comment.createdAt);
     if (t >= landingTime) {
       landing = parsed;
@@ -243,7 +248,7 @@ export function resolveReviewState(input: {
     }
   }
 
-  if (landing !== null && landing.head === input.head && landingTime >= decisionTime) {
+  if (landing !== null && landing.state !== 'retrying' && landing.head === input.head && landingTime >= decisionTime) {
     return { state: landing.state, decision, landing, approvalNeedsCarryCheck: false };
   }
   if (decision === null) return { state: 'awaiting', decision, landing: null, approvalNeedsCarryCheck: false };
