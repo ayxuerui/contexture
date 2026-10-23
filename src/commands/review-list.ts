@@ -1,6 +1,6 @@
 import { forgeRead, sessionPulls, sessionWorktrees } from '../core/approval/sessions.js';
-import { groupSessions, listOpen, sessionState, storeReach, type SessionStateName } from '../core/approval/session-group.js';
-import { parseSessionMarker, sessionKey } from '../core/approval/session-marker.js';
+import { groupSessions, listOpen, readAsSessionPart, sessionState, storeReach, type SessionStateName } from '../core/approval/session-group.js';
+import { sessionKey } from '../core/approval/session-marker.js';
 import { storeForges } from '../core/approval/store-forges.js';
 import type { CommandOutcome, CommandRequires } from '../core/command.js';
 import type { RunEnv } from '../core/env.js';
@@ -60,8 +60,11 @@ export async function execute(env: RunEnv, store: Store, forge?: ForgeClient): P
   if (approval === undefined) throw new ChangeApprovalNotDeclaredError('ctxr review list');
   const client = forge ?? createGhForgeClient(store.root, await credentialsFor(env, store.root));
   const open = await forgeRead(() => client.openPulls());
+  const findings: Finding[] = [];
+  const canonical = await mainWorktreePath(env.git, store.root);
+  const reach = await storeReach(env.git, { root: store.root, canonical, config: store.config, forge: client }, storeForges(env, forge));
   const pulls = (await sessionPulls(env.git, store.root, store.config, client, approval.recording_login, async () => open)).filter(
-    (p) => parseSessionMarker(p.pull.body) === null,
+    (p) => !readAsSessionPart(p.pull, reach?.home.slug ?? null, store.config),
   );
 
   const sessions: ReviewEntry[] = pulls.map((p) => ({
@@ -81,9 +84,6 @@ export async function execute(env: RunEnv, store: Store, forge?: ForgeClient): P
     part: null,
   }));
 
-  const findings: Finding[] = [];
-  const canonical = await mainWorktreePath(env.git, store.root);
-  const reach = await storeReach(env.git, { root: store.root, canonical, config: store.config, forge: client }, storeForges(env, forge));
   if (reach !== null) {
     const listings = await listOpen(reach, async () => open);
     const unreadable = listings.filter((l) => l.error !== null && l.store !== reach.home);

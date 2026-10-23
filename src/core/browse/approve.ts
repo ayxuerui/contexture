@@ -11,6 +11,7 @@ import {
   decidersOnForge,
   groupSessions,
   listOpen,
+  readAsSessionPart,
   sessionState,
   storeLabel,
   storeReach,
@@ -22,7 +23,7 @@ import {
   type StoreListing,
   type StoreReach,
 } from '../approval/session-group.js';
-import { parseSessionMarker, sessionRouteName } from '../approval/session-marker.js';
+import { sessionRouteName } from '../approval/session-marker.js';
 import { storeForges } from '../approval/store-forges.js';
 import { runRemoteGit, ghCredentials } from '../forge/credentials.js';
 import { mainWorktreePath } from '../git/worktree.js';
@@ -71,7 +72,7 @@ export interface ApprovalServer {
    * recording identity. Omitted, mounts are read with `gh`'s own credential in their clone.
    */
   forgeFor?: ForgeFor;
-  /** The process environment, for an authenticated fetch of a mounted part's head. */
+  /** The process environment, for an authenticated fetch of a mounted part's head and for a mount's forge calls. */
   env?: Readonly<Record<string, string | undefined>>;
 }
 
@@ -185,7 +186,7 @@ async function indexPage(store: Store, server: ApprovalServer, kit: PageKit): Pr
     if (homeListing?.error) throw new ForgeUnreachableError(homeListing.error);
     const homePulls = homeListing === undefined ? () => openPulls(server) : async () => homeListing.pulls!;
     const pulls = (await sessionPulls(server.git, store.root, store.config, server.forge, server.approval.recording_login, homePulls)).filter(
-      (p) => parseSessionMarker(p.pull.body) === null,
+      (p) => !readAsSessionPart(p.pull, view?.reach.home.slug ?? null, store.config),
     );
     const rows = pulls.map(
       (p) =>
@@ -463,7 +464,7 @@ function forgeForOf(server: ApprovalServer): ForgeFor {
   if (server.forgeFor !== undefined) return server.forgeFor;
   let forgeFor = forgeForCache.get(server);
   if (forgeFor === undefined) {
-    const env = server.env ?? process.env;
+    const env = server.env ?? {};
     forgeFor = storeForges({ env, git: server.git, now: () => server.now() }, server.forge);
     forgeForCache.set(server, forgeFor);
   }
@@ -520,7 +521,7 @@ async function partCheckout(server: ApprovalServer, view: SessionView, store: Se
     (await server.git.run(['cat-file', '-e', `${pull.headSha}^{commit}`], { cwd: store.root, allowFailure: true })).exitCode === 0;
   if (await present()) return store.root;
   const refspec = `+refs/heads/${pull.headRef}:refs/ctxr-approve/${pull.number}`;
-  const env = server.env ?? process.env;
+  const env = server.env ?? {};
   await runRemoteGit(server.git, store.credentials ?? ghCredentials(env), env, ['fetch', '--quiet', '--no-tags', 'origin', refspec], { cwd: store.root, allowFailure: true });
   return (await present()) ? store.root : null;
 }
