@@ -6,7 +6,7 @@ import type { ForgeCredentials } from '../forge/credentials.js';
 import { ContextureError } from '../errors.js';
 import { ForgeRequestError, type ForgeClient, type IssueComment, type PullRequest, type Review } from '../forge/github.js';
 import type { GitRunner } from '../git/exec.js';
-import { resolveMounts } from '../shared-stores.js';
+import { declaresSharedStores, resolveMounts } from '../shared-stores.js';
 import { parseDecision, parseLandingMark, partKey, recordPartOf, type Decision, type LandingMark, type PartRef, type ReviewStateName, type SessionDecision } from './decision.js';
 import { parseSessionMarker, repositorySlug, sessionKey, sessionsEqual, type SessionIdentity } from './session-marker.js';
 import { baseRef, carriesOver } from './sessions.js';
@@ -118,17 +118,34 @@ export function landingOrder<T extends { store: string }>(parts: readonly T[], r
 }
 
 /**
- * write-lifecycle spec ("Every pull request of a session carries the session"):
- * every open pull request with a marker, grouped by the session it names. A
- * session homed elsewhere is grouped too, so a page can show it apart.
+ * Whether a pull request is read as a part of a session rather than on its own:
+ * it carries a session marker, and the session is homed in another store or
+ * the reading store declares mounts. A store with no `shared_stores` keeps
+ * today's path for its own sessions (design.md D9: nothing changes for a store
+ * that has not declared mounts); a pull request homed elsewhere is always its
+ * home's, so a mounted store never lands it.
  */
-export function groupSessions(reach: StoreReach, listings: readonly StoreListing[]): SessionGroup[] {
+export function readAsSessionPart(pull: PullRequest, homeSlug: string | null, config: StoreConfig): boolean {
+  const identity = parseSessionMarker(pull.body);
+  if (identity === null) return false;
+  return identity.home !== homeSlug || declaresSharedStores(config);
+}
+
+/**
+ * write-lifecycle spec ("Every pull request of a session carries the session"):
+ * every open pull request read as a session part, grouped by the session it
+ * names. A session homed elsewhere is grouped too, so a page can show it apart.
+ * `all` also groups this store's own sessions when it declares no mounts — for
+ * `ctxr land --session`, which names one explicitly.
+ */
+export function groupSessions(reach: StoreReach, listings: readonly StoreListing[], all = false): SessionGroup[] {
   const groups = new Map<string, SessionGroup>();
   const unreadable = listings.filter((l) => l.pulls === null).map((l) => l.store.slug);
   for (const listing of listings) {
     for (const pull of listing.pulls ?? []) {
       const identity = parseSessionMarker(pull.body);
       if (identity === null) continue;
+      if (!all && !readAsSessionPart(pull, reach.home.slug, reach.home.config)) continue;
       const key = sessionKey(identity);
       let group = groups.get(key);
       if (group === undefined) {

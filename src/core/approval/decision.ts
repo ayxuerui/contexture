@@ -160,7 +160,8 @@ export function parseDecision(body: string): Decision | null {
     const paragraphs = body.slice(0, body.lastIndexOf(`<!-- ${DECISION_MARKER}`)).split('\n\n');
     comment = paragraphs.slice(1).join('\n\n').trim();
   }
-  return { decision, head, by, at, carriedFrom, comment, session };
+  // A decision on one pull request reads exactly as before: the session field is there only for a session decision.
+  return { decision, head, by, at, carriedFrom, comment, ...(session === null ? {} : { session }) };
 }
 
 /** The comment body for a landing record: a sentence for people, then the marker. */

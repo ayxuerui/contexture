@@ -134,6 +134,26 @@ describe('ctxr land for a session across stores (real CLI, two fake forges)', ()
     expect((await pullOf(home)).merged).toBe(true);
   });
 
+  it('a store with no mounts lands its own marked pull request exactly as before, on a decision about that pull request alone', async () => {
+    const { makeApprovalStore, recordApproval } = await import('../helpers/approval-store.js');
+    const { forgeSlugOf, sessionMarker } = await import('../../src/core/approval/session-marker.js');
+    const store = await makeApprovalStore();
+    try {
+      const s = await store.openSession('ctx-a', 7, { 'projects/a.md': '# A\n' });
+      await store.forge.update((state) => {
+        state.pulls[0]!.body += `\n\n${sessionMarker({ home: forgeSlugOf(store.origin)!, branch: s.branch })}`;
+      });
+      await recordApproval(store, 7, s.head);
+      const { runCli } = await import('../helpers/run-cli.js');
+      const landed = await runCli(['land', '--pending', '--json'], { cwd: store.root, env: store.env, timeoutMs: 120_000 });
+      const data = JSON.parse(landed.stdout).data;
+      expect(data.sessions).toBeUndefined();
+      expect(data.results).toEqual([expect.objectContaining({ pull_request: 7, outcome: 'merged' })]);
+    } finally {
+      await store.tmp.cleanup();
+    }
+  });
+
   it('a conflict in the mounted part stops the session before the home part', async () => {
     await pair.advance(pair.b, { 'projects/moved.md': '# Moved differently\n' });
     const run = await land(['--session', home.branch, '--confirm']);

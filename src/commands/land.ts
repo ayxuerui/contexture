@@ -6,8 +6,8 @@ import { decisionBody, landingBody, type LandingRecordState } from '../core/appr
 import { writeLandingRecord } from '../core/approval/landing-record.js';
 import { resolverPrompt, runResolver } from '../core/approval/resolver.js';
 import { carriesOver, forgeRead, reviewStateOf, sessionPulls, sessionWorktrees, type SessionWorktree } from '../core/approval/sessions.js';
-import { groupSessions, landingOrder, listOpen, sessionState, storeReach, type OpenPart, type SessionStore, type StoreReach } from '../core/approval/session-group.js';
-import { identityOfWorktree, parseSessionMarker, sessionKey, sessionsEqual, type SessionIdentity } from '../core/approval/session-marker.js';
+import { groupSessions, landingOrder, listOpen, readAsSessionPart, sessionState, storeReach, type OpenPart, type SessionStore, type StoreReach } from '../core/approval/session-group.js';
+import { identityOfWorktree, sessionKey, sessionsEqual, type SessionIdentity } from '../core/approval/session-marker.js';
 import { storeForges } from '../core/approval/store-forges.js';
 import { readConfig } from '../config/load.js';
 import type { CommandOutcome, CommandRequires } from '../core/command.js';
@@ -543,12 +543,12 @@ async function landHoldingLock(
   if (flags.pending) {
     await remoteGit(ctx, ['fetch', '--quiet', 'origin'], canonical, true);
     // A pull request carrying a session marker is its session's: landed below when homed here, left to its home otherwise.
+    const reach = await storeReach(env.git, { root: store.root, canonical, config: store.config, forge: client, credentials }, storeForges(env, forge));
     const approved = (await sessionPulls(env.git, canonical, store.config, client, recordingLogin!)).filter(
-      (p) => p.review.state === 'approved' && parseSessionMarker(p.pull.body) === null,
+      (p) => p.review.state === 'approved' && !readAsSessionPart(p.pull, reach?.home.slug ?? null, store.config),
     );
     // Each is re-read inside landOne, immediately before its merge, so a decision changed meanwhile is honoured.
     for (const p of approved) results.push(await landOne(ctx, p.pull.number, false));
-    const reach = await storeReach(env.git, { root: store.root, canonical, config: store.config, forge: client, credentials }, storeForges(env, forge));
     if (reach !== null) {
       const listings = await listOpen(reach);
       const home = listings.find((l) => l.store === reach.home)!;
@@ -795,7 +795,7 @@ async function landSessionByName(ctx: Context, name: string, forge: ForgeClient 
   const listings = await listOpen(reach);
   const home = listings.find((l) => l.store === reach.home)!;
   if (home.error !== null) throw new ForgeUnreachableError(home.error);
-  const group = groupSessions(reach, listings).find((g) => sessionsEqual(g.identity, identity));
+  const group = groupSessions(reach, listings, true).find((g) => sessionsEqual(g.identity, identity));
   if (group === undefined) {
     throw new LandRefusedError('session_not_found', `No open pull request carries the session ${sessionKey(identity)}, here or in a store this one mounts.`, { session: name });
   }
