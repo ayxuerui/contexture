@@ -34,10 +34,10 @@
 
 ## 5. Skills and end to end
 
-- [ ] 5.1 Update `ctxr-session-lifecycle`: start a joined session inside a mount for the same piece of work
-- [ ] 5.2 Update `ctxr-submit`: run `ctxr session submit` in every part of a session, and hand off one approval link
-- [ ] 5.3 Update `ctxr-land`: land by session with `--session` on an explicit go
-- [ ] 5.4 Check edited skills for the banned tier words and flag attribution; rewrite touched steps to controlled English, keeping `Why:` sentences
-- [ ] 5.5 End-to-end test: a note moved from `ctx-a` into its mount `ctx-b` as one session, approved once on `ctx-a`'s page, lands `ctx-b` first and then `ctx-a`
-- [ ] 5.6 Run `npm run build && npx vitest run` and confirm both exit 0
-- [ ] 5.7 Run `openspec validate approve-sessions-across-stores --strict` and confirm it reports the change valid
+- [x] 5.1 Update `ctxr-session-lifecycle`: start a joined session inside a mount for the same piece of work
+- [x] 5.2 Update `ctxr-submit`: run `ctxr session submit` in every part of a session, and hand off one approval link
+- [x] 5.3 Update `ctxr-land`: land by session with `--session` on an explicit go
+- [x] 5.4 Check edited skills for the banned tier words and flag attribution; rewrite touched steps to controlled English, keeping `Why:` sentences
+- [x] 5.5 End-to-end test: a note moved from `ctx-a` into its mount `ctx-b` as one session, approved once on `ctx-a`'s page, lands `ctx-b` first and then `ctx-a`
+- [x] 5.6 Run `npm run build && npx vitest run` and confirm both exit 0
+- [x] 5.7 Run `openspec validate approve-sessions-across-stores --strict` and confirm it reports the change valid

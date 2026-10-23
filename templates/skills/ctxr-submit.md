@@ -27,6 +27,8 @@ and which worktree holds it, then stop. The work is safe on the branch and the n
 
 A session started inside `shared/<name>` belongs to that mounted store. Run every step below from that session's worktree. The pull request opens on that store's repository. The hand-off names that store's approval page, from its own `contexture.yaml`.
 
+A session started with `ctxr session start --joins` is one part of a session of this store. Submit every part of the session. Run `ctxr session submit` once in each part's worktree. Why: each store gets its own pull request, and the command marks each pull request with the session. Do not write a session marker into a body yourself. Why: the command writes it, and it refuses a body that already carries one.
+
 ## Routes
 
 Every pull request takes one of three routes. Say which, and why, in its body:
@@ -86,10 +88,13 @@ Every pull request takes one of three routes. Say which, and why, in its body:
    pushes or opens anything, so running the same submit again is the retry, and it publishes once.
    Submitting a session again after requested changes works the same way: a further commit on the same
    branch, and the same pull request updated — keep `--branch` as it was.
-9. Hand off: report the pull request's number and its url, and name what landing it takes —
-   `ctxr-land`, targeting that number — so the next step is one word away instead of something to
-   reconstruct later. When this store declares `change_approval`, also give the approval page address the
-   command reports: `serve.base_url`, then `/approve/`, then the session worktree's directory name and a `/`.
-   Why: a person without a forge account approves the change there, and the change then lands without
-   further steps. Landing stays a separate decision, made on the approval page or by an explicit go.
+9. Hand off. Report each pull request's number and its url. Name what lands it: `ctxr-land`, with that
+   number, or with the session when the session has a part in more than one store. Why: the next step is
+   then one word away, not something to reconstruct later. When this store declares `change_approval`,
+   also give the approval page address that the command reports.
+   It is `serve.base_url`, then `/approve/`, then the session worktree's directory name and a `/`.
+   For a session with parts in several stores, give one address only: the session's page in the store
+   where it started. Every part's submit reports that same address. Why: a person without a forge account
+   approves the change there. One decision covers every part, and the change then lands without further
+   steps. Landing stays a separate decision, made on the approval page or by an explicit go.
    Never run it from here.
