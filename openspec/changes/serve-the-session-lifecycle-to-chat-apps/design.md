@@ -14,7 +14,7 @@ The parity inventory, from this change's exploration, maps every owned skill's s
 **The vendor plugin formats**, as researched on 2026-10-23:
 - Both formats are a directory with `skills/<name>/SKILL.md` (the Agent Skills format) plus a remote MCP server entry.
 - **Claude:** `.claude-plugin/plugin.json` plus `.mcp.json` with `{"type":"http","url":…}`. It loads in the claude.ai chat apps, desktop, mobile, Cowork and Claude Code.
-- **ChatGPT:** a root `plugin.json` (Agent Plugins schema) plus `mcp.json` with `{"type":"streamable-http","url":…}` and OAuth declared under `extensions.com.openai.auth`.
+- **ChatGPT:** a root `plugin.json` (Agent Plugins schema) plus `mcp.json` with `{"type":"streamable-http","url":…}` and OAuth declared under `extensions["com.openai"].auth`.
 - **Shared constraints:**
   - Neither may carry a secret.
   - Neither may put a variable in the URL.
@@ -209,7 +209,7 @@ It loses because no included skill needs different wording once every step is a 
 <out>/claude/.claude-plugin/plugin.json   name, displayName, version, description
 <out>/claude/.mcp.json                    {"mcpServers":{"<name>":{"type":"http","url":"<base_url>/mcp"}}}
 <out>/claude/skills/<skill>/SKILL.md
-<out>/chatgpt/plugin.json                 Agent Plugins schema, extensions.com.openai.interface
+<out>/chatgpt/plugin.json                 Agent Plugins schema; extensions["com.openai"].interface
 <out>/chatgpt/mcp.json                    type streamable-http, auth oauth with client mode dcr
 <out>/chatgpt/skills/<skill>/SKILL.md
 <out>/<name>-claude.zip, <out>/<name>-chatgpt.zip
