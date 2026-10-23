@@ -130,28 +130,30 @@ export interface IdentityInput {
 }
 
 /**
- * A session's identity, derived from its branch and worktree alone: a joined
- * branch, then a joined worktree name, then the session as its own home — with
- * the branch it was started on, which its worktree directory still spells.
+ * A session's identity, derived from its worktree and branch alone. The
+ * worktree name decides first, because `ctxr session submit --branch` can
+ * rename the branch to anything, including a name shaped like a joined one,
+ * while the worktree keeps the name it was started with: a joined worktree
+ * name carries its home, and any other session worktree is its own home. Only
+ * a worktree whose name ctxr did not give falls back to the branch.
  */
 export function sessionIdentityFor(input: IdentityInput): SessionIdentity | null {
-  if (input.branch.startsWith(input.prefix)) {
-    const joined = /^([^/]+)\/([^/]+)\/(.+)$/.exec(input.branch.slice(input.prefix.length));
-    if (joined !== null) return { home: `${joined[1]}/${joined[2]}`, branch: `${input.homePrefix}${joined[3]}` };
-  }
   const dirPrefix = worktreeDirNameFor(input.prefix);
-  if (input.worktreeName.startsWith(dirPrefix)) {
+  if (input.worktreeName.startsWith(dirPrefix) && input.worktreeName.length > dirPrefix.length) {
     const rest = input.worktreeName.slice(dirPrefix.length);
     const first = rest.indexOf('--');
     const last = rest.lastIndexOf('--');
     if (first > 0 && last > first + 2 && last + 2 < rest.length) {
       return { home: `${rest.slice(0, first)}/${rest.slice(first + 2, last)}`, branch: `${input.homePrefix}${rest.slice(last + 2)}` };
     }
+    if (input.ownSlug === null) return null;
+    return { home: input.ownSlug, branch: `${input.prefix}${rest}` };
+  }
+  if (input.branch.startsWith(input.prefix)) {
+    const joined = /^([^/]+)\/([^/]+)\/(.+)$/.exec(input.branch.slice(input.prefix.length));
+    if (joined !== null) return { home: `${joined[1]}/${joined[2]}`, branch: `${input.homePrefix}${joined[3]}` };
   }
   if (input.ownSlug === null) return null;
-  if (input.worktreeName.startsWith(dirPrefix) && input.worktreeName.length > dirPrefix.length) {
-    return { home: input.ownSlug, branch: `${input.prefix}${input.worktreeName.slice(dirPrefix.length)}` };
-  }
   return { home: input.ownSlug, branch: input.branch };
 }
 
