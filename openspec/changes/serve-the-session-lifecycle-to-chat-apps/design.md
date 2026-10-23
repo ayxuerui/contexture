@@ -177,11 +177,10 @@ The read/write split keeps the annotations honest.
   - `ctxr-mission`
   - `ctxr-session-capture`
   - `ctxr-research`
-  - `ctxr-second-opinion`, whose every `ctxr second-opinion` step maps to `second_opinion_critique` or `second_opinion_poll`, then `second_opinion_result`
   - `ctxr-session-lifecycle`
   - `ctxr-submit`
 - **Every included skill** is the CLI template, unchanged, with one partial prepended from `templates/skills/mcp/_preamble.md`. This covers the lifecycle skills too, because `bring-the-session-lifecycle-into-the-cli` rewords them around `ctxr session` commands. The preamble says:
-  - in this environment a `ctxr session <verb>` step is the tool `session_<verb>` and a `ctxr second-opinion <mode>` step is `second_opinion_<mode>` (then `second_opinion_result`); every other `ctxr <command>` step runs through `ctxr`, or through `ctxr_write` when it writes;
+  - in this environment each `ctxr` command step runs as one mapping module says: `ctxr session start|list|status|submit|rebase|discard` are the `session_*` tools of the same verb, and every other `ctxr <command>` step runs through `ctxr`, or through `ctxr_write` when it writes. `ctxr session capture` is one of those, through `ctxr_write`, so no tool is ever derived from a command name by rule;
   - paths are under the session root `session_start` returned;
   - `git mv` is `Move`, `git rm` is `Delete`, and `git status` or `git diff` is `session_status`;
   - commits and pushes happen only in `session_submit`.
@@ -193,7 +192,7 @@ An earlier draft of this decision gave the two lifecycle skills MCP-specific tem
 - names a tool the surface does not register;
 - names a `ctxr` subcommand outside the two allowlists.
 
-This is the counterpart of the existing affordance check, and the allowlists and the tool names are read from the same modules the server uses.
+This is the counterpart of the existing affordance check. The mapping module (command path to a `session_*` tool, to `ctxr`, or to `ctxr_write`) is the single source for the tool registry, the preamble's mapping table, this drift check and the D9 alignment check. A `ctxr` step passes when that module maps it.
 
 **Opposing case (conditional blocks inside each template, `<!-- target: mcp -->`):**
 - A reader would see each surface's exact wording.
@@ -226,9 +225,8 @@ It loses because no included skill needs different wording once every step is a 
 
 ### D8. Annotations on every tool
 
-Each tool declares `title`, `readOnlyHint`, `destructiveHint`, `idempotentHint` and `openWorldHint`, which is `false` for every tool except the two second-opinion job tools:
-- **Read-only:** `find`, `gather`, `Read`, `Grep`, `Glob`, `ctxr`, `session_list`, `session_status`, `second_opinion_result`.
-- **Open-world:** `second_opinion_critique` and `second_opinion_poll` are marked `openWorldHint: true`. It is the one tool that sends store content to outside services (three model vendors), and it is not read-only, because it starts a job.
+Each tool declares `title`, `readOnlyHint`, `destructiveHint`, `idempotentHint` and `openWorldHint`, which is `false` for every tool:
+- **Read-only:** `find`, `gather`, `Read`, `Grep`, `Glob`, `ctxr`, `session_list`, `session_status`.
 - **Writes that are not destructive:** `capture`, `session_start`, `Edit`, `Write`, `Move`, `ctxr_write`, `session_rebase`, `session_submit`. `session_submit` publishes, but its effect is a reviewable pull request.
 - **Destructive:** `Delete` and `session_discard`.
 - **Idempotent:** the read-only tools and `session_status`.
@@ -244,36 +242,23 @@ The annotation is a presentation hint only. Scope and ownership checks stay in t
   - `find`: it stands in for the content matching a local agent does with its own `Grep` together with `catalog show`. A client may lack both, and it gives a non-engineer one obvious entry.
   - `gather`: this is `ctxr context gather` with bodies attached, which a client cannot read in one call otherwise. Its name is kept for the clients already connected.
   - `capture`: a one-call capture for a phone, equal to `session_start`, `Write` into the inbox, `ctxr source check` and `session_submit` together.
-  - `second_opinion_result`: the transport cannot hold a minutes-long call open.
+  - `ctxr` and `ctxr_write`: they are the runners through which every command without a tool of its own is reached (D4). Their fields are `args`, `session` and `input`.
 
-**The enforcement:** a test reads the tool registry and the CLI's command registry, and fails when a tool is none of these, or when a command-named tool's fields are not that command's options.
+**Permitted extra fields:** `session` is the one field the MCP layer adds to a command's options, because a local command finds its session from the working directory and a stateless server cannot. `input` is likewise the one added to `ctxr_write`. The check is that a command's options are a subset of its tool's fields minus `session`.
+
+**The enforcement:** a test reads the tool registry and the CLI's command registry, and fails when a tool is none of these, or when a command-named tool's fields, minus `session`, are not a subset of that command's options.
 
 **Opposing case:** let MCP tools be shaped for chat, with fewer and coarser tools that each do several steps. That is friendlier to a model that has no skills loaded. It loses on your rule that skills and tools align. A coarse MCP-only tool is a step the CLI's skill text cannot name, which is the drift this change removes. `capture` is the one coarse tool kept, and it is named as an exception.
 
-### D10. A second opinion runs asynchronously, in a worker that holds no approval credential
+### D10. A second opinion over MCP is deferred
 
-`second_opinion_critique(plan, session?, tier?, only?)` and `second_opinion_poll(question, tier?, only?, lens?)`, the `ctxr second-opinion critique|poll` options as fields, each write a job to a spool directory, `.contexture/cache/mcp/opinions/<id>/`:
-- the request, the member's email, and the plan or question as text;
-- for a critique of a session, the session's diff appended when `session` is given.
+An earlier revision queued critiques to an `opinions` worker that held no approval key. The three-model critique vetoed it. A worker shared by every member runs model CLIs that can read files (codex's read-only sandbox, and agy) on member-written text. That leaves the shared spool and the CLIs' own signed-in credentials one prompt injection away from another member, and ownership checks on the result call do not protect files.
 
-It returns the job id at once. `second_opinion_result(id)` returns `pending`, or, once the job is done, the letters, the manifest and the exit status, exactly as the command writes them. Only the member who started a job sees it. Jobs and their results are deleted after 7 days.
+The two ways that hold up are each a design of their own:
+- **Vendor APIs with no tools:** a request with no tools cannot read anything, at the cost of API keys and billing per store.
+- **One sandbox per job,** under a uid that can see only that job's input and output.
 
-**The worker:** `ctxr second-opinion work --spool <dir>` takes one job at a time from the spool, runs `ctxr second-opinion critique|poll` on it, and writes the result beside the request. contexture-images runs it as an `opinions` service:
-- same image;
-- the agents container's model-CLI home mounted, so the CLIs are already signed in;
-- the store's cache spool mounted;
-- **no** App key and no forge token.
-
-**Why not run it inside `serve`** (the opposing case, steelmanned): it is one process fewer, there is no spool, and the result could be synchronous. The CLIs' containment looks sufficient on paper, since Claude runs with no tools and codex in a read-only sandbox. It loses on what "read-only" means:
-- **The key is readable.** `serve` mounts the App private key as a file (`/run/secrets/github-app-key`), and codex's read-only sandbox can read files.
-- **The plan is member text.** A prompt injection in it could make a critic quote the key back into the letters, and those letters go to the member.
-- **agy has no mode that removes its ability to act**, as the skill already says.
-
-The App key is what makes an approval trustworthy, and memory D5 of 2026-10-21 already keeps it out of every container that runs agents. A model CLI is such a process.
-
-**Why asynchronous:** a strong-tier critique took one to two minutes on a short plan, and up to ten with a deeper Claude effort. That is longer than a chat app can be relied on to hold one tool call open. The result call is cheap and idempotent, and the rendered skill tells the agent to say the critique is under way, which is what the local skill already says for long runs.
-
-**Why a spool rather than a queue service:** the store volume is already shared, and the spool is plain files with an atomic rename to claim a job. Nothing new needs to stay running in `serve`.
+That is left to a follow-up change. Until then, `ctxr-second-opinion` is not in the plugin.
 
 ## Risks / Trade-offs
 
@@ -282,8 +267,6 @@ The App key is what makes an approval trustworthy, and memory D5 of 2026-10-21 a
 - **A CLI command run by `ctxr_write` writes outside the session.** → The cwd and `CONTEXTURE_STORE_ROOT` are the session worktree, root-changing options are refused, and path arguments are resolved and confined. `session_submit` stages only inside the worktree. Anything else is a CLI bug, and the existing integration tests cover the CLI's root confinement.
 - **A spawned `ctxr` is slow on a large store**, because each call builds its own state. → The 30-second limit is a hard bound, and `doctor` is the slowest command. The pkm timing is measured in task 9.1 before the limit is fixed.
 - **A rebase left in progress blocks other calls on that session.** → `session_submit`, `Move` and `Delete` refuse during a rebase, naming `session_rebase` with `continue` or `abort`. `Read` and `Edit` work, so the conflict can be resolved.
-- **The `opinions` service is down, or its CLIs are signed out.** → A job left unclaimed for 2 minutes makes `second_opinion_result` report `worker_unavailable`. The worker runs `preflight` at start and writes its status to the spool, and the job tools refuse at once when the last preflight failed, naming the CLIs that failed.
-- **Store content goes to three vendors.** → `openWorldHint: true` makes both apps prompt for it. The member supplies the text, and the result names the families used.
 - **The plugin formats are new and may change.** → The manifest text lives in templates, and `ctxr plugin build` has a test asserting each manifest's shape against the documented fields. Format drift is then a template change.
 - **ChatGPT's plugin admission is partly unverified** (help-center pages were read through search snippets only). → Task 9.2 installs the built zip in ChatGPT before the change is archived. If it cannot be installed, developer mode plus the server instructions is the documented fallback.
 
@@ -296,3 +279,13 @@ The App key is what makes an approval trustworthy, and memory D5 of 2026-10-21 a
 ## Open Questions
 
 - Whether a personal Claude account can add a private GitHub repository as a marketplace, which would let the plugin update itself. This does not change the build; a later change would commit `<out>/claude/` into the store.
+
+## Revisions after critique
+
+A three-model critique on 2026-10-23 approved this change with changes from two reviewers and rejected it from one. The revisions below override anything inconsistent above.
+
+1. **The second opinion over MCP is deferred** (the skeptic's critical finding: model CLIs that can read files, sharing one spool and one set of credentials across members). See D10 and Non-goals. The pragmatist reached the same scope cut for cost reasons.
+2. **One mapping module** maps each command to its tool. It is the only source for the tool registry, the preamble, the drift check and the alignment check. `ctxr session capture` maps to `ctxr_write`, so no tool name is derived by rule (the architect's F1).
+3. **The alignment check names `ctxr` and `ctxr_write` as exceptions** and permits `session` as the one extra field, so it passes on the shipped set without being loosened in code. D3's stray `submit` is corrected (the architect's F2).
+4. **`capture` gets its own port step (3.3).** The draft helpers are deleted only once nothing calls them (the architect's F3).
+5. **Declined: dropping the alignment test** (the pragmatist's F2). The operator's rule is that skills and tools stay aligned, and a convention without a check is the drift that rule exists to prevent.
