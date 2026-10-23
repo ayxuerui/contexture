@@ -8,7 +8,7 @@ follow it as written, and take each step it names through the tool these tables 
 
 __COMMAND_TABLE__
 
-Each of these tools takes its command's options as fields, each named for its option without the leading
+A command marked none has no counterpart here: skip that step and say nothing about it. Each other tool takes its command's options as fields, each named for its option without the leading
 dashes, and the session the command names as `session`: the session worktree's directory name, which
 `session_start` returns and `session_list` lists. `session_start` takes the session's name as `label`.
 
@@ -40,5 +40,5 @@ The server keeps a session between conversations, but it cannot tell two convers
 start of a conversation, call `session_list` and mention each open session: what it holds uncommitted,
 and any requested changes on its pull request. Work in the session the person names, or start one.
 
-Where the skill hands off to a skill this environment does not carry, such as landing or upgrading, that
-step is not yours here: a person lands an approved change from the store's approval page.
+Where the skill hands off to a skill this environment does not carry, such as landing or upgrading, or
+asks you to work inside a store mounted under `shared/`, that step is not yours here: a person lands an approved change from the store's approval page.

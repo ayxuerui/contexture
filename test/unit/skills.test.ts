@@ -1,7 +1,7 @@
 import { RELATION_DIRECTEDNESS_NOTE, RELATION_VOCABULARY } from '../../src/config/defaults.js';
 import { packagedTemplate } from '../../src/core/templates.js';
 import { renderPagesSection } from '../../src/core/session/submit.js';
-import { GIT_STEP_TOOLS, routeForCommand, TOOL_NAMES } from '../../src/core/mcp/tool-map.js';
+import { GIT_STEP_TOOLS, routeForCommand, TOOL_NAMES, UNAVAILABLE_COMMANDS } from '../../src/core/mcp/tool-map.js';
 import { readFileSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
@@ -1344,7 +1344,9 @@ describe('the MCP render of the owned skills', () => {
   it('passes the content guards the CLI render passes: no tier word, ctxr as the executable, only flags the CLI registers', () => {
     const options = registeredOptions();
     for (const { file, content } of mcp) {
-      for (const word of TIER_WORDS) expect(content, `${file} uses "${word}"`).not.toMatch(new RegExp(`\\b${word}\\b`, 'i'));
+      // The exemption the CLI render's guard makes (mount-shared-stores): `shared/` and `shared-stores` name a location and a command.
+      const scanned = content.replace(/`[^`]*\bshared(?:\/|-stores)[^`]*`/g, '');
+      for (const word of TIER_WORDS) expect(scanned, `${file} uses "${word}"`).not.toMatch(new RegExp(`\\b${word}\\b`, 'i'));
       expect(content, file).not.toMatch(/`contexture [a-z]/);
       for (const flag of ctxrFlagsIn(content)) expect(options.has(flag), `${file}: ${flag}`).toBe(true);
     }
@@ -1364,7 +1366,10 @@ describe('the MCP render of the owned skills', () => {
   }
 
   it('states its mapping as tables a check can read: each session command to its tool, and each git step to a tool or to none', () => {
-    expect(mappingRows('Commands')).toEqual(['start', 'list', 'status', 'submit', 'rebase', 'discard'].map((verb) => [`ctxr session ${verb}`, `session_${verb}`]));
+    expect(mappingRows('Commands')).toEqual([
+      ...['start', 'list', 'status', 'submit', 'rebase', 'discard'].map((verb): [string, string] => [`ctxr session ${verb}`, `session_${verb}`]),
+      ...UNAVAILABLE_COMMANDS.map((command): [string, string] => [`ctxr ${command}`, 'none']),
+    ]);
     const git = new Map(mappingRows('Git steps'));
     expect(git.get('git mv')).toBe('Move');
     expect(git.get('git rm')).toBe('Delete');
@@ -1408,7 +1413,8 @@ function driftProblems(skills: readonly { file: string; content: string }[]): st
     // The managed header names `ctxr init` and `ctxr update` as provenance, not as a step.
     const content = rendered.replace(MANAGED_SKILL_HEADER, '');
     for (const m of content.matchAll(/`ctxr ([a-z][a-z-]*(?: [a-z][a-z-]*)?)/g)) {
-      if (routeForCommand(m[1]!) === null) problems.push(`${file}: ctxr ${m[1]}`);
+      const unavailable = (UNAVAILABLE_COMMANDS as readonly string[]).some((c) => m[1] === c || m[1]!.startsWith(`${c} `));
+      if (!unavailable && routeForCommand(m[1]!) === null) problems.push(`${file}: ctxr ${m[1]}`);
     }
     for (const m of content.matchAll(/`((?:git|gh) [a-z][a-z-]*(?: (?:-{1,2}[a-z-]+|[a-z][a-z-]*))?)/g)) {
       const step = m[1]!;

@@ -52,6 +52,8 @@ export const CTXR_READ_COMMANDS = [
   'publish check',
   'publish urls',
   'publish gather',
+  // mount-shared-stores: reads the declared mounts, with no writes and no network.
+  'shared-stores status',
 ] as const;
 
 /** D4: writing commands `ctxr_write` runs inside a member's own session. `session capture` is one of them (revision 2). */
@@ -71,6 +73,14 @@ export const CTXR_WRITE_COMMANDS = [
   // is what a server on another ctxr version than the store's would write.
   'update',
 ] as const;
+
+/**
+ * Commands a shipped skill names that have no counterpart over MCP, so the
+ * preamble marks them `none` and the agent skips the step. `shared-stores
+ * sync` refreshes the canonical clone's mounts; the server keeps no mounts,
+ * and a chat session cannot change into one (mount-shared-stores).
+ */
+export const UNAVAILABLE_COMMANDS = ['shared-stores sync'] as const;
 
 /** D3: the session commands with a typed tool of their own. */
 export const SESSION_COMMAND_TOOLS = {

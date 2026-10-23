@@ -10,7 +10,7 @@ import { scanDocsDir, SKILL_FILE_NAME, type ScannedDoc } from './conventions.js'
 import { GRAPH_DOCUMENT_RELATIVE_PATH } from './graph/persist.js';
 import { writeFileAtomic } from './fs/atomic.js';
 import { packagedTemplate } from './templates.js';
-import { GIT_STEP_TOOLS, SESSION_COMMAND_TOOLS } from './mcp/tool-map.js';
+import { GIT_STEP_TOOLS, SESSION_COMMAND_TOOLS, UNAVAILABLE_COMMANDS } from './mcp/tool-map.js';
 
 /**
  * The canonical skill bodies live as plain markdown under
@@ -505,7 +505,10 @@ export function renderSkills(config: StoreConfig, target: SkillTarget = 'cli'): 
 /** `templates/skills/mcp/_preamble.md`, rendered against the store's configuration. */
 export function mcpPreamble(config: StoreConfig): string {
   // Revision 6: the tables come from the mapping module, never from a second copy here.
-  const commands = Object.entries(SESSION_COMMAND_TOOLS).map(([command, tool]) => `| \`ctxr ${command}\` | \`${tool}\` |`);
+  const commands = [
+    ...Object.entries(SESSION_COMMAND_TOOLS).map(([command, tool]) => `| \`ctxr ${command}\` | \`${tool}\` |`),
+    ...UNAVAILABLE_COMMANDS.map((command) => `| \`ctxr ${command}\` | none |`),
+  ];
   const gitSteps = Object.entries(GIT_STEP_TOOLS).map(([step, tool]) => `| \`${step}\` | ${tool === null ? 'none' : `\`${tool}\``} |`);
   return packagedTemplate('skills/mcp', '_preamble')
     .replace('__COMMAND_TABLE__', ['| Command | Tool |', '| --- | --- |', ...commands].join('\n'))
