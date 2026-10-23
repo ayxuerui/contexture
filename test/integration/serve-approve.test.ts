@@ -1,5 +1,5 @@
 import { createServer, request, type Server } from 'node:http';
-import { writeFile } from 'node:fs/promises';
+import { chmod, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { parseDecision } from '../../src/core/approval/decision.js';
@@ -496,6 +496,83 @@ describe('the approval page for a session across stores (real CLI, two fake forg
       await pair.tmp.cleanup();
     }
   });
+
+  it('end to end: a note moved from ctx-a into its mount ctx-b is one session, approved once on ctx-a, landing ctx-b first', async () => {
+    const pair = await pairStore();
+    try {
+      await pair.advance(pair.a, { 'projects/note.md': '# Note\n\nA note to move.\n' });
+      const build = async (cwd: string) => expect((await runCli(['catalog', 'build'], { cwd, env: pair.env, timeoutMs: 60_000 })).exitCode).toBe(0);
+      const submit = async (cwd: string, name: string, branch: string) => {
+        const r = await pair.cli(['session', 'submit', name, '--branch', branch, '--message', 'Move the note', '--title', 'Move the note', '--body', 'Why: the note belongs in ctx-b.'], cwd);
+        expect(r.exitCode, r.stdout + r.stderr).toBe(0);
+        return r.json.data as { approval_url: string; pull_request: { number: number } };
+      };
+
+      // The home part: the original removed in ctx-a's session.
+      const started = await pair.cli(['session', 'start', 'move-note'], pair.a.root);
+      const homeWorktree = started.json.data.worktree as string;
+      const homeName = path.basename(homeWorktree);
+      await pair.git(['rm', '-q', 'projects/note.md'], homeWorktree);
+      await build(homeWorktree);
+      const homeSubmit = await submit(pair.a.root, homeName, 'notes/move-out');
+
+      // The mounted part: the note added in a session inside ctx-b that joins it.
+      const joinedStart = await pair.cli(['session', 'start', '--joins', homeName], pair.mount);
+      const joinedWorktree = joinedStart.json.data.worktree as string;
+      await writeFile(path.join(joinedWorktree, 'projects', 'note.md'), '# Note\n\nA note to move.\n');
+      await build(joinedWorktree);
+      const joinedSubmit = await submit(pair.mount, path.basename(joinedWorktree), 'notes/move-in');
+      // One approval link for both parts.
+      expect(joinedSubmit.approval_url).toBe(homeSubmit.approval_url);
+      // The agent opened them with its own account, which is not the recording login.
+      for (const forge of [pair.a.forge, pair.b.forge]) {
+        await forge.update((state) => {
+          for (const p of state.pulls) p.user = 'ctx-agent';
+        });
+      }
+
+      // Record, as ctx-a's main moves, whether ctx-b's main already holds the note.
+      const log = path.join(pair.tmp.root, 'order.log');
+      const hook = path.join(pair.a.origin, 'hooks', 'post-receive');
+      await writeFile(
+        hook,
+        `#!/bin/sh\nwhile read old new ref; do\n  if [ "$ref" = "refs/heads/main" ]; then\n    if git --git-dir="${pair.b.origin}" cat-file -e main:projects/note.md 2>/dev/null; then echo mount-first >> "${log}"; else echo home-first >> "${log}"; fi\n  fi\ndone\n`,
+      );
+      await chmod(hook, 0o755);
+
+      await withPairServer(pair, pair.a.root, async (url) => {
+        const route = new URL(homeSubmit.approval_url).pathname;
+        const shown = await page(url, route);
+        expect(shown.status).toBe(200);
+        const fields = [...shown.body.matchAll(/name="part" value="([^"]+)"/g)].map((m) => m[1]!);
+        expect(new Set(fields).size).toBe(2);
+        const res = await http(new URL(`${route}decision`, url).toString(), {
+          method: 'POST',
+          headers: { [HEADER]: assertion(), Origin: BASE, 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: new URLSearchParams([['decision', 'approve'], ...[...new Set(fields)].map((f) => ['part', f] as [string, string])]).toString(),
+        });
+        expect(res.status, res.body).toBe(303);
+
+        // The server lands what was approved.
+        const deadline = Date.now() + 90_000;
+        const merged = async () => {
+          const a = (await pair.a.forge.read()).pulls.find((p) => p.number === homeSubmit.pull_request.number);
+          const b = (await pair.b.forge.read()).pulls.find((p) => p.number === joinedSubmit.pull_request.number);
+          return Boolean(a?.merged) && Boolean(b?.merged);
+        };
+        while (!(await merged())) {
+          if (Date.now() > deadline) throw new Error('the session did not land');
+          await new Promise((r) => setTimeout(r, 250));
+        }
+      });
+      expect((await readFile(log, 'utf8')).trim()).toBe('mount-first');
+      const onMain = async (origin: string) => (await pair.git(['--git-dir', origin, 'ls-tree', '-r', '--name-only', 'main'], pair.tmp.root)).split('\n');
+      expect(await onMain(pair.b.origin)).toContain('projects/note.md');
+      expect(await onMain(pair.a.origin)).not.toContain('projects/note.md');
+    } finally {
+      await pair.tmp.cleanup();
+    }
+  }, 240_000);
 
   it("shows a session homed elsewhere apart from this store's own, naming its home, with no decision", async () => {
     const pair = await pairStore();
