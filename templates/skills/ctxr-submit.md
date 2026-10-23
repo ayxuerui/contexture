@@ -23,6 +23,10 @@ I open the pull request?" — needing to ask is itself the answer: leave, and le
 Ending a turn without that signal is normal and is not this skill. Say in one line what is uncommitted
 and which worktree holds it, then stop. The work is safe on the branch and the next message picks it up.
 
+## A session in a mounted store
+
+A session started inside `shared/<name>` belongs to that mounted store. Run every step below from that session's worktree. The pull request opens on that store's repository. The hand-off names that store's approval page, from its own `contexture.yaml`.
+
 ## Routes
 
 Every pull request takes one of three routes. Say which, and why, in its body:

@@ -1,4 +1,5 @@
 import { mkdtemp, rm, stat } from 'node:fs/promises';
+import { fastForwardIfSafe, type FastForwardOutcome } from '../core/git/fast-forward.js';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { decisionBody, landingBody, type LandingRecordState } from '../core/approval/decision.js';
@@ -50,14 +51,8 @@ export interface LandResult {
 }
 
 /** write-lifecycle spec ("Every landing run brings the canonical clone up to date when it is safe to"). */
-export interface CanonicalSync {
-  /** True when the clone is at the forge's default branch afterwards — moved, or already there (`from === to`). */
-  synced: boolean;
-  from: string | null;
-  to: string | null;
-  /** Why it was left alone; null when synced. */
-  reason: string | null;
-}
+/** The canonical clone's sync: the shared fast-forward rule's outcome (`core/git/fast-forward.ts`). */
+export type CanonicalSync = FastForwardOutcome;
 
 export interface LandData {
   /** Which kind of forge credential the command used; never the credential. */
@@ -323,26 +318,8 @@ async function catchUp(ctx: Context, result: LandResult, pull: PullRequest, sess
  * it; if the fast-forward would overwrite one, git refuses and that is reported.
  */
 async function syncCanonical(ctx: Context): Promise<CanonicalSync> {
-  const head = async (ref: string): Promise<string | null> => {
-    const r = await git(ctx, ['rev-parse', '--verify', '--quiet', `${ref}^{commit}`], ctx.canonical, true);
-    return r.exitCode === 0 ? r.stdout.trim() : null;
-  };
   await remoteGit(ctx, ['fetch', '--quiet', 'origin', ctx.defaultBranch], ctx.canonical, true);
-  const from = await head('HEAD');
-  const leave = (reason: string): CanonicalSync => ({ synced: false, from, to: from, reason });
-
-  const onBranch = (await git(ctx, ['symbolic-ref', '--quiet', '--short', 'HEAD'], ctx.canonical, true)).stdout.trim();
-  if (onBranch !== ctx.defaultBranch) return leave(`the canonical clone is on "${onBranch || 'a detached HEAD'}", not ${ctx.defaultBranch}`);
-  const dirty = (await git(ctx, ['status', '--porcelain', '--untracked-files=no'], ctx.canonical, true)).stdout.trim();
-  if (dirty !== '') return leave('the canonical clone has uncommitted changes to tracked files');
-  const target = await head(`origin/${ctx.defaultBranch}`);
-  if (target === null) return leave(`origin/${ctx.defaultBranch} could not be read`);
-  if (target === from) return { synced: true, from, to: from, reason: null };
-  const behind = await git(ctx, ['merge-base', '--is-ancestor', 'HEAD', `origin/${ctx.defaultBranch}`], ctx.canonical, true);
-  if (behind.exitCode !== 0) return leave(`the canonical clone has diverged from origin/${ctx.defaultBranch}`);
-  const ff = await git(ctx, ['merge', '--ff-only', '--quiet', `origin/${ctx.defaultBranch}`], ctx.canonical, true);
-  if (ff.exitCode !== 0) return leave(`git refused the fast-forward: ${ff.stderr.trim().split('\n')[0] ?? ''}`);
-  return { synced: true, from, to: await head('HEAD'), reason: null };
+  return fastForwardIfSafe((args) => git(ctx, args, ctx.canonical, true), ctx.defaultBranch, 'the canonical clone');
 }
 
 function syncFinding(sync: CanonicalSync): Finding | null {

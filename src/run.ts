@@ -21,6 +21,8 @@ import * as publishNewCommand from './commands/publish-new.js';
 import * as publishStampCommand from './commands/publish-stamp.js';
 import * as pluginBuildCommand from './commands/plugin-build.js';
 import * as reviewListCommand from './commands/review-list.js';
+import * as sharedStoresStatusCommand from './commands/shared-stores-status.js';
+import * as sharedStoresSyncCommand from './commands/shared-stores-sync.js';
 import * as sessionCaptureCommand from './commands/session-capture.js';
 import * as sessionDiscardCommand from './commands/session-discard.js';
 import * as sessionListCommand from './commands/session-list.js';
@@ -742,6 +744,30 @@ export function buildProgram(env: RunEnv): { program: Command; state: { result: 
       state.result = await runCommand('review.list', runEnv, jsonMode, async () => {
         const store = await openStore(runEnv, { root });
         return reviewListCommand.execute(runEnv, store);
+      });
+    });
+
+  const sharedStoresCommand = program.command('shared-stores').description('the stores this store mounts under shared/');
+
+  sharedStoresCommand
+    .command('sync')
+    .description('clone each declared mount that is missing and fast-forward the others, leaving any with local work alone')
+    .action(async (_cmdOpts: object, cmd: Command) => {
+      const { runEnv, jsonMode, root } = deriveRunEnv(env, cmd);
+      state.result = await runCommand('shared-stores.sync', runEnv, jsonMode, async () => {
+        const store = await openStore(runEnv, { root });
+        return sharedStoresSyncCommand.execute(runEnv, store);
+      });
+    });
+
+  sharedStoresCommand
+    .command('status')
+    .description('report each declared mount: present, a store, branch, commit, uncommitted changes — no writes, no network')
+    .action(async (_cmdOpts: object, cmd: Command) => {
+      const { runEnv, jsonMode, root } = deriveRunEnv(env, cmd);
+      state.result = await runCommand('shared-stores.status', runEnv, jsonMode, async () => {
+        const store = await openStore(runEnv, { root });
+        return sharedStoresStatusCommand.execute(runEnv, store);
       });
     });
 

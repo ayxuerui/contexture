@@ -4,7 +4,7 @@ import type { CommandOutcome, CommandRequires } from '../core/command.js';
 import type { RunEnv } from '../core/env.js';
 import { NoteNotFoundError, PublishSelectorConflictError, PublishSelectorRequiredError } from '../core/errors.js';
 import { ExitCode } from '../core/exit-codes.js';
-import { extractLinkTargets } from '../core/graph/model.js';
+import { extractLinkTargets, linkNames } from '../core/graph/model.js';
 import { listNotes, type Note } from '../core/notes/list.js';
 import { parseNote } from '../core/notes/parse.js';
 import { deriveFiling, type Filing, type FilingSubject } from '../core/publish/filing.js';
@@ -41,9 +41,8 @@ async function resolveEntityNotes(env: RunEnv, store: Store, entity: string): Pr
   const relativePath = toStoreRelativePath(env, store, entity);
   if (!existsSync(path.join(store.root, relativePath))) throw new NoteNotFoundError(relativePath);
 
-  const stem = path.basename(relativePath, '.md');
   const notes = await listNotes(store.root, store.config);
-  return notes.filter((n) => n.path !== relativePath && extractLinkTargets(n.body).includes(stem));
+  return notes.filter((n) => n.path !== relativePath && extractLinkTargets(n.body).some((target) => linkNames(n.path, target, relativePath)));
 }
 
 /**
