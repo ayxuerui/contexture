@@ -85,11 +85,13 @@ describe('ctxr plugin build', () => {
       $schema: 'https://agent-plugins.org/schemas/1.0.0/plugin.schema.json',
       name: 'contexture-store',
       version: data.version,
-      extensions: { 'com.openai.interface': { displayName: 'store (contexture)' } },
+      extensions: { 'com.openai': { interface: { displayName: 'store (contexture)' } } },
     });
+    // The nesting OpenAI's plugin guide documents: extensions -> "com.openai" -> auth.
     expect(await json(path.join(chatgpt, 'mcp.json'))).toEqual({
+      $schema: 'https://agent-plugins.org/schemas/1.0.0/mcp.schema.json',
       mcpServers: {
-        'contexture-store': { type: 'streamable-http', url: `${BASE}/mcp`, extensions: { 'com.openai.auth': { type: 'oauth', client: { mode: 'dcr' } } } },
+        'contexture-store': { type: 'streamable-http', url: `${BASE}/mcp`, extensions: { 'com.openai': { auth: { type: 'oauth', client: { mode: 'dcr' } } } } },
       },
     });
 
