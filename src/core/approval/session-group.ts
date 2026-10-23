@@ -3,6 +3,7 @@ import type { StoreConfig } from '../../config/schema.js';
 import { storePrefix } from '../graph/tree.js';
 import { CONFIG_FILE_NAME } from '../root.js';
 import type { ForgeCredentials } from '../forge/credentials.js';
+import { ContextureError } from '../errors.js';
 import { ForgeRequestError, type ForgeClient, type IssueComment, type PullRequest, type Review } from '../forge/github.js';
 import type { GitRunner } from '../git/exec.js';
 import { resolveMounts } from '../shared-stores.js';
@@ -83,7 +84,8 @@ export async function listOpen(reach: StoreReach, homePulls?: () => Promise<Pull
         const pulls = store === reach.home && homePulls !== undefined ? await homePulls() : await store.forge.openPulls();
         return { store, pulls, error: null };
       } catch (err) {
-        if (!(err instanceof ForgeRequestError)) throw err;
+        // A mount the credential cannot reach (an App not installed there) is unreadable, like an unreachable forge.
+        if (!(err instanceof ForgeRequestError) && !(store !== reach.home && err instanceof ContextureError)) throw err;
         return { store, pulls: null, error: err.message };
       }
     }),

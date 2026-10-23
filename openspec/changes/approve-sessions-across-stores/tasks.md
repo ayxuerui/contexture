@@ -18,12 +18,12 @@
 
 ## 3. The approval page
 
-- [ ] 3.1 Fetch a mounted part's head into the mount's own clone under a private ref namespace, leaving its branches and working tree untouched
-- [ ] 3.2 Make `/approve/` list sessions across the home store and its mounts, once each, with each part's store, number, head and state; show sessions homed elsewhere without a decision; report an unreachable store and offer no decision on its sessions
-- [ ] 3.3 Make the session page show every part under its store's heading, in landing order
-- [ ] 3.4 Make the decision route accept only sessions homed in this store; take every part's store, number and head; refuse a moved head, a closed part, a changed set of parts, or a decider missing from any store's deciders; post the record review first on the record part, then copies on the other parts, each with one decision id; report missing copies
-- [ ] 3.5 Integration tests against the fake forge for each change-approval scenario in this change
-- [ ] 3.6 Run `npx vitest run test/integration/serve-approve.test.ts` and confirm it exits 0
+- [x] 3.1 Fetch a mounted part's head into the mount's own clone under a private ref namespace, leaving its branches and working tree untouched
+- [x] 3.2 Make `/approve/` list sessions across the home store and its mounts, once each, with each part's store, number, head and state; show sessions homed elsewhere without a decision; report an unreachable store and offer no decision on its sessions
+- [x] 3.3 Make the session page show every part under its store's heading, in landing order
+- [x] 3.4 Make the decision route accept only sessions homed in this store; take every part's store, number and head; refuse a moved head, a closed part, a changed set of parts, or a decider missing from any store's deciders; post the record review first on the record part, then copies on the other parts, each with one decision id; report missing copies
+- [x] 3.5 Integration tests against the fake forge for each change-approval scenario in this change
+- [x] 3.6 Run `npx vitest run test/integration/serve-approve.test.ts` and confirm it exits 0
 
 ## 4. Landing
 

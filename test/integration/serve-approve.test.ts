@@ -4,6 +4,7 @@ import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { parseDecision } from '../../src/core/approval/decision.js';
 import { makeApprovalStore, recordApproval, RECORDING_LOGIN, type ApprovalStore } from '../helpers/approval-store.js';
+import { makeSessionPair, recordSessionDecision, type Part, type SessionPair } from '../helpers/session-stores.js';
 import { makeTestSigner } from '../helpers/identity-keys.js';
 import { runCli, runCliBackground, stopCliBackground } from '../helpers/run-cli.js';
 
@@ -263,6 +264,253 @@ describe('the approval page (real CLI, fake forge, real signatures)', () => {
       });
     } finally {
       await store.tmp.cleanup();
+    }
+  });
+});
+
+/**
+ * approve-sessions-across-stores, change-approval: one session with a part in
+ * `ctx-a` and a part in its mount `ctx-b`, listed, shown and decided once on
+ * `ctx-a`'s page.
+ */
+describe('the approval page for a session across stores (real CLI, two fake forges)', () => {
+  const pairStore = (opts: { bDeciders?: string } = {}) =>
+    makeSessionPair({ identity: { issuer: ISSUER, audience: AUDIENCE, jwksUrl }, ...opts });
+
+  async function withPairServer(pair: SessionPair, cwd: string, body: (url: string) => Promise<void>): Promise<void> {
+    const { child, firstLine } = await runCliBackground(['serve', '--port', '0', '--json'], { cwd, env: pair.env });
+    try {
+      await body((JSON.parse(firstLine) as { data: { url: string } }).data.url);
+    } finally {
+      await stopCliBackground(child);
+    }
+  }
+
+  const page = async (url: string, route: string, email = 'a@example.com') => http(new URL(route, url).toString(), { headers: { [HEADER]: assertion(email) } });
+  const partField = (part: Part) => `${part.store.slug}#${part.number}@${part.head}`;
+  function sessionPost(url: string, name: string, fields: [string, string][], email = 'a@example.com'): Promise<Response> {
+    return http(new URL(`/approve/${name}/decision`, url).toString(), {
+      method: 'POST',
+      headers: { [HEADER]: assertion(email), Origin: BASE, 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams(fields).toString(),
+    });
+  }
+  const reviewsOf = async (part: Part) => ((await part.store.forge.read()).reviews ?? {})[part.number] ?? [];
+
+  it('lists a session with parts in two stores once, and shows each part under its store, mounted part first', async () => {
+    const pair = await pairStore();
+    try {
+      const home = await pair.openHome('ctx-move', 7, { 'projects/gone.md': '# Gone\n' });
+      const joined = await pair.openJoined(home, 5, { 'projects/moved.md': '# Moved\n' });
+      // As if the part had been written from another person's clone: this clone of ctx-b does not hold its commits.
+      await pair.git(['worktree', 'remove', '--force', joined.worktree], pair.mount);
+      await pair.git(['branch', '-D', joined.branch], pair.mount);
+      await pair.git(['update-ref', '-d', `refs/remotes/origin/${joined.branch}`], pair.mount);
+      await pair.git(['reflog', 'expire', '--expire=now', '--all'], pair.mount);
+      await pair.git(['gc', '--quiet', '--prune=now'], pair.mount);
+      expect(await pair.git(['cat-file', '-t', joined.head], pair.mount).catch(() => 'missing')).toBe('missing');
+      const mountBranches = await pair.git(['for-each-ref', '--format=%(refname)', 'refs/heads'], pair.mount);
+      await withPairServer(pair, pair.a.root, async (url) => {
+        const index = await page(url, '/approve/');
+        expect(index.status).toBe(200);
+        expect(index.body.split(`href="/approve/${home.name}/"`).length - 1).toBe(1);
+        expect(index.body).toContain('ctx-b #5');
+        expect(index.body).toContain('example/ctx-a #7');
+
+        const shown = await page(url, `/approve/${home.name}/`);
+        expect(shown.status).toBe(200);
+        const b = shown.body.indexOf('ctx-b: pull request');
+        const a = shown.body.indexOf('example/ctx-a: pull request');
+        expect(b).toBeGreaterThan(-1);
+        expect(a).toBeGreaterThan(b);
+        expect(shown.body).toContain('projects/moved.md');
+        expect(shown.body).toContain('projects/gone.md');
+        expect(shown.body).toContain(`value="${partField(joined)}"`);
+        expect(shown.body).toContain(`value="${partField(home)}"`);
+      });
+      // The mounted part's head was fetched under the server's own namespace; the mount's branches are as they were.
+      expect(await pair.git(['for-each-ref', '--format=%(refname)', 'refs/heads'], pair.mount)).toBe(mountBranches);
+      expect(await pair.git(['rev-parse', 'refs/ctxr-approve/5'], pair.mount)).toBe(joined.head);
+    } finally {
+      await pair.tmp.cleanup();
+    }
+  });
+
+  it('records the decision on every part: the record on the home part, a copy on the mounted part, one decision id', async () => {
+    const pair = await pairStore();
+    try {
+      const home = await pair.openHome('ctx-move', 7, { 'projects/gone.md': '# Gone\n' });
+      const joined = await pair.openJoined(home, 5, { 'projects/moved.md': '# Moved\n' });
+      await withPairServer(pair, pair.a.root, async (url) => {
+        const res = await sessionPost(url, home.name, [['decision', 'approve'], ['part', partField(joined)], ['part', partField(home)]]);
+        expect(res.status, res.body).toBe(303);
+      });
+      const [record] = await reviewsOf(home);
+      const [copy] = await reviewsOf(joined);
+      const r = parseDecision(record!.body)!;
+      const c = parseDecision(copy!.body)!;
+      expect(record!.user.login).toBe(RECORDING_LOGIN);
+      expect(copy!.user.login).toBe(RECORDING_LOGIN);
+      expect(r.session!.id).toBe(c.session!.id);
+      expect(r.session!.session).toEqual({ home: 'example/ctx-a', branch: home.branch });
+      expect(r.session!.parts).toEqual([
+        { store: 'example/ctx-b', number: 5, head: joined.head },
+        { store: 'example/ctx-a', number: 7, head: home.head },
+      ]);
+      expect(r).toMatchObject({ decision: 'approve', head: home.head, by: 'a@example.com' });
+      expect(c).toMatchObject({ decision: 'approve', head: joined.head, by: 'a@example.com' });
+      // The record is posted first.
+      expect(Date.parse(record!.submitted_at)).toBeLessThanOrEqual(Date.parse(copy!.submitted_at));
+    } finally {
+      await pair.tmp.cleanup();
+    }
+  });
+
+  it('says which copy is missing when posting it fails, and the decision stands', async () => {
+    const pair = await pairStore();
+    try {
+      const home = await pair.openHome('ctx-move', 7, { 'projects/gone.md': '# Gone\n' });
+      const joined = await pair.openJoined(home, 5, { 'projects/moved.md': '# Moved\n' });
+      await pair.b.forge.update((state) => {
+        state.fail = { 'pulls/5/reviews': 502 };
+      });
+      await withPairServer(pair, pair.a.root, async (url) => {
+        const res = await sessionPost(url, home.name, [['decision', 'approve'], ['part', partField(joined)], ['part', partField(home)]]);
+        expect(res.status).toBe(200);
+        expect(res.body).toContain('example/ctx-b#5');
+        expect(res.body).toContain('Landing posts each missing copy');
+      });
+      expect(await reviewsOf(home)).toHaveLength(1);
+      expect(await reviewsOf(joined)).toHaveLength(0);
+    } finally {
+      await pair.tmp.cleanup();
+    }
+  });
+
+  it('records on the first part when the session has no part in its home store', async () => {
+    const pair = await pairStore();
+    try {
+      const home = await pair.openHome('ctx-move', 7, { 'projects/gone.md': '# Gone\n' });
+      const joined = await pair.openJoined(home, 5, { 'projects/moved.md': '# Moved\n' });
+      await pair.a.forge.update((state) => {
+        state.pulls = [];
+      });
+      await withPairServer(pair, pair.a.root, async (url) => {
+        expect((await page(url, '/approve/')).body).toContain(`href="/approve/${home.name}/"`);
+        const res = await sessionPost(url, home.name, [['decision', 'approve'], ['part', partField(joined)]]);
+        expect(res.status, res.body).toBe(303);
+      });
+      const [record] = await reviewsOf(joined);
+      expect(parseDecision(record!.body)!.session!.parts).toEqual([{ store: 'example/ctx-b', number: 5, head: joined.head }]);
+    } finally {
+      await pair.tmp.cleanup();
+    }
+  });
+
+  it('refuses a decider of one store only, naming the other, and records nothing', async () => {
+    const pair = await pairStore({ bDeciders: '"a@example.com"' });
+    try {
+      const home = await pair.openHome('ctx-move', 7, { 'projects/gone.md': '# Gone\n' });
+      const joined = await pair.openJoined(home, 5, { 'projects/moved.md': '# Moved\n' });
+      await withPairServer(pair, pair.a.root, async (url) => {
+        const res = await sessionPost(url, home.name, [['decision', 'approve'], ['part', partField(joined)], ['part', partField(home)]], 'b@example.com');
+        expect(res.status).toBe(403);
+        expect(res.body).toContain('ctx-b');
+      });
+      expect(await reviewsOf(home)).toHaveLength(0);
+      expect(await reviewsOf(joined)).toHaveLength(0);
+    } finally {
+      await pair.tmp.cleanup();
+    }
+  });
+
+  it('refuses a decision on heads or parts the page did not show, recording nothing', async () => {
+    const pair = await pairStore();
+    try {
+      const home = await pair.openHome('ctx-move', 7, { 'projects/gone.md': '# Gone\n' });
+      const joined = await pair.openJoined(home, 5, { 'projects/moved.md': '# Moved\n' });
+      await withPairServer(pair, pair.a.root, async (url) => {
+        const missingPart = await sessionPost(url, home.name, [['decision', 'approve'], ['part', partField(home)]]);
+        expect(missingPart.status).toBe(409);
+        const moved = await sessionPost(url, home.name, [['decision', 'approve'], ['part', partField({ ...joined, head: 'f'.repeat(40) })], ['part', partField(home)]]);
+        expect(moved.status).toBe(409);
+      });
+      expect(await reviewsOf(home)).toHaveLength(0);
+      expect(await reviewsOf(joined)).toHaveLength(0);
+    } finally {
+      await pair.tmp.cleanup();
+    }
+  });
+
+  it('records a request for changes, with its comment, on every part', async () => {
+    const pair = await pairStore();
+    try {
+      const home = await pair.openHome('ctx-move', 7, { 'projects/gone.md': '# Gone\n' });
+      const joined = await pair.openJoined(home, 5, { 'projects/moved.md': '# Moved\n' });
+      await withPairServer(pair, pair.a.root, async (url) => {
+        const res = await sessionPost(url, home.name, [['decision', 'request-changes'], ['comment', 'Keep the original title.'], ['part', partField(joined)], ['part', partField(home)]]);
+        expect(res.status, res.body).toBe(303);
+      });
+      for (const part of [home, joined]) {
+        const [review] = await reviewsOf(part);
+        expect(review!.state).toBe('CHANGES_REQUESTED');
+        expect(parseDecision(review!.body)!.comment).toBe('Keep the original title.');
+      }
+    } finally {
+      await pair.tmp.cleanup();
+    }
+  });
+
+  it('reports an unreachable mount, offers no decision on its sessions, and still decides sessions only on the home store', async () => {
+    const pair = await pairStore();
+    try {
+      const both = await pair.openHome('ctx-move', 7, { 'projects/gone.md': '# Gone\n' });
+      const joined = await pair.openJoined(both, 5, { 'projects/moved.md': '# Moved\n' });
+      const alone = await pair.openHome('ctx-alone', 8, { 'projects/alone.md': '# Alone\n' });
+      // An earlier decision named the ctx-b part; ctx-b then becomes unreadable.
+      await recordSessionDecision(
+        { store: pair.a, number: 7, head: both.head },
+        [
+          { store: pair.b, number: 5, head: joined.head },
+          { store: pair.a, number: 7, head: both.head },
+        ],
+        { home: 'example/ctx-a', branch: both.branch },
+        { kind: 'request-changes', comment: 'later' },
+      );
+      await pair.b.forge.update((state) => {
+        state.fail = { pulls: 502 };
+      });
+      await withPairServer(pair, pair.a.root, async (url) => {
+        const index = await page(url, '/approve/');
+        expect(index.status).toBe(200);
+        expect(index.body).toContain('The forge could not be read for ctx-b');
+        const withPart = await page(url, `/approve/${both.name}/`);
+        expect(withPart.status).toBe(200);
+        expect(withPart.body).not.toContain('name="part"');
+        const onlyHome = await page(url, `/approve/${alone.name}/`);
+        expect(onlyHome.body).toContain(`value="${partField(alone)}"`);
+        const decided = await sessionPost(url, alone.name, [['decision', 'approve'], ['part', partField(alone)]]);
+        expect(decided.status, decided.body).toBe(303);
+      });
+    } finally {
+      await pair.tmp.cleanup();
+    }
+  });
+
+  it("shows a session homed elsewhere apart from this store's own, naming its home, with no decision", async () => {
+    const pair = await pairStore();
+    try {
+      const home = await pair.openHome('ctx-move', 7, { 'projects/gone.md': '# Gone\n' });
+      await pair.openJoined(home, 5, { 'projects/moved.md': '# Moved\n' });
+      await withPairServer(pair, pair.b.root, async (url) => {
+        const index = await page(url, '/approve/');
+        expect(index.status).toBe(200);
+        expect(index.body).toContain('Sessions that began in another store');
+        expect(index.body).toContain('example/ctx-a');
+        expect(index.body).not.toContain('href="/approve/');
+      });
+    } finally {
+      await pair.tmp.cleanup();
     }
   });
 });
