@@ -93,11 +93,11 @@ The session tools are:
   - the pull request number and state;
   - the approval decision with the decider's comment, as `ctxr review list` reports it.
 - **`session_status(session, diff?)`** = `ctxr session status [--diff]`, with the diff bounded to 100 KB.
-- **`submit(session, branch, commit_message, title, body)`**, as described in D2.
-- **`session_rebase(session, action?)`** = `ctxr session rebase [--continue|--abort]`:
-  - With no action, it starts a rebase onto the fetched default branch. On a conflict it returns each conflicting path with both sides and leaves the rebase in progress, so that `Read` and `Edit` can resolve it.
-  - `action: "continue"` stages and continues.
-  - `action: "abort"` aborts.
+- **`session_submit(session, branch, message, title, body)`** = `ctxr session submit`, as described in D2. The fields are the command's own option names (`--message`, not `commit_message`), as D9 requires.
+- **`session_rebase(session, continue?, abort?)`** = `ctxr session rebase [--continue|--abort]`, the two flags as booleans so the fields stay the command's options (D9):
+  - With neither, it starts a rebase onto the fetched default branch. On a conflict it returns each conflicting path with both sides and leaves the rebase in progress, so that `Read` and `Edit` can resolve it.
+  - `continue: true` stages and continues.
+  - `abort: true` aborts.
 - **`session_discard(session, force?, close_pull_request?)`** = `ctxr session discard`, with the same refusal of unpublished work unless `force`. It is destructive.
 
 A session argument is the session's directory name, as `session_list` returns it.
@@ -267,7 +267,7 @@ That is left to a follow-up change. Until then, `ctxr-second-opinion` is not in 
 - **The agent forgets the session root and writes outside it.** → The write is refused, never redirected. The refusal lists the open sessions with their roots, and the preamble states the rule once.
 - **Unsubmitted work piles up in the store's volume.** → `session_list` shows age and uncommitted state, the preamble tells the agent to mention open sessions at the start of a conversation, and the per-member cap of 20 bounds it. Removal stays an explicit `session_discard`. Nothing is reaped silently, because the lifecycle has no reaping.
 - **A CLI command run by `ctxr_write` writes outside the session.** → The cwd and `CONTEXTURE_STORE_ROOT` are the session worktree, root-changing options are refused, and path arguments are resolved and confined. `session_submit` stages only inside the worktree. Anything else is a CLI bug, and the existing integration tests cover the CLI's root confinement.
-- **A spawned `ctxr` is slow on a large store**, because each call builds its own state. → The 30-second limit is a hard bound, and `doctor` is the slowest command. The pkm timing is measured in task 9.1 before the limit is fixed.
+- **A spawned `ctxr` is slow on a large store**, because each call builds its own state. → The 30-second limit is a hard bound. Measured in task 4.2 on generated stores of 2,539 and 5,039 linked notes: `lint` took 1.2 s and 1.7 s and `doctor` 0.9 s and 1.2 s, so the bound leaves more than an order of magnitude. The pkm timing is confirmed in task 9.1.
 - **A rebase left in progress blocks other calls on that session.** → `session_submit`, `Move` and `Delete` refuse during a rebase, naming `session_rebase` with `continue` or `abort`. `Read` and `Edit` work, so the conflict can be resolved.
 - **The plugin formats are new and may change.** → The manifest text lives in templates, and `ctxr plugin build` has a test asserting each manifest's shape against the documented fields. Format drift is then a template change.
 - **ChatGPT's plugin admission is partly unverified** (help-center pages were read through search snippets only). → Task 9.2 installs the built zip in ChatGPT before the change is archived. If it cannot be installed, developer mode plus the server instructions is the documented fallback.
