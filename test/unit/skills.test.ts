@@ -832,8 +832,8 @@ describe('clear-access-axis-residue: an owned skill names only affordances the C
     }
     expect(ctxrFlagsIn('Run `git push --force-with-lease` after `ctxr doctor`.')).toEqual([]);
     expect(ctxrFlagsIn('Run `ctxr catalog check --stale`.')).toEqual(['--stale']);
-    // A skill's own directory is not the executable: its runner's flags belong to `node`.
-    expect(ctxrFlagsIn('Run `node skills/ctxr-second-opinion/run.mjs --preflight`.')).toEqual([]);
+    // A skill's own directory is not the executable: a script's flags belong to `node`.
+    expect(ctxrFlagsIn('Run `node skills/ctxr-x/run.mjs --preflight`.')).toEqual([]);
     expect(ctxrFlagsIn('Hand off to `ctxr-land` and then run `git push --force-with-lease`.')).toEqual([]);
   });
 });
@@ -958,7 +958,8 @@ describe('shippedSkillFiles', () => {
 });
 
 /**
- * ship-a-cross-model-second-opinion-skill: the conventions the runner cannot
+ * ship-a-cross-model-second-opinion-skill, revised by
+ * run-the-second-opinion-from-the-cli: the conventions the command cannot
  * enforce (synthesis order, bias disclosure, hand-off without executing) are
  * asserted against the rendered text, which is all they can be.
  */
@@ -966,26 +967,33 @@ describe('the second-opinion skill', () => {
   // Prose wraps mid-phrase; assertions read it with whitespace collapsed.
   const skill = () => rendered()['ctxr-second-opinion']!.replace(/[ \t]*\n(?!\n)[ \t]*/g, ' ');
 
-  it('ships its runner and prompt fragments beside SKILL.md, and points at them through the configured skills path', () => {
+  // run-the-second-opinion-from-the-cli D1/D4: the runner became the command, so the skill is one file.
+  it('carries no supporting files, and drives the ctxr second-opinion command group', () => {
     const owned = renderSkills(makeConfig()).find((s) => s.file === 'ctxr-second-opinion')!;
-    expect([...owned.supportingFiles.keys()]).toEqual([
-      'critic-contract.md',
-      'lenses.md',
-      'personas/architect.md',
-      'personas/pragmatist.md',
-      'personas/skeptic.md',
-      'run.mjs',
-    ]);
-    expect(skill()).toContain('node skills/ctxr-second-opinion/run.mjs --preflight');
-    const moved = renderSkills({ ...makeConfig(), harness: { ...makeConfig().harness, skills_path: 'agent/skills/' } }).find((s) => s.file === 'ctxr-second-opinion')!;
-    expect(moved.content).toContain('node agent/skills/ctxr-second-opinion/run.mjs --preflight');
+    expect([...owned.supportingFiles.keys()]).toEqual([]);
+    const s = skill();
+    for (const sub of ['preflight', 'critique --plan-file <plan> --out <dir>', 'poll --prompt-file <question>']) expect(s).toContain(`ctxr second-opinion ${sub}`);
+    expect(s).not.toMatch(/run\.mjs|node [^ ]*skills/);
+    expect(s).not.toContain('__SKILLS_PATH__');
   });
 
-  it('names no ctxr command, because none exists to drive', () => {
-    // The managed header above the H1 names `ctxr init`; the procedure below it drives no ctxr command at all.
-    const procedure = rendered()['ctxr-second-opinion']!.split('\n# Second opinion\n')[1]!;
-    expect(procedure.length).toBeGreaterThan(1000); // anti-vacuity: the split found the body
-    expect(procedure).not.toMatch(/`ctxr [a-z]/);
+  it('every option it names is one the second-opinion group registers', () => {
+    const source = readFileSync(path.resolve(SRC_DIR, 'run.ts'), 'utf8');
+    const group = source.slice(source.indexOf(".command('second-opinion')"), source.indexOf("const sessionCommand"));
+    expect(group).toContain("command('poll')"); // anti-vacuity: the slice is the group's registration
+    const registered = new Set([...group.matchAll(/\.option\('(--[a-z][a-z0-9-]*)/g)].map((m) => m[1]!));
+    registered.add('--json'); // the global output flag
+    const named = ctxrFlagsIn(rendered()['ctxr-second-opinion']!);
+    expect(named.length).toBeGreaterThan(5);
+    expect(named.filter((flag) => !registered.has(flag))).toEqual([]);
+    for (const flag of ['--tier', '--only', '--timeout', '--lens', '--out', '--plan-file', '--prompt-file', '--seed']) expect(registered.has(flag), flag).toBe(true);
+  });
+
+  it('names the statuses by meaning and the lineup and pass-through variables', () => {
+    const s = skill();
+    expect(s).toContain('failed-check status');
+    expect(s).toContain('usage status');
+    for (const name of ['CLAUDE_MODEL', 'CLAUDE_EFFORT', 'CODEX_MODEL', 'CODEX_EFFORT', 'AGY_MODEL', 'PASS_ENV']) expect(s).toContain(`CTXR_SECOND_OPINION_${name}`);
   });
 
   it('says when to critique, poll, or answer directly', () => {

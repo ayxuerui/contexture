@@ -22,7 +22,9 @@ function skillTemplate(slug: string): string {
 
 /**
  * ship-a-cross-model-second-opinion-skill D1: an owned skill may carry
- * packaged files beside its SKILL.md — a runner script, prompt fragments —
+ * packaged files beside its SKILL.md — a runner script, prompt fragments
+ * (today only `ctxr-capture-circleback`; run-the-second-opinion-from-the-cli
+ * moved the second opinion's into the CLI) —
  * authored under `templates/skills/<slug>/`, next to the body template
  * `templates/skills/<slug>.md`. Read verbatim (they are code and prompt
  * text, not store-rendered prose, so no `__TOKEN__` substitution) and in
@@ -354,19 +356,21 @@ const PUBLISH: SkillSeed = {
 };
 
 /**
- * ship-a-cross-model-second-opinion-skill: the first owned skill that ships
- * more than its SKILL.md. The runner and its prompt fragments live under
- * `templates/skills/ctxr-second-opinion/`, and the body names where the
- * store's skills path put them. Named for the judgment, not a command: there
- * is no `ctxr second-opinion`, and the skill drives no ctxr command at all.
+ * ship-a-cross-model-second-opinion-skill, revised by
+ * run-the-second-opinion-from-the-cli D1 and D4: the skill is one file again.
+ * Its runner became `ctxr second-opinion` and its prompts package templates
+ * under `templates/second-opinion/`, so it carries no supporting files, and
+ * `ctxr update` prunes the `run.mjs`, `critic-contract.md`, `lenses.md` and
+ * `personas/` an earlier release left in a store. Named for the command
+ * group it drives, `ctxr second-opinion`; the judgment (when to critique,
+ * how to synthesize, what never to execute) stays in the skill.
  */
 const SECOND_OPINION: SkillSeed = {
   file: 'ctxr-second-opinion',
   name: 'Second opinion',
   description:
     'Get an independent critique of a plan, or a poll on a taste call, from three different model families run in parallel, and synthesize their answers without running the plan.',
-  body: (config) => skillTemplate('ctxr-second-opinion').replaceAll('__SKILLS_PATH__', config.harness.skills_path.replace(/\/+$/, '')).split('\n'),
-  supportingFiles: () => skillSupportingFiles('ctxr-second-opinion'),
+  body: () => skillTemplate('ctxr-second-opinion').split('\n'),
 };
 
 /**

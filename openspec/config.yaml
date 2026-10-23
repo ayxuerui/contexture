@@ -43,7 +43,9 @@ context: |
   be *read* — the store stays operable by an agent with Read/Write/Grep and the
   conventions alone. The write path is the opposite: git is required substrate,
   nothing commits to the default branch, every write lands via a session worktree
-  and a reviewed PR.
+  and a reviewed PR. One exception (run-the-second-opinion-from-the-cli D1):
+  `ctxr second-opinion` is the only command that invokes a model CLI, it is never
+  on the write path, and no other command depends on it.
 
   Enforcement is a gate, not a cage: contexture cannot prevent an agent from
   editing a file directly, and hooks are bypassable with --no-verify. The only
