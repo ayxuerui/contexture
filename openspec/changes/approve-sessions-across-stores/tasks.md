@@ -9,12 +9,12 @@
 
 ## 2. Finding a session's parts and their state
 
-- [ ] 2.1 Group open pull requests on the home store and each present mount by session marker, reading each store's forge with the recording identity
-- [ ] 2.2 Compute session-wide decision state from the record part's review alone: valid only while every named head is current or carried over and no unnamed open part carries the marker; never mix decision ids; `blocked` for a named part closed unmerged, `retrying` for a transient landing failure
-- [ ] 2.3 Read each mounted store's deciders from its `contexture.yaml` on its default branch on the forge
-- [ ] 2.4 Make `ctxr review list` report each part's session and session-wide state
-- [ ] 2.5 Tests with the fake forge: two stores, one session; a pushed part reopening both; a closed part blocking; deciders read from the forge
-- [ ] 2.6 Run `npx vitest run -t "review list|session state"` and confirm it exits 0
+- [x] 2.1 Group open pull requests on the home store and each present mount by session marker, reading each store's forge with the recording identity
+- [x] 2.2 Compute session-wide decision state from the record part's review alone: valid only while every named head is current or carried over and no unnamed open part carries the marker; never mix decision ids; `blocked` for a named part closed unmerged, `retrying` for a transient landing failure
+- [x] 2.3 Read each mounted store's deciders from its `contexture.yaml` on its default branch on the forge
+- [x] 2.4 Make `ctxr review list` report each part's session and session-wide state
+- [x] 2.5 Tests with the fake forge: two stores, one session; a pushed part reopening both; a closed part blocking; deciders read from the forge
+- [x] 2.6 Run `npx vitest run -t "review list|session state"` and confirm it exits 0
 
 ## 3. The approval page
 
