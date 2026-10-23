@@ -69,7 +69,7 @@ A member holding `edit` SHALL be able to call `session_start` with an optional l
 - **THEN** its worktree and branch no longer exist and `session_list` no longer lists it
 
 ### Requirement: `ctxr` and `ctxr_write` run allowlisted CLI commands confined to one checkout
-`ctxr` SHALL run a read-only `ctxr` subcommand from a declared allowlist, and `ctxr_write` a writing one from a second declared allowlist, each given as an argument vector with no shell, using the server's own CLI. `ctxr` SHALL run against the commit being served, or an owned session when one is named; `ctxr_write` SHALL require an owned session, and holding `edit`. A subcommand outside the tool's allowlist, the root option, or a path argument that resolves outside the checkout SHALL be refused before anything runs. The command SHALL run with the checkout as its working directory and store root and without the server's forge credentials in its environment, within a declared time bound, its output bounded to a declared size. A literal `@input` argument SHALL be replaced by the path of a file holding the call's `input` text, written under the session's cache path. The result SHALL give the exit code, the output streams and the commit or session it ran against.
+`ctxr` SHALL run a read-only `ctxr` subcommand from a declared allowlist, and `ctxr_write` a writing one from a second declared allowlist, each given as an argument vector with no shell, using the server's own CLI. `ctxr` SHALL run against the commit being served, or an owned session when one is named; `ctxr_write` SHALL require an owned session, and holding `edit`. A subcommand outside the tool's allowlist, the root option, or a path argument that resolves outside the checkout or onto a path the file tools refuse SHALL be refused before anything runs. After a `ctxr_write` command runs, any change it made to a path the file tools refuse, other than derived paths, SHALL be restored and the call refused. The command SHALL run with the checkout as its working directory and store root and without the server's forge credentials in its environment, within a declared time bound, its output bounded to a declared size. A literal `@input` argument SHALL be replaced by the path of a file holding the call's `input` text, written under the session's cache path. The result SHALL give the exit code, the output streams and the commit or session it ran against.
 
 #### Scenario: A skill's lint step runs unchanged
 - **WHEN** a member calls `ctxr` with `["lint"]` naming their session
@@ -78,6 +78,10 @@ A member holding `edit` SHALL be able to call `session_start` with an optional l
 #### Scenario: A write command needs a session
 - **WHEN** a member calls `ctxr_write` with `["ingest", ...]` and no session
 - **THEN** the call is refused and nothing runs
+
+#### Scenario: A command cannot write a hook
+- **WHEN** `ctxr_write` is called with a path argument `<root>/.githooks/pre-commit`, or runs a command whose output lands under the hooks directory
+- **THEN** the call is refused, and no file under the hooks directory differs from before the call
 
 #### Scenario: Escaping the checkout is refused
 - **WHEN** `ctxr` is called with the root option, with `["update"]`, or with a path argument `../ctx-b/work/a.md`
