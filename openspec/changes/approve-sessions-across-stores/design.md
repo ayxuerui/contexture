@@ -1,3 +1,34 @@
+## Revisions after the second critique
+
+A second critique of the revised plan (2026-10-23, all three APPROVE_WITH_CHANGES, no veto) changed the following.
+It kept every revision of the first round. These override anything inconsistent below.
+
+1. **One review is the record; the rest are copies** (architect and skeptic, both major: posting a decision to
+   several repositories can fail halfway). The architect's repair is taken, with the skeptic's decision id:
+   - Each decision has a unique id.
+   - The record is the review on the record part: the home part, or the first part in landing order when the
+     session has no home part.
+   - The server posts the record first, then copies on the other parts. A failed copy leaves the decision
+     standing, and landing posts a missing copy before merging that part, so the mount's own consent check finds
+     it. Readers take the decision from the record alone, and never mix ids.
+   - The skeptic's alternative, an `incomplete-decision` state that blocks landing until every copy exists, was
+     not taken: it turns a transient forge error into a state that needs a person.
+2. **The home store token is the forge slug** (architect, major): branches are `session/<owner>/<repo>/<home branch
+   without prefix>`, and the marker uses the same slug. A configured display name could repeat across stores.
+3. **Identity is derived from the branch** (pragmatist): no identity file in the worktree. A joined branch carries the
+   home slug and branch, and any other session branch is its own home. `--joins` stays, because it is what creates
+   that branch name.
+4. **`blocked` waits for a person; `retrying` does not** (architect): a named part closed without merging is
+   `blocked`. A rejected push, an unreachable forge, or a mount clone that cannot be brought up to date is
+   `retrying`, tried again next run. Each run computes the state afresh. A conflict goes to the resolver and back
+   for re-approval, as today.
+5. **A mount's clone is brought up to date before its part lands** (architect), by the canonical-sync rule, so the
+   mount's current configuration applies.
+6. **Sessions homed elsewhere are listed in their own section** (pragmatist): kept visible, so members see what is
+   coming into a shared store, but apart from what this page's deciders can act on. Removing them altogether, as
+   the pragmatist proposed, would undo the first round's decision to show them, and the only new evidence was the
+   noise, which a separate section answers.
+
 ## Revisions after critique
 
 A three-model critique (2026-10-23, all three APPROVE_WITH_CHANGES, no veto) changed the following. These override

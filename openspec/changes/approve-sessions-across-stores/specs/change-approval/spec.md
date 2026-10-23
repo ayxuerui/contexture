@@ -4,8 +4,10 @@
 When the store declares mounts, `GET /approve/` SHALL list each session that has at least one open pull request on
 the store or on a present mount the store declares, grouped by session as the write lifecycle defines it. Each entry
 SHALL give the session, its home store, and for each of its pull requests the store it belongs to, its number, its
-head commit and its decision state. A session SHALL be listed once, however many stores its pull requests are on. A
-session homed in another store SHALL be listed as homed there and SHALL offer no decision. The server SHALL read each
+head commit and its decision state. A session SHALL be listed once, however many stores its pull requests are on.
+Sessions homed in another store SHALL be listed apart from this store's own, in a section that names each one's
+home and offers no decision, so that what other people are bringing into a mounted store is visible without
+crowding what this store's deciders can act on. The server SHALL read each
 mounted store's pull requests with its configured recording identity. When the forge cannot be reached for a store,
 the index SHALL say so for that store and SHALL offer no decision on a session with a part there.
 
@@ -16,7 +18,8 @@ the index SHALL say so for that store and SHALL offer no decision on a session w
 
 #### Scenario: A session homed elsewhere is shown but not decided
 - **WHEN** the store `ctx-c` also mounts `ctx-b`, and the session homed in `ctx-a` has an open part on `ctx-b`
-- **THEN** `/approve/` on `ctx-c` lists that part as belonging to a session homed in `ctx-a` and offers no decision on it
+- **THEN** `/approve/` on `ctx-c` lists that part in the section for sessions homed elsewhere, naming `ctx-a`, and
+  offers no decision on it
 
 #### Scenario: A mount the forge cannot reach blocks only its sessions
 - **WHEN** the forge cannot be reached for `ctx-b`
@@ -41,21 +44,36 @@ and record nothing on any pull request, when any of those heads is not that pull
 part is not open, when the session's open parts on the forge differ from the parts posted, or when the decider is
 not a decider of every store the session has a part in. Each store's deciders SHALL be read from that store's
 `change_approval` in its `contexture.yaml` on its default branch on the forge, at decision time; a store with no
-`change_approval` SHALL have no deciders. An accepted decision SHALL be recorded as one review on every part,
-attributed and marked as a single pull request's decision is, and each marker SHALL also name the session and the
-store, number and head of every part.
+`change_approval` SHALL have no deciders.
 
-The parts a session approval's marker names SHALL be the session's parts for landing. The approval SHALL count as
-consent for a part only while every part it names keeps the head the marker records, or a head that part's current
-head carries over from (per write-lifecycle), and while no open pull request carrying the session's marker exists
-that the decision does not name. Otherwise `ctxr review list` and `ctxr land` SHALL report every part as
+An accepted decision SHALL have a unique decision id, and SHALL be recorded as reviews by the recording login, each
+marked as a single pull request's decision is and also naming the decision id, the session, and the store, number
+and head of every part. The decision's record SHALL be its review on one part, the record part: the home store's
+part when the session has one, and otherwise the first named part in landing order. The server SHALL post the
+record review first, then a review on every other part as a copy carrying the same marker. When posting a copy
+fails, the decision SHALL still stand, and the response SHALL say which copies are missing.
+
+Every reader SHALL take a session's decision from its record part alone. The parts the record names SHALL be the
+session's parts for landing. Before landing a part other than the record part, landing SHALL post that part's copy
+when it is missing, and SHALL never post a copy whose decision id differs from the record's. The decision SHALL
+count as consent for a part only while every part it names keeps the head the record gives, or a head that part's
+current head carries over from (per write-lifecycle), and while no open pull request carrying the session's marker
+exists that the record does not name. Otherwise `ctxr review list` and `ctxr land` SHALL report every part as
 `needs-reapproval`.
 
 #### Scenario: Approving a session records a review on every part
 - **WHEN** decider `a@example.com`, a decider of both `ctx-a` and `ctx-b`, approves a session homed in `ctx-a` at
   heads `h1` on `ctx-b` and `h2` on `ctx-a`
-- **THEN** each pull request carries an approving review by the recording login whose marker names the session,
-  both stores' pull requests with `h1` and `h2`, and `a@example.com`
+- **THEN** `ctx-a`'s pull request carries the record review and `ctx-b`'s a copy, each by the recording login with a
+  marker naming one decision id, the session, both stores' pull requests with `h1` and `h2`, and `a@example.com`
+
+#### Scenario: A missing copy is posted before its part lands
+- **WHEN** the record review on `ctx-a`'s part was posted and the copy on `ctx-b`'s part failed
+- **THEN** the session reads as approved, and landing posts the copy on `ctx-b`'s part before merging it
+
+#### Scenario: A session with no part in its home store records on its first part
+- **WHEN** a session homed in `ctx-a` has open parts only on `ctx-b` and is approved
+- **THEN** the record review is posted on `ctx-b`'s part, and every reader takes the decision from it
 
 #### Scenario: A decider of one store only is refused
 - **WHEN** `b@example.com` is a decider of `ctx-a` but not of `ctx-b`, and approves a session with a part on each
@@ -76,9 +94,10 @@ that the decision does not name. Otherwise `ctxr review list` and `ctxr land` SH
 
 ### Requirement: The review state is reported by session
 `ctxr review list` SHALL report, for each session pull request, the session it belongs to and its home store, and
-SHALL report a part's decision state from its session's decision. A session that landing could not finish SHALL be
-reported as `blocked`, naming the part that stopped it. The other states SHALL keep their meanings.
+SHALL report a part's decision state from its session's decision. A session landing left unfinished SHALL be
+reported as `blocked` (a named part closed without merging; it waits for a person) or `retrying` (it lands on a
+later run), naming the part and why. The other states SHALL keep their meanings.
 
-#### Scenario: A blocked mounted part is named on every part
-- **WHEN** a session's part on mounted store `ctx-b` cannot be landed because of a conflict
-- **THEN** `ctxr review list` in `ctx-a` reports the session as `blocked`, naming `ctx-b`'s part and the conflict
+#### Scenario: A closed mounted part blocks the session in the report
+- **WHEN** a session's part on mounted store `ctx-b` was closed without merging after the session was approved
+- **THEN** `ctxr review list` in `ctx-a` reports the session as `blocked`, naming `ctx-b`'s part
