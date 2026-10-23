@@ -23,7 +23,7 @@ import {
   type StoreListing,
   type StoreReach,
 } from '../approval/session-group.js';
-import { sessionRouteName } from '../approval/session-marker.js';
+import { parseSessionMarker, sessionRouteName } from '../approval/session-marker.js';
 import { storeForges } from '../approval/store-forges.js';
 import { runRemoteGit, ghCredentials } from '../forge/credentials.js';
 import { mainWorktreePath } from '../git/worktree.js';
@@ -214,6 +214,30 @@ async function indexPage(store: Store, server: ApprovalServer, kit: PageKit): Pr
         } else {
           elsewhere.push(
             `<tr><td>${escapeHtml(sessionRouteName(group.identity))}</td><td>${escapeHtml(group.identity.home)}</td><td>${partCell}</td><td>${headCell}</td><td>${escapeHtml(STATE_LABEL[state.state])}</td></tr>`,
+          );
+        }
+      }
+      // write-lifecycle spec: a mount's pull request with no session marker is a session of its own, homed in that
+      // mount. It is shown here as homed elsewhere and decided only on the mount's own page.
+      for (const listing of view.listings) {
+        if (listing.store === view.reach.home || listing.pulls === null) continue;
+        const mount = listing.store;
+        const login = mount.config.change_approval?.recording_login ?? null;
+        const base = await baseRef(server.git, mount.root, mount.config.git.default_branch);
+        for (const pull of listing.pulls) {
+          if (parseSessionMarker(pull.body) !== null) continue;
+          let label = STATE_LABEL.awaiting;
+          if (login !== null) {
+            try {
+              label = STATE_LABEL[(await forgeRead(() => reviewStateOf(server.git, mount.root, base, mount.forge, login, pull))).state];
+            } catch (err) {
+              if (!(err instanceof ForgeUnreachableError)) throw err;
+              label = '—';
+            }
+          }
+          elsewhere.push(
+            `<tr><td>${escapeHtml(pull.headRef)}</td><td>${escapeHtml(mount.slug)}</td><td>${escapeHtml(`${partStore(view, mount)} #${pull.number}`)}</td>` +
+              `<td><code>${escapeHtml(pull.headSha.slice(0, 7))}</code></td><td>${escapeHtml(label)}</td></tr>`,
           );
         }
       }

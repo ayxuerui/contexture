@@ -574,6 +574,36 @@ describe('the approval page for a session across stores (real CLI, two fake forg
     }
   }, 240_000);
 
+  it("lists a mount's pull request without a session marker as a session homed in the mount, decided only on the mount's page", async () => {
+    const pair = await pairStore();
+    try {
+      // A session of ctx-b's own, started in ctx-b's canonical clone: its pull request carries no marker.
+      const started = await pair.cli(['session', 'start', 'ctx-own'], pair.b.root);
+      const worktree = started.json.data.worktree as string;
+      const head = await pair.commitIn(worktree, { 'projects/own.md': '# Own\n' }, 'own');
+      await pair.git(['push', '-q', '--no-verify', 'origin', started.json.data.branch], worktree);
+      await pair.b.forge.update((state) => {
+        state.pulls.push({ number: 9, head: started.json.data.branch, title: 'Own', body: 'Why: own.' });
+      });
+      const name = path.basename(worktree);
+      await withPairServer(pair, pair.a.root, async (url) => {
+        const index = await page(url, '/approve/');
+        const elsewhere = index.body.slice(index.body.indexOf('Sessions that began in another store'));
+        expect(elsewhere).toContain('ctx-b #9');
+        expect(elsewhere).toContain('example/ctx-b');
+        expect(elsewhere).toContain(head.slice(0, 7));
+        expect(index.body).not.toContain('href="/approve/');
+      });
+      await withPairServer(pair, pair.b.root, async (url) => {
+        const index = await page(url, '/approve/');
+        expect(index.body).toContain(`href="/approve/${name}/"`);
+        expect((await page(url, `/approve/${name}/`)).body).toContain(`name="head" value="${head}"`);
+      });
+    } finally {
+      await pair.tmp.cleanup();
+    }
+  });
+
   it("shows a session homed elsewhere apart from this store's own, naming its home, with no decision", async () => {
     const pair = await pairStore();
     try {
