@@ -84,6 +84,13 @@ describe('ctxr land for a session across stores (real CLI, two fake forges)', ()
     const first = await land(['--pending']);
     expect(first.json.data.sessions).toEqual([expect.objectContaining({ state: 'retrying', stopped_at: 'example/ctx-b#5', not_attempted: ['example/ctx-a#7'] })]);
     expect((await pullOf(home)).merged ?? false).toBe(false);
+    // Nothing merged, yet the session reads as retrying between runs: the run recorded it on the record part.
+    const between = await pair.cli(['review', 'list'], pair.a.root);
+    expect(between.exitCode, between.stdout).toBe(0);
+    const rows = between.json.data.sessions as { state: string; part: string; landing_reason: string }[];
+    expect(rows.map((r) => r.state)).toEqual(['retrying', 'retrying']);
+    expect(rows[0]!.part).toBe('example/ctx-b#5');
+    expect(rows[0]!.landing_reason).toContain('push-rejected');
 
     await rm(hook);
     const second = await land(['--pending']);

@@ -2,7 +2,7 @@ import { mkdtemp, rm, stat } from 'node:fs/promises';
 import { fastForwardIfSafe, type FastForwardOutcome } from '../core/git/fast-forward.js';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { decisionBody, landingBody, type LandingRecordState } from '../core/approval/decision.js';
+import { decisionBody, landingBody, recordPartOf, type LandingRecordState } from '../core/approval/decision.js';
 import { writeLandingRecord } from '../core/approval/landing-record.js';
 import { resolverPrompt, runResolver } from '../core/approval/resolver.js';
 import { carriesOver, forgeRead, reviewStateOf, sessionPulls, sessionWorktrees, type SessionWorktree } from '../core/approval/sessions.js';
@@ -74,6 +74,8 @@ export interface SessionLandResult {
   stopped_at: string | null;
   landed: string[];
   not_attempted: string[];
+  /** For `retrying`: a one-word cause (`push-rejected`, `forge-unreachable`, `mount-not-synced`, …); null otherwise. */
+  reason_code: string | null;
 }
 
 /** write-lifecycle spec ("Every landing run brings the canonical clone up to date when it is safe to"). */
@@ -671,13 +673,52 @@ async function landSession(
   mode: 'recorded' | 'confirm',
   results: LandResult[],
 ): Promise<SessionLandResult | null> {
+  const outcome = await landSessionSteps(ctx, reach, identity, open, mode, results);
+  if (outcome !== null && outcome.state === 'retrying' && mode === 'recorded' && outcome.stopped_at !== null) {
+    await recordRetrying(ctx, reach, identity, open, outcome);
+  }
+  return outcome;
+}
+
+/**
+ * change-approval spec ("The review state is reported by session"): a session
+ * left unfinished for a passing reason is recorded on its record part, as a
+ * block is, naming the part and why — so `ctxr review list` reports
+ * `retrying` between runs. Readers let it stand until that part lands.
+ */
+async function recordRetrying(ctx: Context, reach: StoreReach, identity: SessionIdentity, open: readonly OpenPart[], outcome: SessionLandResult): Promise<void> {
+  try {
+    const state = await forgeRead(() => sessionState({ git: ctx.env.git, reach, identity, homedHere: true, open, recordingLogin: ctx.recordingLogin ?? '' }));
+    if (state.session === null) return;
+    const recordRef = recordPartOf(state.session);
+    const store = [...reach.mounts, reach.home].find((s) => s.slug === recordRef.store);
+    if (store === undefined) return;
+    const code = outcome.reason_code ?? 'retrying';
+    const sentence = `Landing this session stopped at ${outcome.stopped_at} (${code}). Nothing after it was landed; the next run tries again.`;
+    const mark = landingBody({ state: 'retrying', reason: `${outcome.stopped_at}:${code}`, head: recordRef.head, at: ctx.env.now().toISOString() }, sentence);
+    await record(ctx, emptyResult(recordRef.number, null), `retrying:${code}`, () => store.forge.createComment(recordRef.number, mark));
+  } catch (err) {
+    // The record is a convenience for readers between runs; the landing outcome stands without it.
+    if (!(err instanceof ContextureError)) throw err;
+  }
+}
+
+async function landSessionSteps(
+  ctx: Context,
+  reach: StoreReach,
+  identity: SessionIdentity,
+  open: readonly OpenPart[],
+  mode: 'recorded' | 'confirm',
+  results: LandResult[],
+): Promise<SessionLandResult | null> {
   const key = sessionKey(identity);
-  const outcome: SessionLandResult = { session: key, home: identity.home, state: 'landed', reason: null, stopped_at: null, landed: [], not_attempted: [] };
-  const stop = (state: SessionLandResult['state'], reason: string, part: string | null, rest: readonly string[]): SessionLandResult => {
+  const outcome: SessionLandResult = { session: key, home: identity.home, state: 'landed', reason: null, stopped_at: null, landed: [], not_attempted: [], reason_code: null };
+  const stop = (state: SessionLandResult['state'], reason: string, part: string | null, rest: readonly string[], code: string | null = null): SessionLandResult => {
     outcome.state = state;
     outcome.reason = reason;
     outcome.stopped_at = part;
     outcome.not_attempted = [...rest];
+    outcome.reason_code = state === 'retrying' ? (code ?? 'retrying') : null;
     return outcome;
   };
   const recordingLogin = ctx.recordingLogin ?? '';
@@ -707,7 +748,7 @@ async function landSession(
       const name = partName(part.store, part.number);
       const rest = order.slice(index + 1).map((p) => partName(p.store, p.number));
       const store = stores.find((s) => s.slug === part.store);
-      if (store === undefined) return stop('retrying', `${name} is on a store this one does not mount now`, name, rest);
+      if (store === undefined) return stop('retrying', `${name} is on a store this one does not mount now`, name, rest, 'store-unavailable');
 
       if (mode === 'recorded' && index > 0) {
         // Each step re-reads the session, so a part pushed or added meanwhile reopens it before anything else lands.
@@ -721,10 +762,10 @@ async function landSession(
       let partCtx: Context = ctx;
       if (store !== reach.home) {
         const lock = await acquireLandLock(ctx.env.git, store.root);
-        if (!lock.acquired) return stop('retrying', `another landing is running in ${store.mountName ?? store.slug}'s clone`, name, [name, ...rest]);
+        if (!lock.acquired) return stop('retrying', `another landing is running in ${store.mountName ?? store.slug}'s clone`, name, [name, ...rest], 'mount-busy');
         locks.push(lock);
         const mounted = await mountContext(ctx, store);
-        if ('reason' in mounted) return stop('retrying', mounted.reason, name, [name, ...rest]);
+        if ('reason' in mounted) return stop('retrying', mounted.reason, name, [name, ...rest], 'mount-not-synced');
         partCtx = mounted.ctx;
       }
 
@@ -762,10 +803,13 @@ async function landSession(
         outcome.landed.push(name);
         continue;
       }
-      if (retrying(result)) return stop('retrying', `${name}: ${reason ?? result?.reason ?? result?.outcome}`, name, rest);
+      if (retrying(result)) {
+        const code = result === null ? 'forge-unreachable' : result.outcome === 'lease-refused' ? 'push-rejected' : result.outcome;
+        return stop('retrying', `${name}: ${reason ?? result?.reason ?? result?.outcome}`, name, rest, code);
+      }
       const held = result!;
       const state2 = held.outcome === 'needs-reapproval' ? 'needs-reapproval' : held.outcome === 'blocked' ? 'blocked' : held.outcome === 'no-consent' ? 'not-approved' : 'retrying';
-      return stop(state2, `${name}: ${held.reason ?? held.outcome}`, name, rest);
+      return stop(state2, `${name}: ${held.reason ?? held.outcome}`, name, rest, held.outcome);
     }
     return outcome;
   } finally {

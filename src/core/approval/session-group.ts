@@ -278,13 +278,16 @@ export async function sessionState(input: StateInput): Promise<SessionState> {
     if (found !== null && (candidate === null || found.time >= candidate.time)) candidate = found;
   }
   let record: Found | null = null;
+  let recordComments: IssueComment[] = [];
   if (candidate !== null) {
     const recordRef = recordPartOf(candidate.session);
     const recordStore = storeOf(recordRef.store);
     if (recordStore === null && !input.homedHere) record = candidate;
     if (recordStore !== null) {
       try {
-        record = latestSessionDecision((await readPart(recordStore, recordRef.number)).reviews, recordingLogin, identity);
+        const recordReads = await readPart(recordStore, recordRef.number);
+        record = latestSessionDecision(recordReads.reviews, recordingLogin, identity);
+        recordComments = recordReads.comments;
       } catch (err) {
         if (!(err instanceof ForgeRequestError)) throw err;
         record = null;
@@ -347,7 +350,7 @@ export async function sessionState(input: StateInput): Promise<SessionState> {
     for (const comment of reads.comments) {
       if (comment.author !== recordingLogin) continue;
       const mark = parseLandingMark(comment.body);
-      if (mark === null) continue;
+      if (mark === null || mark.state === 'retrying') continue;
       const t = timeOf(comment.createdAt);
       if (t >= landingTime) {
         landing = mark;
@@ -399,6 +402,13 @@ export async function sessionState(input: StateInput): Promise<SessionState> {
   const blocked = parts.find((p) => p.status === 'landing-blocked');
   if (blocked !== undefined) return result('blocked', `${name(blocked)}: ${blocked.landing!.reason}`, blocked);
   const counted = parts.filter((p) => input.homedHere || p.store !== null);
+  // A landing left unfinished for a passing reason is recorded on the record part, naming the part and why. It
+  // holds until that part lands: a later run that merges it clears it.
+  const retry = latestRetrying(recordComments, recordingLogin, record.time);
+  if (retry !== null) {
+    const held = counted.find((p) => name(p) === retry.part && p.status !== 'merged');
+    if (held !== undefined) return result('retrying', `${retry.part}: ${retry.why}`, held);
+  }
   const unknown = counted.find((p) => p.status === 'unknown');
   if (unknown !== undefined) return result('retrying', `${name(unknown)} cannot be read from its store`, unknown);
   const merged = counted.filter((p) => p.status === 'merged').length;
@@ -407,6 +417,24 @@ export async function sessionState(input: StateInput): Promise<SessionState> {
     return result('retrying', `${merged} of ${counted.length} parts landed; ${name(next)} is next`, next);
   }
   return result('approved', null, null);
+}
+
+/** The latest `retrying` landing record by the recording login posted after the decision: the part, and why. */
+function latestRetrying(comments: readonly IssueComment[], recordingLogin: string, since: number): { part: string; why: string } | null {
+  let found: { part: string; why: string } | null = null;
+  let foundTime = -1;
+  for (const comment of comments) {
+    if (comment.author !== recordingLogin) continue;
+    const mark = parseLandingMark(comment.body);
+    if (mark === null || mark.state !== 'retrying') continue;
+    const t = timeOf(comment.createdAt);
+    if (t < since || t < foundTime) continue;
+    const at = mark.reason.lastIndexOf(':');
+    if (at <= 0) continue;
+    found = { part: mark.reason.slice(0, at), why: mark.reason.slice(at + 1) };
+    foundTime = t;
+  }
+  return found;
 }
 
 /**
