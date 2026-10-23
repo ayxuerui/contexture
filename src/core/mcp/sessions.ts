@@ -3,8 +3,10 @@ import type { StoreConfig } from '../../config/schema.js';
 import { runRemoteGit, type ForgeCredentials } from '../forge/credentials.js';
 import type { ForgeClient, PullRequest } from '../forge/github.js';
 import type { GitResult, GitRunner } from '../git/exec.js';
-import { addWorktree, removeWorktree } from '../git/worktree.js';
+import { addWorktree } from '../git/worktree.js';
 import { generateSessionBranchName, listSessionWorktreeDirs, sessionLabelFromDirName, sessionLabelSlug, worktreePathFor } from '../session.js';
+import { commitStaged } from '../session/commit.js';
+import { firstLines, publishSession, pullStateFor as forgePullState, removeSession as removeSessionWorktree, SessionRemoteError, type PullState } from '../session/remote.js';
 
 /**
  * serve-the-store-over-mcp design.md D9, D13: the write side the MCP surface
@@ -12,6 +14,11 @@ import { generateSessionBranchName, listSessionWorktreeDirs, sessionLabelFromDir
  * ordinary session — a worktree under the configured worktrees path, on a
  * branch under the session prefix, with a pull request — so the approval page
  * lists it and `ctxr land` lands it with no MCP-specific path anywhere.
+ *
+ * bring-the-session-lifecycle-into-the-cli (Migration Plan, step 2): push,
+ * publish, remove and the commit call itself are `src/core/session/`'s, shared
+ * with `ctxr session submit` and `discard`; what stays here is the MCP
+ * surface's own wording of their failures.
  */
 
 export interface WriteDeps {
@@ -39,7 +46,7 @@ export interface Session {
   label: string | null;
 }
 
-export type PullState = { kind: 'open'; pull: PullRequest } | { kind: 'merged' } | { kind: 'closed-unmerged' } | { kind: 'none' };
+export type { PullState };
 
 export class WriteRefusal extends Error {
   constructor(
@@ -63,10 +70,6 @@ export class Mutex {
   }
 }
 
-function firstLines(text: string, count = 6): string {
-  return text.trim().split('\n').slice(0, count).join('\n');
-}
-
 export function approvalUrl(deps: WriteDeps, session: Session): string {
   return `${deps.baseUrl.replace(/\/+$/, '')}/approve/${encodeURIComponent(session.name)}`;
 }
@@ -88,18 +91,12 @@ export async function sessionsLabelled(deps: WriteDeps, labelPrefix: string): Pr
 
 /** What the forge says about the pull requests for `branch`: the open one, else merged, else closed, else none. */
 export async function pullStateFor(deps: WriteDeps, branch: string): Promise<PullState> {
-  const pulls = await deps.forge.pullsForHead(branch);
-  const open = pulls.find((p) => p.state === 'open');
-  if (open !== undefined) return { kind: 'open', pull: open };
-  if (pulls.some((p) => p.merged)) return { kind: 'merged' };
-  if (pulls.length > 0) return { kind: 'closed-unmerged' };
-  return { kind: 'none' };
+  return forgePullState(deps.forge, branch);
 }
 
 /** A session whose pull request was closed without merging is removed: worktree and local branch (D9, D13). */
 export async function removeSession(deps: WriteDeps, session: Session): Promise<void> {
-  await removeWorktree(deps.git, deps.canonicalRoot, session.path);
-  await deps.git.run(['branch', '-D', session.branch], { cwd: deps.canonicalRoot, allowFailure: true });
+  await removeSessionWorktree(deps.git, deps.canonicalRoot, session);
 }
 
 /** A new session from the freshly fetched default branch, exactly as `ctxr session start` names and places one. */
@@ -135,14 +132,6 @@ export async function repoPathOf(deps: WriteDeps, storeRelative: string): Promis
   return `${prefix}${storeRelative}`;
 }
 
-/** The committer: the host's git identity when it has one, else the recording login's noreply address, as `ctxr land` falls back. */
-async function committerEnv(deps: WriteDeps, cwd: string): Promise<Record<string, string>> {
-  const email = (await deps.git.run(['config', '--get', 'user.email'], { cwd, allowFailure: true })).stdout.trim();
-  if (email !== '' || deps.env.GIT_COMMITTER_EMAIL || deps.env.EMAIL) return {};
-  const address = `${deps.recordingLogin.replace(/\[bot\]$/, '')}@users.noreply.github.com`;
-  return { GIT_COMMITTER_NAME: deps.recordingLogin, GIT_COMMITTER_EMAIL: address };
-}
-
 /**
  * Stages `paths` and commits them authored by the member, with the store's
  * hooks running as for any commit. On a refusal the worktree is restored to
@@ -150,16 +139,19 @@ async function committerEnv(deps: WriteDeps, cwd: string): Promise<Record<string
  * and the hook's output is the refusal (design.md D13).
  */
 export async function commitAs(deps: WriteDeps, session: Session, email: string, paths: readonly string[], subject: string, trailer: string): Promise<string> {
-  const run = (args: readonly string[], env?: Record<string, string | undefined>): Promise<GitResult> =>
-    deps.git.run(args, { cwd: session.path, allowFailure: true, ...(env ? { env } : {}) });
+  const run = (args: readonly string[]): Promise<GitResult> => deps.git.run(args, { cwd: session.path, allowFailure: true });
   const added = await run(['add', '--', ...paths]);
   if (added.exitCode !== 0) {
     await restore(deps, session);
     throw new WriteRefusal('mcp.commit_refused', `The change could not be staged: ${firstLines(added.stderr)}`);
   }
   const name = email.split('@')[0] ?? email;
-  const env = { ...deps.env, ...(await committerEnv(deps, session.path)), GIT_AUTHOR_NAME: name, GIT_AUTHOR_EMAIL: email };
-  const committed = await run(['commit', '--quiet', '-m', subject, '-m', `${trailer}: ${email}`], env);
+  const committed = await commitStaged(deps.git, session.path, deps.env, {
+    message: subject,
+    author: { name, email },
+    trailer: { key: trailer, value: email },
+    fallbackCommitter: deps.recordingLogin,
+  });
   if (committed.exitCode !== 0) {
     await restore(deps, session);
     throw new WriteRefusal('mcp.commit_refused', `The store refused the change: ${firstLines(`${committed.stdout}\n${committed.stderr}`, 12)}`);
@@ -173,29 +165,19 @@ export async function restore(deps: WriteDeps, session: Session): Promise<void> 
 }
 
 /**
- * Publishes whatever the session holds that the forge does not: its branch,
- * pushed when the remote lacks the local tip, and a pull request, found by
- * head before one is opened. Idempotent, so a retry after any partial
- * failure converges on exactly one pull request (design.md D9, D13).
+ * Publishes whatever the session holds that the forge does not, through the
+ * shared core's idempotent publish, so a retry after any partial failure
+ * converges on exactly one pull request (design.md D9, D13). An open pull
+ * request is found, never rewritten: its body is the draft's own.
  */
 export async function publish(deps: WriteDeps, session: Session, pull: { title: string; body: string }): Promise<PullRequest> {
-  const tip = (await deps.git.run(['rev-parse', 'HEAD'], { cwd: session.path })).stdout.trim();
-  const remote = await runRemoteGit(deps.git, deps.credentials, deps.env, ['ls-remote', 'origin', `refs/heads/${session.branch}`], { cwd: session.path, allowFailure: true });
-  if (remote.exitCode !== 0 || remote.stdout.split(/\s/)[0] !== tip) {
-    const pushed = await runRemoteGit(deps.git, deps.credentials, deps.env, ['push', '--quiet', 'origin', `HEAD:refs/heads/${session.branch}`], { cwd: session.path, allowFailure: true });
-    if (pushed.exitCode !== 0) {
-      throw new WriteRefusal('mcp.push_failed', `The change is saved in its session but could not be pushed yet (${firstLines(pushed.stderr, 2)}). Retry the same call to publish it.`, { session: session.name });
-    }
-  }
-  const state = await pullStateFor(deps, session.branch);
-  if (state.kind === 'open') return state.pull;
   try {
-    return await deps.forge.createPull({ head: session.branch, base: deps.config.git.default_branch, title: pull.title, body: pull.body });
+    return (await publishSession(deps, session, pull)).pull;
   } catch (err) {
-    throw new WriteRefusal(
-      'mcp.pull_request_failed',
-      `The change is pushed but its pull request could not be opened yet (${err instanceof Error ? firstLines(err.message, 2) : String(err)}). Retry the same call to open it.`,
-      { session: session.name },
-    );
+    if (!(err instanceof SessionRemoteError)) throw err;
+    if (err.step === 'push') {
+      throw new WriteRefusal('mcp.push_failed', `The change is saved in its session but could not be pushed yet (${err.detail}). Retry the same call to publish it.`, { session: session.name });
+    }
+    throw new WriteRefusal('mcp.pull_request_failed', `The change is pushed but its pull request could not be opened yet (${err.detail}). Retry the same call to open it.`, { session: session.name });
   }
 }

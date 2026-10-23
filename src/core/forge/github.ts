@@ -58,6 +58,11 @@ export interface ForgeClient {
   pullsForHead(branch: string): Promise<PullRequest[]>;
   /** serve-the-store-over-mcp D9, D13: opens a pull request for `head` against `base`. */
   createPull(input: { head: string; base: string; title: string; body: string }): Promise<PullRequest>;
+  /**
+   * bring-the-session-lifecycle-into-the-cli D3: a resubmitted session updates its open pull request's title and
+   * body rather than opening another, and `session discard --close-pull-request` closes it.
+   */
+  updatePull(number: number, input: { title?: string; body?: string; state?: 'open' | 'closed' }): Promise<PullRequest>;
   reviews(number: number): Promise<Review[]>;
   comments(number: number): Promise<IssueComment[]>;
   createReview(number: number, input: { event: ReviewEvent; body: string; commitId: string }): Promise<void>;
@@ -152,6 +157,9 @@ export function createGhForgeClient(cwd: string, credentials: ForgeCredentials):
     },
     async createPull(input) {
       return toPull((await api(`${repo}/pulls`, { method: 'POST', input: { head: input.head, base: input.base, title: input.title, body: input.body } })) as RawPull);
+    },
+    async updatePull(number, input) {
+      return toPull((await api(`${repo}/pulls/${number}`, { method: 'PATCH', input })) as RawPull);
     },
     async reviews(number) {
       const raw = (await api(`${repo}/pulls/${number}/reviews?per_page=100`)) as {
