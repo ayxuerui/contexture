@@ -189,13 +189,12 @@ function collect(value: string, previous: string[]): string[] {
   return [...previous, value];
 }
 
-export async function run(argv: readonly string[], env: RunEnv): Promise<ExitCode> {
-  if (isGlobalVersionRequest(argv)) {
-    const jsonMode = argv.includes('--json');
-    const runEnv: RunEnv = { ...env, noInput: env.noInput || argv.includes('--no-input') || jsonMode };
-    return runCommand('version', runEnv, jsonMode, () => versionCommand.execute(runEnv));
-  }
-
+/**
+ * The command tree, built once per invocation. Exported so the MCP surface's
+ * tool/command alignment check (serve-the-session-lifecycle-to-chat-apps D9)
+ * reads the CLI's real command registry rather than a copy of it.
+ */
+export function buildProgram(env: RunEnv): { program: Command; state: { result: ExitCode } } {
   const program = new Command();
   program
     .name('ctxr')
@@ -208,7 +207,7 @@ export async function run(argv: readonly string[], env: RunEnv): Promise<ExitCod
     .option('--json', 'emit machine-readable output')
     .option('--no-input', 'never prompt; fail loud instead of blocking');
 
-  let result: ExitCode = ExitCode.Ok;
+  const state = { result: ExitCode.Ok as ExitCode };
 
   program
     .command('init')
@@ -218,7 +217,7 @@ export async function run(argv: readonly string[], env: RunEnv): Promise<ExitCod
     .option('--harness <ids>', `comma-separated harness-generation adapters to target (${initCommand.SELECTABLE_HARNESS_IDS.join(', ')}), or "none"`)
     .action(async (cmdOpts: { profile?: string; taxonomy?: string; harness?: string }, cmd: Command) => {
       const { runEnv, jsonMode, root } = deriveRunEnv(env, cmd);
-      result = await runCommand('init', runEnv, jsonMode, () =>
+      state.result = await runCommand('init', runEnv, jsonMode, () =>
         initCommand.execute(runEnv, { root, profile: cmdOpts.profile, taxonomy: cmdOpts.taxonomy, harness: cmdOpts.harness }),
       );
     });
@@ -229,7 +228,7 @@ export async function run(argv: readonly string[], env: RunEnv): Promise<ExitCod
     .option('--staged', 'check staged changes only (used by the pre-commit hook)')
     .action(async (cmdOpts: { staged?: boolean }, cmd: Command) => {
       const { runEnv, jsonMode, root } = deriveRunEnv(env, cmd);
-      result = await runCommand('doctor', runEnv, jsonMode, async () => {
+      state.result = await runCommand('doctor', runEnv, jsonMode, async () => {
         const store = await openStore(runEnv, { root });
         return doctorCommand.execute(runEnv, store, { staged: cmdOpts.staged });
       });
@@ -244,7 +243,7 @@ export async function run(argv: readonly string[], env: RunEnv): Promise<ExitCod
     .requiredOption('--text <text>', 'the line to append')
     .action(async (notePath: string, cmdOpts: { region: string; text: string }, cmd: Command) => {
       const { runEnv, jsonMode, root } = deriveRunEnv(env, cmd);
-      result = await runCommand('entry.append', runEnv, jsonMode, async () => {
+      state.result = await runCommand('entry.append', runEnv, jsonMode, async () => {
         const store = await openStore(runEnv, { root });
         return entryAppendCommand.execute(runEnv, store, { path: notePath, region: cmdOpts.region, text: cmdOpts.text });
       });
@@ -257,7 +256,7 @@ export async function run(argv: readonly string[], env: RunEnv): Promise<ExitCod
     .description('regenerate every catalog section, preserving authored glosses')
     .action(async (_cmdOpts: object, cmd: Command) => {
       const { runEnv, jsonMode, root } = deriveRunEnv(env, cmd);
-      result = await runCommand('catalog.build', runEnv, jsonMode, async () => {
+      state.result = await runCommand('catalog.build', runEnv, jsonMode, async () => {
         const store = await openStore(runEnv, { root });
         return catalogBuildCommand.execute(store);
       });
@@ -269,7 +268,7 @@ export async function run(argv: readonly string[], env: RunEnv): Promise<ExitCod
     .option('--stale', 'also report entries whose note has changed since the gloss was confirmed')
     .action(async (cmdOpts: { stale?: boolean }, cmd: Command) => {
       const { runEnv, jsonMode, root } = deriveRunEnv(env, cmd);
-      result = await runCommand('catalog.check', runEnv, jsonMode, async () => {
+      state.result = await runCommand('catalog.check', runEnv, jsonMode, async () => {
         const store = await openStore(runEnv, { root });
         return catalogCheckCommand.execute(store, { stale: cmdOpts.stale });
       });
@@ -281,7 +280,7 @@ export async function run(argv: readonly string[], env: RunEnv): Promise<ExitCod
     .requiredOption('--section <id>', 'the section id to print')
     .action(async (cmdOpts: { section: string }, cmd: Command) => {
       const { runEnv, jsonMode, root } = deriveRunEnv(env, cmd);
-      result = await runCommand('catalog.show', runEnv, jsonMode, async () => {
+      state.result = await runCommand('catalog.show', runEnv, jsonMode, async () => {
         const store = await openStore(runEnv, { root });
         return catalogShowCommand.execute(store, { section: cmdOpts.section });
       });
@@ -302,7 +301,7 @@ export async function run(argv: readonly string[], env: RunEnv): Promise<ExitCod
     .option('--max-notes <n>', 'cap the returned set; truncation is reported, never silent', (v) => Number.parseInt(v, 10))
     .action(async (cmdOpts: { seed: string[]; section: string[]; under: string[]; entity: string[]; hops: number; direction: string; type?: string; maxNotes?: number }, cmd: Command) => {
       const { runEnv, jsonMode, root } = deriveRunEnv(env, cmd);
-      result = await runCommand('context.gather', runEnv, jsonMode, async () => {
+      state.result = await runCommand('context.gather', runEnv, jsonMode, async () => {
         const store = await openStore(runEnv, { root });
         return contextGatherCommand.execute(store, {
           seed: cmdOpts.seed,
@@ -325,7 +324,7 @@ export async function run(argv: readonly string[], env: RunEnv): Promise<ExitCod
     .option('--emit-records', 'also emit a stable per-note record list {id, path, gloss, hash}')
     .action(async (cmdOpts: { emitRecords?: boolean }, cmd: Command) => {
       const { runEnv, jsonMode, root } = deriveRunEnv(env, cmd);
-      result = await runCommand('graph.build', runEnv, jsonMode, async () => {
+      state.result = await runCommand('graph.build', runEnv, jsonMode, async () => {
         const store = await openStore(runEnv, { root });
         return graphBuildCommand.execute(store, { emitRecords: cmdOpts.emitRecords });
       });
@@ -342,7 +341,7 @@ export async function run(argv: readonly string[], env: RunEnv): Promise<ExitCod
       const flags = { since: cmdOpts.since, until: cmdOpts.until, format: cmdOpts.format };
       // review-the-knowledge-diff (D9): `--format markdown` is the whole stdout — the
       // block rides as the human summary, which the reporter writes verbatim and alone.
-      result = await runCommand('graph.diff', runEnv, jsonMode, async () => {
+      state.result = await runCommand('graph.diff', runEnv, jsonMode, async () => {
         graphDiffCommand.checkFlags(flags, jsonMode);
         const store = await openStore(runEnv, { root });
         return graphDiffCommand.execute(store, flags, jsonMode);
@@ -364,7 +363,7 @@ export async function run(argv: readonly string[], env: RunEnv): Promise<ExitCod
         cmd: Command,
       ) => {
         const { runEnv, jsonMode, root } = deriveRunEnv(env, cmd);
-        result = await runCommand('graph.query.neighbors', runEnv, jsonMode, async () => {
+        state.result = await runCommand('graph.query.neighbors', runEnv, jsonMode, async () => {
           const store = await openStore(runEnv, { root });
           return graphQueryCommand.executeNeighbors(store, {
             node,
@@ -381,7 +380,7 @@ export async function run(argv: readonly string[], env: RunEnv): Promise<ExitCod
     .description('shortest path between two nodes, if one exists')
     .action(async (from: string, to: string, _cmdOpts: object, cmd: Command) => {
       const { runEnv, jsonMode, root } = deriveRunEnv(env, cmd);
-      result = await runCommand('graph.query.path', runEnv, jsonMode, async () => {
+      state.result = await runCommand('graph.query.path', runEnv, jsonMode, async () => {
         const store = await openStore(runEnv, { root });
         return graphQueryCommand.executePath(store, { from, to });
       });
@@ -392,7 +391,7 @@ export async function run(argv: readonly string[], env: RunEnv): Promise<ExitCod
     .description('the induced subgraph over the given node ids')
     .action(async (ids: string[], _cmdOpts: object, cmd: Command) => {
       const { runEnv, jsonMode, root } = deriveRunEnv(env, cmd);
-      result = await runCommand('graph.query.subgraph', runEnv, jsonMode, async () => {
+      state.result = await runCommand('graph.query.subgraph', runEnv, jsonMode, async () => {
         const store = await openStore(runEnv, { root });
         return graphQueryCommand.executeSubgraph(store, { ids });
       });
@@ -404,7 +403,7 @@ export async function run(argv: readonly string[], env: RunEnv): Promise<ExitCod
     .option('--top <n>', 'how many to list', (v) => Number.parseInt(v, 10), 10)
     .action(async (cmdOpts: { top: number }, cmd: Command) => {
       const { runEnv, jsonMode, root } = deriveRunEnv(env, cmd);
-      result = await runCommand('graph.query.hubs', runEnv, jsonMode, async () => {
+      state.result = await runCommand('graph.query.hubs', runEnv, jsonMode, async () => {
         const store = await openStore(runEnv, { root });
         return graphQueryCommand.executeHubs(store, { top: cmdOpts.top });
       });
@@ -415,7 +414,7 @@ export async function run(argv: readonly string[], env: RunEnv): Promise<ExitCod
     .description('every positional cluster with its note count')
     .action(async (_cmdOpts: object, cmd: Command) => {
       const { runEnv, jsonMode, root } = deriveRunEnv(env, cmd);
-      result = await runCommand('graph.query.clusters', runEnv, jsonMode, async () => {
+      state.result = await runCommand('graph.query.clusters', runEnv, jsonMode, async () => {
         const store = await openStore(runEnv, { root });
         return graphQueryCommand.executeClusters(store, {});
       });
@@ -427,7 +426,7 @@ export async function run(argv: readonly string[], env: RunEnv): Promise<ExitCod
     .option('--top <n>', 'how many to list (default: the configured bridge limit)', (v) => Number.parseInt(v, 10))
     .action(async (cmdOpts: { top?: number }, cmd: Command) => {
       const { runEnv, jsonMode, root } = deriveRunEnv(env, cmd);
-      result = await runCommand('graph.query.bridges', runEnv, jsonMode, async () => {
+      state.result = await runCommand('graph.query.bridges', runEnv, jsonMode, async () => {
         const store = await openStore(runEnv, { root });
         return graphQueryCommand.executeBridges(store, { top: cmdOpts.top });
       });
@@ -438,7 +437,7 @@ export async function run(argv: readonly string[], env: RunEnv): Promise<ExitCod
     .description('nodes with no links in or out')
     .action(async (_cmdOpts: object, cmd: Command) => {
       const { runEnv, jsonMode, root } = deriveRunEnv(env, cmd);
-      result = await runCommand('graph.query.orphans', runEnv, jsonMode, async () => {
+      state.result = await runCommand('graph.query.orphans', runEnv, jsonMode, async () => {
         const store = await openStore(runEnv, { root });
         return graphQueryCommand.executeOrphans(store, {});
       });
@@ -452,7 +451,7 @@ export async function run(argv: readonly string[], env: RunEnv): Promise<ExitCod
     .requiredOption('--source-id <id>', 'a stable identifier for this specific source')
     .action(async (capturePath: string, cmdOpts: { into: string; sourceType: string; sourceId: string }, cmd: Command) => {
       const { runEnv, jsonMode, root } = deriveRunEnv(env, cmd);
-      result = await runCommand('ingest', runEnv, jsonMode, async () => {
+      state.result = await runCommand('ingest', runEnv, jsonMode, async () => {
         const store = await openStore(runEnv, { root });
         return ingestCommand.execute(runEnv, store, {
           path: capturePath,
@@ -470,7 +469,7 @@ export async function run(argv: readonly string[], env: RunEnv): Promise<ExitCod
     .description('the canonicalized-content hash of a file')
     .action(async (notePath: string, _cmdOpts: object, cmd: Command) => {
       const { runEnv, jsonMode, root } = deriveRunEnv(env, cmd);
-      result = await runCommand('source.hash', runEnv, jsonMode, async () => {
+      state.result = await runCommand('source.hash', runEnv, jsonMode, async () => {
         const store = await openStore(runEnv, { root });
         return sourceHashCommand.execute(runEnv, store, { path: notePath });
       });
@@ -482,7 +481,7 @@ export async function run(argv: readonly string[], env: RunEnv): Promise<ExitCod
     .requiredOption('--source-id <id>', "the candidate material's source identifier")
     .action(async (notePath: string, cmdOpts: { sourceId: string }, cmd: Command) => {
       const { runEnv, jsonMode, root } = deriveRunEnv(env, cmd);
-      result = await runCommand('source.check', runEnv, jsonMode, async () => {
+      state.result = await runCommand('source.check', runEnv, jsonMode, async () => {
         const store = await openStore(runEnv, { root });
         return sourceCheckCommand.execute(runEnv, store, { path: notePath, sourceId: cmdOpts.sourceId });
       });
@@ -495,7 +494,7 @@ export async function run(argv: readonly string[], env: RunEnv): Promise<ExitCod
     .option('--hash <hash>', 'the content hash to record (default: computed from the note\'s current body)')
     .action(async (notePath: string, cmdOpts: { id: string; hash?: string }, cmd: Command) => {
       const { runEnv, jsonMode, root } = deriveRunEnv(env, cmd);
-      result = await runCommand('source.stamp', runEnv, jsonMode, async () => {
+      state.result = await runCommand('source.stamp', runEnv, jsonMode, async () => {
         const store = await openStore(runEnv, { root });
         return sourceStampCommand.execute(runEnv, store, { path: notePath, id: cmdOpts.id, hash: cmdOpts.hash });
       });
@@ -507,7 +506,7 @@ export async function run(argv: readonly string[], env: RunEnv): Promise<ExitCod
     .requiredOption('--id <id>', 'the alternative source identifier')
     .action(async (notePath: string, cmdOpts: { id: string }, cmd: Command) => {
       const { runEnv, jsonMode, root } = deriveRunEnv(env, cmd);
-      result = await runCommand('source.add-alt', runEnv, jsonMode, async () => {
+      state.result = await runCommand('source.add-alt', runEnv, jsonMode, async () => {
         const store = await openStore(runEnv, { root });
         return sourceAddAltCommand.execute(runEnv, store, { path: notePath, id: cmdOpts.id });
       });
@@ -518,7 +517,7 @@ export async function run(argv: readonly string[], env: RunEnv): Promise<ExitCod
     .description('health observations that never fail the run: orphans, broken links, uningested inbox material, catalog gaps')
     .action(async (_cmdOpts: object, cmd: Command) => {
       const { runEnv, jsonMode, root } = deriveRunEnv(env, cmd);
-      result = await runCommand('lint', runEnv, jsonMode, async () => {
+      state.result = await runCommand('lint', runEnv, jsonMode, async () => {
         const store = await openStore(runEnv, { root });
         return lintCommand.execute(runEnv, store);
       });
@@ -529,7 +528,7 @@ export async function run(argv: readonly string[], env: RunEnv): Promise<ExitCod
     .description('retire a note, or a folder of notes whole, to its same path beneath the archive destination via a single tracked rename, reporting every note that links to it')
     .action(async (notePath: string, _cmdOpts: object, cmd: Command) => {
       const { runEnv, jsonMode, root } = deriveRunEnv(env, cmd);
-      result = await runCommand('archive', runEnv, jsonMode, async () => {
+      state.result = await runCommand('archive', runEnv, jsonMode, async () => {
         const store = await openStore(runEnv, { root });
         return archiveCommand.execute(runEnv, store, { path: notePath });
       });
@@ -542,7 +541,7 @@ export async function run(argv: readonly string[], env: RunEnv): Promise<ExitCod
     .description('enumerate candidate source notes (notes linking to <entity>) for a rollup')
     .action(async (entity: string, _cmdOpts: object, cmd: Command) => {
       const { runEnv, jsonMode, root } = deriveRunEnv(env, cmd);
-      result = await runCommand('rollup.gather', runEnv, jsonMode, async () => {
+      state.result = await runCommand('rollup.gather', runEnv, jsonMode, async () => {
         const store = await openStore(runEnv, { root });
         return rollupGatherCommand.execute(runEnv, store, { entity });
       });
@@ -554,7 +553,7 @@ export async function run(argv: readonly string[], env: RunEnv): Promise<ExitCod
     .requiredOption('--content-file <path>', 'a file containing the rollup text to write')
     .action(async (entity: string, cmdOpts: { contentFile: string }, cmd: Command) => {
       const { runEnv, jsonMode, root } = deriveRunEnv(env, cmd);
-      result = await runCommand('rollup.write', runEnv, jsonMode, async () => {
+      state.result = await runCommand('rollup.write', runEnv, jsonMode, async () => {
         const store = await openStore(runEnv, { root });
         return rollupWriteCommand.execute(runEnv, store, { entity, contentFile: cmdOpts.contentFile });
       });
@@ -566,7 +565,7 @@ export async function run(argv: readonly string[], env: RunEnv): Promise<ExitCod
     .option('--for <entity>', 'check only this entity')
     .action(async (cmdOpts: { for?: string }, cmd: Command) => {
       const { runEnv, jsonMode, root } = deriveRunEnv(env, cmd);
-      result = await runCommand('rollup.stale', runEnv, jsonMode, async () => {
+      state.result = await runCommand('rollup.stale', runEnv, jsonMode, async () => {
         const store = await openStore(runEnv, { root });
         return rollupStaleCommand.execute(runEnv, store, { for: cmdOpts.for });
       });
@@ -582,7 +581,7 @@ export async function run(argv: readonly string[], env: RunEnv): Promise<ExitCod
     .option('--entity <name>', 'every note linking to this entity (same enumeration as rollup gather)')
     .action(async (cmdOpts: { under?: string; note?: string; entity?: string }, cmd: Command) => {
       const { runEnv, jsonMode, root } = deriveRunEnv(env, cmd);
-      result = await runCommand('publish.gather', runEnv, jsonMode, async () => {
+      state.result = await runCommand('publish.gather', runEnv, jsonMode, async () => {
         const store = await openStore(runEnv, { root });
         return publishGatherCommand.execute(runEnv, store, {
           under: cmdOpts.under,
@@ -598,7 +597,7 @@ export async function run(argv: readonly string[], env: RunEnv): Promise<ExitCod
     .option('--disposable', 'scaffold a disposable page at disposable/<YYYY-MM-DD>-<slug>, dated today by the command (two-kinds-of-published-page)')
     .action(async (slug: string, cmdOpts: { disposable?: boolean }, cmd: Command) => {
       const { runEnv, jsonMode, root } = deriveRunEnv(env, cmd);
-      result = await runCommand('publish.new', runEnv, jsonMode, async () => {
+      state.result = await runCommand('publish.new', runEnv, jsonMode, async () => {
         const store = await openStore(runEnv, { root });
         return publishNewCommand.execute(store, { slug, disposable: cmdOpts.disposable === true });
       });
@@ -609,7 +608,7 @@ export async function run(argv: readonly string[], env: RunEnv): Promise<ExitCod
     .description("record the hash of the note a permanent page represents (its README's lead link) as a marker on that line — once; never overwrites a marker, and refuses a disposable page")
     .action(async (pagePath: string, _cmdOpts: object, cmd: Command) => {
       const { runEnv, jsonMode, root } = deriveRunEnv(env, cmd);
-      result = await runCommand('publish.stamp', runEnv, jsonMode, async () => {
+      state.result = await runCommand('publish.stamp', runEnv, jsonMode, async () => {
         const store = await openStore(runEnv, { root });
         return publishStampCommand.execute(store, { path: pagePath });
       });
@@ -620,7 +619,7 @@ export async function run(argv: readonly string[], env: RunEnv): Promise<ExitCod
     .description("the mechanized structural checks a published page must pass (no external references, viewport meta, print rule, provenance, sibling README, script syntax; a disposable page's shape; a permanent page's represented note and its hash), and the page's address and lifespan")
     .action(async (pagePath: string, _cmdOpts: object, cmd: Command) => {
       const { runEnv, jsonMode, root } = deriveRunEnv(env, cmd);
-      result = await runCommand('publish.check', runEnv, jsonMode, async () => {
+      state.result = await runCommand('publish.check', runEnv, jsonMode, async () => {
         const store = await openStore(runEnv, { root });
         return publishCheckCommand.execute(store, { path: pagePath });
       });
@@ -633,7 +632,7 @@ export async function run(argv: readonly string[], env: RunEnv): Promise<ExitCod
     .option('--since <ref>', 'the changes since this ref, as a pull request against it would show')
     .action(async (cmdOpts: { staged?: boolean; since?: string }, cmd: Command) => {
       const { runEnv, jsonMode, root } = deriveRunEnv(env, cmd);
-      result = await runCommand('publish.urls', runEnv, jsonMode, async () => {
+      state.result = await runCommand('publish.urls', runEnv, jsonMode, async () => {
         const store = await openStore(runEnv, { root });
         return publishUrlsCommand.execute(store, { staged: cmdOpts.staged === true, since: cmdOpts.since });
       });
@@ -646,7 +645,7 @@ export async function run(argv: readonly string[], env: RunEnv): Promise<ExitCod
     .description('(re)generate every configured harness-generation adapter\'s output')
     .action(async (_cmdOpts: object, cmd: Command) => {
       const { runEnv, jsonMode, root } = deriveRunEnv(env, cmd);
-      result = await runCommand('adapters.generate', runEnv, jsonMode, async () => {
+      state.result = await runCommand('adapters.generate', runEnv, jsonMode, async () => {
         const store = await openStore(runEnv, { root });
         return adaptersGenerateCommand.execute(runEnv, store);
       });
@@ -659,7 +658,7 @@ export async function run(argv: readonly string[], env: RunEnv): Promise<ExitCod
     .option('--host <address>', 'address to bind — widening beyond the default exposes the server, with no requester filtering of its own, to whatever can reach that address', serveCommand.DEFAULT_HOST)
     .action(async (cmdOpts: { port: number; host: string }, cmd: Command) => {
       const { runEnv, jsonMode, root } = deriveRunEnv(env, cmd);
-      result = await runCommand('serve', runEnv, jsonMode, async () => {
+      state.result = await runCommand('serve', runEnv, jsonMode, async () => {
         const store = await openStore(runEnv, { root });
         return serveCommand.execute(runEnv, store, { port: cmdOpts.port, host: cmdOpts.host });
       });
@@ -671,7 +670,7 @@ export async function run(argv: readonly string[], env: RunEnv): Promise<ExitCod
     .option('--check', 'resolve the latest published release and compare it against the installed one')
     .action(async (cmdOpts: { check?: boolean }, cmd: Command) => {
       const { runEnv, jsonMode } = deriveRunEnv(env, cmd);
-      result = await runCommand('version', runEnv, jsonMode, () =>
+      state.result = await runCommand('version', runEnv, jsonMode, () =>
         versionCommand.execute(runEnv, { check: cmdOpts.check }),
       );
     });
@@ -682,7 +681,7 @@ export async function run(argv: readonly string[], env: RunEnv): Promise<ExitCod
     .option('--worktree', 'work in a new worktree on a branch named for this release, never in this checkout; commits nothing')
     .action(async (cmdOpts: { worktree?: boolean }, cmd: Command) => {
       const { runEnv, jsonMode, root } = deriveRunEnv(env, cmd);
-      result = await runCommand('update', runEnv, jsonMode, async () => {
+      state.result = await runCommand('update', runEnv, jsonMode, async () => {
         // The one command allowed past the schema gate on an older store (migrate-stores-on-update).
         const store = await openStoreMigrating(runEnv, { root });
         return cmdOpts.worktree
@@ -697,7 +696,7 @@ export async function run(argv: readonly string[], env: RunEnv): Promise<ExitCod
     .option('--portable', "verify the store's recorded commit in a disposable checkout, in a child process with no harness state reachable")
     .action(async (cmdOpts: { portable?: boolean }, cmd: Command) => {
       const { runEnv, jsonMode, root } = deriveRunEnv(env, cmd);
-      result = await runCommand('verify', runEnv, jsonMode, async () => {
+      state.result = await runCommand('verify', runEnv, jsonMode, async () => {
         const store = await openStore(runEnv, { root });
         return verifyCommand.execute(runEnv, store, { portable: cmdOpts.portable });
       });
@@ -711,7 +710,7 @@ export async function run(argv: readonly string[], env: RunEnv): Promise<ExitCod
     .option('--confirm', 'the caller already has an explicit go for this pull request; land it without a recorded approval')
     .action(async (pr: number | undefined, cmdOpts: { pending?: boolean; confirm?: boolean }, cmd: Command) => {
       const { runEnv, jsonMode, root } = deriveRunEnv(env, cmd);
-      result = await runCommand('land', runEnv, jsonMode, async () => {
+      state.result = await runCommand('land', runEnv, jsonMode, async () => {
         const store = await openStore(runEnv, { root });
         return landCommand.execute(runEnv, store, { pr, pending: Boolean(cmdOpts.pending), confirm: Boolean(cmdOpts.confirm) });
       });
@@ -724,7 +723,7 @@ export async function run(argv: readonly string[], env: RunEnv): Promise<ExitCod
     .description('report each open session pull request with its decision state: awaiting, approved, changes-requested, needs-reapproval or blocked')
     .action(async (_cmdOpts: object, cmd: Command) => {
       const { runEnv, jsonMode, root } = deriveRunEnv(env, cmd);
-      result = await runCommand('review.list', runEnv, jsonMode, async () => {
+      state.result = await runCommand('review.list', runEnv, jsonMode, async () => {
         const store = await openStore(runEnv, { root });
         return reviewListCommand.execute(runEnv, store);
       });
@@ -738,7 +737,7 @@ export async function run(argv: readonly string[], env: RunEnv): Promise<ExitCod
     .argument('[label]', 'a short name for what the session is for — becomes part of the branch and worktree name')
     .action(async (label: string | undefined, _cmdOpts: object, cmd: Command) => {
       const { runEnv, jsonMode, root } = deriveRunEnv(env, cmd);
-      result = await runCommand('session.start', runEnv, jsonMode, async () => {
+      state.result = await runCommand('session.start', runEnv, jsonMode, async () => {
         const store = await openStore(runEnv, { root });
         return sessionStartCommand.execute(runEnv, store, { label });
       });
@@ -750,7 +749,7 @@ export async function run(argv: readonly string[], env: RunEnv): Promise<ExitCod
     .requiredOption('--proposal <path>', 'a YAML file of approved note items')
     .action(async (cmdOpts: { proposal: string }, cmd: Command) => {
       const { runEnv, jsonMode, root } = deriveRunEnv(env, cmd);
-      result = await runCommand('session.capture', runEnv, jsonMode, async () => {
+      state.result = await runCommand('session.capture', runEnv, jsonMode, async () => {
         const store = await openStore(runEnv, { root });
         return sessionCaptureCommand.execute(store, cmdOpts);
       });
@@ -762,7 +761,7 @@ export async function run(argv: readonly string[], env: RunEnv): Promise<ExitCod
     .option('--review', "also read each session's open pull request and, when the store declares change_approval, its decision state from the forge")
     .action(async (cmdOpts: { review?: boolean }, cmd: Command) => {
       const { runEnv, jsonMode, root } = deriveRunEnv(env, cmd);
-      result = await runCommand('session.list', runEnv, jsonMode, async () => {
+      state.result = await runCommand('session.list', runEnv, jsonMode, async () => {
         const store = await openStore(runEnv, { root });
         return sessionListCommand.execute(runEnv, store, { review: Boolean(cmdOpts.review) });
       });
@@ -776,7 +775,7 @@ export async function run(argv: readonly string[], env: RunEnv): Promise<ExitCod
     .option('--diff', 'also print the unified diff of uncommitted work')
     .action(async (session: string | undefined, cmdOpts: { diff?: boolean }, cmd: Command) => {
       const { runEnv, jsonMode, root } = deriveRunEnv(env, cmd);
-      result = await runCommand('session.status', runEnv, jsonMode, async () => {
+      state.result = await runCommand('session.status', runEnv, jsonMode, async () => {
         const store = await openStore(runEnv, { root });
         return sessionStatusCommand.execute(runEnv, store, { session, diff: Boolean(cmdOpts.diff) });
       });
@@ -793,7 +792,7 @@ export async function run(argv: readonly string[], env: RunEnv): Promise<ExitCod
     .option('--body-file <path>', 'read the pull request body from a file instead')
     .action(async (session: string, cmdOpts: { branch: string; message: string; title: string; body?: string; bodyFile?: string }, cmd: Command) => {
       const { runEnv, jsonMode, root } = deriveRunEnv(env, cmd);
-      result = await runCommand('session.submit', runEnv, jsonMode, async () => {
+      state.result = await runCommand('session.submit', runEnv, jsonMode, async () => {
         const store = await openStore(runEnv, { root });
         return sessionSubmitCommand.execute(runEnv, store, { session, ...cmdOpts });
       });
@@ -807,7 +806,7 @@ export async function run(argv: readonly string[], env: RunEnv): Promise<ExitCod
     .option('--abort', 'abort the rebase and restore the session as it was')
     .action(async (session: string, cmdOpts: { continue?: boolean; abort?: boolean }, cmd: Command) => {
       const { runEnv, jsonMode, root } = deriveRunEnv(env, cmd);
-      result = await runCommand('session.rebase', runEnv, jsonMode, async () => {
+      state.result = await runCommand('session.rebase', runEnv, jsonMode, async () => {
         const store = await openStore(runEnv, { root });
         return sessionRebaseCommand.execute(runEnv, store, { session, continue: cmdOpts.continue, abort: cmdOpts.abort });
       });
@@ -821,11 +820,23 @@ export async function run(argv: readonly string[], env: RunEnv): Promise<ExitCod
     .option('--close-pull-request', 'also close the session\'s open pull request')
     .action(async (session: string, cmdOpts: { force?: boolean; closePullRequest?: boolean }, cmd: Command) => {
       const { runEnv, jsonMode, root } = deriveRunEnv(env, cmd);
-      result = await runCommand('session.discard', runEnv, jsonMode, async () => {
+      state.result = await runCommand('session.discard', runEnv, jsonMode, async () => {
         const store = await openStore(runEnv, { root });
         return sessionDiscardCommand.execute(runEnv, store, { session, force: cmdOpts.force, closePullRequest: cmdOpts.closePullRequest });
       });
     });
+
+  return { program, state };
+}
+
+export async function run(argv: readonly string[], env: RunEnv): Promise<ExitCode> {
+  if (isGlobalVersionRequest(argv)) {
+    const jsonMode = argv.includes('--json');
+    const runEnv: RunEnv = { ...env, noInput: env.noInput || argv.includes('--no-input') || jsonMode };
+    return runCommand('version', runEnv, jsonMode, () => versionCommand.execute(runEnv));
+  }
+
+  const { program, state } = buildProgram(env);
 
   try {
     await program.parseAsync(argv as string[], { from: 'user' });
@@ -865,5 +876,5 @@ export async function run(argv: readonly string[], env: RunEnv): Promise<ExitCod
     throw err;
   }
 
-  return result;
+  return state.result;
 }

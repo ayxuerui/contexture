@@ -12,7 +12,7 @@ describe('mcp Read, Grep and Glob', () => {
       'projects/b.md': '# B\n\nThe Kestrel plan.\n',
       'areas/c.md': '# C\n\nnothing\n',
       'raw/inbox/2026-01-01-call.md': '---\nsource_type: meeting\nsource_id: meeting/1\n---\nkestrel in a capture\n',
-    });
+    }, 'advance main', { catalogued: true });
   });
 
   afterEach(async () => {
@@ -81,14 +81,37 @@ describe('mcp Read, Grep and Glob', () => {
     expect(scoped.files).toEqual(['projects/a.md', 'projects/b.md']);
   });
 
-  it('returns a member their own draft of a note, and everyone else the store version', async () => {
-    await f.call('Edit', { file_path: 'projects/b.md', old_string: 'The Kestrel plan.', new_string: 'The Kestrel plan, revised.' });
-    const mine = await read({ file_path: 'projects/b.md' });
-    expect(mine.draft).toBe(true);
+  it("reads a member's own session working tree under its root, and the served commit elsewhere", async () => {
+    const { root } = await f.start('revise-b');
+    await f.call('Edit', { file_path: `${root}projects/b.md`, old_string: 'The Kestrel plan.', new_string: 'The Kestrel plan, revised.' });
+    const mine = await read({ file_path: `${root}projects/b.md` });
+    expect(mine).toMatchObject({ session: expect.any(String), file_path: `${root}projects/b.md`, url: null });
     expect(mine.content).toContain('revised');
-    const theirs = await read({ file_path: 'projects/b.md' }, 'b@example.com');
-    expect(theirs.draft).toBe(false);
-    expect(theirs.content).not.toContain('revised');
+    expect(renderRead(mine)).toContain('working-tree copy in your session');
+    const served = await read({ file_path: 'projects/b.md' });
+    expect(served.session).toBeNull();
+    expect(served.content).not.toContain('revised');
+    // Another member's session does not exist for them: its root is as unreadable as the worktrees path.
+    await expect(read({ file_path: `${root}projects/b.md` }, 'b@example.com')).rejects.toMatchObject({ code: 'mcp.path_not_readable' });
+    const inSession = await grep({ pattern: 'revised', path: root });
+    expect(inSession.lines).toEqual([`${root}projects/b.md`]);
+    expect(inSession.session).not.toBeNull();
+    expect((await grep({ pattern: 'revised' })).lines).toEqual([]);
+    const listed = (await f.call('Glob', { pattern: 'projects/*.md', path: root })) as { files: string[] };
+    expect(listed.files).toEqual([`${root}projects/a.md`, `${root}projects/b.md`]);
+  });
+
+  it('reads the templates, house conventions, log and skills the owned skills need, but never configuration or derived paths (D5)', async () => {
+    const templates = (await f.call('Glob', { pattern: '**/*.md', path: '.contexture/templates' })) as { files: string[] };
+    expect(templates.files.length).toBeGreaterThan(0);
+    expect((await read({ file_path: templates.files[0]! })).total_lines).toBeGreaterThan(0);
+    const skills = (await f.call('Glob', { pattern: '**/SKILL.md', path: '.agents/skills' })) as { files: string[] };
+    expect(skills.files.length).toBeGreaterThan(0);
+    await f.store.advanceMain({ 'log.md': '# Log\n\n- kestrel filed\n' }, 'log', { catalogued: true });
+    f.tick(61);
+    expect((await read({ file_path: 'log.md' })).content).toContain('kestrel filed');
+    expect((await grep({ pattern: 'kestrel filed' })).lines).toEqual(['log.md']);
+    await expect(read({ file_path: '.contexture/cache/graph.json' })).rejects.toMatchObject({ code: 'mcp.path_not_readable' });
   });
 
   it('never follows a symbolic link, and Grep and Glob return only what Read would read (review findings)', async () => {

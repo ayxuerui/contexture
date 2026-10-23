@@ -1,24 +1,24 @@
-import { mkdir, readFile, stat, writeFile } from 'node:fs/promises';
+import { lstat, mkdir, readFile, realpath, rename, unlink, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { readConfig } from '../../../config/load.js';
-import { MIGRATION_STEPS } from '../../../config/migrations.js';
-import { buildCatalog } from '../../catalog/build.js';
 import { InvalidNoteFrontmatterError } from '../../errors.js';
 import { admitsNotePath } from '../../notes/list.js';
 import { parseNoteText } from '../../notes/parse.js';
-import { draftLabel, findDraft } from '../drafts.js';
+import { rebaseInProgress } from '../../session/resolve.js';
 import { ToolRefusal } from '../jsonrpc.js';
-import { approvalUrl, commitAs, publish, removeSession, repoPathOf, startSession, type Session, type WriteDeps } from '../sessions.js';
-import type { McpView, SyncDeps } from '../sync.js';
-import { resolveStorePath } from './files.js';
+import { locatePath, memberSessions, noSessionRefusal, repoPrefixOf, type MemberSession } from '../member-sessions.js';
+import { normalizeStorePath, protectedReason, protectedRefusal } from '../paths.js';
+import type { WriteDeps } from '../sessions.js';
 
 /**
- * serve-the-store-over-mcp design.md D13 (remote-access spec, *`Edit` and
- * `Write` collect in one draft pull request per member*): Claude Code's Edit
- * and Write, landing as commits on the member's draft — one session, one pull
- * request, reviewed on the approval page. A call first publishes whatever the
- * draft left unpublished, and a retry whose effect is already in the draft is
- * answered without a second commit, so a failure partway never strands a change.
+ * serve-the-session-lifecycle-to-chat-apps D1, D2, D5 (remote-access spec,
+ * *`Edit`, `Write`, `Move` and `Delete` change a member's own session and
+ * commit nothing*): Claude Code's Edit and Write, with their parameters
+ * unchanged, plus `Move` and `Delete` for the `git mv` and `git rm` a local
+ * agent runs. Each addresses a file under the root of a session the caller
+ * owns and changes that session's working tree only; nothing commits,
+ * pushes or opens a pull request until `session_submit`. Uncommitted rest
+ * between calls is the session's normal state, as the lifecycle skill says.
+ * The per-member draft these replaced is gone.
  */
 
 export interface EditArgs {
@@ -33,10 +33,21 @@ export interface WriteArgs {
   content: string;
 }
 
+export interface MoveArgs {
+  source_path: string;
+  destination_path: string;
+}
+
+export interface DeleteArgs {
+  file_path: string;
+}
+
+const PATH_HINT = 'under the session root session_start returned, e.g. "<root>projects/kestrel.md"';
+
 export const EDIT_INPUT_SCHEMA = {
   type: 'object',
   properties: {
-    file_path: { type: 'string', description: 'The note to modify, relative to the store root, e.g. "projects/kestrel.md".' },
+    file_path: { type: 'string', description: `The file to modify, ${PATH_HINT}.` },
     old_string: { type: 'string', description: 'The text to replace' },
     new_string: { type: 'string', description: 'The text to replace it with (must be different from old_string)' },
     replace_all: { type: 'boolean', description: 'Replace all occurrences of old_string (default false)' },
@@ -47,213 +58,237 @@ export const EDIT_INPUT_SCHEMA = {
 export const WRITE_INPUT_SCHEMA = {
   type: 'object',
   properties: {
-    file_path: { type: 'string', description: 'The new note to create, relative to the store root, e.g. "projects/kestrel-launch.md".' },
-    content: { type: 'string', description: 'The content to write to the note' },
+    file_path: { type: 'string', description: `The new file to create, ${PATH_HINT}.` },
+    content: { type: 'string', description: 'The content to write to the file' },
   },
   required: ['file_path', 'content'],
 } as const;
 
-const MAX_CONTENT_BYTES = 256 * 1024;
+export const MOVE_INPUT_SCHEMA = {
+  type: 'object',
+  properties: {
+    source_path: { type: 'string', description: `The file to move, ${PATH_HINT}.` },
+    destination_path: { type: 'string', description: 'Where it goes, under the same session root. Must not exist yet.' },
+  },
+  required: ['source_path', 'destination_path'],
+} as const;
+
+export const DELETE_INPUT_SCHEMA = {
+  type: 'object',
+  properties: {
+    file_path: { type: 'string', description: `The file to delete, ${PATH_HINT}.` },
+  },
+  required: ['file_path'],
+} as const;
+
+/** D5: `Edit` and `Write` stay text only, with this cap. */
+export const MAX_CONTENT_BYTES = 256 * 1024;
+
+const invalid = (message: string) => new ToolRefusal('mcp.invalid_arguments', message);
+
+function requiredPath(args: Record<string, unknown>, key: string): string {
+  const value = args[key];
+  if (typeof value !== 'string' || value.trim() === '') throw invalid(`"${key}" is required.`);
+  return value;
+}
 
 export function parseEditArgs(args: Record<string, unknown>): EditArgs {
-  const invalid = (message: string) => new ToolRefusal('mcp.invalid_arguments', message);
-  if (typeof args.file_path !== 'string' || args.file_path.trim() === '') throw invalid('"file_path" is required.');
+  const file_path = requiredPath(args, 'file_path');
   if (typeof args.old_string !== 'string' || args.old_string === '') throw invalid('"old_string" is required and cannot be empty.');
   if (typeof args.new_string !== 'string') throw invalid('"new_string" is required.');
   if (args.old_string === args.new_string) throw invalid('"new_string" must be different from "old_string".');
   if (args.replace_all !== undefined && args.replace_all !== null && typeof args.replace_all !== 'boolean') throw invalid('"replace_all" must be true or false.');
-  return { file_path: args.file_path, old_string: args.old_string, new_string: args.new_string, replace_all: args.replace_all === true };
+  return { file_path, old_string: args.old_string, new_string: args.new_string, replace_all: args.replace_all === true };
 }
 
 export function parseWriteArgs(args: Record<string, unknown>): WriteArgs {
-  const invalid = (message: string) => new ToolRefusal('mcp.invalid_arguments', message);
-  if (typeof args.file_path !== 'string' || args.file_path.trim() === '') throw invalid('"file_path" is required.');
+  const file_path = requiredPath(args, 'file_path');
   if (typeof args.content !== 'string' || args.content.trim() === '') throw invalid('"content" is required.');
   if (Buffer.byteLength(args.content, 'utf8') > MAX_CONTENT_BYTES) throw invalid(`"content" is at most ${MAX_CONTENT_BYTES} bytes.`);
-  return { file_path: args.file_path, content: args.content };
+  return { file_path, content: args.content };
 }
 
-export interface DraftContext {
-  view: McpView;
-  syncDeps: SyncDeps;
-  write: WriteDeps;
+export function parseMoveArgs(args: Record<string, unknown>): MoveArgs {
+  return { source_path: requiredPath(args, 'source_path'), destination_path: requiredPath(args, 'destination_path') };
 }
 
-export interface DraftResult {
+export function parseDeleteArgs(args: Record<string, unknown>): DeleteArgs {
+  return { file_path: requiredPath(args, 'file_path') };
+}
+
+export interface FileChangeResult {
+  /** The path as the tools address it: the session root, then the path inside it. */
   file_path: string;
-  changed: boolean;
-  /** Set when a retried call's effect was already in the draft: nothing new was committed. */
-  already_applied: boolean;
-  commit: string;
-  pull_request: { number: number; url: string };
-  approval_url: string;
+  session: string;
+  /** `Move` only: where the file went. */
+  destination_path?: string;
+  committed: false;
   message: string;
 }
 
-/** design.md D13: editable means the note enumeration would admit it — markdown, outside the capture tier and every tool-owned path. */
-function editablePath(input: string, config: SyncDeps['config']): string {
-  const rel = resolveStorePath(input, config);
-  if (!admitsNotePath(rel, config)) {
-    throw new ToolRefusal('mcp.path_not_editable', `"${rel}" is not a note that can be edited here: only markdown notes are, never configuration, captures, the entry document or tool-owned files.`);
+/** A file in one of the caller's sessions, refused outside every session root and on every protected path (D1, D5). */
+interface Target {
+  session: MemberSession;
+  /** Store-relative inside the session. */
+  rel: string;
+  /** As the tools address it. */
+  shown: string;
+  absolute: string;
+}
+
+async function target(write: WriteDeps, email: string, input: string): Promise<Target> {
+  const normalized = normalizeStorePath(input);
+  const located = await locatePath(write, email, normalized);
+  if (located.kind !== 'session') {
+    throw noSessionRefusal(`"${normalized}" is not under the root of one of your sessions, so nothing was changed.`, await memberSessions(write, email));
   }
-  return rel;
-}
-
-function pullText(email: string): { title: string; body: string } {
-  return {
-    title: `Edits by ${email}`,
-    body: [
-      `Edits made through the store's MCP connector by ${email}.`,
-      '',
-      'Each commit is one Edit or Write. Changes made after an approval need approving again.',
-    ].join('\n'),
-  };
-}
-
-async function existing(file: string): Promise<string | null> {
-  try {
-    return await readFile(file, 'utf8');
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return null;
-    throw err;
-  }
-}
-
-async function pathExists(file: string): Promise<boolean> {
-  return stat(file).then(
-    () => true,
-    () => false,
-  );
+  if (located.rel === '') throw invalid(`"${normalized}" is a session root, not a file in it.`);
+  const reason = protectedReason(located.rel, write.config);
+  if (reason !== null) throw protectedRefusal(normalized, reason);
+  return { session: located.session, rel: located.rel, shown: normalized, absolute: path.join(located.session.ref.storeRoot, located.rel) };
 }
 
 /**
- * The member's draft as it stands, publishing anything it left unpublished; null when there is none to extend.
- * A draft with no commit of its own (left behind by a crash between starting it and committing) is removed: the
- * forge would refuse a pull request for it, and every later call would be refused with it.
+ * The nearest existing ancestor of the target, resolved, must sit inside the
+ * session's worktree, and the target itself must not be a link: a committed
+ * symlinked folder would otherwise carry a write anywhere the server can.
  */
-async function currentDraft(ctx: DraftContext, email: string): Promise<Session | null> {
-  const draft = await findDraft(ctx.write, email);
-  if (draft === null) return null;
-  if (draft.state.kind === 'closed-unmerged' || draft.state.kind === 'merged') {
-    await removeSession(ctx.write, draft.session);
-    return null;
-  }
-  const ahead = (await ctx.write.git.run(['rev-list', '--count', `refs/remotes/origin/${ctx.write.config.git.default_branch}..HEAD`], { cwd: draft.session.path, allowFailure: true })).stdout.trim();
-  if (ahead === '0' && draft.state.kind === 'none') {
-    await removeSession(ctx.write, draft.session);
-    return null;
-  }
-  await publish(ctx.write, draft.session, pullText(email));
-  return draft.session;
-}
-
-async function finish(ctx: DraftContext, email: string, session: Session, rel: string, commit: string, alreadyApplied: boolean): Promise<DraftResult> {
-  const pull = await publish(ctx.write, session, pullText(email));
-  const approval = approvalUrl(ctx.write, session);
-  return {
-    file_path: rel,
-    changed: !alreadyApplied,
-    already_applied: alreadyApplied,
-    commit,
-    pull_request: { number: pull.number, url: pull.url },
-    approval_url: approval,
-    message: alreadyApplied
-      ? `That change is already in your draft (pull request #${pull.number}); nothing new was committed.`
-      : `Saved to your draft, pull request #${pull.number}. It lands once someone approves it at ${approval}.`,
-  };
-}
-
-/** What a call is computed against: the file as the member is editing it, and, when the draft's last commit was this same call on this file, the file before it. */
-interface Basis {
-  current: string | null;
-  /** Present only when the draft's tip commit is `<verb> <rel>`: the file in that commit's parent (null when it did not exist). */
-  beforeTip?: string | null;
-}
-
-/** Applies a computed change to `rel` in the draft (starting one if needed), rebuilds the catalog, commits as the member. Under the write mutex. */
-async function applyToDraft(ctx: DraftContext, email: string, rel: string, verb: 'Edit' | 'Write', compute: (basis: Basis) => { text: string } | { alreadyApplied: true }): Promise<DraftResult> {
-  await ctx.view.refresh(ctx.syncDeps);
-  // Read under the view's lock, so a sync started by another call cannot move the view mid-read.
-  const fromView = (await ctx.view.read(ctx.syncDeps, async (snapshot) => ({ text: await existing(path.join(snapshot.store.root, rel)) }))).text;
-  let session = await currentDraft(ctx, email);
-  const fresh = session === null;
-  const repoPath = await repoPathOf(ctx.write, rel);
-
-  // Decide against what the member is editing: the draft's copy when there is a draft, else the served commit.
-  const basis: Basis = { current: session === null ? fromView : await existing(path.join(session.path, repoPath)) };
-  if (session !== null) {
-    const subject = (await ctx.write.git.run(['log', '-1', '--format=%s'], { cwd: session.path, allowFailure: true })).stdout.trim();
-    if (subject === `${verb} ${rel}`) {
-      const parent = await ctx.write.git.run(['show', `HEAD~1:${repoPath}`], { cwd: session.path, allowFailure: true });
-      basis.beforeTip = parent.exitCode === 0 ? parent.stdout : null;
+async function confined(t: Target): Promise<void> {
+  const top = await realpath(t.session.ref.path);
+  let probe = path.dirname(t.absolute);
+  for (;;) {
+    const found = await realpath(probe).catch(() => null);
+    if (found !== null) {
+      if (found !== top && !found.startsWith(`${top}${path.sep}`)) throw new ToolRefusal('mcp.path_outside_store', `"${t.shown}" resolves outside its session.`);
+      break;
     }
+    const parent = path.dirname(probe);
+    if (parent === probe) break;
+    probe = parent;
   }
-  const outcome = compute(basis);
-  if ('alreadyApplied' in outcome) {
-    const tip = (await ctx.write.git.run(['rev-parse', 'HEAD'], { cwd: session!.path })).stdout.trim();
-    return finish(ctx, email, session!, rel, tip, true);
+  const info = await lstat(t.absolute).catch(() => null);
+  if (info?.isSymbolicLink()) throw new ToolRefusal('mcp.path_not_editable', `"${t.shown}" is a symbolic link, which these tools do not follow.`);
+}
+
+function rebaseRefusal(session: MemberSession, what: string): ToolRefusal {
+  return new ToolRefusal(
+    'mcp.rebase_in_progress',
+    `A rebase is in progress in ${session.name}, so ${what}. Resolve the conflicting files with Edit, then call session_rebase with continue: true, or undo it with abort: true.`,
+    { session: session.name },
+  );
+}
+
+/** D2 risks: during a rebase only `Edit` and `Write` on a conflicting path go through. */
+async function checkRebase(write: WriteDeps, t: Target, allowConflicting: boolean): Promise<void> {
+  if (!(await rebaseInProgress(write.git, t.session.ref.path))) return;
+  if (allowConflicting) {
+    const conflicted = (await write.git.run(['diff', '--name-only', '--diff-filter=U', '-z'], { cwd: t.session.ref.path, allowFailure: true })).stdout.split('\0');
+    if (conflicted.includes(`${await repoPrefixOf(write)}${t.rel}`)) return;
   }
+  throw rebaseRefusal(t.session, `"${t.shown}" cannot be changed until it finishes`);
+}
+
+/** D5: a path the note enumeration admits must still parse as a note; templates, the log and other files are not notes. */
+function checkNote(write: WriteDeps, t: Target, text: string): void {
+  if (!admitsNotePath(t.rel, write.config)) return;
   try {
-    parseNoteText(outcome.text, rel);
+    parseNoteText(text, t.rel);
   } catch (err) {
     const reason = err instanceof InvalidNoteFrontmatterError ? err.finding.message : err instanceof Error ? err.message : String(err);
-    throw new ToolRefusal('mcp.not_a_note', `The result would not be a valid note, so nothing was saved: ${reason}`);
+    throw new ToolRefusal('mcp.not_a_note', `The result would not be a valid note, so nothing was changed: ${reason}`);
   }
+}
 
-  session ??= await startSession(ctx.write, draftLabel(email));
-  try {
-    const absolute = path.join(session.path, repoPath);
-    await mkdir(path.dirname(absolute), { recursive: true });
-    await writeFile(absolute, outcome.text);
-    // The catalog follows the change, as it would in an agent's session (design.md D13).
-    const draftStoreRoot = path.join(session.path, await repoPathOf(ctx.write, ''));
-    const draftConfig = await readConfig(draftStoreRoot, MIGRATION_STEPS);
-    await buildCatalog({ root: draftStoreRoot, config: draftConfig });
-    const catalogPath = await repoPathOf(ctx.write, draftConfig.catalog.path);
-    const paths = (await pathExists(path.join(session.path, catalogPath))) ? [repoPath, catalogPath] : [repoPath];
-    const commit = await commitAs(ctx.write, session, email, paths, `${verb} ${rel}`, 'Edited-by');
-    return await finish(ctx, email, session, rel, commit, false);
-  } catch (err) {
-    if (fresh) {
-      const commits = (await ctx.write.git.run(['rev-list', '--count', `refs/remotes/origin/${ctx.write.config.git.default_branch}..HEAD`], { cwd: session.path, allowFailure: true })).stdout.trim();
-      if (commits === '0') await removeSession(ctx.write, session);
-    }
-    throw err;
-  }
+async function existing(t: Target): Promise<string | null> {
+  const info = await lstat(t.absolute).catch(() => null);
+  if (info === null) return null;
+  if (!info.isFile()) throw new ToolRefusal('mcp.path_not_editable', `"${t.shown}" is not a regular file.`);
+  return readFile(t.absolute, 'utf8');
+}
+
+function changed(t: Target, verb: string, extra: Partial<FileChangeResult> = {}): FileChangeResult {
+  return {
+    file_path: t.shown,
+    session: t.session.name,
+    committed: false,
+    ...extra,
+    message: `${verb} in your session ${t.session.name}. Nothing is committed or published until you call session_submit.`,
+  };
 }
 
 function replace(text: string, args: EditArgs): string {
   return args.replace_all === true ? text.split(args.old_string).join(args.new_string) : text.replace(args.old_string, () => args.new_string);
 }
 
-export async function editTool(ctx: DraftContext, email: string, args: EditArgs): Promise<DraftResult> {
-  const rel = editablePath(args.file_path, ctx.syncDeps.config);
-  return applyToDraft(ctx, email, rel, 'Edit', ({ current, beforeTip }) => {
-    if (current === null) throw new ToolRefusal('mcp.file_not_found', `"${rel}" does not exist. Use Write to create a new note.`);
-    const count = current.split(args.old_string).length - 1;
-    if (count === 0) {
-      // A retry: the draft's last commit was this very replacement on this very file (design.md D13). Exact, so an
-      // empty or common new_string can never pass for an edit that was never made.
-      if (typeof beforeTip === 'string' && beforeTip.includes(args.old_string) && replace(beforeTip, args) === current) return { alreadyApplied: true };
-      throw new ToolRefusal('mcp.edit_failed', `old_string was not found in "${rel}". Read the note again and copy the text exactly.`);
-    }
-    if (count > 1 && args.replace_all !== true) {
-      throw new ToolRefusal('mcp.edit_failed', `old_string occurs ${count} times in "${rel}". Include more surrounding text to make it unique, or set replace_all.`, { occurrences: count });
-    }
-    return { text: replace(current, args) };
-  });
+/** Under the write mutex. */
+export async function editTool(write: WriteDeps, email: string, args: EditArgs): Promise<FileChangeResult> {
+  const t = await target(write, email, args.file_path);
+  await checkRebase(write, t, true);
+  await confined(t);
+  const current = await existing(t);
+  if (current === null) throw new ToolRefusal('mcp.file_not_found', `"${t.shown}" does not exist. Use Write to create a new file.`);
+  const count = current.split(args.old_string).length - 1;
+  if (count === 0) throw new ToolRefusal('mcp.edit_failed', `old_string was not found in "${t.shown}". Read the file again and copy the text exactly.`);
+  if (count > 1 && args.replace_all !== true) {
+    throw new ToolRefusal('mcp.edit_failed', `old_string occurs ${count} times in "${t.shown}". Include more surrounding text to make it unique, or set replace_all.`, { occurrences: count });
+  }
+  const text = replace(current, args);
+  if (Buffer.byteLength(text, 'utf8') > MAX_CONTENT_BYTES) throw invalid(`The result would be over ${MAX_CONTENT_BYTES} bytes; nothing was changed.`);
+  checkNote(write, t, text);
+  await writeFile(t.absolute, text);
+  return changed(t, `Edited "${t.shown}"`);
 }
 
-export async function writeTool(ctx: DraftContext, email: string, args: WriteArgs): Promise<DraftResult> {
-  const rel = editablePath(args.file_path, ctx.syncDeps.config);
-  const inView = (await ctx.view.read(ctx.syncDeps, async (snapshot) => ({ text: await existing(path.join(snapshot.store.root, rel)) }))).text;
-  if (inView !== null) {
-    throw new ToolRefusal('mcp.file_exists', `"${rel}" already exists. Write only creates new notes; use Edit to change it.`);
+/** Under the write mutex. Never overwrites. */
+export async function writeTool(write: WriteDeps, email: string, args: WriteArgs): Promise<FileChangeResult> {
+  const t = await target(write, email, args.file_path);
+  await checkRebase(write, t, true);
+  await confined(t);
+  if ((await lstat(t.absolute).catch(() => null)) !== null) {
+    throw new ToolRefusal('mcp.file_exists', `"${t.shown}" already exists. Write only creates new files; use Edit to change it.`);
   }
   const text = args.content.endsWith('\n') ? args.content : `${args.content}\n`;
-  return applyToDraft(ctx, email, rel, 'Write', ({ current, beforeTip }) => {
-    if (current === null) return { text };
-    if (current === text && beforeTip === null) return { alreadyApplied: true };
-    throw new ToolRefusal('mcp.file_exists', `"${rel}" already exists in your draft. Write only creates new notes; use Edit to change it.`);
-  });
+  checkNote(write, t, text);
+  await mkdir(path.dirname(t.absolute), { recursive: true });
+  await writeFile(t.absolute, text, { flag: 'wx' });
+  return changed(t, `Created "${t.shown}"`);
+}
+
+async function tracked(write: WriteDeps, t: Target): Promise<boolean> {
+  return (await write.git.run(['ls-files', '--error-unmatch', '--', t.absolute], { cwd: t.session.ref.path, allowFailure: true })).exitCode === 0;
+}
+
+/** Under the write mutex. A tracked file moves as `git mv` moves it, so the session shows a rename. */
+export async function moveTool(write: WriteDeps, email: string, args: MoveArgs): Promise<FileChangeResult> {
+  const from = await target(write, email, args.source_path);
+  const to = await target(write, email, args.destination_path);
+  if (from.session.name !== to.session.name) throw invalid('"source_path" and "destination_path" must be under the same session root.');
+  await checkRebase(write, from, false);
+  await confined(from);
+  await confined(to);
+  if ((await existing(from)) === null) throw new ToolRefusal('mcp.file_not_found', `"${from.shown}" does not exist.`);
+  if ((await lstat(to.absolute).catch(() => null)) !== null) throw new ToolRefusal('mcp.file_exists', `"${to.shown}" already exists; Move never overwrites.`);
+  await mkdir(path.dirname(to.absolute), { recursive: true });
+  if (await tracked(write, from)) {
+    const moved = await write.git.run(['mv', '--', from.absolute, to.absolute], { cwd: from.session.ref.path, allowFailure: true });
+    if (moved.exitCode !== 0) throw new ToolRefusal('mcp.move_failed', `"${from.shown}" could not be moved: ${moved.stderr.trim()}`);
+  } else {
+    await rename(from.absolute, to.absolute);
+  }
+  return changed(from, `Moved "${from.shown}" to "${to.shown}"`, { destination_path: to.shown });
+}
+
+/** Under the write mutex. Destructive: the working-tree copy is gone, though a committed version stays in history. */
+export async function deleteTool(write: WriteDeps, email: string, args: DeleteArgs): Promise<FileChangeResult> {
+  const t = await target(write, email, args.file_path);
+  await checkRebase(write, t, false);
+  await confined(t);
+  if ((await existing(t)) === null) throw new ToolRefusal('mcp.file_not_found', `"${t.shown}" does not exist.`);
+  if (await tracked(write, t)) {
+    const removed = await write.git.run(['rm', '-q', '-f', '--', t.absolute], { cwd: t.session.ref.path, allowFailure: true });
+    if (removed.exitCode !== 0) throw new ToolRefusal('mcp.delete_failed', `"${t.shown}" could not be deleted: ${removed.stderr.trim()}`);
+  } else {
+    await unlink(t.absolute);
+  }
+  return changed(t, `Deleted "${t.shown}"`);
 }

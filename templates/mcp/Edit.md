@@ -1,7 +1,8 @@
-Makes an exact string replacement in a note, like a local Edit tool.
+Makes an exact string replacement in a file in one of your sessions, like a local Edit tool.
 
-- Read the note first, and copy `old_string` exactly as it appears, including indentation and line breaks. Do not include the line-number prefix that `Read` shows.
-- The edit fails if `old_string` is not unique in the note. Give more surrounding text to make it unique, or set `replace_all` to change every occurrence.
-- Only notes can be edited: never configuration, the entry document, captures or tool-owned files.
+- `file_path` is under the root of a session you started: the `root` that `session_start` or `session_list` gave, then the path in the store, e.g. `<root>projects/kestrel.md`. A path outside every session root is refused; call `session_start` first.
+- Read the file first (at the same session path), and copy `old_string` exactly as it appears, including indentation and line breaks. Do not include the line-number prefix that `Read` shows.
+- The edit fails if `old_string` is not unique in the file. Give more surrounding text to make it unique, or set `replace_all` to change every occurrence.
+- Notes, captures, templates, house conventions and the log can be edited. The configuration, the hooks directory and other `.git` files, derived files, the worktrees path and the managed skills cannot.
 
-Edits do not change the store directly. Each one is saved to your draft, a pull request that collects all of your edits and lands only once someone approves it on the store's approval page. Tell the person that, and give them the approval link the result returns. If someone asked for changes on your draft, more edits go into the same draft.
+The change rests in the session's working tree. Nothing is committed, published or put up for approval until you call `session_submit`, so make every edit the change needs first.

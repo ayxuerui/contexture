@@ -125,7 +125,7 @@ describe('the MCP surface of ctxr serve (real CLI, fake forge, real signatures)'
   it('signs a member in through the verified identity, serves find, and turns a capture into a session pull request', async () => {
     const store = await approvalStore(true);
     try {
-      await store.advanceMain({ 'projects/kestrel.md': '# Kestrel\n\nThe Kestrel launch moved to March.\n' }, 'add kestrel');
+      await store.advanceMain({ 'projects/kestrel.md': '# Kestrel\n\nThe Kestrel launch moved to March.\n' }, 'add kestrel', { catalogued: true });
       await withServer(store, async (url, stderr) => {
         const meta = await http(new URL('/.well-known/oauth-authorization-server', url).toString());
         expect(meta.status).toBe(200);
@@ -146,7 +146,16 @@ describe('the MCP surface of ctxr serve (real CLI, fake forge, real signatures)'
           ['Grep', true],
           ['Glob', true],
           ['capture', false],
+          ['ctxr', true],
         ]);
+
+        // serve-the-session-lifecycle-to-chat-apps D4: the runner spawns the server's own built CLI against the served commit.
+        const ran = (await rpc(url, token, 'tools/call', { name: 'ctxr', arguments: { args: ['doctor', '--json'] } })).json.result as {
+          isError: boolean;
+          structuredContent: { exit_code: number; ran_against: { commit: string } };
+        };
+        expect(ran.isError).toBe(false);
+        expect(ran.structuredContent).toMatchObject({ exit_code: 0, ran_against: { commit: await store.git(['rev-parse', 'origin/main']) } });
 
         const found = (await rpc(url, token, 'tools/call', { name: 'find', arguments: { text: 'kestrel' } })).json.result as {
           isError: boolean;
