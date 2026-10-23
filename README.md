@@ -350,6 +350,19 @@ A published page's navigation label follows its own declared `<title>`, falling 
 
 The **Preview** area, directly below the published pages, holds the pages your open session worktrees are carrying. A page is previewable from the moment its files exist on disk — before any commit, before any push, before a PR is opened or merged — because `serve` reads the worktree rather than asking git or a forge anything. Pages group by the worktree holding them at `/preview/<worktree>/<page>/index.html`, and a preview is byte-identical to what `/publish/<page>/index.html` will serve once the page lands, so what you read is what ships. Both routes address files rather than directories, so a page's address always names its index file — which is the address `ctxr publish new` and `ctxr publish check` report, so you never have to work out which of the two applies. For a whole change set, `ctxr publish urls --staged` (or `--since <ref>`) reports every page added, modified, moved or removed with both addresses, which is what `ctxr-submit` puts in a pull request's **Pages** section; set `serve.previews: none` in `contexture.yaml` if previews never resolve for your reviewers. A session worktree carrying no page appears nowhere, and nothing else inside one — notes, catalog, graph, config — becomes reachable.
 
+## Stores for more than one person
+
+A store has one audience: everyone who can clone it reads all of it. Privacy between people is a store boundary, never a field on a note, because a git clone holds every file it has ever had. So each person keeps their own store, and the stores they read with others — a family's, a company's, a project group's — are mounted into it:
+
+```yaml
+shared_stores:
+  - { name: family, url: "git@github.com:example/family-store.git" }
+```
+
+`ctxr shared-stores sync` clones each one under `shared/<name>/` and fast-forwards it when that is safe, leaving a mount with local work alone. The clones are ignored through the repository's local exclude file, and `doctor` refuses a commit that stages anything under `shared/`. A mounted store stays a store: its own `contexture.yaml`, exclusions, review and approval govern its notes, and `ctxr session start` run inside `shared/<name>/` opens a session there, whose pull request lands in that store. The graph and `ctxr context gather` read every mount alongside the store's own notes, and `ctxr catalog show` adds the same section from each mount.
+
+Links resolve within the store that holds the note. A filename link (`[[note]]`) finds notes in that store only, and a path link (`[[dir/note]]`) resolves against its root, so a note reaches into a mount with `[[shared/<name>/<path>]]` and a mounted note can never link back. `ctxr lint` reports a mounted note whose link names one of this store's notes. Who can clone which store is the forge's repository access and the credentials each person's agent holds; give each person's agent only their own stores.
+
 ## Approving changes from a page
 
 People who own a store's content often have no forge account. With change approval declared, `ctxr serve` gives them a page instead: `/approve/` lists every session with an open pull request, and each one's page shows the author's account of the change (its title, description and commit messages, labelled as the author's), the knowledge changes computed from the commits, the preview of every changed page, and every changed line. Two buttons — **Approve** and **Request changes** — record the decision on the pull request, as a review by the store's own forge identity naming the person who decided and the commit they saw. Nobody needs a GitHub account to leave an entry in the audit trail.
@@ -490,6 +503,7 @@ To pin a value against a future default change, declare it. Nothing rewrites wha
 | `session start \| capture \| list` | Session worktrees, and applying an approved capture proposal |
 | `land <pr> [--confirm] \| --pending` | Land a session pull request that carries consent: catch up, merge, confirm, sync, reclaim |
 | `review list` | Each open session pull request's decision from the approval page |
+| `shared-stores sync \| status` | Clone and fast-forward the stores this store mounts under `shared/`, or report their state |
 | `adapters generate` | Regenerate harness outputs (`ctxr update` does this too) |
 | `serve` | Read the store in a browser |
 | `update` | Bring contexture-owned files up to the installed version |

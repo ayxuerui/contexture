@@ -4,6 +4,7 @@ import path from 'node:path';
 import { configuredAdapters } from '../../adapters/registry.js';
 import type { StoreConfig } from '../../config/schema.js';
 import { isUnderAnyPrefix } from '../fs/prefix.js';
+import { declaresSharedStores, SHARED_STORES_DIR } from '../shared-stores-location.js';
 import { parseNote } from './parse.js';
 
 /** The note-enumeration seam every retrieval leg builds on. */
@@ -77,6 +78,10 @@ export function excludedPrefixesFor(config: StoreConfig): string[] {
     config.templates.path,
     // standardize-store-operating-guidance: the store log records what happened, never a note.
     config.organize.log_path ?? DEFAULT_LOG_PATH,
+    // mount-shared-stores (D7): mounted stores are their own stores, never this
+    // one's notes. Only when mounts are declared, so a store with an ordinary
+    // `shared/` folder of its own is unchanged.
+    ...(declaresSharedStores(config) ? [SHARED_STORES_DIR] : []),
   ];
 }
 

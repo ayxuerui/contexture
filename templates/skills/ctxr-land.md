@@ -1,6 +1,9 @@
 The land half of the session lifecycle, after review. `ctxr-submit` is the other half; `ctxr-session-lifecycle`
 covers what surrounds both and is not repeated here. `ctxr land` does the landing. This skill decides when to run it.
 
+For a pull request on a mounted store under `shared/<name>`, run every step from that mount, not from this store.
+Why: the mount's own `contexture.yaml` names its approval rules and its canonical clone.
+
 1. Name the target explicitly — a branch name or a pull-request number — rather than relying on whichever
    checkout you happen to be standing in: that checkout is as likely to be the canonical clone on
    `__DEFAULT_BRANCH__`, which has no session to infer, as the session itself. Never land

@@ -2,6 +2,16 @@ Decide where a note lives BEFORE writing it, and say why: the caller wants the r
 this location over its sibling, what would promote it) so they can push back — not a
 folder name. Answer the questions in order; stop early only when the content clearly resolves.
 
+## 0. Which store?
+
+Skip this step when the store mounts no other stores under `shared/`. `AGENTS.md` lists the mounts.
+
+- Ask who may read the note before you ask where it goes.
+- Place the note in this store by default. Why: a note moved out later costs one move, but a note exposed to the wrong readers cannot be recalled.
+- Place it in a mounted store only when every reader of that store may read it. Why: everyone who can clone a store reads all of it.
+- For a note in a mounted store, answer the questions below against that store's own taxonomy. Its own `AGENTS.md` lists its layers.
+- Write it in a session started inside that mount, as `ctxr-session-lifecycle` describes.
+
 __LAYER_STEP__
 
 ## 2. Which location within the layer?

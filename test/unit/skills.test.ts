@@ -572,8 +572,12 @@ describe('owned-skills-expansion: each skill carries its load-bearing rule (task
       for (const name of SHIPPED_NAMES) {
         expect(content, `${file} names shipped layer/profile "${name}"`).not.toMatch(new RegExp(`\\b${name}\\b`));
       }
+      // mount-shared-stores: `shared/` (the mount location) and `shared-stores` (its
+      // command group) are names of a mechanism, not a visibility value, so
+      // they are removed before the scan. The bare word stays banned.
+      const scanned = content.replace(/`[^`]*\bshared(?:\/|-stores)[^`]*`/g, '');
       for (const word of TIER_WORDS) {
-        expect(content, `${file} uses "${word}" as a visibility value`).not.toMatch(new RegExp(`\\b${word}\\b`, 'i'));
+        expect(scanned, `${file} uses "${word}" as a visibility value`).not.toMatch(new RegExp(`\\b${word}\\b`, 'i'));
       }
       // `--as` only ever takes the placeholder
       for (const m of content.matchAll(/--as (<[^>]+>|[\w-]+)/g)) expect(m[1], `${file}: --as ${m[1]}`).toBe('<context>');
