@@ -27,10 +27,10 @@
 
 ## 4. Landing
 
-- [ ] 4.1 Make `ctxr land --pending` land each approved session homed here, mounted parts first in their mounts' clones under their own config, then the home part; skip pull requests homed elsewhere; bring each mount's clone up to date first; post a missing copy before merging a part; treat already-merged as landed; report `blocked` or `retrying` naming the part
-- [ ] 4.2 Add `ctxr land --session <session> --confirm`: land mounted parts from their mounts, then the home part, stopping at the first failure and reporting landed, stopping and unattempted parts
-- [ ] 4.3 Integration tests: one sweep landing both parts in order; a mounted store's sweep skipping a session homed elsewhere; a closed named part blocking; a rejected push retrying; a missing copy posted before landing; a session with no home part recording on its first part; already-merged counted as landed; `--session` order; a conflict stopping the session
-- [ ] 4.4 Run `npx vitest run -t "land"` and confirm it exits 0
+- [x] 4.1 Make `ctxr land --pending` land each approved session homed here, mounted parts first in their mounts' clones under their own config, then the home part; skip pull requests homed elsewhere; bring each mount's clone up to date first; post a missing copy before merging a part; treat already-merged as landed; report `blocked` or `retrying` naming the part
+- [x] 4.2 Add `ctxr land --session <session> --confirm`: land mounted parts from their mounts, then the home part, stopping at the first failure and reporting landed, stopping and unattempted parts
+- [x] 4.3 Integration tests: one sweep landing both parts in order; a mounted store's sweep skipping a session homed elsewhere; a closed named part blocking; a rejected push retrying; a missing copy posted before landing; a session with no home part recording on its first part; already-merged counted as landed; `--session` order; a conflict stopping the session
+- [x] 4.4 Run `npx vitest run -t "land"` and confirm it exits 0
 
 ## 5. Skills and end to end
 
