@@ -102,7 +102,7 @@ The session tools are:
 
 A session argument is the session's directory name, as `session_list` returns it.
 
-**Ownership:** sessions started over MCP are recorded as owned by the starting member in `.contexture/cache/mcp/sessions.json`, written atomically under the write mutex. Every session-addressed call checks ownership and answers `mcp.no_session` for anyone else's session, so their existence is not revealed. An `mcp-draft-<local>-<sha8>` worktree is adopted for the member whose email hashes to its label. A member may hold at most 20 open sessions. Sessions started locally are never visible over MCP.
+**Ownership:** sessions started over MCP are recorded as owned by the starting member in `.contexture/cache/mcp/sessions.json`, written atomically under the write mutex. Every session-addressed call checks ownership and answers `mcp.no_session` for anyone else's session, so their existence is not revealed. An `mcp-draft-<local>-<sha8>` worktree is adopted for the member whose email hashes to its label. A member may hold at most 20 open sessions they started with `session_start`. A capture's session is listed but does not count, because it closes only when a decider acts. Records are keyed by directory name and pruned on read when the worktree no longer exists, for instance after landing or a local `ctxr session discard`. Sessions started locally are never visible over MCP.
 
 **Opposing case (one generic `git` tool with an argv allowlist):**
 - It is fewer tools, and the skills' git commands would carry over verbatim.
@@ -157,6 +157,8 @@ The read/write split keeps the annotations honest.
 **Why the hooks directory:** `session_submit`'s commit runs the worktree's own hooks on the server (see Context). A hook a member wrote would be code they run on the server. Reviewing it later does not undo that.
 
 **`contexture.yaml`** is refused for a reason of its own: it grants MCP scopes, and a change to it should come from a local session that the operator controls.
+
+**One predicate:** these refusals are one function. `ctxr_write` applies it to every resolved path argument before running and, after the command, to every path `git status` shows it changed, whatever destination the command derived. A protected change is restored and the call refused, so the boundary does not rest on what each allowlisted command validates about its targets. The derived and cache paths that commands such as `catalog build` and `graph build` legitimately write are excluded from that after-run check by the same predicate's derived-path list.
 
 **Reads** widen to match. Templates, house conventions, the log and the skills become readable on the served commit and in sessions. `retrieval.exclude_paths` stays hidden, because it is the operator's declared intent and narrowing is positional. `contexture.yaml`, `.git` and derived paths also stay hidden.
 
@@ -289,3 +291,12 @@ A three-model critique on 2026-10-23 approved this change with changes from two 
 3. **The alignment check names `ctxr` and `ctxr_write` as exceptions** and permits `session` as the one extra field, so it passes on the shipped set without being loosened in code. D3's stray `submit` is corrected (the architect's F2).
 4. **`capture` gets its own port step (3.3).** The draft helpers are deleted only once nothing calls them (the architect's F3).
 5. **Declined: dropping the alignment test** (the pragmatist's F2). The operator's rule is that skills and tools stay aligned, and a convention without a check is the drift that rule exists to prevent.
+
+### Second round
+
+A second critique of the revised change approved it with changes from all three reviewers.
+
+6. **The mapping module comes first (task 1.0)**, and the tools register through it. The registry is read from the module, not compared against it.
+7. **One protected-path predicate** covers the file tools and `ctxr_write`, including an after-run check of what the command changed (D5). Two reviewers raised this independently.
+8. **Ownership records** are pruned when their worktree is gone, and captures do not count against the session cap.
+9. **Declined: cutting `ctxr plugin build`** (the pragmatist). Provisioning for a Claude Team org or a ChatGPT workspace is the operator's job, done from a checkout without `serve`. The command is also the seam the manifest-shape test runs on, and the `/plugin/` page calls the same builder.
