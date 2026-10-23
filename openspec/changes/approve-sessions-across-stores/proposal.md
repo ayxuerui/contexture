@@ -17,7 +17,8 @@ order.
 - **A session can span stores.** A session started in a store is the session's home. When the work also writes
   into a mounted store, the agent starts a joined session inside that mount with `ctxr session start --joins
   <session>`. The joined session's branch names its home by forge slug, and every pull request the session opens
-  carries a marker naming the session. The marker, not the branch name, groups a session's pull requests.
+  carries a marker naming the session, appended by `ctxr session submit` (#209). The marker, not the branch name,
+  groups a session's pull requests.
 - **A person's approval page lists their sessions across stores.** The page of the store a person's agent works
   in lists each open session with every pull request in it, in the home store and in each mount. It shows each
   pull request's change under the store it belongs to. A session is decided only on its home store's page; another
@@ -70,8 +71,8 @@ order.
 
 - **Depends on `mount-shared-stores`.** Mounts, the read view and root resolution into a mount come from that
   change, which must land first.
-- `src/commands/session-start.ts` (`--joins`), `src/core/session.ts`, a session marker module beside
-  `src/core/approval/decision.ts`.
+- `src/commands/session-start.ts` (`--joins`), `src/core/session.ts`, `src/core/session/submit.ts` (the marker in
+  the composed body), a session marker module beside `src/core/approval/decision.ts`.
 - `src/core/approval/` (session grouping, the session decision, validity across heads), `src/core/browse/approve.ts`
   (the index and page), `src/commands/review-list.ts`, `src/commands/land.ts` (landing a session homed here in order, `--session`).
 - `serve` reads the forge for each mounted store, using the same recording identity. The GitHub App must be

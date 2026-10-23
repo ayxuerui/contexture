@@ -3,8 +3,9 @@
 - [ ] 1.1 Derive a session's identity (home forge slug and home branch) from its branch and repository; report it from `ctxr session start`
 - [ ] 1.2 Add `ctxr session start --joins <session>`: resolve the session in the mounting store, refuse outside a declared mount or an unknown session; create the worktree on `session/<owner>/<repo>/<home branch without prefix>`
 - [ ] 1.3 Add the session marker (write and parse) beside the decision marker; a missing or malformed marker means a session of one
-- [ ] 1.4 Tests for joining, each refusal, and marker round-trips
-- [ ] 1.5 Run `npx vitest run -t "session"` and confirm it exits 0
+- [ ] 1.4 Make `ctxr session submit` append the marker to the body it composes, and refuse an agent body that already carries one
+- [ ] 1.5 Tests for joining, each refusal, marker round-trips, and submit's marker
+- [ ] 1.6 Run `npx vitest run -t "session"` and confirm it exits 0
 
 ## 2. Finding a session's parts and their state
 
@@ -34,7 +35,7 @@
 ## 5. Skills and end to end
 
 - [ ] 5.1 Update `ctxr-session-lifecycle`: start a joined session inside a mount for the same piece of work
-- [ ] 5.2 Update `ctxr-submit`: submit every part of a session, each with its marker, and hand off one approval link
+- [ ] 5.2 Update `ctxr-submit`: run `ctxr session submit` in every part of a session, and hand off one approval link
 - [ ] 5.3 Update `ctxr-land`: land by session with `--session` on an explicit go
 - [ ] 5.4 Check edited skills for the banned tier words and flag attribution; rewrite touched steps to controlled English, keeping `Why:` sentences
 - [ ] 5.5 End-to-end test: a note moved from `ctx-a` into its mount `ctx-b` as one session, approved once on `ctx-a`'s page, lands `ctx-b` first and then `ctx-a`

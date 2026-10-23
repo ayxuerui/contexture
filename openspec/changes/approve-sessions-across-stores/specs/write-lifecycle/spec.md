@@ -27,7 +27,18 @@ NOT be used to group a session's pull requests; the session marker does that.
 
 ### Requirement: Every pull request of a session carries the session
 A pull request opened from a session SHALL carry a session marker in its body naming the session's identity, in
-the same form the joined branch uses (the home forge slug and the home branch). A pull request whose body carries no well-formed
+the same form the joined branch uses (the home forge slug and the home branch). `ctxr session submit` SHALL append
+the marker to the body it composes, after the sections it generates, derived from the session's branch. It SHALL
+refuse an agent-written body that already contains a session marker, naming it, so that only the command writes one.
+
+#### Scenario: Submit marks the pull request with its session
+- **WHEN** `ctxr session submit` runs in the joined session `session/example/ctx-a/20261023-0700-ctx-move` of `ctx-b`
+- **THEN** the pull request's body ends with a session marker naming `example/ctx-a` and
+  `session/20261023-0700-ctx-move`
+
+#### Scenario: A body carrying its own marker is refused
+- **WHEN** the body given to `ctxr session submit` already contains a session marker
+- **THEN** the command refuses, naming the marker, and opens or updates no pull request A pull request whose body carries no well-formed
 marker SHALL be treated as a session of its own, made of that pull request alone. To list a session, its open parts
 SHALL be found on the forge: every open pull request on the home store or on a store it mounts whose marker names
 the session. Once a session is decided, the parts its decision names SHALL be authoritative for landing (per
