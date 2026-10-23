@@ -1,0 +1,11 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "__NAME__",
+  "version": "__VERSION__",
+  "description": "The skills for working in the __STORE_NAME__ contexture store, and its server, which reads the store and keeps each change in a session until it is submitted for approval.",
+  "extensions": {
+    "com.openai.interface": {
+      "displayName": "__DISPLAY_NAME__"
+    }
+  }
+}

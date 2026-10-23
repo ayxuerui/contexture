@@ -19,6 +19,7 @@ import * as publishCheckCommand from './commands/publish-check.js';
 import * as publishUrlsCommand from './commands/publish-urls.js';
 import * as publishNewCommand from './commands/publish-new.js';
 import * as publishStampCommand from './commands/publish-stamp.js';
+import * as pluginBuildCommand from './commands/plugin-build.js';
 import * as reviewListCommand from './commands/review-list.js';
 import * as sessionCaptureCommand from './commands/session-capture.js';
 import * as sessionDiscardCommand from './commands/session-discard.js';
@@ -713,6 +714,21 @@ export function buildProgram(env: RunEnv): { program: Command; state: { result: 
       state.result = await runCommand('land', runEnv, jsonMode, async () => {
         const store = await openStore(runEnv, { root });
         return landCommand.execute(runEnv, store, { pr, pending: Boolean(cmdOpts.pending), confirm: Boolean(cmdOpts.confirm) });
+      });
+    });
+
+  // serve-the-session-lifecycle-to-chat-apps D7: the chat-app plugins, built from the MCP render of the owned skills.
+  const pluginCommand = program.command('plugin').description("build the store's Claude and ChatGPT plugins: its skills and its MCP server");
+
+  pluginCommand
+    .command('build')
+    .description('write the Claude and ChatGPT plugins, each as a directory and a zip archive, from the MCP render of the owned skills and serve.base_url')
+    .option('--out <dir>', 'where to write them (default: .contexture/cache/plugin/ under the store root)')
+    .action(async (cmdOpts: { out?: string }, cmd: Command) => {
+      const { runEnv, jsonMode, root } = deriveRunEnv(env, cmd);
+      result = await runCommand('plugin.build', runEnv, jsonMode, async () => {
+        const store = await openStore(runEnv, { root });
+        return pluginBuildCommand.execute(runEnv, store, { out: cmdOpts.out });
       });
     });
 
