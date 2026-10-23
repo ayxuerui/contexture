@@ -73,7 +73,17 @@ function recentMeetings() {
   return meetings.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
 }
 
-/** Circleback ids already in the default branch, and in each open pull request's diff. */
+/** Where the runner keeps its review worktree: a fixed path, so a later run finds and clears it. */
+function reviewWorktreePath(root) {
+  return path.join(tmpdir(), `ctxr-capture-circleback-${path.basename(root)}`);
+}
+
+/**
+ * Circleback ids already in the default branch, in each open pull request's diff, and in the store's other
+ * local worktrees, tracked or not: an agent's session that captured a meeting but has not pushed yet is work
+ * in flight, not a gap. The runner's own review worktree is left out, or what an earlier run rendered there
+ * would count as present and a meeting whose pull request was closed unmerged could never be captured again.
+ */
 function presence(root, settings) {
   run('git', ['fetch', '-q', 'origin'], { cwd: root });
   const onMain = new Set(
@@ -87,7 +97,19 @@ function presence(root, settings) {
     const diff = run('gh', ['pr', 'diff', String(pr.number)], { cwd: root, check: false });
     for (const match of diff.matchAll(/circleback\/([A-Za-z0-9_-]+)/g)) if (!inPullRequest.has(match[1])) inPullRequest.set(match[1], pr.number);
   }
-  return { onMain, inPullRequest };
+  const inWorktree = new Map();
+  const own = path.resolve(reviewWorktreePath(root));
+  for (const entry of run('git', ['worktree', 'list', '--porcelain'], { cwd: root, check: false }).split('\n')) {
+    if (!entry.startsWith('worktree ')) continue;
+    const worktree = entry.slice('worktree '.length);
+    if (path.resolve(worktree) === own) continue;
+    const found = run('git', ['grep', '--untracked', '-I', '-h', '-o', '-E', 'circleback/[A-Za-z0-9_-]+'], { cwd: worktree, check: false });
+    for (const match of found.split('\n').filter(Boolean)) {
+      const id = match.slice('circleback/'.length);
+      if (!onMain.has(id) && !inWorktree.has(id)) inWorktree.set(id, worktree);
+    }
+  }
+  return { onMain, inPullRequest, inWorktree };
 }
 
 /**
@@ -96,7 +118,7 @@ function presence(root, settings) {
  * first, because an agent running unattended may not be allowed to delete it.
  */
 function prepareWorktree(root, settings) {
-  const worktree = path.join(tmpdir(), `ctxr-capture-circleback-${path.basename(root)}`);
+  const worktree = reviewWorktreePath(root);
   run('git', ['worktree', 'remove', '--force', worktree], { cwd: root, check: false });
   rmSync(worktree, { recursive: true, force: true });
   run('git', ['worktree', 'prune'], { cwd: root });
@@ -171,7 +193,7 @@ function main() {
   const settings = JSON.parse(readFileSync(path.join(HERE, 'settings.json'), 'utf8'));
   const root = storeRoot();
   const otherTags = new Set(settings.other_tags);
-  const { onMain, inPullRequest } = presence(root, settings);
+  const { onMain, inPullRequest, inWorktree } = presence(root, settings);
   const meetings = recentMeetings();
   const now = Date.now();
   const ageDays = (meeting) => (now - Date.parse(meeting.createdAt)) / 86_400_000;
@@ -181,13 +203,17 @@ function main() {
   const untagged = [];
   const multiStore = [];
   const declined = [];
+  const unpushed = [];
   let present = 0;
   for (const meeting of meetings) {
     const tags = tagNames(meeting);
     const isLocked = (meeting.notes ?? '').includes(LOCKED_NOTICE);
-    const here = onMain.has(meeting.id) || inPullRequest.has(meeting.id);
+    const here = onMain.has(meeting.id) || inPullRequest.has(meeting.id) || inWorktree.has(meeting.id);
     const others = [...tags].filter((tag) => otherTags.has(tag));
     if (tags.has(settings.tag) && here) present += 1;
+    if (tags.has(settings.tag) && inWorktree.has(meeting.id) && !onMain.has(meeting.id) && !inPullRequest.has(meeting.id)) {
+      unpushed.push(`${line(meeting)} (in ${inWorktree.get(meeting.id)})`);
+    }
     if (tags.size === 0 && !here) untagged.push(`${line(meeting)}${isLocked ? ' (locked)' : ageDays(meeting) >= URGENT_DAYS ? ' (URGENT, locks soon)' : ''}`);
     if (tags.has(settings.tag) && others.length > 0) multiStore.push(`${line(meeting)} (also ${others.join(', ')})`);
     if (tags.has(settings.decline_tag) && ageDays(meeting) <= DECLINE_REPORT_DAYS) declined.push(line(meeting));
@@ -197,7 +223,7 @@ function main() {
   }
 
   const report = [
-    `Store tag \`${settings.tag}\`. Meetings in the last ${LOOKBACK_DAYS} days: ${meetings.length}. Already in this store or an open pull request: ${present}.`,
+    `Store tag \`${settings.tag}\`. Meetings in the last ${LOOKBACK_DAYS} days: ${meetings.length}. Already in this store, an open pull request or a local worktree: ${present}.`,
     ...section('TO CAPTURE — date | id | title', owed.map(line)),
   ];
   if (owed.length > 0) {
@@ -214,6 +240,7 @@ function main() {
     }
   }
   report.push(
+    ...section('UNPUSHED — captured in a local worktree but not on the default branch or in an open pull request; land that work', unpushed),
     ...section(`LOCKED — tagged \`${settings.tag}\`, never captured, no longer readable in full`, locked),
     ...section('UNTAGGED', untagged),
     ...section('TAGGED FOR MORE THAN ONE STORE', multiStore),
