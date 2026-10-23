@@ -17,12 +17,13 @@ It needs Circleback's command-line tool (`cb`) signed in, plus `git` and `gh`. A
 start and puts its report in your prompt; then skip to step 2.
 
 The runner reads every meeting from the last 35 days with its tags, and compares them with this store's default
-branch and its open pull requests. A meeting is owed when it carries this store's tag, does not carry the decline
-tag, carries no other store's tag, is not already in the store or an open pull request, and can still be read in
-full. For each owed meeting it prepares a review-branch worktree and writes the record into `__INBOX_PATH__` there:
-the meeting's metadata and attendees, Circleback's action items and summary (marked as the service's derivation),
-and the transcript verbatim, with `source_type` and `source_id` stamped. It never writes the recording URL, which is
-a signed, expiring link and so a credential.
+branch, its open pull requests, and the store's other local worktrees, uncommitted files included. A meeting is owed
+when it carries this store's tag, does not carry the decline tag, carries no other store's tag, is in none of those
+places, and can still be read in full. A meeting found only in a local worktree is someone's capture in flight: it
+is listed under UNPUSHED rather than captured again. For each owed meeting it prepares a review-branch worktree and
+writes the record into `__INBOX_PATH__` there: the meeting's metadata and attendees, Circleback's action items and
+summary (marked as the service's derivation), and the transcript verbatim, with `source_type` and `source_id`
+stamped. It never writes the recording URL, which is a signed, expiring link and so a credential.
 
 The report is authoritative. Do not work the list out again yourself, and do not rebuild the files it wrote. If it
 prints `COLLECTION FAILED`, report that line and stop.
@@ -52,6 +53,8 @@ Give the counts (retrieved, already present), the pull request link, and the run
 they are:
 
 - **LOCKED**: tagged for this store but no longer readable in full, so it cannot be captured.
+- **UNPUSHED**: captured in a local worktree but not yet on the default branch or in a pull request. That work
+  needs landing; nothing here captures it again.
 - **UNTAGGED**, **TAGGED FOR MORE THAN ONE STORE** and **DECLINED IN THE LAST 8 DAYS**, when the runner prints them.
 
 If nothing was owed and every section is empty, say "Nothing missing".
