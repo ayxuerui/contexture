@@ -463,9 +463,56 @@ export const SKILLS: readonly SkillSeed[] = [
   RESEARCH,
 ];
 
-/** The owned skills, rendered against one store's configuration — what `syncShippedSkills` writes. */
-export function renderSkills(config: StoreConfig): Skill[] {
-  return renderSkillSeeds(activeSkillSeeds(config), config);
+/**
+ * serve-the-session-lifecycle-to-chat-apps D6: the owned skills a chat app's
+ * plugin carries, rendered from the same templates as the CLI copies. Left
+ * out: the skills that run local programs (upgrade, second opinion,
+ * Circleback), landing (a person lands from the approval page), and the
+ * derived-artifacts, organize-audit and publish procedures, whose steps the
+ * surface does not offer.
+ */
+export const MCP_SKILL_FILES: readonly string[] = [
+  CAPTURE,
+  INGEST_ORCHESTRATION,
+  PLACEMENT,
+  CONNECTION_FINDING,
+  CONNECTION_PROPOSAL,
+  ROLLUP,
+  MISSION,
+  SESSION_LIFECYCLE,
+  SUBMIT,
+  SESSION_CAPTURE,
+  RESEARCH,
+].map((seed) => seed.file);
+
+/** Which surface a render is for: the store's own skills copies, or the chat-app plugin's (D6). */
+export type SkillTarget = 'cli' | 'mcp';
+
+/**
+ * The owned skills, rendered against one store's configuration. `cli` is what
+ * `syncShippedSkills` writes. `mcp` is the included subset, each the CLI
+ * render's text unchanged under the one preamble that maps its commands and
+ * git steps onto the MCP surface's tools (serve-the-session-lifecycle-to-chat-apps D6).
+ */
+export function renderSkills(config: StoreConfig, target: SkillTarget = 'cli'): Skill[] {
+  const skills = renderSkillSeeds(activeSkillSeeds(config), config);
+  if (target === 'cli') return skills;
+  const preamble = mcpPreamble(config);
+  return skills.filter((skill) => MCP_SKILL_FILES.includes(skill.file)).map((skill) => ({ ...skill, content: withPreamble(skill.content, preamble) }));
+}
+
+/** `templates/skills/mcp/_preamble.md`, rendered against the store's configuration. */
+export function mcpPreamble(config: StoreConfig): string {
+  return packagedTemplate('skills/mcp', '_preamble').replaceAll('__WORKTREES_PATH__', config.session.worktrees_path.replace(/\/*$/, '/'));
+}
+
+/** The preamble goes below the frontmatter, which the Agent Skills format requires first, and above the CLI text. */
+function withPreamble(content: string, preamble: string): string {
+  const end = content.indexOf('\n---\n', 4);
+  if (!content.startsWith('---\n') || end === -1) throw new Error('a rendered skill carries no frontmatter');
+  const head = content.slice(0, end + '\n---\n'.length);
+  const rest = content.slice(head.length).replace(/^\n/, '');
+  return `${head}\n${preamble}\n\n${rest}`;
 }
 
 function renderSkillSeeds(seeds: readonly SkillSeed[], config: StoreConfig): Skill[] {
