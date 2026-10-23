@@ -41,13 +41,17 @@ routes are not this capability's: `change-approval` governs them, and they verif
   `change-approval` routes verify who is asking
 
 ### Requirement: Only read-only HTTP methods are served
-`ctxr serve` SHALL respond to `GET` and `HEAD` requests only, with one exception: when the store declares
+`ctxr serve` SHALL respond to `GET` and `HEAD` requests only, with two exceptions. When the store declares
 change approval, a `POST` to the decision route that `change-approval` defines SHALL reach that route's
-handler, which writes to the forge and writes nothing under the store root. Every other combination of method
-and path SHALL receive a `405` response and SHALL NOT reach any route handler capable of reading or writing
-store content. A `GET` request MAY cause the response to record a display preference (such as a chosen theme)
-as client-side state belonging to the requester's own browser; doing so SHALL NOT create, modify, or delete
-any file under the store root, and SHALL NOT be read as reading or writing store content.
+handler, which writes to the forge and writes nothing under the store root. When the store declares the MCP
+surface that `remote-access` defines, a `POST` to `/mcp`, `/token`, `/register` or `/authorize`, and an
+`OPTIONS` to `/token`, `/register` or the metadata documents, SHALL reach that surface's handler. That handler
+writes nothing under the store root except its own derived read checkout and, for `capture`, the session
+worktree it starts. Every other combination of method and path SHALL receive a `405` response and SHALL NOT
+reach any route handler capable of reading or writing store content. A `GET` request MAY cause the response to
+record a display preference (such as a chosen theme) as client-side state belonging to the requester's own
+browser; doing so SHALL NOT create, modify, or delete any file under the store root, and SHALL NOT be read as
+reading or writing store content.
 
 #### Scenario: A non-read method is refused before it reaches a handler
 - **WHEN** a `POST`, `PUT`, `PATCH`, or `DELETE` request is sent to any path the server would otherwise
@@ -62,6 +66,10 @@ any file under the store root, and SHALL NOT be read as reading or writing store
 #### Scenario: The decision route admits POST only when change approval is declared
 - **WHEN** a `POST` is sent to the decision route of a store that does not declare change approval
 - **THEN** the response is `405`
+
+#### Scenario: The MCP routes admit POST only when the MCP surface is declared
+- **WHEN** a `POST` is sent to `/mcp` of a store that does not declare the MCP surface
+- **THEN** the response is `405`, and no tool runs
 
 ### Requirement: The note route addresses exactly the store's enumerated notes
 The notes route SHALL serve exactly the set of notes the store's own note enumeration produces, and
