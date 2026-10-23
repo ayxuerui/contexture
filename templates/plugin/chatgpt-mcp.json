@@ -1,0 +1,16 @@
+{
+  "mcpServers": {
+    "__NAME__": {
+      "type": "streamable-http",
+      "url": "__MCP_URL__",
+      "extensions": {
+        "com.openai.auth": {
+          "type": "oauth",
+          "client": {
+            "mode": "dcr"
+          }
+        }
+      }
+    }
+  }
+}
