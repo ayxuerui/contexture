@@ -221,7 +221,7 @@ It loses because no included skill needs different wording once every step is a 
 - **Manifests:** the manifest and README text live in `templates/plugin/`.
 - **Supporting files:** only the skills' own supporting files are copied, and no included skill has any.
 
-**The `/plugin/` page:** when the MCP surface is configured, `serve` answers `GET /plugin/` with a page that names the two downloads and the one-time install steps for each app. It answers `GET /plugin/<name>-claude.zip` and `GET /plugin/<name>-chatgpt.zip`, built in memory from the loaded configuration and cached per served commit and configuration. The routes need the same verified identity as the approval routes, through `change_approval.identity`, so they are not part of the Bypass set.
+**The `/plugin/` page:** when the MCP surface is configured, `serve` answers `GET /plugin/` with a page that names the two downloads and the one-time install steps for each app. It answers `GET /plugin/<name>-claude.zip` and `GET /plugin/<name>-chatgpt.zip`, built in memory from the loaded configuration and cached per served commit and configuration. The routes need the same verified identity as the approval routes, through `change_approval.identity`, so they are not part of the Bypass set. A verified person the `mcp` block admits to no scope is refused, as sign-in refuses them: the plugin would connect them to nothing.
 
 **Opposing case (only `ctxr plugin build`, with the operator distributing the zip):** it is one fewer route and less to secure. It loses because the members are mostly not engineers and have no checkout to run `ctxr` in. A download page behind the login they already have is the whole install path.
 

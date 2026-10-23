@@ -95,7 +95,7 @@ Every tool SHALL declare a title and the read-only, destructive, idempotent and 
 - **THEN** `Read` is marked read-only, `Delete` destructive, and every tool carries all four hints and a title
 
 ### Requirement: Members download the store's plugins from the server
-When the MCP surface is configured, `ctxr serve` SHALL answer `GET /plugin/` with a page naming the Claude and ChatGPT plugin downloads and how to install each, and SHALL serve each plugin's archive, built as `ctxr plugin build` builds it from the configuration the server last loaded. These routes SHALL require the verified identity assertion the approval routes require, and SHALL be absent when the MCP surface is not configured.
+When the MCP surface is configured, `ctxr serve` SHALL answer `GET /plugin/` with a page naming the Claude and ChatGPT plugin downloads and how to install each, and SHALL serve each plugin's archive, built as `ctxr plugin build` builds it from the configuration the server last loaded. These routes SHALL require the verified identity assertion the approval routes require, SHALL refuse a verified identity the `mcp` block admits to no scope, as sign-in refuses it, and SHALL be absent when the MCP surface is not configured.
 
 #### Scenario: A member downloads the Claude plugin
 - **WHEN** a member with a verified identity requests the Claude archive from `/plugin/`
@@ -104,6 +104,10 @@ When the MCP surface is configured, `ctxr serve` SHALL answer `GET /plugin/` wit
 #### Scenario: The download needs a verified identity
 - **WHEN** `/plugin/` is requested without an identity assertion
 - **THEN** it is refused as the approval routes refuse it
+
+#### Scenario: A verified non-member gets no plugin
+- **WHEN** `/plugin/` is requested with a verified identity that `mcp.readers`, `mcp.capturers` and `mcp.editors` all leave out
+- **THEN** it is refused, and no archive is built for that request
 
 ### Requirement: `Read`, `Grep` and `Glob` read the served commit or a member's own session
 The surface SHALL offer `Read`, `Grep` and `Glob` with the names and parameters of Claude Code's own tools. Paths SHALL be store-relative, a leading `/` naming the store root. A path under the root of a session the calling member owns SHALL read that session's working tree; any other path SHALL read the commit being served. A path that leaves the store root, or lies under the store's retrieval exclusions, its configuration file, its derived paths or `.git`, SHALL be refused or never returned; the store's templates, house conventions, log and skills SHALL be readable. `Read` SHALL return file text numbered from 1 with an optional offset and limit and at most 2,000 lines per call, marking a capture as one. `Grep` SHALL match a regular expression with Claude Code's Grep parameters, ordered by path, with no score, within a fixed time and output bound, and when reading the served commit SHALL also list matching inbox files of session branches with an open pull request, marked as awaiting approval. `Glob` SHALL list matching files ordered by path.

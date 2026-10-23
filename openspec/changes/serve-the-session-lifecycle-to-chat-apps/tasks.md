@@ -30,14 +30,14 @@
 
 ## 6. Skill rendering for the MCP surface
 
-- [ ] 6.1 `renderSkills(config, 'mcp')`: the included subset from the CLI templates; CLI render byte-identical (`npx vitest run test/unit/skills.test.ts`)
-- [ ] 6.2 `templates/skills/mcp/_preamble.md` with the command-to-tool and git-verb mapping tables
+- [x] 6.1 `renderSkills(config, 'mcp')`: the included subset from the CLI templates; CLI render byte-identical (`npx vitest run test/unit/skills.test.ts`)
+- [x] 6.2 `templates/skills/mcp/_preamble.md` with the command-to-tool and git-verb mapping tables
 - [ ] 6.3 Drift check over the MCP render (tools, allowlists, git/gh mapping) fails on a seeded bad skill and passes on the shipped set
 
 ## 7. Plugin build and download page
 
-- [ ] 7.1 `templates/plugin/` manifests and readme; `ctxr plugin build` writing both directories and archives; manifest-shape test; `npx vitest run test/unit/plugin-build.test.ts`
-- [ ] 7.2 `/plugin/` page and archive routes in `serve` behind the identity check; `npx vitest run test/integration/mcp-serve.test.ts`
+- [x] 7.1 `templates/plugin/` manifests and readme; `ctxr plugin build` writing both directories and archives; manifest-shape test; `npx vitest run test/unit/plugin-build.test.ts`
+- [x] 7.2 `/plugin/` page and archive routes in `serve` behind the identity check; `npx vitest run test/integration/mcp-serve.test.ts`
 
 ## 8. Whole suite
 
