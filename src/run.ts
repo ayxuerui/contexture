@@ -20,6 +20,7 @@ import * as publishUrlsCommand from './commands/publish-urls.js';
 import * as publishNewCommand from './commands/publish-new.js';
 import * as publishStampCommand from './commands/publish-stamp.js';
 import * as reviewListCommand from './commands/review-list.js';
+import * as secondOpinionCommand from './commands/second-opinion.js';
 import * as sharedStoresStatusCommand from './commands/shared-stores-status.js';
 import * as sharedStoresSyncCommand from './commands/shared-stores-sync.js';
 import * as sessionCaptureCommand from './commands/session-capture.js';
@@ -730,6 +731,47 @@ export async function run(argv: readonly string[], env: RunEnv): Promise<ExitCod
         const store = await openStore(runEnv, { root });
         return reviewListCommand.execute(runEnv, store);
       });
+    });
+
+  // run-the-second-opinion-from-the-cli D1: the one command group that invokes a model CLI. Its options are
+  // contexture's own; the model CLIs' flags stay inside src/core/second-opinion/. It opens no store.
+  const secondOpinionGroup = program
+    .command('second-opinion')
+    .description('a cross-model second opinion: the same plan or question sent to three model families\' command-line tools in parallel');
+  const commonSecondOpinionOptions = (sub: Command): Command =>
+    sub
+      .option('--tier <tier>', 'strong (each family\'s frontier model, the default) or fast (each family\'s workhorse)')
+      .option('--only <clis>', 'comma-separated model CLIs to use (claude, codex, agy); a critique or poll needs at least two')
+      .option('--timeout <seconds>', 'per-CLI time limit in seconds (default 600)');
+
+  commonSecondOpinionOptions(
+    secondOpinionGroup.command('preflight').description('check each model CLI answers, at the tier the run will use, and still accepts the flags this command passes'),
+  ).action(async (cmdOpts: { tier?: string; only?: string; timeout?: string }, cmd: Command) => {
+    const { runEnv, jsonMode } = deriveRunEnv(env, cmd);
+    result = await runCommand('second-opinion.preflight', runEnv, jsonMode, () => secondOpinionCommand.executePreflight(runEnv, cmdOpts));
+  });
+
+  commonSecondOpinionOptions(
+    secondOpinionGroup.command('critique').description('send a written plan to three critic roles, each on a different model family, and write anonymised letters and a manifest'),
+  )
+    .option('--plan-file <path>', 'the plan to critique (default: read from stdin)')
+    .option('--out <dir>', 'where to write the critiques and the manifest (default: a new temporary directory)')
+    .option('--seed <n>', 'seed the letter assignment, for a reproducible mapping')
+    .action(async (cmdOpts: { tier?: string; only?: string; timeout?: string; planFile?: string; out?: string; seed?: string }, cmd: Command) => {
+      const { runEnv, jsonMode } = deriveRunEnv(env, cmd);
+      result = await runCommand('second-opinion.critique', runEnv, jsonMode, () => secondOpinionCommand.executeCritique(runEnv, cmdOpts));
+    });
+
+  commonSecondOpinionOptions(
+    secondOpinionGroup.command('poll').description('send one question to the same model families, optionally answered through two or three taste lenses'),
+  )
+    .option('--prompt-file <path>', 'the question and its options (default: read from stdin)')
+    .option('--out <dir>', 'where to write the answers and the manifest (default: a new temporary directory)')
+    .option('--lens <lenses>', 'two or three comma-separated taste lenses: built-in names or Name:description')
+    .option('--no-wrap', 'send the question as written, without the answer scaffold')
+    .action(async (cmdOpts: { tier?: string; only?: string; timeout?: string; promptFile?: string; out?: string; lens?: string; wrap: boolean }, cmd: Command) => {
+      const { runEnv, jsonMode } = deriveRunEnv(env, cmd);
+      result = await runCommand('second-opinion.poll', runEnv, jsonMode, () => secondOpinionCommand.executePoll(runEnv, cmdOpts));
     });
 
   const sharedStoresCommand = program.command('shared-stores').description('the stores this store mounts under shared/');

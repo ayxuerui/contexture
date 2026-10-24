@@ -158,6 +158,8 @@ describe('single-source-literals guard', () => {
       'core/approval/lander.ts',
       // serve-the-store-over-mcp D12: ripgrep, for the MCP surface's Grep and Glob.
       'core/mcp/ripgrep.ts',
+      // run-the-second-opinion-from-the-cli D1: the model CLIs, from the one command that invokes them.
+      'core/second-opinion/launch.ts',
     ];
     const hits = new Set([
       ...filesContainingSubstring("'node:child_process'", allow),
