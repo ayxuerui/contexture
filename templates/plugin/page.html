@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Use __STORE_NAME__ from Claude or ChatGPT</title>
+<style>
+  :root { color-scheme: light dark; --fg: #1d1d1f; --muted: #5f6368; --bg: #f6f6f4; --card: #ffffff; --line: #d9d9d4; --accent: #2f5d50; }
+  @media (prefers-color-scheme: dark) { :root { --fg: #ececea; --muted: #a4a4a0; --bg: #1b1b1a; --card: #262624; --line: #3a3a37; --accent: #8cc5b2; } }
+  * { box-sizing: border-box; }
+  body { margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 16px; background: var(--bg); color: var(--fg); font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { width: 100%; max-width: 560px; background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 28px 24px; }
+  h1 { font-size: 1.25rem; margin: 0 0 12px; }
+  h2 { font-size: 1.05rem; margin: 24px 0 8px; }
+  p { margin: 0 0 12px; }
+  .muted { color: var(--muted); }
+  ol { margin: 0 0 12px; padding-left: 20px; }
+  code { font: 0.95em ui-monospace, SFMono-Regular, Menlo, monospace; overflow-wrap: anywhere; }
+  a.download { display: inline-block; padding: 10px 14px; border-radius: 8px; background: var(--accent); color: var(--card); font-weight: 600; text-decoration: none; }
+</style>
+</head>
+<body>
+<main>
+<h1>Use __STORE_NAME__ from Claude or ChatGPT</h1>
+<p>Each download is a plugin for one app. It carries the store's skills and connects the app to the store at <code>__MCP_URL__</code>. You install it once; signing in goes through this store's own login, and the plugin holds no password or key.</p>
+<p class="muted">Version __VERSION__. When the store's skills change, download it again and install it over the old one.</p>
+
+<h2>Claude</h2>
+<p><a class="download" href="__CLAUDE_HREF__" download>Download __CLAUDE_ARCHIVE__</a></p>
+<ol>
+<li>In Claude, open <strong>Customize</strong>, then <strong>Plugins</strong>.</li>
+<li>Choose <strong>Add</strong>, then <strong>Upload plugin</strong>, and pick the file you downloaded.</li>
+<li>Start a conversation and ask about something the store holds. The first time, Claude asks you to sign in to the store.</li>
+</ol>
+
+<h2>ChatGPT</h2>
+<p><a class="download" href="__CHATGPT_HREF__" download>Download __CHATGPT_ARCHIVE__</a></p>
+<ol>
+<li>If your workspace has an admin, send them the file: an admin uploads a plugin once for the whole workspace.</li>
+<li>Otherwise, turn on developer mode in ChatGPT's settings and upload the file there.</li>
+<li>Start a conversation and ask about something the store holds. The first time, ChatGPT asks you to sign in to the store.</li>
+</ol>
+
+<p class="muted">Changes you make through either app wait in a session of your own until you ask to submit them, and land only once someone approves them on the store's approval page.</p>
+</main>
+</body>
+</html>

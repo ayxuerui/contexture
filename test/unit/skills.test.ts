@@ -1,6 +1,7 @@
 import { RELATION_DIRECTEDNESS_NOTE, RELATION_VOCABULARY } from '../../src/config/defaults.js';
 import { packagedTemplate } from '../../src/core/templates.js';
 import { renderPagesSection } from '../../src/core/session/submit.js';
+import { GIT_STEP_TOOLS, routeForCommand, TOOL_NAMES, UNAVAILABLE_COMMANDS } from '../../src/core/mcp/tool-map.js';
 import { readFileSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
@@ -11,6 +12,8 @@ import type { StoreConfig } from '../../src/config/schema.js';
 import {
   activeSkillSeeds,
   MANAGED_SKILL_HEADER,
+  MCP_SKILL_FILES,
+  mcpPreamble,
   OPTIONAL_SKILLS,
   skillPaths,
   SKILLS,
@@ -1282,5 +1285,167 @@ describe('ctxr-capture-circleback: the opt-in retrieval step for ctxr-capture', 
     } finally {
       await tmp.cleanup();
     }
+  });
+});
+
+/**
+ * serve-the-session-lifecycle-to-chat-apps D6 (harness-portability spec,
+ * *Owned skills render for the MCP surface from the same source*): one text
+ * per skill, with one preamble mapping its commands and git steps onto the
+ * surface's tools.
+ */
+describe('the MCP render of the owned skills', () => {
+  const config = makeConfig();
+  const mcp = renderSkills(config, 'mcp');
+  const cli = renderSkills(config);
+  const preamble = mcpPreamble(config);
+  const frontmatter = (content: string): string => content.slice(0, content.indexOf('\n---\n', 4) + '\n---\n'.length);
+
+  it('leaves the CLI render as it was: the default target, the explicit one and the copies sync writes are one text', async () => {
+    expect(renderSkills(config, 'cli')).toEqual(cli);
+    const shipped = await shippedSkillFiles(config);
+    for (const skill of cli) expect(shipped.get(`skills/${skill.file}/SKILL.md`), skill.file).toBe(skill.content);
+  });
+
+  it('carries the declared subset, in index order, and leaves out the skills that run local programs, land or rebuild', () => {
+    expect(mcp.map((s) => s.file)).toEqual([...MCP_SKILL_FILES]);
+    expect(MCP_SKILL_FILES).toEqual([
+      'ctxr-capture',
+      'ctxr-ingest-orchestration',
+      'ctxr-placement',
+      'ctxr-connection-finding',
+      'ctxr-connection-proposal',
+      'ctxr-rollup',
+      'ctxr-mission',
+      'ctxr-session-lifecycle',
+      'ctxr-submit',
+      'ctxr-session-capture',
+      'ctxr-research',
+    ]);
+    for (const absent of ['ctxr-upgrade', 'ctxr-second-opinion', 'ctxr-capture-circleback', 'ctxr-land', 'ctxr-derived-artifacts', 'ctxr-organize-audit', 'ctxr-publish']) {
+      expect(mcp.some((s) => s.file === absent), absent).toBe(false);
+    }
+  });
+
+  it('is each CLI text unchanged under the preamble, below the frontmatter the Agent Skills format requires first', () => {
+    const byFile = new Map(cli.map((s) => [s.file, s]));
+    for (const skill of mcp) {
+      const original = byFile.get(skill.file)!;
+      const head = frontmatter(original.content);
+      expect(skill.content, skill.file).toBe(`${head}\n${preamble}\n\n${original.content.slice(head.length + 1)}`);
+      expect(skill.description).toBe(original.description);
+      expect(skill.supportingFiles.size).toBe(0);
+    }
+    // The spec's scenario, spelled out for one skill.
+    const submit = mcp.find((s) => s.file === 'ctxr-submit')!.content;
+    const cliSubmit = byFile.get('ctxr-submit')!.content;
+    expect(submit.endsWith(cliSubmit.slice(frontmatter(cliSubmit).length + 1))).toBe(true);
+    expect(submit.indexOf(preamble)).toBeLessThan(submit.indexOf(MANAGED_SKILL_HEADER));
+  });
+
+  it('names the store\'s configured worktrees path, and no placeholder survives', () => {
+    expect(preamble).toContain('`.worktrees/<directory>/`');
+    expect(mcpPreamble(makeConfig({ session: { branch_prefix: 'session/', worktrees_path: '.contexture/worktrees' } }))).toContain('`.contexture/worktrees/<directory>/work/a.md`');
+    for (const skill of mcp) expect(skill.content.match(/__[A-Z][A-Z0-9_]*__/g), skill.file).toBeNull();
+  });
+
+  it('passes the content guards the CLI render passes: no tier word, ctxr as the executable, only flags the CLI registers', () => {
+    const options = registeredOptions();
+    for (const { file, content } of mcp) {
+      // The exemption the CLI render's guard makes (mount-shared-stores): `shared/` and `shared-stores` name a location and a command.
+      const scanned = content.replace(/`[^`]*\bshared(?:\/|-stores)[^`]*`/g, '');
+      for (const word of TIER_WORDS) expect(scanned, `${file} uses "${word}"`).not.toMatch(new RegExp(`\\b${word}\\b`, 'i'));
+      expect(content, file).not.toMatch(/`contexture [a-z]/);
+      for (const flag of ctxrFlagsIn(content)) expect(options.has(flag), `${file}: ${flag}`).toBe(true);
+    }
+  });
+
+  /** Rows of the preamble's two tables: `| \`command\` | \`tool\` |`, or `none` for a step the server does itself. */
+  function mappingRows(heading: string): [string, string][] {
+    const section = preamble.split(`### ${heading}\n`)[1]!.split('\n### ')[0]!;
+    return section
+      .split('\n')
+      .filter((line) => line.startsWith('| `'))
+      .map((line) => {
+        const m = /^\| `([^`]+)` \| (?:`([A-Za-z_]+)`|(none)) \|$/.exec(line);
+        expect(m, line).not.toBeNull();
+        return [m![1]!, m![2] ?? m![3]!];
+      });
+  }
+
+  it('states its mapping as tables a check can read: each session command to its tool, and each git step to a tool or to none', () => {
+    expect(mappingRows('Commands')).toEqual([
+      ...['start', 'list', 'status', 'submit', 'rebase', 'discard'].map((verb): [string, string] => [`ctxr session ${verb}`, `session_${verb}`]),
+      ...UNAVAILABLE_COMMANDS.map((command): [string, string] => [`ctxr ${command}`, 'none']),
+    ]);
+    const git = new Map(mappingRows('Git steps'));
+    expect(git.get('git mv')).toBe('Move');
+    expect(git.get('git rm')).toBe('Delete');
+    expect(git.get('git status')).toBe('session_status');
+    expect(git.get('git diff')).toBe('session_status');
+    expect(git.get('git commit')).toBe('session_submit');
+    expect(git.get('git push')).toBe('session_submit');
+    // Every git step an included skill names is a row, so the drift check has something to pass on.
+    let named = 0;
+    for (const { file, content } of mcp) {
+      const body = content.slice(content.indexOf(MANAGED_SKILL_HEADER));
+      for (const m of body.matchAll(/`((?:git|gh) [a-z-]+(?: --[a-z-]+)?)/g)) {
+        const step = m[1]!;
+        const known = [...git.keys()].some((row) => step === row || step.startsWith(`${row} `) || row.startsWith(`${step} `) || step.split(' ').slice(0, 2).join(' ') === row);
+        expect(known, `${file} names ${step}`).toBe(true);
+        named += 1;
+      }
+    }
+    expect(named).toBeGreaterThanOrEqual(3); // git mv, git fetch, git merge --ff-only
+  });
+
+  it('routes every other ctxr command through the ctxr and ctxr_write tools, and commits only in session_submit', () => {
+    expect(preamble).toMatch(/Every other `ctxr` step runs through the `ctxr` tool when the command only reads, and through `ctxr_write`\s+when it writes/);
+    expect(preamble).toMatch(/`args`/);
+    expect(preamble).toMatch(/Commits, pushes and pull requests happen only in `session_submit`/);
+    expect(preamble).toMatch(/At the\s+start of a conversation, call `session_list` and mention each open session/);
+  });
+});
+
+/**
+ * serve-the-session-lifecycle-to-chat-apps task 6.3, and the harness-portability
+ * delta "An MCP-rendered skill names only what the surface offers": every `ctxr`
+ * command an included skill names routes to a tool through the mapping module,
+ * every `git` or `gh` step is a row of its git-step table, and every tool the
+ * preamble names is one the surface registers.
+ */
+function driftProblems(skills: readonly { file: string; content: string }[]): string[] {
+  const problems: string[] = [];
+  const gitSteps = Object.keys(GIT_STEP_TOOLS);
+  for (const { file, content: rendered } of skills) {
+    // The managed header names `ctxr init` and `ctxr update` as provenance, not as a step.
+    const content = rendered.replace(MANAGED_SKILL_HEADER, '');
+    for (const m of content.matchAll(/`ctxr ([a-z][a-z-]*(?: [a-z][a-z-]*)?)/g)) {
+      const unavailable = (UNAVAILABLE_COMMANDS as readonly string[]).some((c) => m[1] === c || m[1]!.startsWith(`${c} `));
+      if (!unavailable && routeForCommand(m[1]!) === null) problems.push(`${file}: ctxr ${m[1]}`);
+    }
+    for (const m of content.matchAll(/`((?:git|gh) [a-z][a-z-]*(?: (?:-{1,2}[a-z-]+|[a-z][a-z-]*))?)/g)) {
+      const step = m[1]!;
+      const known = gitSteps.some((row) => step === row || step.startsWith(`${row} `) || row === step.split(' ').slice(0, 2).join(' '));
+      if (!known) problems.push(`${file}: ${step}`);
+    }
+    for (const m of content.matchAll(/`(session_[a-z]+|ctxr_write|Move|Delete)`/g)) {
+      if (!TOOL_NAMES.includes(m[1]!)) problems.push(`${file}: tool ${m[1]}`);
+    }
+  }
+  return problems;
+}
+
+describe('the MCP render names only what the surface offers', () => {
+  const mcp = renderSkills(makeConfig(), 'mcp');
+
+  it('passes on the shipped skills', () => {
+    expect(mcp.length).toBeGreaterThan(0);
+    expect(driftProblems(mcp)).toEqual([]);
+  });
+
+  it('fails, naming the skill and the term, for an unmapped git step, an unknown command and an unknown tool', () => {
+    const seeded = { file: 'ctxr-seeded', content: 'Run `git cherry-pick`, then `ctxr session reap`, then call `session_publish`.' };
+    expect(driftProblems([seeded])).toEqual(['ctxr-seeded: ctxr session reap', 'ctxr-seeded: git cherry-pick', 'ctxr-seeded: tool session_publish']);
   });
 });

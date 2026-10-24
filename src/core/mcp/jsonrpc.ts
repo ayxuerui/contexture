@@ -32,6 +32,19 @@ export interface JsonRpcResponse {
   error?: JsonRpcError;
 }
 
+/**
+ * serve-the-session-lifecycle-to-chat-apps D8: the hints every tool declares,
+ * so each app's confirmation prompts match what a call does. A presentation
+ * hint only: scope and ownership are still checked by the server on every call.
+ */
+export interface ToolAnnotations {
+  readOnlyHint: boolean;
+  destructiveHint: boolean;
+  idempotentHint: boolean;
+  /** False for every tool: none reaches beyond the store. */
+  openWorldHint: false;
+}
+
 /** A tool as `tools/list` advertises it and `tools/call` runs it. */
 export interface ToolDefinition<TPrincipal> {
   name: string;
@@ -40,7 +53,7 @@ export interface ToolDefinition<TPrincipal> {
   inputSchema: Record<string, unknown>;
   /** The scope a principal must hold for the tool to be listed or called. */
   scope: string;
-  readOnly: boolean;
+  annotations: ToolAnnotations;
   run(args: Record<string, unknown>, principal: TPrincipal): Promise<unknown>;
   /**
    * The text a client model reads, when JSON is the wrong shape for it — the file tools answer
@@ -172,7 +185,7 @@ async function dispatchOne<TPrincipal>(message: unknown, ctx: DispatchContext<TP
               title: tool.title,
               description: tool.description,
               inputSchema: tool.inputSchema,
-              annotations: { title: tool.title, readOnlyHint: tool.readOnly, destructiveHint: false, idempotentHint: tool.readOnly, openWorldHint: false },
+              annotations: { title: tool.title, ...tool.annotations },
             })),
           },
         };

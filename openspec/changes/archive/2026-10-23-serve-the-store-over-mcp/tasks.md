@@ -63,4 +63,4 @@
 
 ## 11. Final verification against real clients (operator)
 
-- [ ] 11.1 Repeat 5.1 with `gather`, `capture`, `Read`, `Grep`, `Glob`, `Edit` and `Write`, and run ChatGPT developer mode (deferred from 5.1): confirm one call of each from claude.ai and from ChatGPT in `serve`'s log, that the capture appeared on the approval page, and that approving it landed it
+- [x] 11.1 (moved to serve-the-session-lifecycle-to-chat-apps, task 9.2) Repeat 5.1 with `gather`, `capture`, `Read`, `Grep`, `Glob`, `Edit` and `Write`, and run ChatGPT developer mode (deferred from 5.1): confirm one call of each from claude.ai and from ChatGPT in `serve`'s log, that the capture appeared on the approval page, and that approving it landed it

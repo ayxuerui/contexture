@@ -1,7 +1,9 @@
+import { execFile } from 'node:child_process';
 import { createHash, randomBytes } from 'node:crypto';
 import { readFile, writeFile } from 'node:fs/promises';
 import { createServer, request, type Server } from 'node:http';
 import path from 'node:path';
+import { promisify } from 'node:util';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { makeApprovalStore, type ApprovalStore } from '../helpers/approval-store.js';
 import { makeTestSigner } from '../helpers/identity-keys.js';
@@ -47,6 +49,19 @@ function http(url: string, opts: { method?: string; headers?: Record<string, str
     });
     req.on('error', reject);
     req.end(opts.body);
+  });
+}
+
+/** The same request, with the body kept as bytes: an archive is not UTF-8. */
+function download(url: string, headers: Record<string, string> = {}): Promise<{ status: number; headers: Record<string, string | string[] | undefined>; body: Buffer }> {
+  return new Promise((resolve, reject) => {
+    const req = request(url, { headers }, (res) => {
+      const chunks: Buffer[] = [];
+      res.on('data', (c: Buffer) => chunks.push(c));
+      res.on('end', () => resolve({ status: res.statusCode ?? 0, headers: res.headers, body: Buffer.concat(chunks) }));
+    });
+    req.on('error', reject);
+    req.end();
   });
 }
 
@@ -125,7 +140,7 @@ describe('the MCP surface of ctxr serve (real CLI, fake forge, real signatures)'
   it('signs a member in through the verified identity, serves find, and turns a capture into a session pull request', async () => {
     const store = await approvalStore(true);
     try {
-      await store.advanceMain({ 'projects/kestrel.md': '# Kestrel\n\nThe Kestrel launch moved to March.\n' }, 'add kestrel');
+      await store.advanceMain({ 'projects/kestrel.md': '# Kestrel\n\nThe Kestrel launch moved to March.\n' }, 'add kestrel', { catalogued: true });
       await withServer(store, async (url, stderr) => {
         const meta = await http(new URL('/.well-known/oauth-authorization-server', url).toString());
         expect(meta.status).toBe(200);
@@ -146,7 +161,16 @@ describe('the MCP surface of ctxr serve (real CLI, fake forge, real signatures)'
           ['Grep', true],
           ['Glob', true],
           ['capture', false],
+          ['ctxr', true],
         ]);
+
+        // serve-the-session-lifecycle-to-chat-apps D4: the runner spawns the server's own built CLI against the served commit.
+        const ran = (await rpc(url, token, 'tools/call', { name: 'ctxr', arguments: { args: ['doctor', '--json'] } })).json.result as {
+          isError: boolean;
+          structuredContent: { exit_code: number; ran_against: { commit: string } };
+        };
+        expect(ran.isError).toBe(false);
+        expect(ran.structuredContent).toMatchObject({ exit_code: 0, ran_against: { commit: await store.git(['rev-parse', 'origin/main']) } });
 
         const found = (await rpc(url, token, 'tools/call', { name: 'find', arguments: { text: 'kestrel' } })).json.result as {
           isError: boolean;
@@ -224,6 +248,9 @@ describe('the MCP surface of ctxr serve (real CLI, fake forge, real signatures)'
         await writeFile(`${configPath}.next`, without);
         await import('node:fs/promises').then((fs) => fs.rename(`${configPath}.next`, configPath));
         expect((await http(metaUrl)).status).toBe(404);
+        // serve-the-session-lifecycle-to-chat-apps D7: the plugin downloads go with the block, even for a verified member.
+        expect((await http(new URL('/plugin/', url).toString(), { headers: { [HEADER]: assertion('a@example.com') } })).status).toBe(404);
+        expect((await http(new URL('/plugin/contexture-store-claude.zip', url).toString(), { headers: { [HEADER]: assertion('a@example.com') } })).status).toBe(404);
       });
     } finally {
       await store.tmp.cleanup();
@@ -240,6 +267,58 @@ describe('the MCP surface of ctxr serve (real CLI, fake forge, real signatures)'
         const authorize = new URL(`/authorize?${params.toString()}`, url).toString();
         expect((await http(authorize)).status).toBe(401);
         expect((await http(authorize, { headers: { [HEADER]: assertion('z@elsewhere.example') } })).status).toBe(403);
+      });
+    } finally {
+      await store.tmp.cleanup();
+    }
+  });
+
+  /**
+   * serve-the-session-lifecycle-to-chat-apps D7 (remote-access spec, *Members
+   * download the store's plugins from the server*).
+   */
+  it('serves the plugin page and both archives to a verified member, built as ctxr plugin build builds them', async () => {
+    const store = await approvalStore(true);
+    try {
+      await withServer(store, async (url) => {
+        const page = new URL('/plugin/', url).toString();
+        expect((await http(page)).status).toBe(401);
+        expect((await http(new URL('/plugin/contexture-store-claude.zip', url).toString())).status).toBe(401);
+        expect((await http(page, { headers: { [HEADER]: assertion('z@elsewhere.example') } })).status).toBe(403);
+
+        const member = { [HEADER]: assertion('b@example.com') };
+        const html = await http(page, { headers: member });
+        expect(html.status).toBe(200);
+        expect(html.headers['content-type']).toBe('text/html; charset=utf-8');
+        expect(html.body).toContain('href="/plugin/contexture-store-claude.zip"');
+        expect(html.body).toContain('href="/plugin/contexture-store-chatgpt.zip"');
+        expect(html.body).toContain('Upload plugin');
+        expect(html.body).toContain('developer mode');
+        expect(html.body).toContain(`${BASE}/mcp`);
+        expect((await http(new URL('/plugin', url).toString(), { headers: member })).status).toBe(200);
+        expect((await http(new URL('/plugin/contexture-store-other.zip', url).toString(), { headers: member })).status).toBe(404);
+
+        const exec = promisify(execFile);
+        for (const [target, entry, server] of [
+          ['claude', '.mcp.json', { type: 'http', url: `${BASE}/mcp` }],
+          ['chatgpt', 'mcp.json', { type: 'streamable-http', url: `${BASE}/mcp` }],
+        ] as const) {
+          const zip = await download(new URL(`/plugin/contexture-store-${target}.zip`, url).toString(), member);
+          expect(zip.status).toBe(200);
+          expect(zip.headers['content-type']).toBe('application/zip');
+          expect(zip.headers['content-disposition']).toBe(`attachment; filename="contexture-store-${target}.zip"`);
+          const file = path.join(store.tmp.root, `downloaded-${target}.zip`);
+          await writeFile(file, zip.body);
+          const listed = (await exec('unzip', ['-Z1', file])).stdout.split('\n');
+          expect(listed).toContain('skills/ctxr-capture/SKILL.md');
+          expect(listed).not.toContain('skills/ctxr-land/SKILL.md');
+          const mcp = JSON.parse((await exec('unzip', ['-p', file, entry])).stdout) as { mcpServers: Record<string, Record<string, unknown>> };
+          expect(mcp.mcpServers['contexture-store']).toMatchObject(server);
+
+          // The same bytes a second time: one build per served commit and configuration.
+          const again = await download(new URL(`/plugin/contexture-store-${target}.zip`, url).toString(), member);
+          expect(again.body.equals(zip.body)).toBe(true);
+        }
       });
     } finally {
       await store.tmp.cleanup();

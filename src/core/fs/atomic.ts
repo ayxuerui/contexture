@@ -8,14 +8,15 @@ import path from 'node:path';
  * POSIX), fsync it, then rename over the target. A process killed mid-write
  * leaves either the old complete file or nothing on disk — never a
  * truncated target. Used for every authored file contexture writes,
- * starting with `contexture.yaml` and `.gitignore` in `init`.
+ * starting with `contexture.yaml` and `.gitignore` in `init`; bytes as well as
+ * text, for the plugin archives (serve-the-session-lifecycle-to-chat-apps D7).
  */
-export async function writeFileAtomic(filePath: string, contents: string): Promise<void> {
+export async function writeFileAtomic(filePath: string, contents: string | Uint8Array): Promise<void> {
   const dir = path.dirname(filePath);
   const tempPath = path.join(dir, `.${path.basename(filePath)}.${randomBytes(6).toString('hex')}.tmp`);
   const handle = await open(tempPath, 'w');
   try {
-    await handle.writeFile(contents, 'utf8');
+    await (typeof contents === 'string' ? handle.writeFile(contents, 'utf8') : handle.writeFile(contents));
     await handle.sync();
   } finally {
     await handle.close();
