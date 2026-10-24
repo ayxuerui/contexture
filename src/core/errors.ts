@@ -817,6 +817,16 @@ export class ForgeCredentialsError extends ContextureError {
 }
 
 /**
+ * run-the-second-opinion-from-the-cli D2: invalid arguments, unreadable input, fewer than two requested
+ * model CLIs, or a pass-through list naming a protected variable — always before any CLI launches.
+ */
+export class SecondOpinionUsageError extends ContextureError {
+  constructor(message: string, details?: Record<string, unknown>) {
+    super(ExitCode.Usage, { code: 'second_opinion.usage', severity: 'error', message, ...(details ? { details } : {}) });
+  }
+}
+
+/**
  * bring-the-session-lifecycle-into-the-cli D3: a session command's refusal —
  * the usage code for what the caller named (a session that is not one, a
  * branch another session carries, a body with a generated section's heading),
