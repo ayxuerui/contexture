@@ -29,6 +29,29 @@ It kept every revision of the first round. These override anything inconsistent 
    the pragmatist proposed, would undo the first round's decision to show them, and the only new evidence was the
    noise, which a separate section answers.
 
+### Implementation findings
+
+These came out of implementing the change (2026-10-23) and override anything inconsistent below.
+
+7. **Identity is derived from the worktree name, not the branch alone.** `ctxr-submit` always passes
+   `ctxr session submit --branch`, which renames the session's branch, so a branch cannot carry a session's
+   identity past its first submit. The worktree directory keeps the name it was started with: a home session's
+   spells its branch, and a joined session's is `session-<owner>--<repo>--<tail>`. A GitHub owner and a generated
+   session name never contain `--`, so the name splits back without ambiguity. The joined branch still names its
+   home, so `--joins` stays as revision 3 has it.
+8. **The home store's deciders come from the configuration `serve` has loaded.** That configuration follows the
+   default branch (serve-follows-config-changes and the canonical sync), and it already admitted the person to the
+   page. Reading it from the forge again would add a forge call and a failure mode to every decision of a store
+   with no mounts. Mounted stores' deciders are read from the forge, as D5 says, because the mount's clone can be
+   behind.
+9. **A store with no mounts keeps today's path for its own pull requests**, marker or not, so stores that have not
+   declared `shared_stores` behave exactly as before. A pull request whose marker names another home is still left
+   to that home.
+10. **`--session` requires `--confirm`.** A session approved on the page lands with `ctxr land --pending`, which
+    reads the decision; `--session` is the chat form of consent only.
+11. **`retrying` is recorded**, on the record part, as a block is, so it survives between runs and `review list`
+    reports it even when nothing has merged.
+
 ## Revisions after critique
 
 A three-model critique (2026-10-23, all three APPROVE_WITH_CHANGES, no veto) changed the following. These override
@@ -203,6 +226,18 @@ Nothing else is a choice a store needs to make.
   `serve` runs again. → They are visible on every page that mounts the store, as homed elsewhere.
 - **[Two people work in the same shared store at once]** Their sessions are separate sessions with separate
   branches, and they land independently. Conflicts go through the existing resolver and re-approval.
+
+- **[Every part's decision is read with the home store's recording login]** The record, the copies and the
+  consent check that runs in a mount's clone all use the home store's recording login. A mounted store whose
+  `change_approval.recording_login` differs cannot take part in sessions homed elsewhere: its own readers would
+  not count the home's reviews. → The design assumes one identity per party (Context); a store run by another
+  party with another App is out of reach until a cross-identity rule is designed.
+- **[Known gap: the MCP surface opens pull requests without a marker]** Those pull requests are home-only, so each
+  is a session of its own and keeps today's path. → A joined session is started from a terminal agent; the MCP
+  surface gains the marker when it gains joined sessions.
+- **[Known gap: App-mode landing in a mount needs a github.com origin]** `CONTEXTURE_GITHUB_REPOSITORY` names the
+  home store's repository only, so a mount's App credential is found from the mount clone's `origin`. → A mount
+  whose origin is a mirror or proxy cannot be landed in App mode.
 
 ## Migration Plan
 
