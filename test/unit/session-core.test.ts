@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { readConfig } from '../../src/config/load.js';
 import { MIGRATION_STEPS } from '../../src/config/migrations.js';
 import { decisionBody } from '../../src/core/approval/decision.js';
+import { sessionMarker } from '../../src/core/approval/session-marker.js';
 import { buildCatalog } from '../../src/core/catalog/build.js';
 import { SessionRefusedError } from '../../src/core/errors.js';
 import { ExitCode } from '../../src/core/exit-codes.js';
@@ -102,7 +103,9 @@ describe('the session core (real git, bare origin, fake gh)', () => {
     expect(pull).toMatchObject({ number: result.pull_request.number, head: 'notes/intro', title: 'Rewrite the intro', state: 'open' });
     expect(pull!.body!.startsWith('Why: the intro was out of date.\n\n')).toBe(true);
     const block = await runCli(['graph', 'diff', '--since', 'origin/main', '--format', 'markdown'], { cwd: session.storeRoot, env: store.env });
-    expect(pull!.body!.endsWith(block.stdout.replace(/\n$/, ''))).toBe(true);
+    // approve-sessions-across-stores: the session marker comes last, after the Knowledge changes block.
+    expect(result.session_identity).not.toBeNull();
+    expect(pull!.body!.endsWith(`${block.stdout.replace(/\n$/, '')}\n\n${sessionMarker(result.session_identity!)}`)).toBe(true);
     expect(pull!.body!).toContain('## Knowledge changes');
     expect(pull!.body!).not.toContain('## Pages');
     expect(result.approval_url).toBe(`http://127.0.0.1:1/approve/${encodeURIComponent(session.name)}/`);

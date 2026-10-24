@@ -1,7 +1,8 @@
 ## ADDED Requirements
 
 ### Requirement: The approval index lists sessions across the store and its mounts
-When the store declares mounts, `GET /approve/` SHALL list each session that has at least one open pull request on
+A store that declares no `shared_stores` SHALL list, show and decide its own pull requests exactly as before this
+change, marker or not. When the store declares mounts, `GET /approve/` SHALL list each session that has at least one open pull request on
 the store or on a present mount the store declares, grouped by session as the write lifecycle defines it. Each entry
 SHALL give the session, its home store, and for each of its pull requests the store it belongs to, its number, its
 head commit and its decision state. A session SHALL be listed once, however many stores its pull requests are on.
@@ -42,9 +43,10 @@ A decision on a session SHALL be accepted only by the session's home store, and 
 number and head commit of every one of its open pull requests, as the page showed them. The server SHALL refuse it,
 and record nothing on any pull request, when any of those heads is not that pull request's current head, when any
 part is not open, when the session's open parts on the forge differ from the parts posted, or when the decider is
-not a decider of every store the session has a part in. Each store's deciders SHALL be read from that store's
-`change_approval` in its `contexture.yaml` on its default branch on the forge, at decision time; a store with no
-`change_approval` SHALL have no deciders.
+not a decider of every store the session has a part in. The home store's deciders SHALL be those of the
+configuration `serve` has loaded, which follows the home store's default branch. Each mounted store's deciders
+SHALL be read from that store's `change_approval` in its `contexture.yaml` on its default branch on the forge, at
+decision time; a mounted store with no `change_approval` SHALL have no deciders.
 
 An accepted decision SHALL have a unique decision id, and SHALL be recorded as reviews by the recording login, each
 marked as a single pull request's decision is and also naming the decision id, the session, and the store, number
@@ -52,6 +54,11 @@ and head of every part. The decision's record SHALL be its review on one part, t
 part when the session has one, and otherwise the first named part in landing order. The server SHALL post the
 record review first, then a review on every other part as a copy carrying the same marker. When posting a copy
 fails, the decision SHALL still stand, and the response SHALL say which copies are missing.
+
+Every part's decision SHALL be read, posted and checked with the home store's recording login. This assumes every
+store a session touches records with the same identity; a mounted store whose `change_approval.recording_login`
+differs cannot take part in sessions homed in another store, since its own readers would not count the home's
+reviews.
 
 Every reader SHALL take a session's decision from its record part alone. The parts the record names SHALL be the
 session's parts for landing. Before landing a part other than the record part, landing SHALL post that part's copy
@@ -96,7 +103,9 @@ exists that the record does not name. Otherwise `ctxr review list` and `ctxr lan
 `ctxr review list` SHALL report, for each session pull request, the session it belongs to and its home store, and
 SHALL report a part's decision state from its session's decision. A session landing left unfinished SHALL be
 reported as `blocked` (a named part closed without merging; it waits for a person) or `retrying` (it lands on a
-later run), naming the part and why. The other states SHALL keep their meanings.
+later run), naming the part and why. `retrying` SHALL be read from the landing record the run left on the record
+part, until the part it names merges, and also SHALL be reported while some named parts have merged and others are
+still open. The other states SHALL keep their meanings.
 
 #### Scenario: A closed mounted part blocks the session in the report
 - **WHEN** a session's part on mounted store `ctx-b` was closed without merging after the session was approved

@@ -10,8 +10,26 @@ import { appendFileSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFil
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
-const statePath = process.env.FAKE_GH_STATE;
-const origin = process.env.FAKE_GH_ORIGIN;
+// Several repositories: $FAKE_GH_REPOS names a JSON file mapping each bare origin's path to its own state file. The
+// repository a call is about is the one `gh` would fill `{owner}/{repo}` from: the `origin` of the directory it runs in.
+function repoFromCwd() {
+  const reposPath = process.env.FAKE_GH_REPOS;
+  if (reposPath === undefined) return { statePath: process.env.FAKE_GH_STATE, origin: process.env.FAKE_GH_ORIGIN };
+  const repos = JSON.parse(readFileSync(reposPath, 'utf8'));
+  let url = '';
+  try {
+    url = execFileSync('git', ['remote', 'get-url', 'origin'], { cwd: process.cwd(), encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+  } catch {
+    url = '';
+  }
+  const found = repos[path.resolve(url)];
+  if (found === undefined) {
+    process.stderr.write(`gh: no fake repository for origin "${url}" (HTTP 404)\n`);
+    process.exit(1);
+  }
+  return { statePath: found, origin: path.resolve(url) };
+}
+const { statePath, origin } = repoFromCwd();
 const args = process.argv.slice(2);
 if (args[0] !== 'api' || statePath === undefined) {
   process.stderr.write(`fake gh: unsupported invocation ${args.join(' ')}\n`);
@@ -77,6 +95,18 @@ for (const [needle, status] of Object.entries(state.fail ?? {})) {
 }
 
 if (endpoint === 'user') reply({ login: state.login });
+
+// A file on a branch, read live from the bare origin, as GitHub's contents API answers it.
+const contents = /^repos\/\{owner\}\/\{repo\}\/contents\/([^?]+)(?:\?ref=(.+))?$/.exec(endpoint);
+if (contents !== null) {
+  const [, filePath, ref] = contents;
+  try {
+    const text = execFileSync('git', ['--git-dir', origin, 'show', `${decodeURIComponent(ref ?? 'main')}:${decodeURIComponent(filePath)}`], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+    reply({ type: 'file', encoding: 'base64', content: Buffer.from(text, 'utf8').toString('base64') });
+  } catch {
+    fail(404, 'Not Found');
+  }
+}
 
 const match = /^repos\/\{owner\}\/\{repo\}\/(pulls|issues)(?:\/(\d+))?(?:\/(\w+))?(?:\?.*)?$/.exec(endpoint);
 if (match === null) fail(404, `fake gh: no route for ${endpoint}`);
