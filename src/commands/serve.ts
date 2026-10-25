@@ -26,6 +26,7 @@ import { handleApprove, isApprovePath, isDecisionRoute, type ApprovalServer, typ
 import { createIdentityVerifier } from '../core/approval/identity.js';
 import { ForgeUnreachableError, RecordingLoginMismatchError } from '../core/errors.js';
 import { credentialsFor, type CredentialKind } from '../core/forge/credentials.js';
+import { storeForges } from '../core/approval/store-forges.js';
 import { createGhForgeClient, ForgeRequestError } from '../core/forge/github.js';
 import { isMcpPath, McpSurface } from '../core/mcp/surface.js';
 import { isPluginPath, PluginDownloads } from '../core/plugin/routes.js';
@@ -338,6 +339,9 @@ async function approvalServer(env: RunEnv, store: Store): Promise<ApprovalServer
     origin: new URL(store.config.serve!.base_url!).origin,
     forge,
     credentials,
+    // approve-sessions-across-stores D8: each mounted store's pull requests, read with the same recording identity.
+    forgeFor: storeForges(env),
+    env: env.env,
     verifier: createIdentityVerifier(approval.identity),
     git: env.git,
     now: () => env.now(),

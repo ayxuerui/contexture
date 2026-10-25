@@ -58,16 +58,20 @@ Skip this section when the store mounts no other stores under `shared/`.
 
 - After you bring the canonical clone up to date, run `ctxr shared-stores sync`. It clones a missing mount and fast-forwards the others.
 - Report a mount that sync left alone, with its reason. Do not reset, stash or force it. Why: local work in a mount is somebody's session.
-- To write a note into a mount, change into `shared/<name>` and run `ctxr session start` there. Why: the session, its pull request and its approval then belong to that store.
-- Keep one session per store. A change that touches this store and a mount is two sessions and two pull requests.
+- To write into a mount for the work of this store's session, change into `shared/<name>`. Run `ctxr session start --joins <session>` there, with this store's session name. Why: the mount's session then joins this one, and one decision covers both pull requests.
+- The command refuses outside a mount, or for a session this store does not have. Report the refusal. Do not start a plain session instead.
+- When the work has no session in this store, run `ctxr session start` in the mount. Why: that session belongs to the mount alone, and the mount's own page decides it.
+- Write only the mount's files in the mount's session. Why: each store's pull request holds only that store's changes.
+- A change that touches this store and a mount is one session. It has one pull request in each store.
 
 To move a note from this store into a mount:
 
 1. List the links the note carries. Find each target that stays in this store.
 2. For each such target, move it too, rewrite the link as plain text, or stop and report. Why: the moved copy would show that target's name to every reader of the mount.
-3. Add the note in a session inside the mount. Submit and land that pull request first.
-4. Then, in a session of this store, delete the original. Rewrite links to it as path links, such as `[[shared/<name>/<path>]]`.
-5. Tell the operator that the move cannot be undone for past readers. Why: the note stays in the mount's history and in every reader's clone.
+3. In the mount, start a session with `ctxr session start --joins <session>`. Add the note there.
+4. In this store's session, delete the original. Rewrite links to it as path links, such as `[[shared/<name>/<path>]]`.
+5. Submit both parts with `ctxr-submit`. One approval covers them. Landing merges the mount's part first, then this store's part. Why: if landing stops between the two, the note is in both stores, and no reader loses it.
+6. Tell the operator that the move cannot be undone for past readers. Why: the note stays in the mount's history and in every reader's clone.
 
 ## Between turns
 

@@ -68,6 +68,11 @@ export interface ForgeClient {
   createReview(number: number, input: { event: ReviewEvent; body: string; commitId: string }): Promise<void>;
   createComment(number: number, body: string): Promise<void>;
   merge(number: number, input: { method: MergeMethod; sha: string }): Promise<void>;
+  /**
+   * approve-sessions-across-stores D5: a file's text on `ref` as the forge holds it; null when it is not there.
+   * A mounted store's deciders are read this way, at decision time, never from a clone that can be behind.
+   */
+  fileAt(filePath: string, ref: string): Promise<string | null>;
 }
 
 /** A `gh api` call that did not succeed. `status` is the HTTP status when `gh` reported one. */
@@ -196,6 +201,17 @@ export function createGhForgeClient(cwd: string, credentials: ForgeCredentials):
     },
     async merge(number, input) {
       await api(`${repo}/pulls/${number}/merge`, { method: 'PUT', input: { merge_method: input.method, sha: input.sha } });
+    },
+    async fileAt(filePath, ref) {
+      const encoded = filePath.split('/').map(encodeURIComponent).join('/');
+      try {
+        const raw = (await api(`${repo}/contents/${encoded}?ref=${encodeURIComponent(ref)}`)) as { content?: string; encoding?: string } | null;
+        if (raw === null || typeof raw.content !== 'string') return null;
+        return raw.encoding === 'base64' ? Buffer.from(raw.content, 'base64').toString('utf8') : raw.content;
+      } catch (err) {
+        if (err instanceof ForgeRequestError && err.status === 404) return null;
+        throw err;
+      }
     },
   };
 }

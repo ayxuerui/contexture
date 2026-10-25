@@ -39,7 +39,18 @@ export interface StartedSession {
   label: string | null;
 }
 
-export async function startSession(deps: StartDeps, storeRoot: string, label?: string): Promise<StartedSession> {
+/**
+ * approve-sessions-across-stores: a session joined to one in the store that
+ * mounts this one takes its branch and worktree name from that session, never
+ * from a label or the clock. Only `ctxr session start --joins` passes it; the
+ * MCP surface keeps no mounts.
+ */
+export interface JoinedName {
+  branch: string;
+  worktreeName: string;
+}
+
+export async function startSession(deps: StartDeps, storeRoot: string, label?: string, joined?: JoinedName): Promise<StartedSession> {
   // Ahead of the fetch, so a label that can never work costs no network round trip and leaves nothing behind.
   let labelSlug: string | null = null;
   if (label !== undefined) {
@@ -55,13 +66,13 @@ export async function startSession(deps: StartDeps, storeRoot: string, label?: s
   // The local branch both with no remote at all and with a remote that lacks the branch: honest, expected states.
   const startPoint = fetched ? `origin/${defaultBranch}` : defaultBranch;
 
-  let branch = generateSessionBranchName(deps.config, deps.now(), labelSlug ?? undefined);
-  if (deps.branchTaken !== undefined) {
+  let branch = joined?.branch ?? generateSessionBranchName(deps.config, deps.now(), labelSlug ?? undefined);
+  if (joined === undefined && deps.branchTaken !== undefined) {
     for (let step = 1; step <= 60 && (await deps.branchTaken(branch)); step += 1) {
       branch = generateSessionBranchName(deps.config, new Date(deps.now().getTime() + step * 1000), labelSlug ?? undefined);
     }
   }
-  const worktree = worktreePathFor({ root: storeRoot, config: deps.config }, branch);
+  const worktree = joined === undefined ? worktreePathFor({ root: storeRoot, config: deps.config }, branch) : path.join(storeRoot, deps.config.session.worktrees_path, joined.worktreeName);
   const added = await addWorktree(deps.git, storeRoot, worktree, branch, startPoint, { allowFailure: true });
   if (added.exitCode !== 0) throw new SessionWorktreeRefusedError(branch, worktree, added.stderr);
   return { name: path.basename(worktree), worktree, branch, startPoint, fetched, label: labelSlug };

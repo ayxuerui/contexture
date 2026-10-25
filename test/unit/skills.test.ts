@@ -339,7 +339,19 @@ describe('owned-skills-expansion: each skill carries its load-bearing rule (task
     expect(s).toContain('`needs-reapproval`');
     expect(s).toContain('the default action, not an optional extra');
     expect(s).toMatch(/nothing sweeps\s+up afterward/);
-    expect(new Set(ctxrFlagsIn(s))).toEqual(new Set(['--confirm']));
+    expect(new Set(ctxrFlagsIn(s))).toEqual(new Set(['--confirm', '--pending', '--session']));
+  });
+
+  it('approve-sessions-across-stores: the lifecycle joins a session from a mount, submit marks every part, and land lands by session', () => {
+    const lifecycle = skills['ctxr-session-lifecycle']!;
+    expect(lifecycle).toContain('`ctxr session start --joins <session>`');
+    expect(lifecycle).toMatch(/Landing merges the mount's part first, then this store's part/);
+    const submit = skills['ctxr-submit']!;
+    expect(submit).toMatch(/Run `ctxr session submit` once in each part's worktree/);
+    expect(submit).toMatch(/give\s+one address only/);
+    const land = skills['ctxr-land']!;
+    expect(land).toContain('`ctxr land --session <session> --confirm`');
+    expect(land).toMatch(/Never land the parts\s+of a session one at a time/);
   });
 
   it('submit: the hand-off names the approval page when the store declares change approval (approve-from-the-review-page)', () => {
