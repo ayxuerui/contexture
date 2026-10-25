@@ -131,6 +131,44 @@ describe('publish check', () => {
     }
   });
 
+  describe('no-external-references reads what a page loads', () => {
+    async function externalChecks(html: string): Promise<string[]> {
+      const tmp = await makeTmpDir();
+      try {
+        const store: Store = { root: tmp.root, config: makeConfig() };
+        const htmlPath = await writePage(tmp.root, 'ctx-a/links', html, await stampedReadme(tmp.root));
+        const outcome = await executeCheck(store, { path: htmlPath });
+        return outcome.data!.failures.filter((f) => f.check === 'no-external-references').map((f) => f.message);
+      } finally {
+        await tmp.cleanup();
+      }
+    }
+    const inBody = (fragment: string) => GOOD_HTML.replace('</body>', `${fragment}</body>`);
+    const inStyle = (rule: string) => GOOD_HTML.replace('<style>', `<style>${rule}`);
+
+    it('passes a page whose only external addresses are outbound links', async () => {
+      const html = inBody('<a href="https://example.com/">one</a><a class=x href=\'http://example.org/\'>two</a><map><area href="https://example.net/"></map>');
+      expect(await externalChecks(html)).toEqual([]);
+    });
+
+    it.each([
+      ['an external stylesheet link', inBody('<link rel="stylesheet" href="https://cdn.example.com/x.css">')],
+      ['an external image', inBody('<img src="https://cdn.example.com/x.png" alt="">')],
+      ['an unquoted external src', inBody('<img src=https://cdn.example.com/x.png alt="">')],
+      ['an external srcset candidate', inBody('<img src="x.png" srcset="x2.png 2x, https://cdn.example.com/x3.png 3x" alt="">')],
+      ['an external base', GOOD_HTML.replace('<title>', '<base href="https://example.com/"><title>')],
+      ['an external SVG use', inBody('<svg><use xlink:href="https://cdn.example.com/s.svg#i"></use></svg>')],
+      ['an external video poster', inBody('<video poster="https://cdn.example.com/p.jpg"></video>')],
+      ['an external CSS @import', inStyle('@import "https://fonts.example.com/f.css";')],
+      ['an external CSS url()', inStyle('body{background:url(https://cdn.example.com/bg.png)}')],
+      ['an external url() in a style attribute', inBody('<div style="background:url(&quot;https://cdn.example.com/bg.png&quot;)"></div>')],
+    ])('fails %s', async (_label, html) => {
+      const messages = await externalChecks(html);
+      expect(messages).toHaveLength(1);
+      expect(messages[0]).toContain('example.com');
+    });
+  });
+
   it('fails, names the check, and identifies the block for a syntactically invalid inline script', async () => {
     const tmp = await makeTmpDir();
     try {
