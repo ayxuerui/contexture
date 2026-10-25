@@ -62,10 +62,44 @@ function stripNonStructural(html: string): string {
   return html.replace(/<!--[\s\S]*?-->/g, '').replace(/<script[\s\S]*?<\/script>/gi, '').replace(/<style[\s\S]*?<\/style>/gi, '');
 }
 
+const EXTERNAL_ADDRESS = /^\s*https?:\/\//i;
+
+/** allow-outbound-links-in-published-pages D1: attributes whose value an element loads, on any element. */
+const LOADING_ATTRIBUTES = new Set(['src', 'srcset', 'poster', 'data']);
+
+/** D1: the elements whose `href` is navigation only. Every other `href` loads or re-bases what it names. */
+const NAVIGATING_ELEMENTS = new Set(['a', 'area']);
+
+function loadsExternally(element: string, attribute: string, value: string): boolean {
+  if (attribute === 'srcset') return value.split(',').some((candidate) => EXTERNAL_ADDRESS.test(candidate));
+  if (LOADING_ATTRIBUTES.has(attribute)) return EXTERNAL_ADDRESS.test(value);
+  if (attribute === 'href' || attribute.endsWith(':href')) return !NAVIGATING_ELEMENTS.has(element) && EXTERNAL_ADDRESS.test(value);
+  return false;
+}
+
+/**
+ * publish spec: a page loads nothing from an external address. An outbound
+ * `<a href>` loads nothing until a reader follows it, so it passes (D1); an
+ * external CSS `url()` or `@import` loads as surely as `<link href>`, so it
+ * fails (D2). The first match is named (D3).
+ */
 function checkNoExternalReferences(html: string): PublishCheckFailure[] {
-  const match = /(?:src|href)\s*=\s*["']https?:\/\/[^"']*["']/i.exec(html);
-  if (!match) return [];
-  return [{ check: 'no-external-references', message: `references an external network resource: ${match[0]}` }];
+  const fail = (text: string): PublishCheckFailure[] => [{ check: 'no-external-references', message: `references an external network resource: ${text}` }];
+
+  const tagRe = /<([a-zA-Z][\w:-]*)((?:[^>"']|"[^"]*"|'[^']*')*)>/g;
+  const attrRe = /([^\s"'=<>/]+)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+))/g;
+  let tag: RegExpExecArray | null;
+  while ((tag = tagRe.exec(html))) {
+    const element = tag[1]!.toLowerCase();
+    let attr: RegExpExecArray | null;
+    while ((attr = attrRe.exec(tag[2] ?? ''))) {
+      const value = attr[2] ?? attr[3] ?? attr[4] ?? '';
+      if (loadsExternally(element, attr[1]!.toLowerCase(), value)) return fail(attr[0]);
+    }
+  }
+
+  const css = /(?:url\(\s*(?:&quot;|["'])?|@import\s+["'])\s*https?:\/\/[^"')\s]*/i.exec(html);
+  return css ? fail(css[0]) : [];
 }
 
 function checkViewportMeta(html: string): PublishCheckFailure[] {
