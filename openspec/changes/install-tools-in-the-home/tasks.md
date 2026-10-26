@@ -1,12 +1,14 @@
 ## 1. Version report
 
-- [ ] 1.1 In `src/core/install-kind.ts`, classify a `node_modules` path not under Node's prefix
-      against npm's configured global prefix: `NPM_CONFIG_PREFIX` / `npm_config_prefix`, else
-      `npm prefix -g` with a short timeout; failure leaves `undetermined`.
-- [ ] 1.2 Judge `install_writable` against the prefix the path was found under (its global
-      package root and `bin`), not Node's directory.
-- [ ] 1.3 Unit tests: env prefix, npm-reported prefix, npm unavailable, project dependency, Windows
-      layout; the existing Node-prefix and linked cases unchanged.
+- [ ] 1.1 In `src/core/install-kind.ts`, resolve npm's global prefix (`NPM_CONFIG_PREFIX` /
+      `npm_config_prefix`, else `npm prefix -g` with a short timeout) and classify a `node_modules`
+      path as `global` only under that prefix's package root; fall back to Node's prefix only when
+      npm cannot be asked.
+- [ ] 1.2 Judge `install_writable` against that prefix (its package root and `bin`), not Node's
+      directory.
+- [ ] 1.3 Unit tests: env prefix, npm-reported prefix, npm unavailable (fallback), Node-prefix
+      install with npm configured elsewhere (`undetermined`), project dependency, Windows layout,
+      linked unchanged.
 
 ## 2. Baseline conventions
 

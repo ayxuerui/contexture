@@ -55,28 +55,39 @@ shows the user prefix is the right answer. But the runtime image already sets th
 agents never reach this branch. The branch is reached only where the operator chose the layout,
 and changing it is theirs.
 
-### D4. The global prefix is npm's answer, asked only when Node's prefix does not settle it
+### D4. "Global" means "inside the prefix `npm install -g` writes to", and npm says where that is
 
-`classifyInstallPath` keeps its pure first step: a path under Node's own prefix is `global`, a path
-with no `node_modules` is `linked`. For anything else under a `node_modules`, it consults npm's
-configured global prefix: `NPM_CONFIG_PREFIX` or `npm_config_prefix` from the environment if set,
-else the output of `npm prefix -g` (bounded by a short timeout; a failure leaves the answer
-`undetermined`). A path under `<prefix>/lib/node_modules` (POSIX) or `<prefix>/node_modules`
-(Windows) is `global`, and `install_writable` checks that root and `<prefix>/bin` rather than
-Node's directory.
+The question the upgrade skill needs answered is: would `npm install -g ctxr-cli` replace the
+executable that is running? Today ctxr answers a different one -- is it under Node's own prefix? --
+and is wrong both ways:
 
-*Environment only, steelmanned:* reading `NPM_CONFIG_PREFIX` alone keeps the classifier pure and
-spawns nothing, and it covers the runtime image. But it misses the case npm documents as *the* fix
-for EACCES, `npm config set prefix`, which writes `~/.npmrc` and sets no variable. Parsing npmrc
-files ourselves (user, global, builtin, project, with `${VAR}` expansion) reimplements npm's
-config resolution and would drift from it.
+1. ctxr under a user prefix (`~/.local`, `~/.npm-global`) reports `undetermined`, and the skill
+   refuses an upgrade that would work. This is the runtime image's case.
+2. ctxr under Node's prefix while npm is configured to write elsewhere reports `global`, and the
+   upgrade installs a second copy instead of replacing the first. Step 4's on-PATH check notices
+   only after the second copy exists.
 
-*Always ask npm, steelmanned:* one code path, always npm's own answer. But it adds a process spawn
-to every `ctxr version`, including the bare one, for the common case Node's prefix already settles.
-Asking only when the cheap answer is `undetermined` costs nothing on the common path.
+So the classifier asks npm first. The prefix is `NPM_CONFIG_PREFIX` or `npm_config_prefix` when
+either is set, otherwise the output of `npm prefix -g`, bounded by a short timeout. A path under
+that prefix's global package root (`<prefix>/lib/node_modules` on POSIX, `<prefix>/node_modules` on
+Windows) is `global`, and `install_writable` checks that root and `<prefix>/bin`. A path in a
+`node_modules` outside it is `undetermined`, whatever Node's prefix says. Node's own prefix is used
+only when npm cannot be asked (not on PATH, failed, timed out), which keeps today's behavior there.
+A path with no `node_modules` stays `linked`.
 
-The question being answered is "would `npm install -g` replace this executable?", and npm is the
-authority on where `npm install -g` writes, so where it is consulted its answer wins.
+*In the skill instead, steelmanned:* the skill could run `npm prefix -g` and compare paths itself:
+no code, smaller change. But the comparison would live in markdown no test reaches, which is why
+the CLI reports `install_kind` at all (the earlier change's D12), and only this skill would get it
+right; every other caller of `ctxr version` would keep the wrong answer.
+
+*Environment only, steelmanned:* reading `NPM_CONFIG_PREFIX` alone spawns nothing and covers the
+runtime image. It misses npm's own documented EACCES fix, `npm config set prefix`, which writes
+`~/.npmrc` and sets no variable. Parsing npmrc files (user, global, builtin, project, `${VAR}`
+expansion) would reimplement npm's config resolution and drift from it.
+
+*Cost:* one `npm` process (a few hundred milliseconds) when the variable is unset. Only the install
+classification needs it, which `ctxr version` computes alongside a registry call to npm already;
+nothing on the session or update paths does.
 
 ## Risks / Trade-offs
 

@@ -38,11 +38,11 @@ prefix: the remedy is a prefix in the home, which the skill never names.
   never retry with `sudo`; report `install_path` and stop; tell the operator that a global npm
   prefix in the home makes the next install writable, and that an executable that shipped in a
   container image is upgraded by a newer image.
-- **`ctxr version` classifies an install under npm's configured global prefix as `global`**, and
-  checks that prefix's `lib/node_modules` and `bin` for `install_writable`. The prefix is read from
-  `NPM_CONFIG_PREFIX` / `npm_config_prefix` when set; otherwise, only for a path that would
-  otherwise be `undetermined`, from `npm prefix -g`. A local project dependency stays
-  `undetermined`.
+- **`ctxr version` reports `global` exactly when `npm install -g` would replace the running
+  executable**: the path is under the prefix npm writes to, read from `NPM_CONFIG_PREFIX` /
+  `npm_config_prefix` or else `npm prefix -g`, and `install_writable` is judged there. An install
+  under Node's own prefix that npm would not replace becomes `undetermined`; Node's prefix is used
+  only when npm cannot be asked. A local project dependency stays `undetermined`.
 - The `cli-contract` requirement for the version report and the `harness-portability`
   requirements for the baseline conventions and the upgrade skill are amended to match.
 
@@ -56,8 +56,8 @@ None.
 
 ### Modified Capabilities
 
-- `cli-contract`: the version report classifies an install under the package manager's
-  configured global prefix as global, and judges its writability there.
+- `cli-contract`: the version report classifies an install as global exactly when it lies under
+  the prefix a package-manager global install writes to, and judges its writability there.
 - `harness-portability`: the baseline conventions carry an install rule; the upgrade skill's
   unwritable-install branch names the user-prefix remedy and forbids escalation.
 
