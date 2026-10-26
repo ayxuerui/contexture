@@ -2,6 +2,7 @@ import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { afterEach, describe, expect, it } from 'vitest';
 import { handleMcpRequest, MCP_PATH, type Authentication } from '../../src/core/mcp/http.js';
+import { buildTools, type ToolContext } from '../../src/core/mcp/tools/index.js';
 import {
   dispatch,
   JSONRPC_INVALID_PARAMS,
@@ -26,7 +27,7 @@ const echo: ToolDefinition<Principal> = {
   description: 'returns its arguments',
   inputSchema: { type: 'object' },
   scope: 'read',
-  readOnly: true,
+  annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   run: async (args) => ({ echoed: args }),
 };
 
@@ -63,6 +64,32 @@ describe('mcp jsonrpc dispatch', () => {
     expect(tools[0]!.annotations.readOnlyHint).toBe(true);
     const none = (await dispatch({ jsonrpc: '2.0', id: 'b', method: 'tools/list' }, context({ scopes: [] }))) as JsonRpcResponse;
     expect((none.result as { tools: unknown[] }).tools).toEqual([]);
+  });
+
+  // serve-the-session-lifecycle-to-chat-apps D8, task 5.2: every shipped tool carries a title and all four hints.
+  it('lists every shipped tool with a title and honest annotations', async () => {
+    const shipped = buildTools({ view: {}, syncDeps: {}, write: {}, mutex: {}, baseUrl: undefined } as unknown as ToolContext);
+    const answer = (await dispatch(
+      { jsonrpc: '2.0', id: 'c', method: 'tools/list' },
+      { principal: { email: 'a@example.com', scopes: ['read', 'capture', 'edit'] }, tools: () => shipped, instructions: '', authorizeCall: () => undefined, refusalFor: () => undefined },
+    )) as JsonRpcResponse;
+    type Listed = { name: string; title: string; annotations: Record<string, unknown> };
+    const tools = (answer.result as { tools: Listed[] }).tools;
+    expect(tools.length).toBe(shipped.length);
+    for (const tool of tools) {
+      expect(tool.title, tool.name).toMatch(/\S/);
+      expect(tool.annotations, tool.name).toEqual({
+        title: tool.title,
+        readOnlyHint: expect.any(Boolean),
+        destructiveHint: expect.any(Boolean),
+        idempotentHint: expect.any(Boolean),
+        openWorldHint: false,
+      });
+    }
+    const hints = Object.fromEntries(tools.map((t) => [t.name, t.annotations]));
+    for (const name of ['find', 'gather', 'Read', 'Grep', 'Glob', 'ctxr', 'session_list', 'session_status']) expect(hints[name], name).toMatchObject({ readOnlyHint: true, destructiveHint: false, idempotentHint: true });
+    for (const name of ['capture', 'session_start', 'Edit', 'Write', 'Move', 'ctxr_write', 'session_rebase', 'session_submit']) expect(hints[name], name).toMatchObject({ readOnlyHint: false, destructiveHint: false });
+    for (const name of ['Delete', 'session_discard']) expect(hints[name], name).toMatchObject({ readOnlyHint: false, destructiveHint: true });
   });
 
   it('tools/call returns structured content, and a refusal as an isError result', async () => {

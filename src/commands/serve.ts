@@ -29,6 +29,7 @@ import { credentialsFor, type CredentialKind } from '../core/forge/credentials.j
 import { storeForges } from '../core/approval/store-forges.js';
 import { createGhForgeClient, ForgeRequestError } from '../core/forge/github.js';
 import { isMcpPath, McpSurface } from '../core/mcp/surface.js';
+import { isPluginPath, PluginDownloads } from '../core/plugin/routes.js';
 
 export const requires: CommandRequires = { store: 'required' };
 
@@ -129,6 +130,7 @@ async function handleRequest(
   holder: ServingStateHolder,
   landing: LandingControl,
   mcp: McpSurface,
+  plugins: PluginDownloads,
   git: GitRunner,
   stderr: NodeJS.WritableStream,
   req: IncomingMessage,
@@ -152,6 +154,13 @@ async function handleRequest(
   const decisionPost = method === 'POST' && (approval !== null || approvalError !== null) && isDecisionRoute(pathname);
   if (method !== 'GET' && method !== 'HEAD' && !decisionPost) {
     send(res, method, 405, 'text/plain; charset=utf-8', 'method not allowed\n');
+    return;
+  }
+
+  // serve-the-session-lifecycle-to-chat-apps D7: the plugin downloads, behind the approval routes' identity check.
+  if (isPluginPath(pathname)) {
+    const reply = await plugins.handle(store, approval, approvalError, req, pathname);
+    send(res, method, reply.status, reply.contentType, reply.body, reply.headers);
     return;
   }
 
@@ -387,6 +396,7 @@ export async function execute(env: RunEnv, store: Store, flags: ServeFlags): Pro
   });
   const landing = createLandingControl(env, store.root);
   const mcp = new McpSurface({ git: env.git, canonicalRoot: store.root, env: env.env, now: () => env.now(), log: (line) => env.io.stderr.write(`${line}\n`) });
+  const plugins = new PluginDownloads(env.git);
   landing.sync(store.config);
   // Stopping serve stops a landing run in progress; landing is resumable, so the next start finishes it.
   const shutdown = (signal: NodeJS.Signals): void => {
@@ -395,7 +405,7 @@ export async function execute(env: RunEnv, store: Store, flags: ServeFlags): Pro
   process.once('SIGTERM', shutdown);
   process.once('SIGINT', shutdown);
   const server = createServer((req, res) => {
-    handleRequest(holder, landing, mcp, env.git, env.io.stderr, req, res).catch((err: unknown) => {
+    handleRequest(holder, landing, mcp, plugins, env.git, env.io.stderr, req, res).catch((err: unknown) => {
       env.io.stderr.write(`serve: ${err instanceof Error ? err.message : String(err)}\n`);
       if (!res.headersSent) send(res, req.method ?? 'GET', 500, 'text/plain; charset=utf-8', 'internal error\n');
       else res.end();

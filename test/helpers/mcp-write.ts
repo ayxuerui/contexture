@@ -6,6 +6,7 @@ import { createExecFileGitRunner } from '../../src/core/git/exec.js';
 import { Mutex, type WriteDeps } from '../../src/core/mcp/sessions.js';
 import { McpView, type SyncDeps } from '../../src/core/mcp/sync.js';
 import { buildTools, type ToolContext } from '../../src/core/mcp/tools/index.js';
+import { DIST_BIN } from './dist-bin.js';
 import { makeApprovalStore, RECORDING_LOGIN, type ApprovalStore, type ApprovalStoreOptions } from './approval-store.js';
 
 /**
@@ -25,6 +26,8 @@ export interface McpWriteFixture {
   reload(): Promise<void>;
   /** Calls a tool as `email`, returning its result or throwing its refusal. */
   call(name: string, args: Record<string, unknown>, email?: string): Promise<Record<string, unknown>>;
+  /** `session_start` as `email`: the session's directory name and its store-relative root. */
+  start(label?: string, email?: string): Promise<{ session: string; root: string; branch: string }>;
 }
 
 export const MEMBER = 'a@example.com';
@@ -45,7 +48,7 @@ export async function makeMcpWriteFixture(opts: ApprovalStoreOptions = {}): Prom
     const write: WriteDeps = { ...syncDeps, git, canonicalRoot: store.root, now, recordingLogin: RECORDING_LOGIN, baseUrl: 'https://ctx-a.example.test' };
     fixture.syncDeps = syncDeps;
     fixture.write = write;
-    fixture.ctx = { view, syncDeps, write, mutex, baseUrl: 'https://ctx-a.example.test' };
+    fixture.ctx = { view, syncDeps, write, mutex, baseUrl: 'https://ctx-a.example.test', cliEntry: DIST_BIN };
   };
   const mutex = new Mutex();
   await build();
@@ -61,6 +64,9 @@ export async function makeMcpWriteFixture(opts: ApprovalStoreOptions = {}): Prom
       const tool = buildTools(fixture.ctx).find((t) => t.name === name);
       if (tool === undefined) throw new Error(`no tool ${name}`);
       return (await tool.run(args, { email, scopes: ['read', 'capture', 'edit'] })) as Record<string, unknown>;
+    },
+    async start(label?: string, email = MEMBER) {
+      return (await fixture.call('session_start', label === undefined ? {} : { label }, email)) as unknown as { session: string; root: string; branch: string };
     },
   });
   return fixture;

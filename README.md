@@ -422,16 +422,21 @@ People who never open a terminal can still use a store, from the Claude or ChatG
 
 ```yaml
 mcp:
-  readers: ["@example.com"]       # find, gather, Read, Grep, Glob
+  readers: ["@example.com"]       # find, gather, Read, Grep, Glob, ctxr
   capturers: ["a@example.com"]    # capture
-  editors: ["a@example.com"]      # Edit, Write
+  editors: ["a@example.com"]      # sessions, Edit, Write, Move, Delete, ctxr_write
 ```
 
 What a connected app gets, with no model running on the server:
 
 - **`find`** matches a phrase literally across the notes and returns each match's gloss, matching lines and a link, in path order with no score. Material not yet filed into a note comes back separately as `unfiled`. With no phrase, `find` returns the catalog as a map of the store. **`gather`** runs the retrieval pass from those notes and returns their full text along with the notes linked to and from them.
-- **`Read`, `Grep` and `Glob`** carry the names and parameters of Claude Code's own tools. Paths are store-relative. `Grep` and `Glob` run ripgrep (`rg` must be on the `PATH` of `serve`), and configuration, derived files and tool-owned folders are never read.
-- **`capture`** saves one item of outside material into the inbox as its own session pull request. **`Edit`** and **`Write`** collect a person's changes to notes in one draft pull request of their own. All of these appear on the approval page like any session, and nothing lands until a decider approves it.
+- **`Read`, `Grep` and `Glob`** carry the names and parameters of Claude Code's own tools. Paths are store-relative. `Grep` and `Glob` run ripgrep (`rg` must be on the `PATH` of `serve`). Notes, captures, `AGENTS.md`, the note templates, the house conventions, the log and the skills are readable; configuration, derived files and the paths `retrieval.exclude_paths` hides are not.
+- **`capture`** saves one item of outside material into the inbox as its own session pull request, in one call.
+- **Sessions**, for editors, work as they do for a local agent. `session_start` starts a session worktree on the server and returns its root, such as `.worktrees/session-20261023-101500-kestrel/`. `Edit`, `Write`, `Move` and `Delete` change files under that root and commit nothing; `Read`, `Grep` and `Glob` under the root read the session's uncommitted copy. `session_status` re-scans it, and `session_submit` runs `ctxr doctor` as the gate, commits as the signed-in person, pushes the named branch and opens the pull request with the title and body the agent wrote. `session_list` shows each of the person's sessions with its pull request and the decider's decision and comment, so requested changes reach them; `session_rebase` and `session_discard` do what the `ctxr session` commands of the same name do. Each tool calls the same code as its `ctxr session` command. A person sees only the sessions they started over MCP, and holds at most 20 open at once.
+- **`ctxr`** runs a read-only command such as `lint`, `doctor`, `catalog show` or `graph query` against the served commit or one of the person's sessions; **`ctxr_write`** runs a writing one such as `ingest`, `entry append` or `catalog build` inside a session. Both spawn the server's own CLI as an argument list, with no shell, a 30-second limit and the forge credentials removed from its environment, and refuse `--root` and any path outside the checkout.
+- **Never writable** over MCP, by any tool: `contexture.yaml`, the `.githooks/` directory and every other `.git*` path (a commit in a session worktree runs that worktree's hooks on the server), derived paths, the worktrees path and the managed skills path. A `ctxr_write` command that changes one anyway has the change undone and the call refused.
+
+Every session's pull request appears on the approval page like any other, and nothing lands until a decider approves it. A per-person draft from an earlier version is adopted as that person's session; its pull request stays open and landable. Each tool declares MCP annotations (read-only, destructive, idempotent), so the apps ask before `Delete` and `session_discard`.
 
 **Sign-in.** Someone connecting an app goes through the access proxy's login and then a consent page naming the app, where it will be sent back to, their email and what it may do. They are admitted only if `readers`, `capturers` or `editors` lists them. Nothing is stored on the server: client registrations, codes and 30-day tokens are all signed, and every call re-checks the configuration, so removing someone from the lists refuses their next call. With a GitHub App as the recording identity, the signing key is derived from the App's key, so rotating the App key signs everyone out. With `gh`'s own credential, people sign in again after every restart.
 
@@ -442,7 +447,21 @@ curl -i https://ctx.example.com/.well-known/oauth-authorization-server   # 200, 
 curl -i -X POST https://ctx.example.com/mcp                              # 401 with WWW-Authenticate: Bearer resource_metadata=…
 ```
 
-**Connecting.** In Claude: Settings → Connectors → *Add custom connector*, with the URL `https://ctx.example.com/mcp`. In ChatGPT, turn on developer mode and add a connector with the same URL and OAuth. Reads come from a checkout `serve` keeps for itself under `.contexture/cache/mcp/view`, brought up to date from `origin` at most once a minute. It never touches the checkout your agents work in. Each MCP request writes one line to `serve`'s stderr, naming the person, the method and the tool, but never the arguments or the results.
+**Installing the plugin.** The plugin is what gives an app the store's skills as well as its tools, so an agent in Claude or ChatGPT follows the same session practice as a local one. `serve` offers it at `https://ctx.example.com/plugin/`, a page naming two downloads, one for each app: `contexture-<store>-claude.zip` and `contexture-<store>-chatgpt.zip`. The page and both downloads need the same verified identity as the approval page, and only people the `mcp` block admits get them, so keep `/plugin/` behind the access proxy, outside the Bypass list above. Each person installs it once:
+
+- **Claude:** Customize → Plugins → *Add* → *Upload plugin*, and pick the Claude download.
+- **ChatGPT:** a workspace admin uploads the ChatGPT download for the whole workspace; without an admin, turn on developer mode and upload it there.
+
+Each plugin carries the store's skills, rendered from the same templates as the skill copies in the store under a preamble that maps every `ctxr`, `git` and `gh` step onto the server's tools, and one server entry naming `serve.base_url` and `/mcp`. It carries no credential: the app signs in through the store's own login. Its version is the CLI's version plus the commit it was built from, so download it again after upgrading `ctxr` or changing the skills. To hand the plugin out yourself, for instance to a Claude organization's or ChatGPT workspace's admin, build it from a checkout:
+
+```sh
+ctxr plugin build              # both plugins, as directories and zips, under .contexture/cache/plugin/
+ctxr plugin build --out dist/  # somewhere else
+```
+
+It refuses with exit `2`, writing nothing, on a store without an `mcp` block.
+
+**Connecting without the plugin.** In Claude: Settings → Connectors → *Add custom connector*, with the URL `https://ctx.example.com/mcp`. In ChatGPT, turn on developer mode and add a connector with the same URL and OAuth. Reads come from a checkout `serve` keeps for itself under `.contexture/cache/mcp/view`, brought up to date from `origin` at most once a minute. It never touches the checkout your agents work in. Each MCP request writes one line to `serve`'s stderr, naming the person, the method and the tool, but never the arguments or the results.
 
 ## Keeping a store current
 
@@ -506,6 +525,7 @@ To pin a value against a future default change, declare it. Nothing rewrites wha
 | `shared-stores sync \| status` | Clone and fast-forward the stores this store mounts under `shared/`, or report their state |
 | `adapters generate` | Regenerate harness outputs (`ctxr update` does this too) |
 | `serve` | Read the store in a browser |
+| `plugin build [--out <dir>]` | Build the Claude and ChatGPT plugins: the store's skills and its MCP server |
 | `update` | Bring contexture-owned files up to the installed version |
 | `version [--check]` | Report the installed version; `--check` compares it against the latest published release |
 | `verify [--portable]` | Exercise core store operations end to end |

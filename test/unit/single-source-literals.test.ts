@@ -158,6 +158,8 @@ describe('single-source-literals guard', () => {
       'core/approval/lander.ts',
       // serve-the-store-over-mcp D12: ripgrep, for the MCP surface's Grep and Glob.
       'core/mcp/ripgrep.ts',
+      // serve-the-session-lifecycle-to-chat-apps D4: the server's own CLI, for the MCP surface's ctxr and ctxr_write.
+      'core/mcp/cli-runner.ts',
       // run-the-second-opinion-from-the-cli D1: the model CLIs, from the one command that invokes them.
       'core/second-opinion/launch.ts',
     ];

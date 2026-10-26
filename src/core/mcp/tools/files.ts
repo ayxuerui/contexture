@@ -3,13 +3,13 @@ import path from 'node:path';
 import type { StoreConfig } from '../../../config/schema.js';
 import { joinBaseUrl, noteRoute } from '../../browse/page-url.js';
 import { isUnderAnyPrefix } from '../../fs/prefix.js';
-import { admitsNotePath, excludedPrefixesFor } from '../../notes/list.js';
-import { CONFIG_FILE_NAME } from '../../root.js';
-import { draftVersion, findLocalDraft } from '../drafts.js';
+import { admitsNotePath } from '../../notes/list.js';
 import { ToolRefusal } from '../jsonrpc.js';
+import { locatePath, type MemberSession } from '../member-sessions.js';
+import { ENTRY_DOCUMENT, nameablePath, normalizeStorePath, readablePath, searchExclusions } from '../paths.js';
 import { glob as ripgrepGlob, grep as ripgrepGrep, type GrepParams } from '../ripgrep.js';
 import type { WriteDeps } from '../sessions.js';
-import type { Snapshot } from '../sync.js';
+import type { McpView, Snapshot, SyncDeps } from '../sync.js';
 
 /**
  * serve-the-store-over-mcp design.md D12 (remote-access spec, *`Read`,
@@ -18,37 +18,49 @@ import type { Snapshot } from '../sync.js';
  * commit being served. Paths are store-relative (a leading `/` names the
  * store root). What these tools may never read or return is one list, used
  * both to refuse a named path and as ripgrep's exclusions.
+ *
+ * serve-the-session-lifecycle-to-chat-apps D1, D5 (remote-access spec,
+ * *`Read`, `Grep` and `Glob` read the served commit or a member's own
+ * session*): a path under the root of one of the caller's sessions reads that
+ * session's working tree, uncommitted work included; any other path reads the
+ * served commit. The readable set widens to the templates, house conventions,
+ * log and skills the owned skills read (`paths.ts`).
  */
 
 export const READ_DEFAULT_LIMIT = 2000;
 const READ_MAX_LINE_CHARS = 2000;
 const GREP_MAX_LINES = 1000;
-/** The store's entry document, readable though it is not a note. */
-const ENTRY_DOCUMENT = 'AGENTS.md';
 
-/** Everything these tools hide: the retrieval exclusions except the capture tier, plus configuration and `.git`. */
-export function hiddenPrefixes(config: StoreConfig): string[] {
-  const captureRoot = config.ingest.capture_root.replace(/\/+$/, '');
-  return [...excludedPrefixesFor(config).filter((p) => p.replace(/\/+$/, '') !== captureRoot), CONFIG_FILE_NAME, '.git'];
-}
+export { readablePath } from '../paths.js';
 
 /** A caller's path as a store-relative one; refused when it leaves the store or is hidden. `''` is the store root. */
 export function resolveStorePath(input: string, config: StoreConfig): string {
-  const cleaned = input.trim().replace(/\\/g, '/');
-  const normalized = path.posix.normalize(`/${cleaned}`).replace(/^\/+/, '').replace(/\/+$/, '');
-  if (normalized === '..' || normalized.startsWith('../') || cleaned.split('/').includes('..')) {
-    throw new ToolRefusal('mcp.path_outside_store', `"${input}" is outside the store.`);
-  }
-  if (normalized !== '' && isUnderAnyPrefix(normalized, hiddenPrefixes(config))) {
+  const normalized = normalizeStorePath(input);
+  if (!nameablePath(normalized, config)) {
     throw new ToolRefusal('mcp.path_not_readable', `"${normalized}" is not something these tools read (configuration, derived files and tool-owned folders are not).`);
   }
   return normalized;
 }
 
-/** What `Read` answers for, as one predicate: a note, a markdown capture, or the entry document. Grep and Glob return nothing else. */
-export function readablePath(rel: string, config: StoreConfig): boolean {
-  if (admitsNotePath(rel, config) || rel === ENTRY_DOCUMENT) return true;
-  return rel.endsWith('.md') && isUnderAnyPrefix(rel, [config.ingest.capture_root]);
+/** Where a read is answered from: the served commit's view, or one of the caller's sessions. */
+export type ReadTarget = { kind: 'view'; rel: string } | { kind: 'session'; session: MemberSession; rel: string };
+
+/** The read target for a caller's path; a path under another member's (or no) session is hidden like the worktrees path. */
+export async function readTarget(write: WriteDeps, email: string, input: string, config: StoreConfig): Promise<ReadTarget> {
+  const normalized = normalizeStorePath(input);
+  const located = await locatePath(write, email, normalized);
+  if (located.kind === 'foreign') throw new ToolRefusal('mcp.path_not_readable', `"${normalized}" is not something these tools read (configuration, derived files and tool-owned folders are not).`);
+  if (!nameablePath(located.rel, config)) {
+    throw new ToolRefusal('mcp.path_not_readable', `"${normalized}" is not something these tools read (configuration, derived files and tool-owned folders are not).`);
+  }
+  return located;
+}
+
+/** What the file tools need for a read: the view, and the write side that knows the caller's sessions. */
+export interface FileContext {
+  view: McpView;
+  syncDeps: SyncDeps;
+  write: WriteDeps;
 }
 
 // ---- Read ----------------------------------------------------------------------
@@ -87,9 +99,10 @@ export interface ReadResult {
   total_lines: number;
   first_line: number;
   last_line: number;
-  draft: boolean;
+  /** The session whose working tree was read; null for the served commit. */
+  session: string | null;
   capture: boolean;
-  /** The note's page on the browsing surface, for citing; null for a capture or the entry document. */
+  /** The note's page on the browsing surface, for citing; null for a capture, a session's copy, or anything not a note. */
   url: string | null;
 }
 
@@ -105,40 +118,45 @@ function numbered(text: string, offset: number | undefined, limit: number | unde
   return { content, total: lines.length, first, last: first + slice.length - 1 };
 }
 
-export async function readTool(snapshot: Snapshot, write: WriteDeps, email: string, args: ReadArgs): Promise<ReadResult> {
-  const config = snapshot.store.config;
-  const rel = resolveStorePath(args.file_path, config);
-  const captureRoot = config.ingest.capture_root;
-  const isCapture = isUnderAnyPrefix(rel, [captureRoot]);
-  const admitted = admitsNotePath(rel, config);
-
-  const draft = admitted ? await findLocalDraft(write, email) : null;
-  const drafted = draft === null ? null : await draftVersion(write, draft, rel);
-  if (drafted !== null) {
-    const n = numbered(drafted, args.offset, args.limit);
-    return { file_path: rel, content: n.content, total_lines: n.total, first_line: n.first, last_line: n.last, draft: true, capture: false, url: null };
+/** One file under `root`, numbered; refused unless it is readable, a regular file, and inside `root` once resolved. */
+async function readUnder(root: string, rel: string, config: StoreConfig, shown: string, args: ReadArgs): Promise<{ text: string; n: ReturnType<typeof numbered> }> {
+  if (!readablePath(rel, config)) {
+    throw new ToolRefusal('mcp.path_not_readable', `"${shown}" is not a note, a capture, the entry document, a template, a house convention, the log or a skill, so it cannot be read here.`);
   }
-
-  if (!admitted && !isCapture && rel !== ENTRY_DOCUMENT) {
-    throw new ToolRefusal('mcp.path_not_readable', `"${rel}" is not a note, a capture or the entry document, so it cannot be read here.`);
-  }
-  const absolute = path.join(snapshot.store.root, rel);
+  const absolute = path.join(root, rel);
   const info = await lstat(absolute).catch(() => null);
-  if (info === null || (!info.isFile() && !info.isSymbolicLink())) throw new ToolRefusal('mcp.file_not_found', `"${rel}" does not exist in the store.`);
+  if (info === null || (!info.isFile() && !info.isSymbolicLink())) throw new ToolRefusal('mcp.file_not_found', `"${shown}" does not exist.`);
   // A link is never followed: a committed symlink named like a note could otherwise read anything the server can.
-  if (info.isSymbolicLink()) throw new ToolRefusal('mcp.path_not_readable', `"${rel}" is a symbolic link, which these tools do not follow.`);
+  if (info.isSymbolicLink()) throw new ToolRefusal('mcp.path_not_readable', `"${shown}" is a symbolic link, which these tools do not follow.`);
   const real = await realpath(absolute);
-  const root = await realpath(snapshot.store.root);
-  if (path.relative(root, real).startsWith('..')) throw new ToolRefusal('mcp.path_outside_store', `"${rel}" is outside the store.`);
-  const n = numbered(await readFile(absolute, 'utf8'), args.offset, args.limit);
-  const url = admitted ? joinBaseUrl(write.baseUrl, noteRoute(rel)) : null;
-  return { file_path: rel, content: n.content, total_lines: n.total, first_line: n.first, last_line: n.last, draft: false, capture: isCapture, url };
+  if (path.relative(await realpath(root), real).startsWith('..')) throw new ToolRefusal('mcp.path_outside_store', `"${shown}" is outside the store.`);
+  const text = await readFile(absolute, 'utf8');
+  return { text, n: numbered(text, args.offset, args.limit) };
+}
+
+export async function readTool(ctx: FileContext, email: string, args: ReadArgs): Promise<ReadResult> {
+  const target = await readTarget(ctx.write, email, args.file_path, ctx.write.config);
+  if (target.kind === 'session') {
+    const config = ctx.write.config;
+    const shown = `${target.session.root}${target.rel}`;
+    const { n } = await readUnder(target.session.ref.storeRoot, target.rel, config, shown, args);
+    const capture = isUnderAnyPrefix(target.rel, [config.ingest.capture_root]);
+    return { file_path: shown, content: n.content, total_lines: n.total, first_line: n.first, last_line: n.last, session: target.session.name, capture, url: null };
+  }
+  return ctx.view.read(ctx.syncDeps, async (snapshot) => {
+    const config = snapshot.store.config;
+    const rel = resolveStorePath(target.rel, config);
+    const { n } = await readUnder(snapshot.store.root, rel, config, rel, args);
+    const capture = isUnderAnyPrefix(rel, [config.ingest.capture_root]);
+    const url = admitsNotePath(rel, config) ? joinBaseUrl(ctx.write.baseUrl, noteRoute(rel)) : null;
+    return { file_path: rel, content: n.content, total_lines: n.total, first_line: n.first, last_line: n.last, session: null, capture, url };
+  });
 }
 
 export function renderRead(data: unknown): string {
-  const r = data as ReadResult & { store: { head: string } };
+  const r = data as ReadResult;
   const notes: string[] = [];
-  if (r.draft) notes.push('This is your pending draft of this note (awaiting approval), not the version in the store.');
+  if (r.session !== null) notes.push(`This is the working-tree copy in your session ${r.session}, including any change not yet submitted; it is not yet in the store.`);
   if (r.capture) notes.push('This is a capture: raw material not yet filed into a note. Do not present it as what the store says.');
   if (r.url !== null) notes.push(`${r.file_path}, at ${r.url}. Include this link when you cite the note.`);
   if (r.last_line < r.total_lines) notes.push(`Showing lines ${r.first_line}–${r.last_line} of ${r.total_lines}.`);
@@ -204,51 +222,79 @@ export interface GrepResult {
   output_mode: string;
   lines: string[];
   omitted: number;
-  /** Inbox files on session branches with an open pull request that match: captures awaiting approval. */
+  /** The session searched; null for the served commit. */
+  session: string | null;
+  /** Inbox files on session branches with an open pull request that match: captures awaiting approval. Served commit only. */
   awaiting_approval: { path: string; branch: string; lines: string[] }[];
 }
 
-export async function grepTool(snapshot: Snapshot, args: GrepArgs): Promise<GrepResult> {
-  const config = snapshot.store.config;
-  const searchPath = args.path === undefined ? null : resolveStorePath(args.path, config) || null;
-  const outcome = await ripgrepGrep(snapshot.store.root, args, searchPath, hiddenPrefixes(config));
-  if (outcome.kind === 'error') throw new ToolRefusal('mcp.search_failed', `The search could not run: ${outcome.message}.`);
-  // design.md D12: Grep returns only what Read would read, so it never prints a file Read refuses.
-  const entries = outcome.kind === 'ok' ? outcome.entries.filter((e) => e.path === null || readablePath(e.path, config)) : [];
-  const all: string[] = [];
-  for (const e of entries) {
-    if (e.path === null) {
-      if (all.length > 0 && all[all.length - 1] !== '--') all.push(e.rest ?? '--');
-    } else if (e.rest === null) all.push(e.path);
-    else all.push(`${e.path}${/^\d+[-]/.test(e.rest) ? '-' : ':'}${e.rest}`);
-  }
-  while (all[all.length - 1] === '--') all.pop();
-  const start = args.offset ?? 0;
-  const limit = Math.min(args.head_limit ?? GREP_MAX_LINES, GREP_MAX_LINES);
-  const lines = all.slice(start, start + limit);
+/** Where a search runs: a root on disk, the store-relative path inside it, and the prefix its results are shown under. */
+interface SearchTarget {
+  root: string;
+  searchPath: string | null;
+  config: StoreConfig;
+  /** `''` for the served commit; the session's root for a session. */
+  shownPrefix: string;
+  session: MemberSession | null;
+  pending: Snapshot['pending'];
+}
 
-  // design.md D12: the duplicate `find` reveals, revealed here too. JavaScript's engine stands in for ripgrep's
-  // over a handful of small files; a pattern it cannot compile simply matches none of them.
-  const awaiting: GrepResult['awaiting_approval'] = [];
-  let regex: RegExp | null = null;
-  try {
-    regex = new RegExp(args.pattern, args['-i'] === true ? 'i' : '');
-  } catch {
-    regex = null;
-  }
-  if (regex !== null) {
-    for (const capture of snapshot.pending) {
-      if (searchPath !== null && !isUnderAnyPrefix(capture.path, [searchPath])) continue;
-      const matching = capture.text
-        .split('\n')
-        .map((line, i) => ({ line, n: i + 1 }))
-        .filter(({ line }) => regex!.test(line))
-        .slice(0, 3)
-        .map(({ line, n }) => `${n}:${line}`);
-      if (matching.length > 0) awaiting.push({ path: capture.path, branch: capture.branch, lines: matching });
+/** Runs `fn` over the search target a `path` argument names: a session of the caller's, else the served commit. */
+async function searching<T extends object>(ctx: FileContext, email: string, input: string | undefined, fn: (target: SearchTarget) => Promise<T>): Promise<T> {
+  if (input !== undefined) {
+    const target = await readTarget(ctx.write, email, input, ctx.write.config);
+    if (target.kind === 'session') {
+      return fn({ root: target.session.ref.storeRoot, searchPath: target.rel || null, config: ctx.write.config, shownPrefix: target.session.root, session: target.session, pending: [] });
     }
   }
-  return { output_mode: args.output_mode ?? 'files_with_matches', lines, omitted: Math.max(0, all.length - start - lines.length), awaiting_approval: awaiting };
+  return ctx.view.read(ctx.syncDeps, (snapshot) => {
+    const config = snapshot.store.config;
+    const searchPath = input === undefined ? null : resolveStorePath(input, config) || null;
+    return fn({ root: snapshot.store.root, searchPath, config, shownPrefix: '', session: null, pending: snapshot.pending });
+  });
+}
+
+export async function grepTool(ctx: FileContext, email: string, args: GrepArgs): Promise<GrepResult> {
+  return searching(ctx, email, args.path, async ({ root, searchPath, config, shownPrefix, session, pending }) => {
+    const outcome = await ripgrepGrep(root, args, searchPath, searchExclusions(config));
+    if (outcome.kind === 'error') throw new ToolRefusal('mcp.search_failed', `The search could not run: ${outcome.message}.`);
+    // design.md D12: Grep returns only what Read would read, so it never prints a file Read refuses.
+    const entries = outcome.kind === 'ok' ? outcome.entries.filter((e) => e.path === null || readablePath(e.path, config)) : [];
+    const all: string[] = [];
+    for (const e of entries) {
+      if (e.path === null) {
+        if (all.length > 0 && all[all.length - 1] !== '--') all.push(e.rest ?? '--');
+      } else if (e.rest === null) all.push(`${shownPrefix}${e.path}`);
+      else all.push(`${shownPrefix}${e.path}${/^\d+[-]/.test(e.rest) ? '-' : ':'}${e.rest}`);
+    }
+    while (all[all.length - 1] === '--') all.pop();
+    const start = args.offset ?? 0;
+    const limit = Math.min(args.head_limit ?? GREP_MAX_LINES, GREP_MAX_LINES);
+    const lines = all.slice(start, start + limit);
+
+    // design.md D12: the duplicate `find` reveals, revealed here too. JavaScript's engine stands in for ripgrep's
+    // over a handful of small files; a pattern it cannot compile simply matches none of them.
+    const awaiting: GrepResult['awaiting_approval'] = [];
+    let regex: RegExp | null = null;
+    try {
+      regex = new RegExp(args.pattern, args['-i'] === true ? 'i' : '');
+    } catch {
+      regex = null;
+    }
+    if (regex !== null) {
+      for (const capture of pending) {
+        if (searchPath !== null && !isUnderAnyPrefix(capture.path, [searchPath])) continue;
+        const matching = capture.text
+          .split('\n')
+          .map((line, i) => ({ line, n: i + 1 }))
+          .filter(({ line }) => regex!.test(line))
+          .slice(0, 3)
+          .map(({ line, n }) => `${n}:${line}`);
+        if (matching.length > 0) awaiting.push({ path: capture.path, branch: capture.branch, lines: matching });
+      }
+    }
+    return { output_mode: args.output_mode ?? 'files_with_matches', lines, omitted: Math.max(0, all.length - start - lines.length), session: session?.name ?? null, awaiting_approval: awaiting };
+  });
 }
 
 export function renderGrep(data: unknown): string {
@@ -284,13 +330,13 @@ export function parseGlobArgs(args: Record<string, unknown>): GlobArgs {
   return { pattern: args.pattern, ...(typeof args.path === 'string' ? { path: args.path } : {}) };
 }
 
-export async function globTool(snapshot: Snapshot, args: GlobArgs): Promise<{ files: string[]; omitted: number }> {
-  const config = snapshot.store.config;
-  const searchPath = args.path === undefined ? null : resolveStorePath(args.path, config) || null;
-  const outcome = await ripgrepGlob(snapshot.store.root, args.pattern, searchPath, hiddenPrefixes(config));
-  if (outcome.kind === 'error') throw new ToolRefusal('mcp.search_failed', `The file listing could not run: ${outcome.message}.`);
-  const files = outcome.kind === 'ok' ? outcome.entries.map((e) => e.path).filter((p): p is string => p !== null && readablePath(p, config)) : [];
-  return { files: files.slice(0, GREP_MAX_LINES), omitted: Math.max(0, files.length - GREP_MAX_LINES) };
+export async function globTool(ctx: FileContext, email: string, args: GlobArgs): Promise<{ files: string[]; omitted: number; session: string | null }> {
+  return searching(ctx, email, args.path, async ({ root, searchPath, config, shownPrefix, session }) => {
+    const outcome = await ripgrepGlob(root, args.pattern, searchPath, searchExclusions(config));
+    if (outcome.kind === 'error') throw new ToolRefusal('mcp.search_failed', `The file listing could not run: ${outcome.message}.`);
+    const files = outcome.kind === 'ok' ? outcome.entries.map((e) => e.path).filter((p): p is string => p !== null && readablePath(p, config)) : [];
+    return { files: files.slice(0, GREP_MAX_LINES).map((p) => `${shownPrefix}${p}`), omitted: Math.max(0, files.length - GREP_MAX_LINES), session: session?.name ?? null };
+  });
 }
 
 export function renderGlob(data: unknown): string {
