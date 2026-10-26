@@ -24,9 +24,9 @@ refused.
 
 The upgrade skill also has a gap at its one install step. Its `install_writable: false` branch
 says the executable "is managed by whatever installed it" and names a newer container image as the
-remedy. That was right while the image baked `ctxr` in. In the runtime image the agents' `ctxr` is
-in the home and writable, and the remaining unwritable case, on any machine, is a root-owned npm
-prefix: the remedy is a prefix in the home, which the skill never names.
+remedy. That was right while the image baked `ctxr` in. The runtime image now carries no `ctxr`
+at all -- it is installed into the home -- and the remaining unwritable case, on any machine, is a
+root-owned npm prefix: the remedy is a prefix in the home, which the skill never names.
 
 ## What Changes
 

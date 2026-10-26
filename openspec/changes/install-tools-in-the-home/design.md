@@ -91,17 +91,12 @@ nothing on the session or update paths does.
 
 ## Risks / Trade-offs
 
-- **A session upgrade can outrun `serve`.** In the runtime image the agents' `ctxr` is in the home
-  and `serve` runs the image's. contexture-images guards its own daily update against a release
-  whose store schema is above the image's ctxr. `ctxr-upgrade`'s `npm install -g ctxr-cli@latest`
-  does not: a session could install a release that migrates the store's schema past what `serve`
-  reads. The schema has been 10 from 0.20.0 to 0.34.0, so this is rare, and this change does not
-  address it. See the open question.
+- **A session upgrade can take a ctxr ahead of the store's schema.** `ctxr-upgrade` installs
+  `ctxr-cli@latest`; when that release raises the schema, the store is refused until its migration
+  pull request merges. This is the same risk a deployment that updates ctxr on a schedule takes
+  (contexture-images' runtime image does, in both its agents and `serve` containers), and it is
+  accepted there and here: schema-raising releases are rare (10 from 0.20.0 to 0.34.0), the fix is
+  merging one pull request, and the skill already re-renders the store through a pull request in
+  its own steps. A schema ceiling the environment declares was considered and declined; if it is
+  ever wanted, the limit belongs to the store's readers, not to one environment.
 - **`AGENTS.md` size.** Two bullets, no example block.
-
-## Open Questions
-
-- Should `ctxr version --check` (and so `ctxr-upgrade`) honor a schema ceiling the environment
-  declares, for example a `CONTEXTURE_SCHEMA_CEILING` the runtime image sets to its own ctxr's
-  `SUPPORTED_SCHEMA_VERSION`, reporting the newest release at or below it? It would close the risk
-  above at the cost of a deployment-shaped variable in core. Left for a separate change if wanted.
