@@ -55,3 +55,21 @@ Each catalog section SHALL have a configured maximum size in `contexture.yaml`. 
 #### Scenario: A changed note is flagged for gloss review
 - **WHEN** a note's content changes materially after its catalog gloss was last confirmed
 - **THEN** `catalog check --stale` lists that note's entry as needing gloss review
+
+### Requirement: Reading a section includes the same section of each mounted store
+`ctxr catalog show --section <path-prefix>` SHALL output the mounting store's own entries under that prefix, then,
+for each present mount that joins the read view (per shared-stores), that mount's entries under the same prefix,
+read from the mount's own tracked catalog, under a heading naming the mount, each path prefixed by the mount's
+location. A mount with no entries under that prefix SHALL contribute nothing.
+
+#### Scenario: A section reads across the store and its mounts
+- **WHEN** `ctx-a` and its mount `ctx-b` both have catalog entries under `work`, and `ctxr catalog show --section work` runs in `ctx-a`
+- **THEN** the output lists `ctx-a`'s entries, then `ctx-b`'s under a heading naming `ctx-b`, each of the latter with a path beginning `shared/ctx-b/`
+
+### Requirement: Reading a mounted store's catalog changes no catalog
+`ctxr catalog show` SHALL NOT build, write, or correct a mounted store's catalog, and SHALL NOT copy a mounted
+store's entries into the mounting store's catalog.
+
+#### Scenario: Reading a section writes nothing
+- **WHEN** `ctxr catalog show` runs in `ctx-a`
+- **THEN** no file in `ctx-a` or in any mount changes
