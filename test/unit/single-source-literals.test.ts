@@ -162,6 +162,8 @@ describe('single-source-literals guard', () => {
       'core/mcp/cli-runner.ts',
       // run-the-second-opinion-from-the-cli D1: the model CLIs, from the one command that invokes them.
       'core/second-opinion/launch.ts',
+      // install-tools-in-the-home D4: `npm prefix -g`, where `npm install -g` writes.
+      'core/npm-prefix.ts',
     ];
     const hits = new Set([
       ...filesContainingSubstring("'node:child_process'", allow),

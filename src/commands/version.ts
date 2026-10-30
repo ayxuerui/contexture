@@ -3,7 +3,7 @@ import type { RunEnv } from '../core/env.js';
 import type { Finding } from '../core/envelope.js';
 import { ExitCode } from '../core/exit-codes.js';
 import type { InstallKind } from '../core/install-kind.js';
-import { isGlobalInstallWritable, resolveInstallLocation } from '../core/install-kind.js';
+import { isGlobalInstallWritable, npmGlobalPrefix, resolveInstallLocation } from '../core/install-kind.js';
 import { ownPackageName } from '../core/registry.js';
 import { compareRelease } from '../core/version-check.js';
 import { CLI_VERSION } from '../version.js';
@@ -45,13 +45,16 @@ export interface VersionFlags {
  * explicitly is asking about now.
  */
 export async function execute(env: RunEnv, flags: VersionFlags = {}): Promise<CommandOutcome<VersionData>> {
-  const install = resolveInstallLocation(env.execPath);
+  // Global means "inside the prefix `npm install -g` writes to", so npm's prefix is asked first
+  // (install-tools-in-the-home D4); Node's own prefix stands in only when it cannot be.
+  const npmPrefix = await npmGlobalPrefix(env.env);
+  const install = resolveInstallLocation(env.execPath, npmPrefix);
   const base: VersionData = {
     version: CLI_VERSION,
     install_path: install.path,
     install_kind: install.kind,
     ...(install.kind === 'global'
-      ? { install_writable: await isGlobalInstallWritable(install.path, env.execPath) }
+      ? { install_writable: await isGlobalInstallWritable(install.path, env.execPath, npmPrefix) }
       : {}),
   };
 
