@@ -21,6 +21,11 @@ Draw a diagram when structure, flow or sequence would take a paragraph: fenced `
 - Scratch and intermediate files go in `__SCRATCH_PATH__`, never the store or `$HOME`. Deliverables are not scratch: a page goes under `__PUBLISH_PATH__`, a note into the store.
 - Notes carry no access control — whoever reads the store reads all of it. Place sensitive material deliberately, and say in the note when it must not be quoted onward.
 
+## Installing tools
+
+- Install a tool you need as your own user, with its publisher's own installer, into your home — never with `sudo`, and never into the store.
+- For an npm package, `npm install -g` is right when `npm config get prefix` is in your home. When it is not and the install is refused, report that and stop: where npm installs is the operator's decision.
+
 ## The store log
 
 `__LOG_PATH__` is append-only: after an ingest, a lint pass, or a structural change, add `## [YYYY-MM-DD] <kind> | <title>` and a few bullets. At session start, if its last `lint` entry is more than seven days old or missing, suggest a lint pass.
