@@ -1,0 +1,70 @@
+## Context
+
+See proposal.md for why. The pieces already exist:
+
+- `core/git/fast-forward.ts` holds the canonical-sync rule (on the default branch, clean, not diverged; otherwise
+  report and leave alone), shared by `ctxr land` and `ctxr shared-stores sync`.
+- `ctxr land` fetches through `remoteGit`, which authenticates as the GitHub App when App credentials are in the
+  environment, and otherwise uses the git credential the host already has.
+- `core/approval/lander.ts` runs `ctxr land --pending` as a child process: once 10 seconds after start, then every
+  5 minutes, never two at once, output prefixed `land:` to stderr. `serve` starts it only while the loaded
+  configuration declares `change_approval` with `land` absent or `auto`.
+- Landing holds a lock in the repository's git directory, so a person's `ctxr land` and the server's sweep never race.
+
+## Goals / Non-Goals
+
+**Goals:**
+- Every running `serve` follows its store's default branch within one interval, approval or not.
+- One number decides how fresh a store is served.
+- No second scheduler, and no new way of authenticating.
+
+**Non-Goals:** see the proposal's Non-goals.
+
+## Decisions
+
+### D1. The sync is a command, `ctxr sync`, run as a child like landing
+
+**Case for syncing in-process inside `serve`:** no child process, and no new command to document. **Why a
+command:** the runner already isolates landing in a child process, so a hung fetch or a crash never takes the server
+down; the sync gets the same isolation for free. The command also stands on its own: an agents container's timer
+(the `contexture-images` side of keeping agents current) or a person can run exactly what the server runs.
+
+### D2. One timer runs one store-update run: landing when landing is on, sync otherwise
+
+**Case for two timers** (the landing sweep as today, plus a separate sync timer): no change to the landing path.
+**Why one:** two runs would fetch and fast-forward the same clone and could interleave with a merge. One run at a time
+removes that, and landing already ends with the canonical sync, so it subsumes a sync run. `ctxr sync` also takes
+landing's repository lock, so a person's `ctxr land` and a server's `ctxr sync` never race either.
+
+### D3. `serve.sync_minutes` defaults to 5, on for every store
+
+**Case for an opt-in key with no default** (the convention for mechanisms a store must choose): a store that never
+asked starts fetching from the forge every five minutes. **Why a default:** serving a store as it was on the day it
+was cloned is the bug, not a choice anyone makes, and every store that runs `serve` wants its content current. Five
+is today's landing interval, so a store with approval sees no change, and a shipped default follows the release.
+
+### D4. The command is named `ctxr sync`
+
+**Case for `ctxr canonical sync` or `ctxr store sync`:** they say what is synced. **Why `ctxr sync`:** at the point
+of use, in a terminal or a timer, it reads as "bring this store up to date", which is what it does. `ctxr
+shared-stores sync` stays distinct by its group name.
+
+### D5. The first run starts within a minute
+
+The lander's first sweep runs 10 seconds after start today; the runner keeps that, and the spec says "within one
+minute" so a slow start is not a violation.
+
+## Risks / Trade-offs
+
+- **[A `serve` with no forge credential fails every run]** Without App credentials or a host credential, a private
+  store's fetch fails each interval. → It fails loudly on stderr, prefixed, every interval; requests are unaffected.
+  The `.docker` READMEs name the App as the credential `serve` uses.
+- **[Network activity on every store]** One fetch per store per interval. → Five minutes is what landing stores
+  already do; `serve.sync_minutes` can lengthen it.
+- **[A clone with local work never updates]** → Reported on every run as the reason, exactly as landing does; nothing
+  is forced.
+
+## Migration Plan
+
+None. Stores without the key get the 5-minute default, and stores without `change_approval` start being synced on
+the next `serve` start after the release. Rollback is the previous release.
