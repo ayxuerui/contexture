@@ -54,6 +54,37 @@ shared-stores sync` stays distinct by its group name.
 The lander's first sweep runs 10 seconds after start today; the runner keeps that, and the spec says "within one
 minute" so a slow start is not a violation.
 
+### D6. Pull request previews are fetched when opened, at the publishing store's address
+
+**Case for previewing at the writer's own store** (your agent's `serve`, which can reach the session worktree in your
+container): no fetch at all. **Why the publishing store:** the other deciders can read only that store's address, a
+preview must be byte-identical to what `/publish/` will serve, and a page's relative links resolve against the store
+that publishes it. Previews are addressed by pull request number, which the approval pages and `ctxr session submit`
+already report, rather than by branch name, which contains slashes and can be renamed.
+
+### D7. A GitHub webhook, used only as a hint, with every other mechanism kept as fallback
+
+**Case against a webhook** (the first draft held it off): a route that must be reachable without Access, a secret
+to manage, and webhook settings per repository. **Why do it:** the route does nothing but start work `serve` already
+does on its own timer, and it trusts nothing in the delivery beyond "branch X changed", reading every change from the
+forge. A forged delivery that somehow passed the signature check costs one extra fetch. In return, merged pages are
+served within seconds and previews are ready before the link is opened. The timer and on-demand fetching stay
+because GitHub does not retry a failed delivery.
+
+### D8. Per-repository webhooks now; the App's single webhook with the single host service
+
+**Case for the App's webhook now:** one setting covers every store, and the App is already installed on all of them.
+**Why per repository:** an App has one webhook URL, and today each store has its own `serve`, so one receiver would
+have to forward to the others. Each repository's webhook points at its own `serve` until the stores share one host
+service, which then takes the App's webhook.
+
+### D9. The webhook secret lives in the environment, and Access is bypassed for exactly one path
+
+The secret is read from `CONTEXTURE_WEBHOOK_SECRET` or `CONTEXTURE_WEBHOOK_SECRET_FILE`, like the App key, never from
+`contexture.yaml`, which is committed. GitHub cannot pass Cloudflare Access, so each store's hostname gets an Access
+bypass for exactly `/hooks/github`, the same shape as the existing `/mcp` bypass on `brain.ruixue.ai`; the signature
+check is that route's control.
+
 ## Risks / Trade-offs
 
 - **[A `serve` with no forge credential fails every run]** Without App credentials or a host credential, a private
@@ -61,6 +92,8 @@ minute" so a slow start is not a violation.
   The `.docker` READMEs name the App as the credential `serve` uses.
 - **[Network activity on every store]** One fetch per store per interval. → Five minutes is what landing stores
   already do; `serve.sync_minutes` can lengthen it.
+- **[The Access bypass is widened by mistake]** A bypass broader than `/hooks/github` would expose the store. →
+  The README names the exact path; a deploy check curls `/` and `/notes/` from outside and expects a redirect to Access.
 - **[A clone with local work never updates]** → Reported on every run as the reason, exactly as landing does; nothing
   is forced.
 

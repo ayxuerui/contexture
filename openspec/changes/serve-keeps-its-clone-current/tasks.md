@@ -18,8 +18,22 @@
 - [ ] 3.3 Integration tests: a store without `change_approval` serves a change merged on the origin after one interval; a store with approval runs only landing; a failing run leaves routes unchanged
 - [ ] 3.4 Run `npx vitest run -t "serve"` and confirm it exits 0
 
-## 4. Docs and end to end
+## 4. Pull request previews
 
-- [ ] 4.1 README: `ctxr sync` in the command reference; the serving section says `serve` follows the default branch every `serve.sync_minutes`
-- [ ] 4.2 Run `npm run build && npx vitest run` and confirm both exit 0
-- [ ] 4.3 Run `openspec validate serve-keeps-its-clone-current --strict` and confirm it reports the change valid
+- [ ] 4.1 Add `/preview/pull/<number>/` to `serve`: read the pull request's head from the forge (reusing it for at most 15 seconds), fetch it into a private ref namespace when missing, and serve only published pages from that commit; `404` for a closed or unknown pull request
+- [ ] 4.2 Have `ctxr session submit` and the approval pages report the `/preview/pull/<number>/` address for a store with `serve.base_url`
+- [ ] 4.3 Integration tests against the fake forge: a page from a branch pushed elsewhere previews byte-identical to `/publish/`; a new push shows after the reuse window; a closed pull request is `404`; notes stay unaddressable
+- [ ] 4.4 Run `npx vitest run -t "preview"` and confirm it exits 0
+
+## 5. The webhook
+
+- [ ] 5.1 Add `POST /hooks/github`: present only with `CONTEXTURE_WEBHOOK_SECRET` or `CONTEXTURE_WEBHOOK_SECRET_FILE`; verify `X-Hub-Signature-256` in constant time; `401` otherwise; a push to the default branch triggers the store-update runner, any other push fetches that branch
+- [ ] 5.2 Update the read-only-methods guard to admit that `POST` only with a secret
+- [ ] 5.3 Integration tests: signed default-branch push starts a run; signed branch push prefetches; unsigned and wrongly signed deliveries do nothing; without a secret the route is `405`
+- [ ] 5.4 Run `npx vitest run -t "webhook"` and confirm it exits 0
+
+## 6. Docs and end to end
+
+- [ ] 6.1 README: `ctxr sync` in the command reference; the serving section covers the timer, pull request previews, and the webhook with its repository setting, its secret, and the exact Access bypass
+- [ ] 6.2 Run `npm run build && npx vitest run` and confirm both exit 0
+- [ ] 6.3 Run `openspec validate serve-keeps-its-clone-current --strict` and confirm it reports the change valid
