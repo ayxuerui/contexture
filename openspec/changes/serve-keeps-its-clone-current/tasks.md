@@ -44,5 +44,5 @@
 ## 7. Docs and end to end
 
 - [x] 7.1 README: `ctxr sync` in the command reference; the serving section covers the timer, pull request previews, and the webhook with its repository setting, its secret, and the exact Access bypass
-- [ ] 7.2 Run `npm run build && npx vitest run` and confirm both exit 0
-- [ ] 7.3 Run `openspec validate serve-keeps-its-clone-current --strict` and confirm it reports the change valid
+- [x] 7.2 Run `npm run build && npx vitest run` and confirm both exit 0
+- [x] 7.3 Run `openspec validate serve-keeps-its-clone-current --strict` and confirm it reports the change valid
