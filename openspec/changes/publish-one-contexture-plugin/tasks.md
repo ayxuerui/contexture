@@ -22,8 +22,8 @@
 
 ## 5. Whole suite and release
 
-- [ ] 5.1 `npm run typecheck && npm run build && npm test` exit 0; README "Connecting chat apps" rewritten for the marketplace
-- [ ] 5.2 The release checklist (release PR) runs `npm run plugin` with the version bump
+- [x] 5.1 `npm run typecheck && npm run build && npm test` exit 0; README "Connecting chat apps" rewritten for the marketplace
+- [x] 5.2 The release checklist (release PR) runs `npm run plugin` with the version bump
 
 ## 6. Real clients (operator checkpoint)
 
