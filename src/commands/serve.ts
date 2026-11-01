@@ -425,7 +425,8 @@ async function approvalServer(env: RunEnv, store: Store): Promise<ApprovalServer
     forgeFor: storeForges(env),
     env: env.env,
     verifier: createIdentityVerifier(approval.identity),
-    git: env.git,
+    // It fetches into the shared clone and its mounts, and renders diffs, next to the App key: no repository hooks or drivers.
+    git: hardenGit(env.git),
     now: () => env.now(),
   };
 }
@@ -509,6 +510,8 @@ export async function execute(env: RunEnv, store: Store, flags: ServeFlags): Pro
   const landing = createStoreUpdateControl(env, store.config, store.root);
   const mcp = new McpSurface({ git: env.git, canonicalRoot: store.root, env: env.env, now: () => env.now(), log: (line) => env.io.stderr.write(`${line}\n`) });
   const plugins = new PluginDownloads(env.git);
+  // Routes run git in the clone the agent shares (diffs, logs): no repository hooks or drivers there either.
+  const routeGit = hardenGit(env.git);
   const pulls = new PullPreviews({ git: hardenGit(env.git), env: env.env, now: () => env.now(), forgeFor: storeForge(env) });
   // Stopping serve stops a store-update run in progress; landing and syncing are resumable, so the next start finishes it.
   const shutdown = (signal: NodeJS.Signals): void => {
@@ -517,7 +520,7 @@ export async function execute(env: RunEnv, store: Store, flags: ServeFlags): Pro
   process.once('SIGTERM', shutdown);
   process.once('SIGINT', shutdown);
   const server = createServer((req, res) => {
-    handleRequest(holder, landing, mcp, plugins, env.git, env.io.stderr, pulls, webhookSecret, req, res).catch((err: unknown) => {
+    handleRequest(holder, landing, mcp, plugins, routeGit, env.io.stderr, pulls, webhookSecret, req, res).catch((err: unknown) => {
       env.io.stderr.write(`serve: ${err instanceof Error ? err.message : String(err)}\n`);
       if (!res.headersSent) send(res, req.method ?? 'GET', 500, 'text/plain; charset=utf-8', 'internal error\n');
       else res.end();
