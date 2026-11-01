@@ -24,7 +24,7 @@ import { createZip } from './zip.js';
  * configuration, with a README and contexture's license, and no MCP server
  * entry: each member adds their store's connector once, by its `/mcp` address.
  * Its version is the CLI's, so a member's marketplace installs a new copy
- * exactly at a release (D3). The repository commits it under `plugins/ctxr/`.
+ * exactly at a release (D3). The repository commits it under `plugins/contexture/`.
  *
  * The ChatGPT plugin stays the store's (serve-the-session-lifecycle-to-chat-apps
  * D7): ChatGPT has no marketplace on a personal plan, so it is the store's zip
@@ -44,9 +44,9 @@ export const MAX_NAME_LENGTH = 64;
 export const MAX_DESCRIPTION_LENGTH = 1024;
 const NAME_PREFIX = 'contexture-';
 
-/** The general Claude plugin's name (D5: `ctxr`, so its commands read `/ctxr:submit`), and the marketplace in contexture's repository that lists it (D1). */
-export const CLAUDE_PLUGIN_NAME = 'ctxr';
-export const CLAUDE_PLUGIN_DISPLAY_NAME = 'ctxr';
+/** The general Claude plugin's name (D5, revision 11: `contexture`, the product's name as plugins conventionally are, so its commands read `/contexture:submit`), and the marketplace in contexture's repository that lists it (D1). */
+export const CLAUDE_PLUGIN_NAME = 'contexture';
+export const CLAUDE_PLUGIN_DISPLAY_NAME = 'contexture';
 export const PLUGIN_MARKETPLACE = 'ayxuerui/contexture';
 
 export interface BuiltPlugin {

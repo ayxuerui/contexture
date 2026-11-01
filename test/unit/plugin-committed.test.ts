@@ -52,7 +52,7 @@ describe('the freshness comparison', () => {
   let copy: string;
   beforeAll(async () => {
     tmp = await makeTmpDir('contexture-plugin-fresh-');
-    copy = path.join(tmp.root, 'ctxr');
+    copy = path.join(tmp.root, 'contexture');
   });
   afterAll(async () => {
     await tmp?.cleanup();
@@ -118,7 +118,7 @@ describe("the plugin's commands", () => {
       const match = /^---\n([^]*?)\n---\n\n([^]*)\n\n(.*)\n$/.exec(text);
       expect(match, command).not.toBeNull();
       const [, head, body, last] = match as unknown as [string, string, string, string];
-      expect(head.split('\n'), command).toEqual([`description: Typed shortcut for /ctxr:${command}, which opens the ${skill} skill. A request in words loads ${skill} itself.`]);
+      expect(head.split('\n'), command).toEqual([`description: Typed shortcut for /contexture:${command}, which opens the ${skill} skill. A request in words loads ${skill} itself.`]);
       expect(head, command).not.toMatch(/: .*: /);
       expect(body, `${command}: body differs from ${skill}`).toBe(skillBody(skills.find((s) => s.file === skill)!.content));
       expect(last, command).toMatch(/\$ARGUMENTS$/);

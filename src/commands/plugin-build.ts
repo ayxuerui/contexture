@@ -20,7 +20,7 @@ export const DEFAULT_GENERAL_PLUGIN_OUT = 'contexture-plugin';
 /**
  * Where each plugin's directory goes under `--out`. The Claude plugin's is its
  * name, so `--out plugins` in contexture's repository writes the marketplace's
- * `plugins/ctxr/` (publish-one-contexture-plugin revision 9).
+ * `plugins/contexture/` (publish-one-contexture-plugin revision 9).
  */
 export const PLUGIN_DIRECTORIES: Readonly<Record<PluginTarget, string>> = { claude: CLAUDE_PLUGIN_NAME, chatgpt: 'chatgpt' };
 

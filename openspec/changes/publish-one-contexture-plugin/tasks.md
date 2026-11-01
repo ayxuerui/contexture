@@ -27,13 +27,14 @@
 
 ## 7. Plugin name, commands and the checkout rule
 
-- [x] 7.1 Rename the plugin to `ctxr`: `plugins/ctxr/`, plugin.json name and displayName, build output `<out>/ctxr/` and `ctxr-claude.zip` with its ignore rule; the marketplace stays `contexture` with entry `ctxr`; the per-store ChatGPT plugin keeps `contexture-<store>`; update README, CONTRIBUTING, the connect page and tests
+- [x] 7.1 Rename the plugin to `ctxr` (renamed back to `contexture` in revision 11, task 7.6): `plugins/ctxr/`, plugin.json name and displayName, build output `<out>/ctxr/` and `ctxr-claude.zip` with its ignore rule; the marketplace stays `contexture` with entry `ctxr`; the per-store ChatGPT plugin keeps `contexture-<store>`; update README, CONTRIBUTING, the connect page and tests
 - [x] 7.2 Command map module (command → skill) and generated `commands/<name>.md`: full skill render plus `$ARGUMENTS`, typed-shortcut description, frontmatter `description` only; check that each maps to a carried skill and matches its render
 - [x] 7.3 Preamble's first rule: in a checkout (a `contexture.yaml` at the root, a shell running `ctxr`), the `ctxr:`-namespaced entries are the plugin's, so invoke the un-namespaced `ctxr-<name>` skill from the store's skills folder; test its wording and that it is first
 - [x] 7.4 `npm run plugin`; `claude plugin validate .` and `claude plugin validate plugins/ctxr` pass; `npm run typecheck && npm run build && npm test` exit 0
-- [ ] 7.5 Operator gate before the release PR merges: upload the built `ctxr-claude.zip` to claude.ai; it installs, `/ctxr:capture` is offered, and a natural request loads `ctxr-capture`
+- [x] 7.6 Rename the plugin to `contexture` (revision 11): `plugins/contexture/`, `contexture-claude.zip`, commands `/contexture:<name>`, the checkout rule naming `contexture:`; MIT license text; regenerate, validate, full suite
+- [ ] 7.5 Operator gate before the release PR merges: upload the built `contexture-claude.zip` to claude.ai; it installs, `/contexture:capture` is offered, and a natural request loads `ctxr-capture`
 
 ## 6. Real clients (operator checkpoint)
 
-- [ ] 6.1 After the release: add the marketplace in claude.ai with Sync automatically, install `ctxr`, keep the pkm connector; remove `contexture-pkm`; type `/ctxr:capture` and check that a natural request loads the skill, not the command; in Claude Code with the plugin synced, check that a checkout follows the store's own skills
+- [ ] 6.1 After the release: add the marketplace in claude.ai with Sync automatically, install `contexture`, keep the pkm connector; remove `contexture-pkm`; type `/contexture:capture` and check that a natural request loads the skill, not the command; in Claude Code with the plugin synced, check that a checkout follows the store's own skills
 - [ ] 6.2 In claude.ai and in ChatGPT: start a session, edit, submit with a written description, see it on the approval page, request changes, answer them, approve; confirm each call in `serve`'s log and that a placeholder value was taken from *This store*; then check the updated plugin against a server one release behind, and with two stores connected at once (carries 2026-11-01-serve-the-session-lifecycle-to-chat-apps task 9.2)

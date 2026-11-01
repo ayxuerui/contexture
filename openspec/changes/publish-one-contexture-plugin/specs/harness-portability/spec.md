@@ -24,21 +24,21 @@ The owned skills SHALL render for a second target, the MCP surface, alongside th
 ## ADDED Requirements
 
 ### Requirement: contexture publishes one plugin for every store
-contexture's repository SHALL carry the Claude plugin `ctxr` under `plugins/ctxr/`, generated from the MCP render, listed by the `contexture` marketplace in `.claude-plugin/marketplace.json` at its root. Its `version` SHALL equal the CLI's, and it SHALL carry no MCP server entry, credential, hook, local server or top-level `bin/` directory. `ctxr plugin build` SHALL write it without reading a store, and in a store that declares `mcp` also that store's ChatGPT plugin, with its connector.
+contexture's repository SHALL carry the Claude plugin `contexture` under `plugins/contexture/`, generated from the MCP render and listed by `.claude-plugin/marketplace.json` at its root. Its `version` SHALL equal the CLI's, and it SHALL carry no MCP server entry, credential, hook, local server or top-level `bin/` directory. `ctxr plugin build` SHALL write it without reading a store, and in a store that declares `mcp` also that store's ChatGPT plugin, with its connector.
 
 #### Scenario: The plugin carries no connector
 - **WHEN** `ctxr plugin build` runs outside any store
 - **THEN** it writes the Claude plugin with the rendered skills and no MCP server entry, its version is the CLI's version, and no ChatGPT plugin is written
 
 ### Requirement: The committed plugin is checked against the render
-A test SHALL fail, naming the first differing file, when the committed `plugins/ctxr/` differs from what `ctxr plugin build` writes, or when its version differs from the package's, so a skill change cannot merge without the plugin it changes.
+A test SHALL fail, naming the first differing file, when the committed `plugins/contexture/` differs from what `ctxr plugin build` writes, or when its version differs from the package's, so a skill change cannot merge without the plugin it changes.
 
 #### Scenario: The committed plugin is current
-- **WHEN** the test suite runs on a commit whose skills, preamble and version match the committed `plugins/ctxr/`
+- **WHEN** the test suite runs on a commit whose skills, preamble and version match the committed `plugins/contexture/`
 - **THEN** the freshness test passes
 
 #### Scenario: A skill change without a regenerated plugin fails
-- **WHEN** a skill template changes and `plugins/ctxr/` is not regenerated
+- **WHEN** a skill template changes and `plugins/contexture/` is not regenerated
 - **THEN** the freshness test fails naming the differing skill file
 
 ### Requirement: The plugin's commands open its skills
@@ -53,7 +53,7 @@ The plugin SHALL carry a command for each entry of a declared map from command n
 - **THEN** the check fails naming that command
 
 ### Requirement: In a checkout, the plugin's skills defer to the store's own
-The MCP render's preamble SHALL begin by telling an agent that a working directory with a `contexture.yaml` at its root and a shell that runs `ctxr` is a checkout, where it invokes the un-namespaced `ctxr-<name>` skill from the store's skills folder and never the plugin's `ctxr:`-namespaced one. A test over the render SHALL assert that this rule, so worded, is the preamble's first.
+The MCP render's preamble SHALL begin by telling an agent that a working directory with a `contexture.yaml` at its root and a shell that runs `ctxr` is a checkout, where it invokes the un-namespaced `ctxr-<name>` skill from the store's skills folder and never the plugin's `contexture:`-namespaced one. A test over the render SHALL assert that this rule, so worded, is the preamble's first.
 
 #### Scenario: The checkout rule comes first
 - **WHEN** the MCP render is produced

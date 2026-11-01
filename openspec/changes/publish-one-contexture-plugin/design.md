@@ -69,7 +69,7 @@ The skills still read AGENTS.md for conventions, as they do today.
 
 ### D3. The version is the CLI's, and the committed plugin is checked
 
-`plugins/ctxr/.claude-plugin/plugin.json` carries `version` equal to `package.json`'s. `npm run plugin` regenerates the directory from the built CLI.
+`plugins/contexture/.claude-plugin/plugin.json` carries `version` equal to `package.json`'s. `npm run plugin` regenerates the directory from the built CLI.
 
 A test renders the plugin and compares it byte for byte with the committed directory, and checks that the version matches. Both have to pass on every PR:
 - **A PR that changes a skill regenerates the plugin** in the same PR.
@@ -94,19 +94,19 @@ Its text lives in `templates/plugin/page.html`.
 
 **Rejected alternative: drop the page.** The connector address and the steps would then live only in the README, and a non-engineer member needs them in one place they already sign in to.
 
-### D5. The plugin is `ctxr`, with typed commands for its entry points
+### D5. The plugin is `contexture`, with typed commands for its entry points
 
-The plugin is named `ctxr` and the marketplace `contexture`, so a member installs `ctxr@contexture`. It carries seven commands, each mapped explicitly to the skill it opens:
+The plugin and the marketplace are both named `contexture` (revision 11). It carries seven commands, each mapped explicitly to the skill it opens:
 
 | Command | Skill |
 |---|---|
-| `/ctxr:capture` | `ctxr-capture` |
-| `/ctxr:ingest` | `ctxr-ingest-orchestration` |
-| `/ctxr:research` | `ctxr-research` |
-| `/ctxr:rollup` | `ctxr-rollup` |
-| `/ctxr:mission` | `ctxr-mission` |
-| `/ctxr:session` | `ctxr-session-lifecycle` |
-| `/ctxr:submit` | `ctxr-submit` |
+| `/contexture:capture` | `ctxr-capture` |
+| `/contexture:ingest` | `ctxr-ingest-orchestration` |
+| `/contexture:research` | `ctxr-research` |
+| `/contexture:rollup` | `ctxr-rollup` |
+| `/contexture:mission` | `ctxr-mission` |
+| `/contexture:session` | `ctxr-session-lifecycle` |
+| `/contexture:submit` | `ctxr-submit` |
 
 **How a command is built:**
 - **Body:** the full MCP render of its skill, generated from the same template, followed by the person's `$ARGUMENTS`. In chat a command loads as a skill, so whichever of the two Claude loads, it has the whole procedure.
@@ -114,13 +114,13 @@ The plugin is named `ctxr` and the marketplace `contexture`, so a member install
 - **Frontmatter:** `description` only. claude.ai documents only `name`, `description`, `license`, `compatibility`, `metadata` and `allowed-tools`, so `disable-model-invocation` (Claude Code only) is left out (revision 7). The typed-shortcut description and the full body are the protection on every surface.
 - **Check:** a test fails when a command maps to a skill the plugin does not carry, or when its body differs from that skill's render.
 
-**Why `ctxr` and not `contexture`:** a three-model poll on 2026-11-01 ranked this option first, unanimously. The commands are what people type, and `/ctxr:submit` matches the CLI people already know. The repeated prefix in `/ctxr:ctxr-capture` shows only on skill entries, which nobody types. The skills keep `ctxr-*`, as the earlier poll settled.
+**Why `contexture` (revision 11):** plugins are conventionally named for the product.
+- **A survey of about 30 plugins** (2026-11-01, read from their manifests on GitHub) found `figma`, `supabase`, `vercel`, `stripe`, `sentry`, `atlassian`, `canva`, `box`, `airtable`, `linear`, `asana`, `circleback`, and Anthropic's `productivity`, `sales` and `code-review`.
+- **Where a product's CLI is shorter than its brand, the brand still wins:** GitHub (CLI `gh`) ships `github`, and Sentry (CLI `sentry-cli`) ships `sentry`.
+- **Commands are bare verbs under that name,** as in `/vercel:deploy` and `/stripe:test-cards`.
+- **Skills that also live outside the plugin keep a prefix,** as in `/figma:figma-use` and `/sentry:sentry-debug-issue`. That is the same as our `ctxr-*`.
 
-**Opposing case (`contexture` with the same commands, `/contexture:submit`):**
-- It keeps the brand.
-- It avoids the stutter on skill entries.
-
-It loses on length and on two names: the commands would be `/contexture:` in chat while the CLI and the skills are `ctxr`.
+An earlier three-model poll had preferred `ctxr` for its shorter, CLI-matching commands. It compared the names in the abstract, without this evidence. For members who know the product as contexture, following the ecosystem's convention outweighs the shorter prefix.
 
 **Commands for the local-only skills** (land, publish, upgrade, second-opinion) are not part of this change. Stores get no `.claude/commands/` copies: see D6.
 
@@ -128,11 +128,11 @@ It loses on length and on two names: the commands would be `/contexture:` in cha
 
 A plugin added on claude.ai syncs into the same person's Claude Code. There its chat render ("you are working through this store's server") would sit beside the store's own `ctxr-*` skills, which are written for a checkout.
 
-**The rule:** the preamble's first section says that when a `contexture.yaml` sits at the root of the working directory and a shell runs `ctxr`, this is a checkout. The plugin's skills and commands are the `ctxr:`-namespaced ones. In a checkout the agent invokes the un-namespaced `ctxr-<name>` skill from the store's skills folder, and never the `ctxr:` one. A `/ctxr:` command then works on both surfaces: through the connector in chat, and through the store's skill in a checkout.
+**The rule:** the preamble's first section says that when a `contexture.yaml` sits at the root of the working directory and a shell runs `ctxr`, this is a checkout. The plugin's skills and commands are the `contexture:`-namespaced ones. In a checkout the agent invokes the un-namespaced `ctxr-<name>` skill from the store's skills folder, and never the `contexture:` one. A `/ctxr:` command then works on both surfaces: through the connector in chat, and through the store's skill in a checkout.
 
-**No `.claude/commands/` copies in stores.** For an operator who also has the plugin, they would duplicate every `/ctxr:` entry in Claude Code.
+**No `.claude/commands/` copies in stores.** For an operator who also has the plugin, they would duplicate every `/contexture:` entry in Claude Code.
 
-**Accepted gap:** an operator without the plugin gets no `/ctxr:` commands locally, and asks in words as today.
+**Accepted gap:** an operator without the plugin gets no `/contexture:` commands locally, and asks in words as today.
 
 ## Risks / Trade-offs
 
@@ -152,7 +152,7 @@ A plugin added on claude.ai syncs into the same person's Claude Code. There its 
 
 ## Revisions after critique
 
-(Revisions 1–6 predate D5 and D6. Where they say plugin `contexture` or `plugins/contexture/`, read `ctxr` and `plugins/ctxr/`.)
+(Revisions 7–10 were written while the plugin was named `ctxr`; revision 11 renamed it back to `contexture`. Read `ctxr:`, `/ctxr:`, `plugins/ctxr/` and `ctxr-claude.zip` there as `contexture:`, `/contexture:`, `plugins/contexture/` and `contexture-claude.zip`.)
 
 A three-model critique on 2026-11-01 approved this change with changes from all three reviewers. These revisions override anything inconsistent above.
 
@@ -175,3 +175,8 @@ A three-model critique of D5 and D6 approved them with changes from all three re
 8. **The checkout rule names the distinction:** the `ctxr:`-namespaced entries are the plugin's, and the un-namespaced `ctxr-<name>` is the store's. The test asserts that wording, not only its position.
 9. **Build-side names:** the Claude plugin builds to `<out>/ctxr/` and `ctxr-claude.zip`, with a matching ignore rule. The per-store ChatGPT plugin keeps `contexture-<store>` and `contexture-<store>-chatgpt.zip`, because it is that store's plugin, connector included.
 10. **Declined: emitting the entry-point skills under short names (`capture`, `submit`) instead of commands.** This is the plugin-only rename that the earlier poll ranked below keeping the prefix. A skill would have one name in chat and another in the stores, and the plugin render would have to rewrite every cross-reference. The commands' duplicated bodies are generated from the same template and checked, so they cannot drift. The cost accepted is a longer `/` menu.
+
+### Third round (naming)
+
+11. **The plugin is `contexture`, not `ctxr`,** after a survey of popular plugins showed that plugins are named for the product, even where its CLI is shorter (GitHub's `gh`, `sentry-cli`); see D5. Commands read `/contexture:capture` and the like. Skills keep `ctxr-*`. The build writes `<out>/contexture/` and `contexture-claude.zip`, and the repository commits `plugins/contexture/`.
+12. **The license is MIT.** `package.json`, the README and every published release already said MIT, while `LICENSE` held the Apache 2.0 text from the initial commit. The file now carries the MIT text, so the plugin's manifest and the `LICENSE` file it copies agree.

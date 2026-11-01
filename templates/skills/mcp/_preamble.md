@@ -3,11 +3,11 @@
 ### In a checkout, use the store's own skill
 
 If the working directory has a `contexture.yaml` at its root and a shell here runs `ctxr`, you are in a
-checkout of the store, and this text is not for you. The `ctxr:`-namespaced skills and commands, such as
-`ctxr:ctxr-capture` and `/ctxr:capture`, are this plugin's, written for the store's server. The
+checkout of the store, and this text is not for you. The `contexture:`-namespaced skills and commands, such as
+`contexture:ctxr-capture` and `/contexture:capture`, are this plugin's, written for the store's server. The
 un-namespaced `ctxr-<name>` skills in the store's skills folder are the store's own, written for a checkout.
 In a checkout, invoke the un-namespaced `ctxr-<name>` skill of the same name and follow it, never the
-`ctxr:` one, and ignore the rest of this text. A `/ctxr:` command typed in a checkout asks for that store
+`contexture:` one, and ignore the rest of this text. A `/contexture:` command typed in a checkout asks for that store
 skill.
 
 ### Through the store's server
