@@ -7,6 +7,7 @@ import * as archiveCommand from './commands/archive.js';
 import * as doctorCommand from './commands/doctor.js';
 import * as ingestCommand from './commands/ingest.js';
 import * as landCommand from './commands/land.js';
+import * as syncCommand from './commands/sync.js';
 import * as lintCommand from './commands/lint.js';
 import * as contextGatherCommand from './commands/context-gather.js';
 import * as graphBuildCommand from './commands/graph-build.js';
@@ -718,6 +719,18 @@ export function buildProgram(env: RunEnv): { program: Command; state: { result: 
       state.result = await runCommand('land', runEnv, jsonMode, async () => {
         const store = await openStore(runEnv, { root });
         return landCommand.execute(runEnv, store, { pr, pending: Boolean(cmdOpts.pending), confirm: Boolean(cmdOpts.confirm), session: cmdOpts.session });
+      });
+    });
+
+  program
+    .command('sync')
+    .description("bring the canonical clone up to date with the forge's default branch by landing's fast-forward rule, leaving a clone with local work alone; with --every, keep doing so, mounts included")
+    .option('--every <minutes>', 'keep running: every this many whole minutes, sync the canonical clone and then refresh the mounts as `ctxr shared-stores sync` does', (v) => Number(v))
+    .action(async (cmdOpts: { every?: number }, cmd: Command) => {
+      const { runEnv, jsonMode, root } = deriveRunEnv(env, cmd);
+      state.result = await runCommand('sync', runEnv, jsonMode, async () => {
+        const store = await openStore(runEnv, { root });
+        return syncCommand.execute(runEnv, store, cmdOpts.every === undefined ? {} : { every: cmdOpts.every });
       });
     });
 

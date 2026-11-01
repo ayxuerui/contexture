@@ -1,11 +1,11 @@
 ## 1. `ctxr sync`
 
-- [ ] 1.1 Add `src/commands/sync.ts`: take landing's repository lock, fetch the default branch through landing's authenticated fetch, apply `fastForwardIfSafe`, report the outcome as `canonical_sync`; exit with the setup/usage code when the fetch fails
-- [ ] 1.2 Register `ctxr sync` in `src/run.ts`
-- [ ] 1.3 Integration tests against a local bare origin: behind clone fast-forwarded; dirty, wrong-branch and diverged clones left alone with the success code; unreachable origin exits with the setup/usage code; nothing under `shared/` touched
-- [ ] 1.4 Add `--every <minutes>`: loop until stopped, each round the canonical sync then `shared-stores sync`; report a failed round on stderr and keep going
-- [ ] 1.5 Tests: rounds fast-forward the clone and a mount; a failed round does not stop the loop
-- [ ] 1.6 Run `npx vitest run -t "ctxr sync"` and confirm it exits 0
+- [x] 1.1 Add `src/commands/sync.ts`: take landing's repository lock, fetch the default branch through landing's authenticated fetch, apply `fastForwardIfSafe`, report the outcome as `canonical_sync`; exit with the setup/usage code when the fetch fails
+- [x] 1.2 Register `ctxr sync` in `src/run.ts`
+- [x] 1.3 Integration tests against a local bare origin: behind clone fast-forwarded; dirty, wrong-branch and diverged clones left alone with the success code; unreachable origin exits with the setup/usage code; nothing under `shared/` touched
+- [x] 1.4 Add `--every <minutes>`: loop until stopped, each round the canonical sync then `shared-stores sync`; report a failed round on stderr and keep going
+- [x] 1.5 Tests: rounds fast-forward the clone and a mount; a failed round does not stop the loop
+- [x] 1.6 Run `npx vitest run -t "ctxr sync"` and confirm it exits 0
 
 ## 2. `serve.sync_minutes`
 
