@@ -111,7 +111,7 @@ The plugin is named `ctxr` and the marketplace `contexture`, so a member install
 **How a command is built:**
 - **Body:** the full MCP render of its skill, generated from the same template, followed by the person's `$ARGUMENTS`. In chat a command loads as a skill, so whichever of the two Claude loads, it has the whole procedure.
 - **Description:** worded as a typed shortcut ("Typed shortcut: …"), so a natural request matches the skill's description and not the command's.
-- **Frontmatter:** `disable-model-invocation: true`, which Claude Code honours to keep the command out of automatic loading. claude.ai accepts only `name`, `description`, `license`, `compatibility`, `metadata` and `allowed-tools`, so there the description and the full body are the protection.
+- **Frontmatter:** `description` only. claude.ai documents only `name`, `description`, `license`, `compatibility`, `metadata` and `allowed-tools`, so `disable-model-invocation` (Claude Code only) is left out (revision 7). The typed-shortcut description and the full body are the protection on every surface.
 - **Check:** a test fails when a command maps to a skill the plugin does not carry, or when its body differs from that skill's render.
 
 **Why `ctxr` and not `contexture`:** a three-model poll on 2026-11-01 ranked this option first, unanimously. The commands are what people type, and `/ctxr:submit` matches the CLI people already know. The repeated prefix in `/ctxr:ctxr-capture` shows only on skill entries, which nobody types. The skills keep `ctxr-*`, as the earlier poll settled.
@@ -128,7 +128,7 @@ It loses on length and on two names: the commands would be `/contexture:` in cha
 
 A plugin added on claude.ai syncs into the same person's Claude Code. There its chat render ("you are working through this store's server") would sit beside the store's own `ctxr-*` skills, which are written for a checkout.
 
-**The rule:** the preamble's first section says that when a `contexture.yaml` sits at the root of the working directory and a shell runs `ctxr`, this is a checkout. The agent then follows the store's own skill of the same name from the store's skills folder and ignores this plugin's version. A `/ctxr:` command then works on both surfaces: through the connector in chat, and through the store's skill in a checkout.
+**The rule:** the preamble's first section says that when a `contexture.yaml` sits at the root of the working directory and a shell runs `ctxr`, this is a checkout. The plugin's skills and commands are the `ctxr:`-namespaced ones. In a checkout the agent invokes the un-namespaced `ctxr-<name>` skill from the store's skills folder, and never the `ctxr:` one. A `/ctxr:` command then works on both surfaces: through the connector in chat, and through the store's skill in a checkout.
 
 **No `.claude/commands/` copies in stores.** For an operator who also has the plugin, they would duplicate every `/ctxr:` entry in Claude Code.
 
@@ -166,3 +166,12 @@ A three-model critique on 2026-11-01 approved this change with changes from all 
 4. **Rollback is described as shipped.** The operator runs `ctxr plugin build`, which writes the connector-less zip, and members upload it and keep their store connector.
 5. **Declined: removing the `ctxr plugin build` command** (pragmatist). It is the rollback path above, it is what `npm run plugin` calls, and it lets an operator build the plugin without `serve`. It costs one command, and dropping it would leave no way to produce the zip outside the repository's npm scripts.
 6. **Where `ctxr plugin build` writes** (settled in implementation). Each plugin is a directory and a zip beside it under `--out`: the Claude plugin at `<out>/contexture/` with `contexture-claude.zip`, and in a store with `mcp` its ChatGPT plugin at `<out>/chatgpt/` with `contexture-<store>-chatgpt.zip`. The default `--out` is `.contexture/cache/plugin/` inside a store, as before, and `./contexture-plugin/` outside one, so a build never writes into the working directory itself. `npm run plugin` is `ctxr plugin build --out plugins` with the store root cleared, which lands the plugin at `plugins/ctxr/`; the zip beside it is removed and ignored. A store without `mcp` gets the Claude plugin and a notice, not the old configuration error, since the Claude plugin needs no server.
+
+### Second round (D5, D6)
+
+A three-model critique of D5 and D6 approved them with changes from all three reviewers.
+
+7. **`disable-model-invocation` is dropped from the commands, and the claude.ai upload becomes a gate.** Two reviewers raised it: the key is outside claude.ai's documented frontmatter, and refusal would only surface after a release. Before the release PR merges, the operator uploads the `ctxr-claude.zip` that `ctxr plugin build` writes to their claude.ai account. They confirm it installs, that `/ctxr:capture` is offered, and that a natural request loads `ctxr-capture` (task 7.5).
+8. **The checkout rule names the distinction:** the `ctxr:`-namespaced entries are the plugin's, and the un-namespaced `ctxr-<name>` is the store's. The test asserts that wording, not only its position.
+9. **Build-side names:** the Claude plugin builds to `<out>/ctxr/` and `ctxr-claude.zip`, with a matching ignore rule. The per-store ChatGPT plugin keeps `contexture-<store>` and `contexture-<store>-chatgpt.zip`, because it is that store's plugin, connector included.
+10. **Declined: emitting the entry-point skills under short names (`capture`, `submit`) instead of commands.** This is the plugin-only rename that the earlier poll ranked below keeping the prefix. A skill would have one name in chat and another in the stores, and the plugin render would have to rewrite every cross-reference. The commands' duplicated bodies are generated from the same template and checked, so they cannot drift. The cost accepted is a longer `/` menu.

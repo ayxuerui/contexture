@@ -42,18 +42,18 @@ A test SHALL fail, naming the first differing file, when the committed `plugins/
 - **THEN** the freshness test fails naming the differing skill file
 
 ### Requirement: The plugin's commands open its skills
-The plugin SHALL carry a command for each entry of a declared map from command name to included skill. Each command's body SHALL be its skill's MCP render followed by the person's arguments; its description SHALL mark it as a typed shortcut; and it SHALL declare that the model does not invoke it on its own. A test SHALL fail, naming the command, when its skill is not one the plugin carries or its body differs from that skill's render.
+The plugin SHALL carry a command for each entry of a declared map from command name to included skill. Each command's body SHALL be its skill's MCP render followed by the person's arguments; and its description SHALL mark it as a typed shortcut. A test SHALL fail, naming the command, when its skill is not one the plugin carries or its body differs from that skill's render.
 
 #### Scenario: A command opens its skill
 - **WHEN** the plugin is built
-- **THEN** `commands/submit.md` carries the `ctxr-submit` render and a description beginning as a typed shortcut, and declares that the model does not invoke it
+- **THEN** `commands/submit.md` carries the `ctxr-submit` render and a description beginning as a typed shortcut, and no frontmatter key beyond `description`
 
 #### Scenario: A command naming a missing skill fails
 - **WHEN** the command map names a skill the plugin does not include
 - **THEN** the check fails naming that command
 
 ### Requirement: In a checkout, the plugin's skills defer to the store's own
-The MCP render's preamble SHALL begin by telling an agent that a working directory with a `contexture.yaml` at its root and a shell that runs `ctxr` is a checkout, where it follows the store's own skill of the same name from the store's skills folder instead of the plugin's. A test over the render SHALL assert that this is the preamble's first rule.
+The MCP render's preamble SHALL begin by telling an agent that a working directory with a `contexture.yaml` at its root and a shell that runs `ctxr` is a checkout, where it invokes the un-namespaced `ctxr-<name>` skill from the store's skills folder and never the plugin's `ctxr:`-namespaced one. A test over the render SHALL assert that this rule, so worded, is the preamble's first.
 
 #### Scenario: The checkout rule comes first
 - **WHEN** the MCP render is produced
