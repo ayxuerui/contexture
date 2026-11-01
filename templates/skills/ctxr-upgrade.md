@@ -15,11 +15,11 @@ step 3 gates on the operator rather than proceeding from the fact that a newer r
 
 2. Check `install_kind` before proposing anything.
    - `global` with `install_writable: true` — proceed to step 3.
-   - `global` with `install_writable: false` — this executable is managed by whatever installed it,
-     and you cannot write where a package-manager upgrade would go: the install would be refused.
-     Report `install_path` and stop. If it shipped in a container image, the upgrade is a newer
-     image — merge the image's version bump, then pull it and recreate the container — and not
-     something to run from here.
+   - `global` with `install_writable: false` — npm would write where you cannot, so the install
+     would be refused. Never retry it with `sudo`. Report `install_path` and stop, and name the
+     remedy for the operator: a global npm prefix in their home (`npm config get prefix` shows the
+     current one) makes the next install writable; an executable that shipped in a container image
+     is upgraded by a newer image — pull it and recreate the container — not from here.
    - `linked` — this executable resolves to a working copy at `install_path`, not a package
      installation. A global install would upgrade a different `ctxr` than the one running. Report the
      path and stop.

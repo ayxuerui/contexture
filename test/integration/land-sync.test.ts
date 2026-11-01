@@ -25,7 +25,7 @@ describe('every landing run brings the canonical clone up to date when it is saf
       const before = await store.git(['rev-parse', 'HEAD']);
       const merged = await store.advanceMain({ 'projects/elsewhere.md': '# Merged elsewhere\n' });
       const r = await land(store, ['--pending']);
-      expect(r.exitCode, r.stdout + r.stderr).toBe(0);
+      expect(r.exitCode, r.stdout + r.stderr + (await store.forge.log())).toBe(0);
       expect(await store.git(['rev-parse', 'HEAD'])).toBe(merged);
       expect(r.envelope.data.canonical_sync).toEqual({ synced: true, from: before, to: merged, reason: null });
       expect(r.envelope.findings).toEqual([]);
@@ -62,7 +62,7 @@ describe('every landing run brings the canonical clone up to date when it is saf
         await store.advanceMain({ 'projects/elsewhere.md': '# Merged elsewhere\n' });
         const before = await snapshot(store);
         const r = await land(store, ['--pending']);
-        expect(r.exitCode, r.stdout + r.stderr).toBe(0);
+        expect(r.exitCode, r.stdout + r.stderr + (await store.forge.log())).toBe(0);
         expect(await snapshot(store)).toEqual(before);
         expect(r.envelope.data.canonical_sync).toMatchObject({ synced: false, from: before.head, to: before.head });
         expect(String(r.envelope.data.canonical_sync!.reason)).toContain(reason);
@@ -81,7 +81,7 @@ describe('every landing run brings the canonical clone up to date when it is saf
       await appendFile(path.join(store.root, 'contexture.yaml'), '# being edited\n');
       const before = await snapshot(store);
       const r = await land(store, ['7']);
-      expect(r.exitCode, r.stdout + r.stderr).toBe(0);
+      expect(r.exitCode, r.stdout + r.stderr + (await store.forge.log())).toBe(0);
       expect(r.envelope.data.results[0]).toMatchObject({ outcome: 'merged', canonical_sync: { synced: false } });
       expect(String((r.envelope.data.results[0]!.canonical_sync as { reason: string }).reason)).toContain('uncommitted');
       expect(await snapshot(store)).toEqual(before);

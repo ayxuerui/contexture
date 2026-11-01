@@ -22,6 +22,14 @@ export function hermeticGitEnv(overrides: Record<string, string | undefined> = {
     GIT_AUTHOR_EMAIL: 'test@example.com',
     GIT_COMMITTER_NAME: 'Test',
     GIT_COMMITTER_EMAIL: 'test@example.com',
+    // No auto maintenance. Since git 2.47 a fetch or commit starts `git maintenance run --auto --detach`, which
+    // outlives the command a test awaited and can still be writing into a .git the test, or the fake forge, is
+    // removing (`rmdir .git: directory not empty`), or pruning a loose-object directory the next command writes into.
+    // In the fake forge's merge clone that removal runs right after the push, so a failure there left the commit on
+    // the base branch and the pull request open, and `ctxr land` reported merge-refused.
+    GIT_CONFIG_COUNT: '1',
+    GIT_CONFIG_KEY_0: 'maintenance.auto',
+    GIT_CONFIG_VALUE_0: 'false',
     CONTEXTURE_STORE_ROOT: undefined,
     // Superseded name (rename-store-root-env-var): also scrubbed, so a
     // developer's still-exported old-name variable cannot leak into a test
