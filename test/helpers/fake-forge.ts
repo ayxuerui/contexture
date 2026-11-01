@@ -41,6 +41,8 @@ export interface FakeForge {
   update(mutate: (state: FakeForgeState) => void): Promise<void>;
   /** The distinct GH_TOKEN values `gh` was called with, when `expectTokenPrefix` is set. */
   tokensSeen(): Promise<string[]>;
+  /** Every call the fake `gh` answered and how, one line each — for assertion messages when a command hides a forge error. */
+  log(): Promise<string>;
 }
 
 /** A `gh` on PATH backed by a JSON state file and, when given, a bare origin repository. */
@@ -63,6 +65,9 @@ export async function makeFakeForge(dir: string, state: FakeForgeState, originGi
     },
     async write(next) {
       await writeFile(statePath, JSON.stringify(next, null, 2));
+    },
+    async log() {
+      return readFile(`${statePath}.log`, 'utf8').catch(() => '');
     },
     async tokensSeen() {
       const text = await readFile(`${statePath}.tokens`, 'utf8').catch(() => '');
@@ -105,6 +110,9 @@ export async function makeFakeForges(dir: string, repos: readonly { origin: stri
       },
       async write(next) {
         await writeFile(statePath, JSON.stringify(next, null, 2));
+      },
+      async log() {
+        return readFile(`${statePath}.log`, 'utf8').catch(() => '');
       },
       async tokensSeen() {
         const text = await readFile(`${statePath}.tokens`, 'utf8').catch(() => '');

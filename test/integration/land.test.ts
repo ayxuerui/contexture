@@ -38,7 +38,7 @@ describe('ctxr land (real CLI, real git, fake forge)', () => {
       await recordApproval(store, 7, s.head);
 
       const result = await land(store, ['7']);
-      expect(result.exitCode, result.stdout + result.stderr).toBe(0);
+      expect(result.exitCode, result.stdout + result.stderr + (await store.forge.log())).toBe(0);
       expect(result.results[0]).toMatchObject({ outcome: 'merged', consent: 'recorded', catch_up: 'not-needed', canonical_sync: { synced: true }, reclaim: { removed: true } });
       expect(await originMainFile(store, 'projects/a.md')).toBe('# A');
       expect(await readFile(path.join(store.root, 'projects/a.md'), 'utf8')).toBe('# A\n');
@@ -75,7 +75,7 @@ describe('ctxr land (real CLI, real git, fake forge)', () => {
     try {
       await store.openSession('ctx-a', 7, { 'projects/a.md': '# A\n' });
       const result = await land(store, ['7', '--confirm']);
-      expect(result.exitCode, result.stdout).toBe(0);
+      expect(result.exitCode, result.stdout + (await store.forge.log())).toBe(0);
       expect(result.results[0]).toMatchObject({ outcome: 'merged', consent: 'confirm' });
     } finally {
       await store.tmp.cleanup();
@@ -109,7 +109,7 @@ describe('ctxr land (real CLI, real git, fake forge)', () => {
         state.failAfterMerge = true;
       });
       const result = await land(store, ['7']);
-      expect(result.exitCode, result.stdout).toBe(0);
+      expect(result.exitCode, result.stdout + (await store.forge.log())).toBe(0);
       expect(result.results[0]).toMatchObject({ outcome: 'merged', reclaim: { removed: true } });
     } finally {
       await store.tmp.cleanup();
@@ -136,7 +136,7 @@ describe('ctxr land (real CLI, real git, fake forge)', () => {
       });
 
       const result = await land(store, ['--pending']);
-      expect(result.exitCode, result.stdout).toBe(0);
+      expect(result.exitCode, result.stdout + (await store.forge.log())).toBe(0);
       expect(result.results.map((r) => [r.pull_request, r.outcome])).toEqual([[1, 'merged']]);
       expect(await exists(b.worktree)).toBe(true);
       expect(await exists(c.worktree)).toBe(true);
@@ -156,7 +156,7 @@ describe('ctxr land (real CLI, real git, fake forge)', () => {
       await store.advanceMain({ 'projects/other.md': '# Other\n' });
 
       const result = await land(store, ['7']);
-      expect(result.exitCode, result.stdout + result.stderr).toBe(0);
+      expect(result.exitCode, result.stdout + result.stderr + (await store.forge.log())).toBe(0);
       expect(result.results[0]).toMatchObject({ outcome: 'merged', catch_up: 'carried-over', records_posted: ['carry-over'] });
       const reviews = (await store.forge.read()).reviews!['7']!;
       const carried = parseDecision(reviews[reviews.length - 1]!.body)!;
@@ -238,7 +238,7 @@ describe('ctxr land (real CLI, real git, fake forge)', () => {
       await store.advanceMain({ 'projects/a.md': '# A from main\n' });
 
       const result = await land(store, ['7']);
-      expect(result.exitCode, result.stdout + result.stderr).toBe(3);
+      expect(result.exitCode, result.stdout + result.stderr + (await store.forge.log())).toBe(3);
       expect(result.results[0], JSON.stringify(result.results[0]) + result.stderr).toMatchObject({ outcome: 'needs-reapproval', catch_up: 'conflict-resolved' });
       const pushed = await store.git(['--git-dir', store.origin, 'rev-parse', s.branch], store.tmp.root);
       expect(pushed).not.toBe(s.head);

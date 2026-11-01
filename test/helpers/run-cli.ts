@@ -30,16 +30,19 @@ export interface RunCliOptions {
  * forever waiting for an EOF that never comes.
  */
 export async function runCli(args: readonly string[], opts: RunCliOptions): Promise<RunCliResult> {
+  const timeoutMs = opts.timeoutMs ?? 10_000;
   return new Promise((resolve) => {
     const child = execFile(
       'node',
       [BIN_PATH, ...args],
-      { cwd: opts.cwd, env: opts.env ?? hermeticGitEnv(), timeout: opts.timeoutMs ?? 10_000 },
+      { cwd: opts.cwd, env: opts.env ?? hermeticGitEnv(), timeout: timeoutMs },
       (err, stdout, stderr) => {
         if (err) {
-          const e = err as NodeJS.ErrnoException & { code?: number | string };
+          const e = err as NodeJS.ErrnoException & { code?: number | string; killed?: boolean; signal?: NodeJS.Signals | null };
           const exitCode = typeof e.code === 'number' ? e.code : 1;
-          resolve({ stdout, stderr, exitCode });
+          // A CLI killed at the limit has no exit code of its own; say so, or the failure reads as the CLI's exit 1.
+          const killed = e.killed === true ? `\n[runCli: ctxr ${args.join(' ')} killed by ${e.signal ?? 'a signal'} after the ${timeoutMs} ms limit]\n` : '';
+          resolve({ stdout, stderr: stderr + killed, exitCode });
         } else {
           resolve({ stdout, stderr, exitCode: 0 });
         }
