@@ -839,6 +839,13 @@ export class SessionRefusedError extends ContextureError {
   }
 }
 
+/** context-browsing spec (serve-keeps-its-clone-current D9): a webhook secret that is ambiguous, unreadable or empty. */
+export class WebhookSecretError extends ContextureError {
+  constructor(message: string, variables: readonly string[]) {
+    super(ExitCode.Usage, { code: 'serve.webhook_secret', severity: 'error', message, details: { variables: [...variables] } });
+  }
+}
+
 /** write-lifecycle spec (serve-keeps-its-clone-current): `ctxr sync --every` takes a positive whole number of minutes. */
 export class SyncFlagsError extends ContextureError {
   constructor(message: string) {

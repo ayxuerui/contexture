@@ -29,10 +29,10 @@
 
 ## 5. The webhook
 
-- [ ] 5.1 Add `POST /hooks/github`: present only with `CONTEXTURE_WEBHOOK_SECRET` or `CONTEXTURE_WEBHOOK_SECRET_FILE`; verify `X-Hub-Signature-256` in constant time; `401` otherwise; a push to the default branch triggers the store-update runner, any other push fetches that branch
-- [ ] 5.2 Update the read-only-methods guard to admit that `POST` only with a secret
-- [ ] 5.3 Integration tests: signed default-branch push starts a run; signed branch push prefetches; unsigned and wrongly signed deliveries do nothing; without a secret the route is `405`
-- [ ] 5.4 Run `npx vitest run -t "webhook"` and confirm it exits 0
+- [x] 5.1 Add `POST /hooks/github`: present only with `CONTEXTURE_WEBHOOK_SECRET` or `CONTEXTURE_WEBHOOK_SECRET_FILE`; verify `X-Hub-Signature-256` in constant time; `401` otherwise; a push to the default branch triggers the store-update runner, any other push fetches that branch
+- [x] 5.2 Update the read-only-methods guard to admit that `POST` only with a secret
+- [x] 5.3 Integration tests: signed default-branch push starts a run; signed branch push prefetches; unsigned and wrongly signed deliveries do nothing; without a secret the route is `405`
+- [x] 5.4 Run `npx vitest run -t "webhook"` and confirm it exits 0
 
 ## 6. Fetch failures and git hardening
 

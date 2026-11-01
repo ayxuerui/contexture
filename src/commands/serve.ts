@@ -6,6 +6,7 @@ import { buildLinkResolver } from '../core/browse/link-resolver.js';
 import { renderIndexBody, renderNav } from '../core/browse/nav.js';
 import { parsePullPreviewPath, PREVIEW_ROUTE_PREFIX, PUBLISH_ROUTE_PREFIX, REVIEW_HEAD_PARAM, REVIEW_ROUTE_PREFIX } from '../core/browse/page-url.js';
 import { PullPreviews } from '../core/browse/pull-preview.js';
+import { hintOf, readBody, readWebhookSecret, signatureValid, WEBHOOK_ROUTE } from '../core/browse/webhook.js';
 import { hardenGit } from '../core/git/hardened.js';
 import type { ForgeCredentials } from '../core/forge/credentials.js';
 import type { ForgeClient } from '../core/forge/github.js';
@@ -139,6 +140,7 @@ async function handleRequest(
   git: GitRunner,
   stderr: NodeJS.WritableStream,
   pulls: PullPreviews,
+  webhookSecret: Buffer | null,
   req: IncomingMessage,
   res: ServerResponse,
 ): Promise<void> {
@@ -158,8 +160,15 @@ async function handleRequest(
 
   // context-browsing spec: the one exception to read-only is a POST to the decision route of a store that declares change approval.
   const decisionPost = method === 'POST' && (approval !== null || approvalError !== null) && isDecisionRoute(pathname);
-  if (method !== 'GET' && method !== 'HEAD' && !decisionPost) {
+  // serve-keeps-its-clone-current D9: and a POST to the webhook, which exists only with a secret in the environment.
+  const webhookPost = method === 'POST' && webhookSecret !== null && pathname === WEBHOOK_ROUTE;
+  if (method !== 'GET' && method !== 'HEAD' && !decisionPost && !webhookPost) {
     send(res, method, 405, 'text/plain; charset=utf-8', 'method not allowed\n');
+    return;
+  }
+
+  if (webhookPost) {
+    await handleWebhook(store, landing, pulls, webhookSecret, stderr, req, res);
     return;
   }
 
@@ -337,6 +346,50 @@ async function handleRequest(
 }
 
 /**
+ * context-browsing spec ("Only a signed forge delivery reaches the webhook";
+ * "A verified push brings the server up to date at once"): a delivery whose
+ * signature does not verify is answered 401 and does nothing. A verified one
+ * is answered 202 first; then a push to the default branch starts a
+ * store-update run (coalesced with one in progress), and a push to another
+ * branch fetches it for its pull request's preview. Nothing else in the
+ * delivery is used.
+ */
+async function handleWebhook(
+  store: Store,
+  landing: StoreUpdateControl,
+  pulls: PullPreviews,
+  secret: Buffer,
+  stderr: NodeJS.WritableStream,
+  req: IncomingMessage,
+  res: ServerResponse,
+): Promise<void> {
+  const body = await readBody(req);
+  if (body === null) {
+    send(res, 'POST', 413, 'text/plain; charset=utf-8', 'delivery too large\n');
+    return;
+  }
+  if (!signatureValid(secret, body, req.headers['x-hub-signature-256'])) {
+    stderr.write('serve: webhook: a delivery without a valid signature was refused\n');
+    send(res, 'POST', 401, 'text/plain; charset=utf-8', 'signature does not verify\n');
+    return;
+  }
+  const hint = hintOf(req.headers['x-github-event'], body, store.config.git.default_branch);
+  send(res, 'POST', 202, 'text/plain; charset=utf-8', hint.kind === 'ignored' ? `ignored: ${hint.reason}\n` : 'accepted\n');
+  if (hint.kind === 'default-branch') {
+    stderr.write(`serve: webhook: ${store.config.git.default_branch} changed${hint.repository === null ? '' : ` on ${hint.repository}`}; starting a store-update run\n`);
+    landing.trigger();
+  } else if (hint.kind === 'branch') {
+    stderr.write(`serve: webhook: ${hint.branch} changed${hint.repository === null ? '' : ` on ${hint.repository}`}; fetching it for its preview\n`);
+    try {
+      const fetched = await pulls.prefetchBranch(store, hint.branch);
+      if (fetched.length > 0) stderr.write(`serve: webhook: fetched pull request ${fetched.map((n) => `#${n}`).join(', ')}\n`);
+    } catch (err) {
+      stderr.write(`serve: webhook: ${hint.branch} could not be fetched: ${err instanceof Error ? err.message : String(err)}\n`);
+    }
+  }
+}
+
+/**
  * cli-contract spec (local-browsing-surface D5): resolves the moment the
  * listener is ready, so `runCommand()` emits exactly one envelope before
  * any request is served — the listener itself keeps the process alive
@@ -443,6 +496,8 @@ function storeForge(env: RunEnv): (store: Store) => Promise<{ forge: ForgeClient
 
 export async function execute(env: RunEnv, store: Store, flags: ServeFlags): Promise<CommandOutcome<ServeData>> {
   // Startup still fails fast on a recording-login mismatch or an unreachable forge; only later changes degrade.
+  // An ambiguous or unreadable webhook secret fails it too: a store that asked for the webhook should not run without it.
+  const webhookSecret = await readWebhookSecret(env.env);
   const approval = await approvalServer(env, store);
   const holder = await createServingState({
     initial: store,
@@ -462,7 +517,7 @@ export async function execute(env: RunEnv, store: Store, flags: ServeFlags): Pro
   process.once('SIGTERM', shutdown);
   process.once('SIGINT', shutdown);
   const server = createServer((req, res) => {
-    handleRequest(holder, landing, mcp, plugins, env.git, env.io.stderr, pulls, req, res).catch((err: unknown) => {
+    handleRequest(holder, landing, mcp, plugins, env.git, env.io.stderr, pulls, webhookSecret, req, res).catch((err: unknown) => {
       env.io.stderr.write(`serve: ${err instanceof Error ? err.message : String(err)}\n`);
       if (!res.headersSent) send(res, req.method ?? 'GET', 500, 'text/plain; charset=utf-8', 'internal error\n');
       else res.end();
