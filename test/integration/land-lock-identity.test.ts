@@ -18,7 +18,7 @@ describe('ctxr land: one lander per repository, and a committer on a bare host',
         state.fail = { pulls: 500, user: 500 };
       });
       const sweep = await runCli(['land', '--pending', '--json'], { cwd: store.root, env: store.env });
-      expect(sweep.exitCode, sweep.stdout + sweep.stderr).toBe(0);
+      expect(sweep.exitCode, sweep.stdout + sweep.stderr + (await store.forge.log())).toBe(0);
       expect(sweep.stderr).toContain(`process ${process.pid}`);
       const named = await runCli(['land', '7', '--confirm', '--json'], { cwd: store.root, env: store.env });
       expect(named.exitCode).toBe(3);
@@ -37,7 +37,7 @@ describe('ctxr land: one lander per repository, and a committer on a bare host',
       await recordApproval(store, 7, s.head);
       await writeFile(lockFile(store.root), JSON.stringify({ pid: 2 ** 22 + 12345, host: hostname() }));
       const result = await runCli(['land', '--pending', '--json'], { cwd: store.root, env: store.env, timeoutMs: 60_000 });
-      expect(result.exitCode, result.stdout + result.stderr).toBe(0);
+      expect(result.exitCode, result.stdout + result.stderr + (await store.forge.log())).toBe(0);
       expect(JSON.parse(result.stdout).data.results[0].outcome).toBe('merged');
       await expect(readFile(lockFile(store.root), 'utf8')).rejects.toThrow();
     } finally {

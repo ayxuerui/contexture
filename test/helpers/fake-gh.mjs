@@ -38,13 +38,29 @@ if (args[0] !== 'api' || statePath === undefined) {
 const endpoint = args[1];
 const methodIndex = args.indexOf('--method');
 const method = methodIndex === -1 ? 'GET' : args[methodIndex + 1];
-const state = JSON.parse(readFileSync(statePath, 'utf8'));
-const input = args.includes('--input') ? JSON.parse(readFileSync(0, 'utf8') || 'null') : null;
-
+// Every answer is also appended to $statePath.log, so a test whose CLI swallows a forge error (land reports only
+// `merge-refused`) can still print what the forge said: `forge.log()` in test/helpers/fake-forge.ts.
+function record(outcome) {
+  try {
+    appendFileSync(`${statePath}.log`, `${new Date().toISOString()} pid=${process.pid} ${method} ${endpoint} -> ${outcome}\n`);
+  } catch {
+    // The log is diagnostic only; a test directory already removed must not change the answer.
+  }
+}
 function fail(status, message) {
+  record(`${status} ${message}`);
   process.stderr.write(`gh: ${message} (HTTP ${status})\n`);
   process.exit(1);
 }
+// A crash is an answer too: without this, an exception (say, reading stdin) leaves no line in the log.
+process.on('uncaughtException', (err) => {
+  record(`crashed: ${err.stack ?? err}`);
+  process.stderr.write(`fake gh crashed: ${err.stack ?? err}\n`);
+  process.exit(1);
+});
+const state = JSON.parse(readFileSync(statePath, 'utf8'));
+const input = args.includes('--input') ? JSON.parse(readFileSync(0, 'utf8') || 'null') : null;
+
 // Parallel calls (reviews and comments together) read the file at once, so only a mutation writes, and atomically.
 function save() {
   const temp = `${statePath}.${process.pid}.tmp`;
@@ -53,11 +69,21 @@ function save() {
 }
 function reply(value) {
   if (method !== 'GET') save();
+  record('200');
   process.stdout.write(value === undefined ? '' : JSON.stringify(value));
   process.exit(0);
 }
 function git(gitArgs, cwd) {
   return execFileSync('git', gitArgs, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+}
+// A scratch clone is removed best-effort. git >= 2.47 detaches the auto maintenance a fetch or commit starts, and that
+// background process can write into .git while it is being removed (ENOTEMPTY): retry, and never fail the call on it.
+function removeScratch(dir) {
+  try {
+    rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+  } catch (err) {
+    record(`note: could not remove ${dir}: ${err.message}`);
+  }
 }
 function headSha(ref) {
   if (origin === undefined) return '0'.repeat(40);
@@ -176,6 +202,8 @@ if (kind === 'pulls' && sub === 'merge' && method === 'PUT') {
   const head = headSha(pull.head);
   if (input.sha !== head) fail(409, 'Head branch was modified');
   const work = mkdtempSync(path.join(tmpdir(), 'fake-gh-merge-'));
+  // Once the push lands the merge has happened, so nothing after it may fail the call: the forge would report an open
+  // pull request whose commit is already on the base branch, and land would say `merge-refused`.
   try {
     git(['clone', '--quiet', '--branch', pull.base ?? 'main', origin, work]);
     git(['fetch', '--quiet', 'origin', pull.head], work);
@@ -185,13 +213,13 @@ if (kind === 'pulls' && sub === 'merge' && method === 'PUT') {
     } else {
       git(['merge', '--no-ff', '--no-verify', '--quiet', '-m', `Merge #${pull.number}`, 'FETCH_HEAD'], work);
     }
-    git(['push', '--quiet', '--no-verify', 'origin', `HEAD:refs/heads/${pull.base ?? 'main'}`], work);
     pull.merge_commit_sha = git(['rev-parse', 'HEAD'], work);
+    git(['push', '--quiet', '--no-verify', 'origin', `HEAD:refs/heads/${pull.base ?? 'main'}`], work);
   } catch (err) {
+    removeScratch(work);
     fail(405, `merge failed: ${err.message}`);
-  } finally {
-    rmSync(work, { recursive: true, force: true });
   }
+  removeScratch(work);
   pull.merged_head_sha = head;
   pull.state = 'closed';
   pull.merged = true;
