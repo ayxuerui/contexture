@@ -14,7 +14,8 @@ import type { CommandOutcome, CommandRequires } from '../core/command.js';
 import type { RunEnv } from '../core/env.js';
 import type { GitRunner } from '../core/git/exec.js';
 import { createServingState, type ServingStateHolder } from '../core/browse/serving-state.js';
-import { createLander, type Lander } from '../core/approval/lander.js';
+import { createStoreUpdateRunner, type StoreUpdateKind, type StoreUpdateSettings } from '../core/store-update-runner.js';
+import { serveSyncMinutes } from '../config/defaults.js';
 import type { StoreConfig } from '../config/schema.js';
 import { readConfig } from '../config/load.js';
 import { MIGRATION_STEPS } from '../config/migrations.js';
@@ -128,7 +129,7 @@ async function readDerivedDocument(absolutePath: string): Promise<{ text: string
 
 async function handleRequest(
   holder: ServingStateHolder,
-  landing: LandingControl,
+  landing: StoreUpdateControl,
   mcp: McpSurface,
   plugins: PluginDownloads,
   git: GitRunner,
@@ -216,7 +217,7 @@ async function handleRequest(
     const replyHeaders = reply.contentType.startsWith('text/html') ? { ...headers, ...reply.headers } : { 'Cache-Control': 'no-store', ...reply.headers };
     send(res, method, reply.status, reply.contentType, reply.body, replyHeaders);
     // After the response: the decider's redirect never waits on a landing run.
-    if (reply.landingRequested === true) landing.trigger();
+    if (reply.landingRequested === true) landing.triggerLanding();
     return;
   }
 
@@ -349,37 +350,46 @@ async function approvalServer(env: RunEnv, store: Store): Promise<ApprovalServer
 }
 
 /**
- * change-approval spec ("The server lands what was approved"): one lander per
- * server, running while the loaded configuration declares change_approval and
- * does not say `land: manual`. It follows configuration changes like every
- * other part of the server, so turning approval on or off at runtime starts or
- * stops it.
+ * context-browsing spec ("The server keeps its clone of the store current"),
+ * change-approval spec ("The server lands what was approved"): one
+ * store-update runner per server, always running. Each run is a landing run
+ * while the loaded configuration declares change_approval and does not say
+ * `land: manual`, and a sync run otherwise; the interval is
+ * `serve.sync_minutes`. It follows configuration changes like every other part
+ * of the server, so turning approval on or off at runtime changes the next
+ * run's kind, and a new interval takes effect on reload.
  */
-interface LandingControl {
+interface StoreUpdateControl {
   sync(config: StoreConfig): void;
+  /** A store-update run of whichever kind the configuration calls for (a verified push to the default branch). */
   trigger(): void;
+  /** A landing run, only while landing is on (an accepted approval); nothing under `land: manual`. */
+  triggerLanding(): void;
   stop(): Promise<void>;
 }
 
-function createLandingControl(env: RunEnv, root: string): LandingControl {
-  let lander: Lander | null = null;
+export function storeUpdateSettings(config: StoreConfig): StoreUpdateSettings {
+  const landing = config.change_approval !== undefined && config.change_approval.land !== 'manual';
+  const kind: StoreUpdateKind = landing ? 'land' : 'sync';
+  return { kind, intervalMs: serveSyncMinutes(config) * 60 * 1000 };
+}
+
+function createStoreUpdateControl(env: RunEnv, initial: StoreConfig, root: string): StoreUpdateControl {
   // Exactly the command a person would run: this Node binary and this CLI's entry script.
   const command = [env.execPath, process.argv[1]!];
+  const runner = createStoreUpdateRunner({ command, root, env: env.env, output: env.io.stderr, ...storeUpdateSettings(initial) });
   return {
     sync(config) {
-      const wanted = config.change_approval !== undefined && config.change_approval.land !== 'manual';
-      if (wanted && lander === null) lander = createLander({ command, root, env: env.env, output: env.io.stderr });
-      if (!wanted && lander !== null) {
-        void lander.stop();
-        lander = null;
-      }
+      runner.configure(storeUpdateSettings(config));
     },
     trigger() {
-      lander?.trigger();
+      runner.trigger();
     },
-    async stop() {
-      await lander?.stop();
-      lander = null;
+    triggerLanding() {
+      if (runner.kind() === 'land') runner.trigger();
+    },
+    stop() {
+      return runner.stop();
     },
   };
 }
@@ -394,11 +404,10 @@ export async function execute(env: RunEnv, store: Store, flags: ServeFlags): Pro
     buildApproval: (next) => approvalServer(env, next),
     log: (line) => env.io.stderr.write(`${line}\n`),
   });
-  const landing = createLandingControl(env, store.root);
+  const landing = createStoreUpdateControl(env, store.config, store.root);
   const mcp = new McpSurface({ git: env.git, canonicalRoot: store.root, env: env.env, now: () => env.now(), log: (line) => env.io.stderr.write(`${line}\n`) });
   const plugins = new PluginDownloads(env.git);
-  landing.sync(store.config);
-  // Stopping serve stops a landing run in progress; landing is resumable, so the next start finishes it.
+  // Stopping serve stops a store-update run in progress; landing and syncing are resumable, so the next start finishes it.
   const shutdown = (signal: NodeJS.Signals): void => {
     void landing.stop().finally(() => process.exit(signal === 'SIGINT' ? 130 : 143));
   };

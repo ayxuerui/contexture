@@ -15,10 +15,10 @@
 
 ## 3. The store-update runner
 
-- [ ] 3.1 Generalize `core/approval/lander.ts` into a store-update runner that runs `land --pending` when the loaded configuration turns landing on and `sync` otherwise, with the interval from `serve.sync_minutes`, never two at once, output prefixed by the run
-- [ ] 3.2 Make `serve` always start the runner and re-read the run kind and interval when the configuration reloads
-- [ ] 3.3 Integration tests: a store without `change_approval` serves a change merged on the origin after one interval; a store with approval runs only landing; a failing run leaves routes unchanged
-- [ ] 3.4 Run `npx vitest run -t "serve"` and confirm it exits 0
+- [x] 3.1 Generalize `core/approval/lander.ts` into a store-update runner that runs `land --pending` when the loaded configuration turns landing on and `sync` otherwise, with the interval from `serve.sync_minutes`, never two at once, output prefixed by the run
+- [x] 3.2 Make `serve` always start the runner and re-read the run kind and interval when the configuration reloads
+- [x] 3.3 Integration tests: a store without `change_approval` serves a change merged on the origin after one interval; a store with approval runs only landing; a failing run leaves routes unchanged
+- [x] 3.4 Run `npx vitest run -t "serve"` and confirm it exits 0
 
 ## 4. Pull request previews
 
