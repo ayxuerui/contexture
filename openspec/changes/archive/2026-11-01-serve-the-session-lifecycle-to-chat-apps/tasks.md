@@ -45,5 +45,5 @@
 
 ## 9. Real clients (operator checkpoint)
 
-- [ ] 9.1 Deploy to pkm; time `ctxr doctor` through `ctxr` on pkm and confirm it is under the bound
-- [ ] 9.2 Install the downloaded plugin in claude.ai and in ChatGPT; in each, start a session, edit, submit with a written description, see it on the approval page, request changes, answer them, and approve; confirm each call in `serve`'s log (carries 2026-10-23-serve-the-store-over-mcp task 11.1)
+- [x] 9.1 Deploy to pkm; time `ctxr doctor` through `ctxr` on pkm and confirm it is under the bound
+- [x] 9.2 (moved to publish-one-contexture-plugin) Install the downloaded plugin in claude.ai and in ChatGPT; in each, start a session, edit, submit with a written description, see it on the approval page, request changes, answer them, and approve; confirm each call in `serve`'s log (carries 2026-10-23-serve-the-store-over-mcp task 11.1)

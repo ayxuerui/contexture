@@ -336,61 +336,6 @@ The configured skills path SHALL be usable as a harness's native skill directory
 - **WHEN** a store's skills path is that harness's skill directory
 - **THEN** every skill is discoverable there as a complete skill file — the file the harness loads is the file `AGENTS.md` indexes
 
-### Requirement: Submit and land are owned skills over git and gh
-contexture SHALL ship `ctxr-submit` and `ctxr-land` as contexture-owned skills delivered by init and update. The submit skill SHALL state the entry condition that admits it — an explicit operator request to wrap up, or the operator's own closing signal — alongside the anti-triggers that do not admit it, naming an agent's own judgment that its assigned task is finished as the chief one; that stated condition is what makes the absent confirmation below sound rather than assumed. The submit skill SHALL run the re-scan, run the capture skill exactly once, stage named paths, run `ctxr doctor` for store-scope validation, and end in `git push` followed by `gh pr create` — whose body carries a Pages section, listing the preview and published address of every page the change set adds, modifies, moves or removes as reported by `ctxr publish urls`, with the condition under which a preview resolves, whenever that report is non-empty and omitting the section otherwise, and a Knowledge changes section that is the output of `ctxr graph diff --format markdown` pasted verbatim — the agent writes none of that section's text, adds nothing to it and removes nothing from it, so the body carries a record of the change's effect on the store that names its commits and the command reproducing it — without an intervening confirmation step, because the request to submit is itself the consent for both — and SHALL close by reporting the pull request, naming the target a subsequent land will need, and, when the store declares change approval, the pull request's approval page address under `serve.base_url`. The land skill SHALL name its target explicitly (never inferring it from the currently checked-out branch), read the pull request's state and decision state with `gh pr view` and `ctxr review list` before any side effect, and gate the landing behind an explicit confirmation unless the pull request is already `approved` from the approval page, since that recorded decision is the consent. It SHALL then land with `ctxr land <pr>`, passing `--confirm` only after an explicit go. When `ctxr land` reports a conflict, the skill SHALL route it to the lifecycle skill's conflict playbook and then run the command again. The skill SHALL NOT merge with `gh pr merge` itself, because `ctxr land` holds the consent check, the merge confirmation and the synchronization. The lifecycle skill SHALL cover start, including running `ctxr review list` when the store declares change approval and acting on each `changes-requested` comment as review feedback on that session and each `blocked` landing as work to resolve, the session's resting state between turns, re-scan, conflicts, sequencing, and reclaiming worktrees; SHALL state that ending a turn with uncommitted work on the session branch is that resting state rather than an obligation to discharge, and that completing a deliverable is not what ends a session; and SHALL reference both skills without repeating their steps.
-
-#### Scenario: The lifecycle frame names the resting state
-- **WHEN** the session-lifecycle skill is rendered for a store
-- **THEN** it carries a section on the state between turns, stating that the worktree persists across exchanges, that ending a turn with uncommitted work on the branch is normal rather than unfinished, and that having completed a deliverable is not the signal that ends the session
-
-#### Scenario: Submit states what admits it
-- **WHEN** the submit skill is rendered for a store
-- **THEN** it carries an entry-condition section, positioned ahead of the procedure's first step, naming the operator request or closing signal that admits it and the anti-triggers that do not — including that having finished the assigned task is not a closing signal and that the agent's own summary is not one either
-
-#### Scenario: Submit ends in git and gh, gated
-- **WHEN** an agent follows the rendered submit skill
-- **THEN** `ctxr doctor` runs before staging, the capture skill is invoked exactly once, and the branch rename is followed directly by `git push` and `gh pr create` with no confirmation step between them — the gate on this path is `ctxr doctor`, which submit may not proceed past, not a confirmation of the push itself
-
-#### Scenario: Submit hands off with a target land can use
-- **WHEN** an agent reaches the end of the rendered submit skill
-- **THEN** it reports the pull request's number and url and names the target that landing it will take, without merging or invoking the land skill itself
-
-#### Scenario: Land checks state before merging and confirms after
-- **WHEN** an agent follows the rendered land skill
-- **THEN** it reads the pull request's state and decision state before landing, gates the landing behind an explicit confirmation unless the pull request is already `approved`, and lands with `ctxr land`, which confirms from the forge that the pull request merged, instead of running `gh pr merge` itself
-
-#### Scenario: Land names its target explicitly
-- **WHEN** the land skill is rendered for a store
-- **THEN** it instructs naming the target by branch name or pull-request number instead of relying on the current checkout
-
-#### Scenario: Update delivers both to an existing store
-- **WHEN** a store initialized before this change runs the update command
-- **THEN** both skills are present at the configured skills path with the managed header, driving `git` and `gh` rather than a `ctxr session` subcommand, and the lifecycle skill no longer contains the submit or land steps
-
-#### Scenario: Submit puts the pages' addresses in the pull request body
-- **WHEN** an agent follows the rendered submit skill and the change set adds or moves a page under the publish path
-- **THEN** the pull request body carries a Pages section naming each page's status and its addresses, takes them from `ctxr publish urls` rather than deriving them, and states the condition under which a preview resolves
-
-#### Scenario: Submit omits the Pages section when no page changed
-- **WHEN** `ctxr publish urls` reports no pages for the change set
-- **THEN** the pull request body carries no Pages section
-
-#### Scenario: Submit pastes the knowledge-changes block verbatim
-- **WHEN** an agent follows the rendered submit skill
-- **THEN** it runs `ctxr graph diff --since` with `--format markdown` before `gh pr create`, and the pull request body carries that command's output unchanged, naming the base and head commit ids and the reproducing command
-
-#### Scenario: Submit carries the block even when no note changed
-- **WHEN** `ctxr graph diff` reports no note, link, rollup or source change for the change set
-- **THEN** the pull request body still carries the block, which states that the range changes no note, rather than omitting the section or filling it with the agent's own description
-
-#### Scenario: Submit names the approval page
-- **WHEN** an agent reaches the end of the rendered submit skill for a store that declares change approval
-- **THEN** its hand-off names the pull request's approval page address under `serve.base_url` alongside the pull request's number and url
-
-#### Scenario: Session start picks up requested changes
-- **WHEN** the session-lifecycle skill is rendered for a store that declares change approval
-- **THEN** its start section runs `ctxr review list` and treats a `changes-requested` comment as review feedback for that session's branch and a `blocked` landing as work to resolve
-
 ### Requirement: The session-capture skill applies through the command
 The owned session-capture skill SHALL instruct the agent to write the approved items to a proposal file and run `ctxr session capture --proposal <file>`, and to take its report from the command's output.
 
@@ -788,39 +733,40 @@ A contexture-owned skill SHALL be able to ship packaged files beside its `SKILL.
 - **THEN** that harness's copy of the skill directory contains the same supporting files as the canonical one
 
 ### Requirement: The second-opinion skill is an owned skill over external model CLIs
-contexture SHALL ship `ctxr-second-opinion` as a contexture-owned skill delivered by init and update, carrying its runner as a supporting file that is invoked with `node` and depends on nothing outside the Node standard library. The skill SHALL offer two modes: *critique*, in which a written plan is sent to three critic roles — structure and coherence, failure modes and trust boundaries, and simplicity and cost — each backed by a different model family's command-line tool; and *poll*, in which one question is sent to the same model families, optionally asking each to answer through two or three named taste lenses. No `ctxr` command SHALL invoke a model CLI, and no command's behavior SHALL depend on the skill or on those CLIs being present; `ctxr verify` SHALL NOT report them, because the skill is not on the write path.
+contexture SHALL ship `ctxr-second-opinion` as a contexture-owned skill delivered by init and update, carrying no supporting files and driving the `ctxr second-opinion` command group. The command SHALL offer two modes: *critique*, in which a written plan is sent to three critic roles — structure and coherence, failure modes and trust boundaries, and simplicity and cost — each backed by a different model family's command-line tool; and *poll*, in which one question is sent to the same model families, optionally asking each to answer through two or three named taste lenses; and a *preflight* that checks each tool before anything is spent. `ctxr second-opinion` SHALL be the only `ctxr` command that invokes a model CLI. No other command's behavior SHALL depend on it or on those CLIs being present, it SHALL NOT be invoked by any command on the write path, and `ctxr verify` SHALL NOT report the CLIs. The critic contract, persona mandates and lens roster SHALL be shipped as package templates.
 
-The runner is the enforcing mechanism for the following, each covered by a test that runs it against stub CLIs on the executable search path:
+The command is the enforcing mechanism for the following, each covered by a test that runs it against stub CLIs on the executable search path:
 
 - It SHALL run the critics concurrently, each in its own process and each given only the plan and its own role — never another critic's output.
 - It SHALL pass prompt content to each CLI on standard input or as a single argument vector element, never through a shell.
 - It SHALL invoke each CLI with that tool's read-only or no-tools mode where one exists, and in an empty scratch directory as its working directory in every case.
+- It SHALL give each CLI an environment built from a declared allowlist — the executable search path, home, locale and terminal variables, the model CLIs' own variable prefixes, proxy and certificate variables, its own `CTXR_SECOND_OPINION_` variables, and any names an operator lists in a declared pass-through variable, except the forge and contexture prefixes, which the pass-through cannot name — and no other variable of its own environment.
 - It SHALL bound each critic by a timeout and record a critic that times out, exits non-zero, or returns output lacking the required verdict as failed, with the cause.
 - It SHALL write each critique under a letter assigned in an order independent of the critic roster, record the letter-to-role-and-model mapping in a separate manifest, and record in that manifest the model each CLI reports having run where the CLI reports one.
 - It SHALL mark a critique whose findings cite nothing the plan contains — no step it numbers and no text quoted from it — as blind and exclude it from the count of valid critiques, while a critique that approves with no findings SHALL remain valid.
-- It SHALL exit with a distinct status when fewer than two critiques are valid, so a partial result cannot be mistaken for a complete one.
+- It SHALL exit with the failed-check status when fewer than two critiques are valid, so a partial result cannot be mistaken for a complete one, and with the usage status for invalid arguments or fewer than two requested CLIs.
 
-The skill SHALL state when to critique, when to poll, and when to answer directly; SHALL instruct synthesis on the anonymized letters before the manifest is read; SHALL instruct that a dissent backed by cited evidence, and a rejection carrying a critical finding, are surfaced in their own sections rather than outvoted; SHALL disclose that a critic sharing the orchestrating agent's model family is a bias to name; and SHALL end in a hand-off that executes no step of the plan it critiqued. Those instructions are skill-markdown conventions, asserted by a test over the rendered skill, not guarantees the runner can make.
+The skill SHALL state when to critique, when to poll, and when to answer directly; SHALL instruct synthesis on the anonymized letters before the manifest is read; SHALL instruct that a dissent backed by cited evidence, and a rejection carrying a critical finding, are surfaced in their own sections rather than outvoted; SHALL disclose that a critic sharing the orchestrating agent's model family is a bias to name; and SHALL end in a hand-off that executes no step of the plan it critiqued. Those instructions are skill-markdown conventions, asserted by a test over the rendered skill, not guarantees the command can make.
 
 #### Scenario: Update delivers the skill with its runner
-- **WHEN** a store initialized before this change runs `ctxr update`
-- **THEN** the skill is present at the configured skills path with the managed header, its runner and prompt fragments beside it, and a second update reports nothing changed
+- **WHEN** a store whose skill carries the earlier supporting-file runner runs `ctxr update`
+- **THEN** the skill is present at the configured skills path with the managed header and names `ctxr second-opinion`, the earlier runner and prompt fragments beside it are removed, and a second update reports nothing changed
 
 #### Scenario: Critics never see each other
-- **WHEN** the runner executes a critique against stub CLIs that record the input they receive
+- **WHEN** the command executes a critique against stub CLIs that record the input they receive
 - **THEN** each stub received the plan and exactly one role's instructions, and none received text produced by another critic
 
 #### Scenario: No shell stands between the plan and a critic
-- **WHEN** the runner executes a critique of a plan containing shell metacharacters, quotes, and a multi-kilobyte body
+- **WHEN** the command executes a critique of a plan containing shell metacharacters, quotes, and a multi-kilobyte body
 - **THEN** each stub CLI receives the plan byte-identical, and no shell process is spawned
 
 #### Scenario: Results are anonymized
-- **WHEN** the runner completes a critique
-- **THEN** the critique files are named by letter, contain no role or model name placed there by the runner, and the letter-to-role-and-model mapping appears only in the manifest
+- **WHEN** the command completes a critique
+- **THEN** the critique files are named by letter, contain no role or model name placed there by the command, and the letter-to-role-and-model mapping appears only in the manifest
 
 #### Scenario: A failed critic is reported, not hidden
 - **WHEN** one stub CLI exits non-zero and another exceeds the timeout
-- **THEN** each of those critiques is recorded as failed naming its cause, and the runner does not substitute another model for either
+- **THEN** each of those critiques is recorded as failed naming its cause, and the command does not substitute another model for either
 
 #### Scenario: A blind critique does not count
 - **WHEN** a stub CLI returns a well-formed verdict whose findings cite no step and quote no text present in the plan
@@ -828,7 +774,7 @@ The skill SHALL state when to critique, when to poll, and when to answer directl
 
 #### Scenario: Fewer than two valid critiques is a partial result
 - **WHEN** only one of three critiques is valid
-- **THEN** the runner exits with the partial-result status, distinct from both success and a usage error
+- **THEN** the command exits with the failed-check status, distinct from both success and a usage error
 
 #### Scenario: The rendered skill hands off without executing
 - **WHEN** the skill is rendered for a store
@@ -1246,3 +1192,74 @@ The skill SHALL direct the agent to continue each retrieved record with the capt
 #### Scenario: A repeated run does not collide with the last
 - **WHEN** the runner runs twice with the same meetings owed
 - **THEN** the second run reuses the fixed worktree path and renders the same captures without failing
+
+### Requirement: Submit and land are owned skills over the session commands
+contexture SHALL ship `ctxr-submit` and `ctxr-land` as contexture-owned skills delivered by init and update. The submit skill SHALL state the entry condition that admits it — an explicit operator request to wrap up, or the operator's own closing signal — alongside the anti-triggers that do not admit it, naming an agent's own judgment that its assigned task is finished as the chief one. It SHALL run `ctxr session status` as the re-scan, offer a rollup for any entity `ctxr rollup stale` flags, run the capture skill exactly once, hold one coherent unit per pull request, and end in `ctxr session submit` with a branch name, a commit message, a title and a body answering why, what changed, route, verification and follow-ups, without an intervening confirmation, because the request to submit is the consent and the command's store-scope check is the gate. It SHALL NOT instruct writing the Knowledge changes or Pages sections, which the command writes. It SHALL close by reporting the pull request, naming the target a land needs, and, when the store declares change approval, the approval page address. The land skill SHALL be as before: name its target explicitly, read state with `gh pr view` and `ctxr review list` before any side effect, gate on an explicit go unless already approved, land with `ctxr land`, and route a conflict to the lifecycle skill. The lifecycle skill SHALL cover start, including acting on `changes-requested` and `blocked` rows `ctxr session list --review` reports when the store declares change approval, the resting state between turns, re-scan through `ctxr session status`, conflicts through `ctxr session rebase`, sequencing, and removal through `ctxr session discard`, and SHALL reference submit and land without repeating their steps.
+
+#### Scenario: Submit ends in the session command, gated
+- **WHEN** an agent follows the rendered submit skill
+- **THEN** it re-scans with `ctxr session status`, invokes the capture skill exactly once, and ends with `ctxr session submit` and no confirmation step, naming no `git push` or `gh pr create`
+
+#### Scenario: Submit leaves the generated sections to the command
+- **WHEN** the submit skill is rendered for a store
+- **THEN** it does not instruct running `ctxr graph diff` or `ctxr publish urls` to paste their output, and states that the command appends those sections
+
+#### Scenario: Submit still states what admits it
+- **WHEN** the submit skill is rendered for a store
+- **THEN** it carries an entry-condition section ahead of the first step naming the admitting request and the anti-triggers, including that a finished task and the agent's own summary are not closing signals
+
+#### Scenario: The lifecycle skill drives the session commands
+- **WHEN** the session-lifecycle skill is rendered for a store that declares change approval
+- **THEN** it reads requested changes from `ctxr session list --review`, re-scans with `ctxr session status`, resolves conflicts with `ctxr session rebase`, and removes a session with `ctxr session discard`
+
+#### Scenario: Land is unchanged
+- **WHEN** an agent follows the rendered land skill
+- **THEN** it reads the pull request's state and decision state before landing, gates on an explicit go unless already approved, and lands with `ctxr land`
+
+#### Scenario: Update delivers the reworded skills
+- **WHEN** a store initialized before this change runs the update command
+- **THEN** the submit and lifecycle skills are present with the managed header and drive the session commands, and a second update reports nothing changed
+
+### Requirement: No secret in the environment reaches a model CLI
+`ctxr second-opinion` SHALL NOT pass to a model CLI any environment variable outside its declared allowlist, so a forge token, an App credential or its file path present in its own environment is never visible to a critic. A preflight that fails SHALL name the variables it withheld, never their values.
+
+#### Scenario: A forge credential is withheld
+- **WHEN** the command runs with `GH_TOKEN`, `CONTEXTURE_GITHUB_APP_PRIVATE_KEY_FILE` and `ANTHROPIC_API_KEY` set, against stub CLIs that record their environment
+- **THEN** each stub saw `ANTHROPIC_API_KEY` and neither of the other two
+
+#### Scenario: The pass-through cannot name a protected variable
+- **WHEN** `CTXR_SECOND_OPINION_PASS_ENV=GH_TOKEN` is set
+- **THEN** the command exits with the usage code naming `GH_TOKEN`, and no CLI is invoked
+
+#### Scenario: An operator passes a variable through
+- **WHEN** `CTXR_SECOND_OPINION_PASS_ENV=CORP_CONFIG` and `CORP_CONFIG` are set
+- **THEN** each stub saw `CORP_CONFIG`
+
+### Requirement: Owned skills render for the MCP surface from the same source
+The owned skills SHALL render for a second target, the MCP surface, alongside the CLI render, which SHALL be unchanged by it. The MCP render SHALL include a declared subset of the owned skills; every included skill SHALL render from its CLI template, unchanged, with one shared preamble naming how each command and git step maps to the surface's tools. The upgrade, Circleback and second-opinion skills, which run local programs, the land skill and the derived-artifacts skill SHALL NOT be included.
+
+#### Scenario: The CLI render is unchanged
+- **WHEN** the owned skills are rendered for the CLI on a store before and after this rendering exists
+- **THEN** the two renders are byte-identical
+
+#### Scenario: A capture skill reaches the chat app
+- **WHEN** the owned skills are rendered for the MCP surface
+- **THEN** the capture skill is included with the shared preamble, the submit skill's text equals the CLI render's under the preamble, and the upgrade, second-opinion and land skills are absent
+
+### Requirement: An MCP-rendered skill names only what the surface offers
+A test over the MCP render SHALL fail, naming the skill and the term, when an included skill names a tool the surface does not register, a `ctxr` command the surface's command-to-tool mapping does not map, or a `git` or `gh` command the shared preamble does not map. The tool names and allowlists SHALL be read from the same definitions the server uses.
+
+#### Scenario: An unmapped git step fails the check
+- **WHEN** an included skill instructs `git rebase -i`
+- **THEN** the check exits non-zero naming that skill and the command
+
+### Requirement: `ctxr plugin build` writes the store's chat-app plugins
+`ctxr plugin build` SHALL write, under an output directory that defaults to a path under the store's derived cache, a Claude plugin and a ChatGPT plugin, each as a directory and as an archive. Each SHALL carry the MCP render of the owned skills as `skills/<name>/SKILL.md` and an MCP server entry whose address is `serve.base_url` followed by `/mcp`, in that vendor's manifest format; neither SHALL carry a credential, a variable in the address, a hook, a local server or a top-level `bin/` directory. Manifest and readme text SHALL come from shipped templates. The plugin's name SHALL derive from the store's name and its version from the CLI's version and the rendered commit. The command SHALL exit with the configuration error code, writing nothing, when the store declares no `mcp` block.
+
+#### Scenario: Both plugins are built
+- **WHEN** `ctxr plugin build` runs on a store declaring `mcp` and `serve.base_url: https://ctx-a.example.test`
+- **THEN** the output holds a Claude plugin whose `.mcp.json` names `https://ctx-a.example.test/mcp`, a ChatGPT plugin whose `mcp.json` names the same address with OAuth, both carrying the rendered skills, and an archive of each
+
+#### Scenario: A store without the MCP surface has no plugin
+- **WHEN** `ctxr plugin build` runs on a store with no `mcp` block
+- **THEN** it exits with the configuration error code and writes nothing
