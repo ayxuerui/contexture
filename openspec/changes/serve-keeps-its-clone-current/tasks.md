@@ -36,10 +36,10 @@
 
 ## 6. Fetch failures and git hardening
 
-- [ ] 6.1 Make the shared canonical sync check its fetch's exit status first, and report a failed fetch as not synced with git's first error line, in `land` and `sync`
-- [ ] 6.2 Run every git command of `land`, `sync` and the runner with `core.hooksPath` set to an empty directory, `core.fsmonitor=false`, and each repository-declared `filter.*`, `diff.*.command`/`textconv` and `merge.*.driver` blanked
-- [ ] 6.3 Tests: a failed fetch with a stale `origin/main` equal to HEAD reports not synced; a planted `post-merge` hook and a declared filter driver do not run during a landing fast-forward
-- [ ] 6.4 Run `npx vitest run -t "land|ctxr sync"` and confirm it exits 0
+- [x] 6.1 Make the shared canonical sync check its fetch's exit status first, and report a failed fetch as not synced with git's first error line, in `land` and `sync`
+- [x] 6.2 Run every git command of `land`, `sync` and the runner with `core.hooksPath` set to an empty directory, `core.fsmonitor=false`, and each repository-declared `filter.*`, `diff.*.command`/`textconv` and `merge.*.driver` blanked
+- [x] 6.3 Tests: a failed fetch with a stale `origin/main` equal to HEAD reports not synced; a planted `post-merge` hook and a declared filter driver do not run during a landing fast-forward
+- [x] 6.4 Run `npx vitest run -t "land|ctxr sync"` and confirm it exits 0
 
 ## 7. Docs and end to end
 

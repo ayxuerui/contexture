@@ -1,5 +1,6 @@
 import { mkdtemp, rm, stat } from 'node:fs/promises';
-import { fastForwardIfSafe, type FastForwardOutcome } from '../core/git/fast-forward.js';
+import { fastForwardIfSafe, syncCanonicalClone, type FastForwardOutcome } from '../core/git/fast-forward.js';
+import { hardenGit } from '../core/git/hardened.js';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { decisionBody, landingBody, recordPartOf, type LandingRecordState } from '../core/approval/decision.js';
@@ -348,8 +349,14 @@ async function catchUp(ctx: Context, result: LandResult, pull: PullRequest, sess
  * it; if the fast-forward would overwrite one, git refuses and that is reported.
  */
 async function syncCanonical(ctx: Context): Promise<CanonicalSync> {
-  await remoteGit(ctx, ['fetch', '--quiet', 'origin', ctx.defaultBranch], ctx.canonical, true);
-  return fastForwardIfSafe((args) => git(ctx, args, ctx.canonical, true), ctx.defaultBranch, 'the canonical clone');
+  // serve-keeps-its-clone-current D11: a failed fetch is reported as not synced, never compared against.
+  const result = await syncCanonicalClone(
+    () => remoteGit(ctx, ['fetch', '--quiet', 'origin', ctx.defaultBranch], ctx.canonical, true),
+    (args) => git(ctx, args, ctx.canonical, true),
+    ctx.defaultBranch,
+    'the canonical clone',
+  );
+  return result.outcome;
 }
 
 function syncFinding(sync: CanonicalSync): Finding | null {
@@ -478,7 +485,9 @@ function summaryLine(r: LandResult): string {
  * runner acting on a page approval has no agent in it, and the consent check is
  * the one thing that must be enforced rather than instructed.
  */
-export async function execute(env: RunEnv, store: Store, flags: LandFlags, forge?: ForgeClient): Promise<CommandOutcome<LandData>> {
+export async function execute(callerEnv: RunEnv, store: Store, flags: LandFlags, forge?: ForgeClient): Promise<CommandOutcome<LandData>> {
+  // serve-keeps-its-clone-current D12: every git command this run makes ignores the repository's hooks and drivers.
+  const env: RunEnv = { ...callerEnv, git: hardenGit(callerEnv.git) };
   if (flags.pending && flags.confirm) throw new LandFlagsError('--pending lands only recorded approvals, so it does not take --confirm.');
   if (flags.session !== undefined) {
     if (flags.pending || flags.pr !== undefined) throw new LandFlagsError('--session names the whole session; it takes no pull request number and no --pending.');
