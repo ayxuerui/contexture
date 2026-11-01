@@ -24,19 +24,38 @@ The owned skills SHALL render for a second target, the MCP surface, alongside th
 ## ADDED Requirements
 
 ### Requirement: contexture publishes one plugin for every store
-contexture's repository SHALL carry the Claude plugin `contexture` under `plugins/contexture/`, generated from the MCP render, listed by a `.claude-plugin/marketplace.json` at its root. Its `version` SHALL equal the CLI's, and it SHALL carry no MCP server entry, credential, hook, local server or top-level `bin/` directory. `ctxr plugin build` SHALL write it without reading a store, and in a store that declares `mcp` also that store's ChatGPT plugin, with its connector.
+contexture's repository SHALL carry the Claude plugin `ctxr` under `plugins/ctxr/`, generated from the MCP render, listed by the `contexture` marketplace in `.claude-plugin/marketplace.json` at its root. Its `version` SHALL equal the CLI's, and it SHALL carry no MCP server entry, credential, hook, local server or top-level `bin/` directory. `ctxr plugin build` SHALL write it without reading a store, and in a store that declares `mcp` also that store's ChatGPT plugin, with its connector.
 
 #### Scenario: The plugin carries no connector
 - **WHEN** `ctxr plugin build` runs outside any store
 - **THEN** it writes the Claude plugin with the rendered skills and no MCP server entry, its version is the CLI's version, and no ChatGPT plugin is written
 
 ### Requirement: The committed plugin is checked against the render
-A test SHALL fail, naming the first differing file, when the committed `plugins/contexture/` differs from what `ctxr plugin build` writes, or when its version differs from the package's, so a skill change cannot merge without the plugin it changes.
+A test SHALL fail, naming the first differing file, when the committed `plugins/ctxr/` differs from what `ctxr plugin build` writes, or when its version differs from the package's, so a skill change cannot merge without the plugin it changes.
 
 #### Scenario: The committed plugin is current
-- **WHEN** the test suite runs on a commit whose skills, preamble and version match the committed `plugins/contexture/`
+- **WHEN** the test suite runs on a commit whose skills, preamble and version match the committed `plugins/ctxr/`
 - **THEN** the freshness test passes
 
 #### Scenario: A skill change without a regenerated plugin fails
-- **WHEN** a skill template changes and `plugins/contexture/` is not regenerated
+- **WHEN** a skill template changes and `plugins/ctxr/` is not regenerated
 - **THEN** the freshness test fails naming the differing skill file
+
+### Requirement: The plugin's commands open its skills
+The plugin SHALL carry a command for each entry of a declared map from command name to included skill. Each command's body SHALL be its skill's MCP render followed by the person's arguments; its description SHALL mark it as a typed shortcut; and it SHALL declare that the model does not invoke it on its own. A test SHALL fail, naming the command, when its skill is not one the plugin carries or its body differs from that skill's render.
+
+#### Scenario: A command opens its skill
+- **WHEN** the plugin is built
+- **THEN** `commands/submit.md` carries the `ctxr-submit` render and a description beginning as a typed shortcut, and declares that the model does not invoke it
+
+#### Scenario: A command naming a missing skill fails
+- **WHEN** the command map names a skill the plugin does not include
+- **THEN** the check fails naming that command
+
+### Requirement: In a checkout, the plugin's skills defer to the store's own
+The MCP render's preamble SHALL begin by telling an agent that a working directory with a `contexture.yaml` at its root and a shell that runs `ctxr` is a checkout, where it follows the store's own skill of the same name from the store's skills folder instead of the plugin's. A test over the render SHALL assert that this is the preamble's first rule.
+
+#### Scenario: The checkout rule comes first
+- **WHEN** the MCP render is produced
+- **THEN** the first section of every included skill's preamble is the checkout rule
+

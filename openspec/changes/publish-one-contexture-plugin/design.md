@@ -28,7 +28,7 @@ pkm's AGENTS.md already states the inbox, templates, layers, relation vocabulary
 
 ### D1. One plugin, from contexture's repository, with no connector
 
-The plugin is contexture's: the skills are contexture's text, and only the values differ between stores. It is generated into `plugins/contexture/` in contexture's public repository and listed by `.claude-plugin/marketplace.json` at the repository root, with source `./plugins/contexture`. A member's connector to their store is added separately, once.
+The plugin is contexture's: the skills are contexture's text, and only the values differ between stores. It is generated into `plugins/ctxr/` in contexture's public repository and listed by `.claude-plugin/marketplace.json` at the repository root, with source `./plugins/ctxr`. A member's connector to their store is added separately, once.
 
 **Opposing case (keep the per-store plugin), steelmanned:**
 - **One install instead of two.** The plugin brings its connector.
@@ -69,7 +69,7 @@ The skills still read AGENTS.md for conventions, as they do today.
 
 ### D3. The version is the CLI's, and the committed plugin is checked
 
-`plugins/contexture/.claude-plugin/plugin.json` carries `version` equal to `package.json`'s. `npm run plugin` regenerates the directory from the built CLI.
+`plugins/ctxr/.claude-plugin/plugin.json` carries `version` equal to `package.json`'s. `npm run plugin` regenerates the directory from the built CLI.
 
 A test renders the plugin and compares it byte for byte with the committed directory, and checks that the version matches. Both have to pass on every PR:
 - **A PR that changes a skill regenerates the plugin** in the same PR.
@@ -94,6 +94,46 @@ Its text lives in `templates/plugin/page.html`.
 
 **Rejected alternative: drop the page.** The connector address and the steps would then live only in the README, and a non-engineer member needs them in one place they already sign in to.
 
+### D5. The plugin is `ctxr`, with typed commands for its entry points
+
+The plugin is named `ctxr` and the marketplace `contexture`, so a member installs `ctxr@contexture`. It carries seven commands, each mapped explicitly to the skill it opens:
+
+| Command | Skill |
+|---|---|
+| `/ctxr:capture` | `ctxr-capture` |
+| `/ctxr:ingest` | `ctxr-ingest-orchestration` |
+| `/ctxr:research` | `ctxr-research` |
+| `/ctxr:rollup` | `ctxr-rollup` |
+| `/ctxr:mission` | `ctxr-mission` |
+| `/ctxr:session` | `ctxr-session-lifecycle` |
+| `/ctxr:submit` | `ctxr-submit` |
+
+**How a command is built:**
+- **Body:** the full MCP render of its skill, generated from the same template, followed by the person's `$ARGUMENTS`. In chat a command loads as a skill, so whichever of the two Claude loads, it has the whole procedure.
+- **Description:** worded as a typed shortcut ("Typed shortcut: …"), so a natural request matches the skill's description and not the command's.
+- **Frontmatter:** `disable-model-invocation: true`, which Claude Code honours to keep the command out of automatic loading. claude.ai accepts only `name`, `description`, `license`, `compatibility`, `metadata` and `allowed-tools`, so there the description and the full body are the protection.
+- **Check:** a test fails when a command maps to a skill the plugin does not carry, or when its body differs from that skill's render.
+
+**Why `ctxr` and not `contexture`:** a three-model poll on 2026-11-01 ranked this option first, unanimously. The commands are what people type, and `/ctxr:submit` matches the CLI people already know. The repeated prefix in `/ctxr:ctxr-capture` shows only on skill entries, which nobody types. The skills keep `ctxr-*`, as the earlier poll settled.
+
+**Opposing case (`contexture` with the same commands, `/contexture:submit`):**
+- It keeps the brand.
+- It avoids the stutter on skill entries.
+
+It loses on length and on two names: the commands would be `/contexture:` in chat while the CLI and the skills are `ctxr`.
+
+**Commands for the local-only skills** (land, publish, upgrade, second-opinion) are not part of this change. Stores get no `.claude/commands/` copies: see D6.
+
+### D6. In a checkout, the plugin defers to the store's own skills
+
+A plugin added on claude.ai syncs into the same person's Claude Code. There its chat render ("you are working through this store's server") would sit beside the store's own `ctxr-*` skills, which are written for a checkout.
+
+**The rule:** the preamble's first section says that when a `contexture.yaml` sits at the root of the working directory and a shell runs `ctxr`, this is a checkout. The agent then follows the store's own skill of the same name from the store's skills folder and ignores this plugin's version. A `/ctxr:` command then works on both surfaces: through the connector in chat, and through the store's skill in a checkout.
+
+**No `.claude/commands/` copies in stores.** For an operator who also has the plugin, they would duplicate every `/ctxr:` entry in Claude Code.
+
+**Accepted gap:** an operator without the plugin gets no `/ctxr:` commands locally, and asks in words as today.
+
 ## Risks / Trade-offs
 
 - **A client that does not pass server instructions to the model** never sees *This store*. → The preamble also says that a missing value can be read from AGENTS.md, which states most of them, and that otherwise the agent asks. Claude passes server instructions; ChatGPT is checked in task 6.2.
@@ -112,6 +152,8 @@ Its text lives in `templates/plugin/page.html`.
 
 ## Revisions after critique
 
+(Revisions 1–6 predate D5 and D6. Where they say plugin `contexture` or `plugins/contexture/`, read `ctxr` and `plugins/ctxr/`.)
+
 A three-model critique on 2026-11-01 approved this change with changes from all three reviewers. These revisions override anything inconsistent above.
 
 1. **The plugin can be ahead of a store's server, and the skills say what to do then.** Two reviewers raised this independently.
@@ -123,4 +165,4 @@ A three-model critique on 2026-11-01 approved this change with changes from all 
 3. **The MCP render takes no configuration.** It substitutes one static placeholder map. The "two stores render one plugin" scenario becomes an assertion that the render contains no value from the shipped defaults.
 4. **Rollback is described as shipped.** The operator runs `ctxr plugin build`, which writes the connector-less zip, and members upload it and keep their store connector.
 5. **Declined: removing the `ctxr plugin build` command** (pragmatist). It is the rollback path above, it is what `npm run plugin` calls, and it lets an operator build the plugin without `serve`. It costs one command, and dropping it would leave no way to produce the zip outside the repository's npm scripts.
-6. **Where `ctxr plugin build` writes** (settled in implementation). Each plugin is a directory and a zip beside it under `--out`: the Claude plugin at `<out>/contexture/` with `contexture-claude.zip`, and in a store with `mcp` its ChatGPT plugin at `<out>/chatgpt/` with `contexture-<store>-chatgpt.zip`. The default `--out` is `.contexture/cache/plugin/` inside a store, as before, and `./contexture-plugin/` outside one, so a build never writes into the working directory itself. `npm run plugin` is `ctxr plugin build --out plugins` with the store root cleared, which lands the plugin at `plugins/contexture/`; the zip beside it is removed and ignored. A store without `mcp` gets the Claude plugin and a notice, not the old configuration error, since the Claude plugin needs no server.
+6. **Where `ctxr plugin build` writes** (settled in implementation). Each plugin is a directory and a zip beside it under `--out`: the Claude plugin at `<out>/contexture/` with `contexture-claude.zip`, and in a store with `mcp` its ChatGPT plugin at `<out>/chatgpt/` with `contexture-<store>-chatgpt.zip`. The default `--out` is `.contexture/cache/plugin/` inside a store, as before, and `./contexture-plugin/` outside one, so a build never writes into the working directory itself. `npm run plugin` is `ctxr plugin build --out plugins` with the store root cleared, which lands the plugin at `plugins/ctxr/`; the zip beside it is removed and ignored. A store without `mcp` gets the Claude plugin and a notice, not the old configuration error, since the Claude plugin needs no server.

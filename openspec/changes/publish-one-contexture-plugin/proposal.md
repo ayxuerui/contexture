@@ -9,7 +9,9 @@ The skills are contexture's, not any one store's. One plugin built from contextu
 
 ## What Changes
 
-- **One plugin for every store.** `contexture` is a Claude plugin committed in contexture's repository (`plugins/contexture/`), listed by a `.claude-plugin/marketplace.json` at the repository root. A member adds the marketplace (`ayxuerui/contexture`) once, turns on **Sync automatically**, and installs `contexture`. Its `version` is the CLI's version, so members receive a new copy exactly when a release ships and never ahead of the servers.
+- **One plugin for every store.** `ctxr` is a Claude plugin committed in contexture's repository (`plugins/ctxr/`), listed by the `contexture` marketplace (`.claude-plugin/marketplace.json` at the repository root). A member adds the marketplace (`ayxuerui/contexture`) once, turns on **Sync automatically**, and installs `ctxr` (`ctxr@contexture`). Its `version` is the CLI's version, so members receive a new copy exactly when a release ships and never ahead of the servers.
+- **Typed commands for the entry points.** Seven commands are generated from the skills they open: `/ctxr:capture`, `/ctxr:ingest`, `/ctxr:research`, `/ctxr:rollup`, `/ctxr:mission`, `/ctxr:session` and `/ctxr:submit`. The skills keep their `ctxr-*` names and stay what Claude loads by itself.
+- **The plugin defers to a checkout.** A plugin on a claude.ai account also syncs into the person's Claude Code. Its preamble's first rule is: in a checkout of a store, use that store's own skills, not the plugin's.
 - **The plugin carries no connector.** Each member adds their store's connector once, by its `/mcp` address. Someone in two stores adds two connectors. The skills work with whichever contexture connector is attached.
 - **A store-independent MCP render.**
   - The skills render identically for every store. Each value a CLI render takes from `contexture.yaml` (inbox and capture paths, templates, log, graph document, cluster depth, layers, relation vocabulary, mission size, guidance, archive and scratch paths, default branch) is written as a named placeholder.

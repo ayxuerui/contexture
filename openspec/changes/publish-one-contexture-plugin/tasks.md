@@ -25,7 +25,14 @@
 - [x] 5.1 `npm run typecheck && npm run build && npm test` exit 0; README "Connecting chat apps" rewritten for the marketplace
 - [x] 5.2 The release checklist (release PR) runs `npm run plugin` with the version bump
 
+## 7. Plugin name, commands and the checkout rule
+
+- [ ] 7.1 Rename the plugin to `ctxr` (`plugins/ctxr/`, plugin.json name and displayName; marketplace stays `contexture`, entry `ctxr`); update README, CONTRIBUTING, the connect page and tests
+- [ ] 7.2 Command map module (command → skill) and generated `commands/<name>.md`: full skill render plus `$ARGUMENTS`, typed-shortcut description, `disable-model-invocation: true`; check that each maps to a carried skill and matches its render
+- [ ] 7.3 Preamble's first rule: in a checkout (a `contexture.yaml` at the root, a shell running `ctxr`) follow the store's own skill; test that it is first
+- [ ] 7.4 `npm run plugin`; `claude plugin validate .` and `claude plugin validate plugins/ctxr` pass; `npm run typecheck && npm run build && npm test` exit 0
+
 ## 6. Real clients (operator checkpoint)
 
-- [ ] 6.1 After the release: add the marketplace in claude.ai with Sync automatically, install `contexture`, keep the pkm connector; remove `contexture-pkm`
+- [ ] 6.1 After the release: add the marketplace in claude.ai with Sync automatically, install `ctxr`, keep the pkm connector; remove `contexture-pkm`; type `/ctxr:capture` and check that a natural request loads the skill, not the command; in Claude Code with the plugin synced, check that a checkout follows the store's own skills
 - [ ] 6.2 In claude.ai and in ChatGPT: start a session, edit, submit with a written description, see it on the approval page, request changes, answer them, approve; confirm each call in `serve`'s log and that a placeholder value was taken from *This store*; then check the updated plugin against a server one release behind, and with two stores connected at once (carries 2026-11-01-serve-the-session-lifecycle-to-chat-apps task 9.2)
