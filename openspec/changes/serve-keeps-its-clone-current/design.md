@@ -11,6 +11,17 @@ See proposal.md for why. The pieces already exist:
   configuration declares `change_approval` with `land` absent or `auto`.
 - Landing holds a lock in the repository's git directory, so a person's `ctxr land` and the server's sweep never race.
 
+Two facts checked on the live host on 2026-11-01 shape the last two decisions:
+
+- **`serve` and the agents share one clone.** In the runtime image's compose, a store's `serve` and agents containers
+  mount the same volume at `/store`. So `serve`'s git commands run in a repository the agent can write, `.git/`
+  included.
+- **Agents can already merge to `main`.** pkm's agent logs in as the repository owner, and the other agents' tokens
+  have write access. None of these private repositories has branch protection, which needs a paid GitHub plan. The
+  approval page records consent and the hooks and skills enforce the habit, but nothing on the forge prevents a direct
+  push. What the App key adds for a compromised agent is reach into stores its own token cannot write, and the ability
+  to forge a decision attributed to a person.
+
 ## Goals / Non-Goals
 
 **Goals:**
@@ -93,6 +104,24 @@ every timer. **Why not:** updating a clone runs git inside it, and git runs that
 holding the App key, next to the key file. The simplicity is kept another way: the loop is `ctxr sync --every`, so
 `contexture-images` adds one supervised line in the agents container, run as the agent's own user with its own token,
 and `serve`'s timer calls the same sync code.
+
+### D11. A failed fetch is reported, never compared against
+
+The landing run's canonical sync fetches with failures allowed, then compares the clone with the last-fetched default
+branch. When that fetch fails, an old `origin/main` equal to HEAD reads as "already current". The sync now checks the
+fetch first and reports it, for landing and for `ctxr sync`. **Case for keeping failures quiet:** a forge outage then
+produces no warning on every run. **Why report:** a store silently served stale while claiming to be current is the
+failure this change exists to remove.
+
+### D12. Landing's git ignores the repository's hooks and drivers, as defense in depth
+
+Because `serve` shares `/store` with the agent, a hook or driver the agent places in `.git/` would run in the process
+holding the App key on the next landing run. Every git command landing and syncing run overrides `core.hooksPath` with
+an empty directory, turns `core.fsmonitor` off, and blanks each filter, diff and merge driver the repository declares.
+**Case for skipping it and giving `serve` its own clone instead:** a separate volume removes the shared repository
+altogether, and overrides cannot anticipate every configuration git might execute. **Why both:** the separate clone is
+a `contexture-images` change that lands with the single host service; the overrides are cheap, protect every store
+now, and stay useful after. They are not a guarantee, and the design does not claim one.
 
 ## Risks / Trade-offs
 

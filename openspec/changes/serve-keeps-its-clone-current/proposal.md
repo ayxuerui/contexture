@@ -12,6 +12,8 @@ Previews have the opposite gap. A page written in a session inside a mounted sto
 - **A GitHub webhook.** With a webhook secret in its environment, `serve` accepts signed push deliveries at `POST /hooks/github`: a push to the default branch starts a store-update run at once, and a push to any other branch fetches it for its preview. A delivery is only a hint; every change is read from the forge. The timer and on-demand fetching stay as fallbacks, because GitHub does not retry a failed delivery.
 - **`ctxr sync --every <minutes>`**: the same sync as a running loop that also refreshes the store's mounts, so an agents container keeps its own clone and mounts current by starting one process as the agent's own user. `contexture-images` adds one supervised line; the loop lives in ctxr.
 - **A merged pull request's preview redirects to the published page**, so a shared preview link keeps working after the change lands.
+- **A failed fetch is reported, never mistaken for an up-to-date clone**, in landing's sync and in `ctxr sync`.
+- **Landing's and syncing's git ignore the repository's hooks and drivers.** `serve` shares `/store` with the agent, so a hook planted in `.git/` would otherwise run next to the App key; `core.hooksPath`, `core.fsmonitor` and repository-declared filter, diff and merge drivers are overridden on every git command they run. Defense in depth; `serve`'s own clone is a later `contexture-images` change.
 - **`serve.sync_minutes`**: optional, positive whole minutes, absent meaning 5, today's landing interval. The landing sweep's interval follows it too, so one number decides how fresh a store is served.
 
 ## Non-goals

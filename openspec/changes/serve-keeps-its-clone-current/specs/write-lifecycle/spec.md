@@ -36,3 +36,23 @@ the credential of the user running it, so an agents container runs it as the age
 #### Scenario: A failed round does not end the loop
 - **WHEN** one round's fetch fails because the forge cannot be reached
 - **THEN** the failure is reported on stderr and the next round runs on schedule
+
+### Requirement: A canonical sync never reports a clone current after a failed fetch
+Every canonical sync, the one each landing run ends with and the one `ctxr sync` runs, SHALL check that its fetch
+succeeded before comparing the clone with the forge's default branch. When the fetch fails, it SHALL report the clone
+as not synced, naming the failed fetch and git's first error line, and SHALL NOT report it as current or
+fast-forward it.
+
+#### Scenario: A failed fetch is not mistaken for an up-to-date clone
+- **WHEN** a landing run's fetch fails and the clone's last-fetched default branch equals its HEAD
+- **THEN** the run reports the clone as not synced because the fetch failed, not as already current
+
+### Requirement: Git run for landing and syncing ignores the repository's own hooks and drivers
+Every git command `ctxr land`, `ctxr sync` and the store-update runner run SHALL override the repository's hook path
+with an empty directory, turn `core.fsmonitor` off, and disable any filter, diff or merge driver the repository's
+configuration declares, so that code a repository writer placed in `.git/hooks` or `.git/config` does not run in the
+process that holds the forge credential.
+
+#### Scenario: A planted hook does not run during landing
+- **WHEN** the canonical clone's `.git/hooks/post-merge` is an executable script and a landing run fast-forwards the clone
+- **THEN** the script does not run
