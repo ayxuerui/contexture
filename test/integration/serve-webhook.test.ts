@@ -82,7 +82,8 @@ describe('ctxr serve accepts signed GitHub webhook deliveries (real CLI, fake fo
         // The first timed run starts 10 s after startup; this one came from the delivery.
         expect(Date.now() - startedAt, stderr()).toBeLessThan(10_000);
         expect(stderr()).toContain('serve: webhook: main changed on example/ctx-a; starting a store-update run');
-        expect(stderr()).toContain('sync: ');
+        // The run's own output arrives when the child exits, a moment after the fast-forward it reports.
+        expect(await until(async () => stderr().includes('sync: '), 10_000), stderr()).toBe(true);
       });
     } finally {
       await store.tmp.cleanup();

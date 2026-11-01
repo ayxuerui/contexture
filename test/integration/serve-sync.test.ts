@@ -44,7 +44,7 @@ describe('ctxr serve keeps its clone current (real CLI, fake forge)', { timeout:
         const merged = await store.advanceMain({ 'projects/merged.md': '# Merged on the forge\n' }, 'merge elsewhere');
         expect(await until(async () => (await getStatus(note)) === 200, 40_000), stderr()).toBe(true);
         expect(await store.git(['rev-parse', 'HEAD'])).toBe(merged);
-        expect(stderr()).toContain('sync: ');
+        expect(await until(async () => stderr().includes('sync: '), 10_000), stderr()).toBe(true);
         expect(stderr()).not.toContain('land: ');
       });
     } finally {
