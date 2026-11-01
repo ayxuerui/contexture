@@ -917,10 +917,13 @@ describe('ctxr-upgrade stops on an install the user cannot write', () => {
     expect(notWritable).toBeLessThan(gate);
     expect(notWritable).toBeLessThan(install);
     const branch = upgrade.slice(notWritable, upgrade.indexOf('\n   - `linked`', notWritable));
-    expect(branch).toContain('Report `install_path` and stop.');
+    expect(branch).toContain('Report `install_path` and stop');
     expect(branch).toContain('newer');
     expect(branch).toContain('image');
     expect(branch).not.toContain('npm install');
+    // install-tools-in-the-home: no escalation, and the user-prefix remedy is named.
+    expect(branch).toContain('Never retry it with `sudo`.');
+    expect(branch).toContain('a global npm prefix in their home');
   });
 });
 
