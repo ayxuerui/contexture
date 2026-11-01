@@ -76,6 +76,20 @@ export function createExecFileGitRunner(): GitRunner {
 }
 
 /**
+ * serve-keeps-its-clone-current (D6): one blob's exact bytes — `git cat-file
+ * blob <object>` with its output kept as a Buffer, so a page's images and
+ * documents reach a pull request preview byte for byte, as `/publish/` serves
+ * them from disk. `leading` carries a hardened runner's arguments.
+ */
+export async function readBlobBytes(cwd: string, object: string, leading: readonly string[] = []): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    execFile('git', [...leading, 'cat-file', 'blob', object], { cwd, maxBuffer: MAX_OUTPUT_BYTES, encoding: 'buffer' }, (err, stdout) =>
+      err ? reject(err) : resolve(stdout),
+    );
+  });
+}
+
+/**
  * review-the-knowledge-diff (D2): the contents of many blobs through ONE
  * `git cat-file --batch` process, keyed by object id, decoded as UTF-8. A
  * process per blob would put a fork behind every note on both sides of a

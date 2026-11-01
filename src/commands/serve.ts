@@ -4,7 +4,11 @@ import path from 'node:path';
 import { DIAGRAM_SCRIPT_ROUTE, RENDERER_ROUTE_PREFIX, diagramRenderer } from '../core/browse/diagram-assets.js';
 import { buildLinkResolver } from '../core/browse/link-resolver.js';
 import { renderIndexBody, renderNav } from '../core/browse/nav.js';
-import { PREVIEW_ROUTE_PREFIX, PUBLISH_ROUTE_PREFIX, REVIEW_HEAD_PARAM, REVIEW_ROUTE_PREFIX } from '../core/browse/page-url.js';
+import { parsePullPreviewPath, PREVIEW_ROUTE_PREFIX, PUBLISH_ROUTE_PREFIX, REVIEW_HEAD_PARAM, REVIEW_ROUTE_PREFIX } from '../core/browse/page-url.js';
+import { PullPreviews } from '../core/browse/pull-preview.js';
+import { hardenGit } from '../core/git/hardened.js';
+import type { ForgeCredentials } from '../core/forge/credentials.js';
+import type { ForgeClient } from '../core/forge/github.js';
 import { resolveNavState, resolveTheme } from '../core/browse/preferences.js';
 import { titleFor } from '../core/catalog/model.js';
 import { escapeHtml, renderNoteBody } from '../core/browse/render.js';
@@ -134,6 +138,7 @@ async function handleRequest(
   plugins: PluginDownloads,
   git: GitRunner,
   stderr: NodeJS.WritableStream,
+  pulls: PullPreviews,
   req: IncomingMessage,
   res: ServerResponse,
 ): Promise<void> {
@@ -191,6 +196,29 @@ async function handleRequest(
 
   if (pathname === DIAGRAM_SCRIPT_ROUTE) {
     send(res, method, 200, 'text/javascript; charset=utf-8', await readDiagramScript());
+    return;
+  }
+
+  /**
+   * serve-keeps-its-clone-current D6: a pull request's pages, from its head on
+   * the forge — byte-verbatim like `/publish/`, with no shell. Answered ahead
+   * of the worktree previews below, and before any read of the store's own
+   * checkout.
+   */
+  const pullPreview = parsePullPreviewPath(pathname);
+  if (pullPreview !== null) {
+    const answer = await pulls.answer(store, pullPreview.number, pullPreview.filePath);
+    if (answer.kind === 'file') {
+      send(res, method, 200, contentTypeFor(answer.filePath), answer.body, { 'Cache-Control': 'no-store' });
+    } else if (answer.kind === 'redirect') {
+      res.writeHead(302, { Location: answer.location, 'Cache-Control': 'no-store', 'Content-Length': 0 });
+      res.end();
+    } else if (answer.kind === 'unavailable') {
+      stderr.write(`serve: pull request preview ${pullPreview.number}: ${answer.message}\n`);
+      send(res, method, 503, 'text/plain; charset=utf-8', 'the pull request could not be read from the forge\n');
+    } else {
+      send(res, method, 404, 'text/plain; charset=utf-8', 'not found\n');
+    }
     return;
   }
 
@@ -394,6 +422,25 @@ function createStoreUpdateControl(env: RunEnv, initial: StoreConfig, root: strin
   };
 }
 
+/**
+ * The store's own forge client and credential, for pull request previews and
+ * the webhook: formed once, on first use, so a store that never opens a
+ * preview never needs a forge credential. A failure is not remembered, so a
+ * credential fixed in the environment's files is picked up on the next try.
+ */
+function storeForge(env: RunEnv): (store: Store) => Promise<{ forge: ForgeClient; credentials: ForgeCredentials }> {
+  let formed: Promise<{ forge: ForgeClient; credentials: ForgeCredentials }> | null = null;
+  return (store) => {
+    formed ??= credentialsFor(env, store.root)
+      .then((credentials) => ({ forge: createGhForgeClient(store.root, credentials), credentials }))
+      .catch((err: unknown) => {
+        formed = null;
+        throw err;
+      });
+    return formed;
+  };
+}
+
 export async function execute(env: RunEnv, store: Store, flags: ServeFlags): Promise<CommandOutcome<ServeData>> {
   // Startup still fails fast on a recording-login mismatch or an unreachable forge; only later changes degrade.
   const approval = await approvalServer(env, store);
@@ -407,6 +454,7 @@ export async function execute(env: RunEnv, store: Store, flags: ServeFlags): Pro
   const landing = createStoreUpdateControl(env, store.config, store.root);
   const mcp = new McpSurface({ git: env.git, canonicalRoot: store.root, env: env.env, now: () => env.now(), log: (line) => env.io.stderr.write(`${line}\n`) });
   const plugins = new PluginDownloads(env.git);
+  const pulls = new PullPreviews({ git: hardenGit(env.git), env: env.env, now: () => env.now(), forgeFor: storeForge(env) });
   // Stopping serve stops a store-update run in progress; landing and syncing are resumable, so the next start finishes it.
   const shutdown = (signal: NodeJS.Signals): void => {
     void landing.stop().finally(() => process.exit(signal === 'SIGINT' ? 130 : 143));
@@ -414,7 +462,7 @@ export async function execute(env: RunEnv, store: Store, flags: ServeFlags): Pro
   process.once('SIGTERM', shutdown);
   process.once('SIGINT', shutdown);
   const server = createServer((req, res) => {
-    handleRequest(holder, landing, mcp, plugins, env.git, env.io.stderr, req, res).catch((err: unknown) => {
+    handleRequest(holder, landing, mcp, plugins, env.git, env.io.stderr, pulls, req, res).catch((err: unknown) => {
       env.io.stderr.write(`serve: ${err instanceof Error ? err.message : String(err)}\n`);
       if (!res.headersSent) send(res, req.method ?? 'GET', 500, 'text/plain; charset=utf-8', 'internal error\n');
       else res.end();

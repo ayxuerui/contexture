@@ -152,7 +152,9 @@ describe('the approval page (real CLI, fake forge, real signatures)', () => {
         // The derived facts, the pages and the lines.
         expect(html).toContain('class="ctxr-derived"');
         expect(html).toContain('projects/a.md');
-        expect(html).toContain(`/preview/${s.name}/ctx-a-page/index.html`);
+        // serve-keeps-its-clone-current D6: with a base URL, the page previews from the pull request's pushed head.
+        expect(html).toContain(`/preview/pull/7/ctx-a-page/index.html`);
+        expect(html).toContain('It shows the pages as pushed.');
         expect(html).toContain('class="ctxr-diff-add"');
         expect(html).toContain('A new line about ctx-a.');
         expect(html).not.toContain('Uncommitted words.');

@@ -22,10 +22,10 @@
 
 ## 4. Pull request previews
 
-- [ ] 4.1 Add `/preview/pull/<number>/` to `serve`: read the pull request's head from the forge (reusing it for at most 15 seconds), fetch it into a private ref namespace when missing, and serve only published pages from that commit; redirect a merged pull request's page to its `/publish/` address; `404` for a pull request closed without merging or unknown
-- [ ] 4.2 Have `ctxr session submit` and the approval pages report the `/preview/pull/<number>/` address for a store with `serve.base_url`
-- [ ] 4.3 Integration tests against the fake forge: a page from a branch pushed elsewhere previews byte-identical to `/publish/`; a new push shows after the reuse window; a merged pull request redirects to `/publish/`; one closed unmerged is `404`; notes stay unaddressable
-- [ ] 4.4 Run `npx vitest run -t "preview"` and confirm it exits 0
+- [x] 4.1 Add `/preview/pull/<number>/` to `serve`: read the pull request's head from the forge (reusing it for at most 15 seconds), fetch it into a private ref namespace when missing, and serve only published pages from that commit; redirect a merged pull request's page to its `/publish/` address; `404` for a pull request closed without merging or unknown
+- [x] 4.2 Have `ctxr session submit` and the approval pages report the `/preview/pull/<number>/` address for a store with `serve.base_url`
+- [x] 4.3 Integration tests against the fake forge: a page from a branch pushed elsewhere previews byte-identical to `/publish/`; a new push shows after the reuse window; a merged pull request redirects to `/publish/`; one closed unmerged is `404`; notes stay unaddressable
+- [x] 4.4 Run `npx vitest run -t "preview"` and confirm it exits 0
 
 ## 5. The webhook
 
