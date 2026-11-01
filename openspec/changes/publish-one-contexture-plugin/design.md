@@ -19,7 +19,7 @@ pkm's AGENTS.md already states the inbox, templates, layers, relation vocabulary
 
 **Goals:**
 - One plugin that every store's members install once and that updates itself.
-- It updates at a release, never before the servers have the tools its skills name.
+- It updates at a release. Each store's server updates on its own schedule (here, daily), so the skills tolerate a server that is behind (revision 1).
 
 **Non-Goals:**
 - No change to the CLI render or to any tool.
@@ -108,4 +108,18 @@ Its text lives in `templates/plugin/page.html`.
    - remove `contexture-pkm`;
    - add the marketplace and install `contexture`;
    - keep the connector already added for pkm.
-3. **Rollback:** delete the marketplace entry. Members fall back to uploading a zip, which `ctxr plugin build` still writes.
+3. **Rollback:** delete the marketplace entry. The operator runs `ctxr plugin build` for the connector-less zip, and members upload it and keep their store connector (revision 4).
+
+## Revisions after critique
+
+A three-model critique on 2026-11-01 approved this change with changes from all three reviewers. These revisions override anything inconsistent above.
+
+1. **The plugin can be ahead of a store's server, and the skills say what to do then.** Two reviewers raised this independently.
+   - Members get a new plugin when the release PR merges. Each store's `serve` updates on its own schedule: daily on this host, possibly later for other operators. The goal "never before the servers have the tools" was false and is withdrawn.
+   - Instead, the preamble states a rule. When a step names a tool or command the connector does not offer, say that this store's server runs an older ctxr (the version under *This store*), skip that step or use the nearest one it does offer, and never improvise a replacement for a write.
+   - The connector's tool list is what the agent checks against. There is no minimum-version table to keep in step.
+   - Task 6.2 tests the updated plugin against a server one release behind, and with two stores connected at once.
+2. **The committed plugin is the Claude plugin directory only.** Its README and license are rendered by `ctxr plugin build` from `templates/plugin/`, so they are generated too. The archives are not committed and are not part of the freshness comparison.
+3. **The MCP render takes no configuration.** It substitutes one static placeholder map. The "two stores render one plugin" scenario becomes an assertion that the render contains no value from the shipped defaults.
+4. **Rollback is described as shipped.** The operator runs `ctxr plugin build`, which writes the connector-less zip, and members upload it and keep their store connector.
+5. **Declined: removing the `ctxr plugin build` command** (pragmatist). It is the rollback path above, it is what `npm run plugin` calls, and it lets an operator build the plugin without `serve`. It costs one command, and dropping it would leave no way to produce the zip outside the repository's npm scripts.

@@ -1,7 +1,7 @@
 ## MODIFIED Requirements
 
 ### Requirement: Owned skills render for the MCP surface from the same source
-The owned skills SHALL render for a second target, the MCP surface, alongside the CLI render, which SHALL be unchanged by it. The MCP render SHALL include a declared subset of the owned skills; every included skill SHALL render from its CLI template with one shared preamble naming how each command and git step maps to the surface's tools. The MCP render SHALL NOT depend on any store's configuration: each value the CLI render takes from `contexture.yaml` SHALL render as a named placeholder, and the preamble SHALL state that each placeholder's value is given in the connector's instructions. The upgrade, Circleback and second-opinion skills, which run local programs, the land skill and the derived-artifacts skill SHALL NOT be included.
+The owned skills SHALL render for a second target, the MCP surface, alongside the CLI render, which SHALL be unchanged by it. The MCP render SHALL include a declared subset of the owned skills; every included skill SHALL render from its CLI template with one shared preamble naming how each command and git step maps to the surface's tools. The MCP render SHALL take no store configuration: each value the CLI render takes from `contexture.yaml` SHALL render as a named placeholder, and the preamble SHALL state that each placeholder's value is given in the connector's instructions. The upgrade, Circleback and second-opinion skills, which run local programs, the land skill and the derived-artifacts skill SHALL NOT be included.
 
 #### Scenario: The CLI render is unchanged
 - **WHEN** the owned skills are rendered for the CLI on a store before and after this rendering exists
@@ -12,8 +12,8 @@ The owned skills SHALL render for a second target, the MCP surface, alongside th
 - **THEN** the capture skill is included with the shared preamble, the submit skill's text equals the CLI render's under the preamble apart from its placeholders, and the upgrade, second-opinion and land skills are absent
 
 #### Scenario: Two stores render one plugin
-- **WHEN** the owned skills are rendered for the MCP surface under two configurations that differ in every value the CLI render substitutes
-- **THEN** the two renders are byte-identical, and neither contains a path, layer name or relation name from either configuration
+- **WHEN** the owned skills are rendered for the MCP surface
+- **THEN** the render takes no configuration, carries a named placeholder wherever the CLI render substitutes a store value, and contains no path, layer name or relation name from the shipped defaults
 
 ## REMOVED Requirements
 
