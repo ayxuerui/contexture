@@ -16,17 +16,17 @@ The skills are contexture's, not any one store's. One plugin built from contextu
   - The shared preamble says to read those values from the connector's instructions.
   - The CLI render is unchanged.
 - **Server instructions carry the store's values.** The instructions `serve` sends at `initialize` gain a "This store" section that gives each placeholder's value, rendered from the loaded configuration, plus the server's ctxr version.
-- **`ctxr plugin build` builds the general plugin.** It needs no store and no `mcp` block, and writes the Claude plugin (and the ChatGPT one, as before, without a connector). The repository's copy is checked by a test that fails when the committed plugin differs from the render, or when its version differs from the package's.
+- **`ctxr plugin build` builds the general Claude plugin.** It needs no store and no `mcp` block. Inside a store with an `mcp` block it also writes that store's ChatGPT plugin, as today (with its connector), now carrying the store-independent skills. The repository's copy is checked by a test that fails when the committed plugin differs from the render, or when its version differs from the package's.
 - **BREAKING: `/plugin/` becomes the store's connect page.**
   - It still requires the verified identity.
-  - It now gives the marketplace and plugin to add in Claude, this store's connector address and how to add it, and the ChatGPT plugin zip with the same connector steps.
+  - It now gives the marketplace and plugin to add in Claude, this store's connector address and how to add it, and the store's ChatGPT plugin zip as before.
   - It no longer serves a store-specific Claude zip.
 
 ## Non-goals
 
 - **Listing in Anthropic's directory.** The general plugin is now publishable there, since nothing in it is private. That is a separate step, with its own review requirements (README, license, test cases), and the marketplace already gives automatic updates. Left for a follow-up change.
 - **A per-store override of the plugin.** A store that wants different skills uses the CLI's own skills path, as it does locally. The plugin is contexture's text.
-- **ChatGPT automatic updates.** How ChatGPT updates workspace plugins is unverified. Its plugin stays a zip, now the general one, downloaded from `/plugin/`.
+- **A general ChatGPT plugin, and ChatGPT updates.** On personal plans ChatGPT has no marketplace (a workspace admin can import one, reading the same `.claude-plugin/marketplace.json`), so its plugin stays the store's zip from `/plugin/`, with the store's connector bundled. The operator chose to do Claude first (2026-11-01).
 - **Removing `serve`'s plugin build entirely.** `/plugin/` still builds the ChatGPT zip in memory, because a zip is that app's only install path.
 
 ## Capabilities

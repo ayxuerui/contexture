@@ -88,7 +88,7 @@ Members receive a new copy only when the version changes, so only at a release.
 The page, still behind the verified identity, gives:
 1. **Claude:** add the marketplace `ayxuerui/contexture`, turn on Sync automatically, and install `contexture`.
 2. **This store's connector:** its address, `serve.base_url` `/mcp`, and how to add a custom connector in each app.
-3. **ChatGPT:** the general ChatGPT plugin zip, built in memory as before but without a connector, plus the same connector steps.
+3. **ChatGPT:** the store's ChatGPT plugin zip, built in memory as before with the store's connector, now carrying the store-independent skills. A general ChatGPT plugin is deferred: on personal plans ChatGPT has no marketplace, so it would not update itself either.
 
 Its text lives in `templates/plugin/page.html`.
 

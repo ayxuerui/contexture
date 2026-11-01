@@ -12,7 +12,7 @@ The instructions `serve` returns at `initialize` SHALL include a section naming 
 - **THEN** the next `initialize` gives the new log path
 
 ### Requirement: The server's connect page tells a member how to add the plugin and this store's connector
-When the MCP surface is configured, `ctxr serve` SHALL answer `GET /plugin/` with a page that names contexture's plugin marketplace and plugin for Claude and how to install it with automatic updates, this store's connector address (`serve.base_url` followed by `/mcp`) and how to add it in each app, and a download of the ChatGPT plugin built as `ctxr plugin build` builds it.
+When the MCP surface is configured, `ctxr serve` SHALL answer `GET /plugin/` with a page that names contexture's plugin marketplace and plugin for Claude and how to install it with automatic updates, this store's connector address (`serve.base_url` followed by `/mcp`) and how to add it in each app, and a download of this store's ChatGPT plugin built as `ctxr plugin build` builds it in the store.
 
 #### Scenario: A member reads how to connect
 - **WHEN** a member with a verified identity requests `/plugin/`

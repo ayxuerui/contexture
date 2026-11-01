@@ -11,13 +11,13 @@
 
 ## 3. General plugin build and the repository's marketplace
 
-- [ ] 3.1 `ctxr plugin build` without a store: the Claude plugin (version = CLI version, no MCP entry) and the ChatGPT plugin, directories and archives
+- [ ] 3.1 `ctxr plugin build`: without a store, the Claude plugin (version = CLI version, no MCP entry); in a store with `mcp`, also that store's ChatGPT plugin with its connector, as today
 - [ ] 3.2 `npm run plugin` regenerating `plugins/contexture/` (the Claude plugin directory, README and license rendered from `templates/plugin/`; archives not committed); `.claude-plugin/marketplace.json` at the repository root
 - [ ] 3.3 Freshness test (byte comparison of the plugin directory only, and the version); `claude plugin validate .` and `claude plugin validate plugins/contexture` pass; `npx vitest run test/unit/plugin-build.test.ts` passes
 
 ## 4. Connect page
 
-- [ ] 4.1 `/plugin/` as the connect page from `templates/plugin/page.html`: marketplace and plugin, the store's connector address and steps per app, the ChatGPT archive
+- [ ] 4.1 `/plugin/` as the connect page from `templates/plugin/page.html`: marketplace and plugin, the store's connector address and steps per app, the store's ChatGPT archive; no Claude archive
 - [ ] 4.2 `npx vitest run test/integration/mcp-serve.test.ts` passes for the page, its identity refusals and the archive
 
 ## 5. Whole suite and release

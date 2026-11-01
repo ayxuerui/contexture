@@ -24,11 +24,11 @@ The owned skills SHALL render for a second target, the MCP surface, alongside th
 ## ADDED Requirements
 
 ### Requirement: contexture publishes one plugin for every store
-contexture's repository SHALL carry the Claude plugin `contexture` under `plugins/contexture/`, generated from the MCP render, and a `.claude-plugin/marketplace.json` at its root listing it by relative path. Its `version` SHALL equal the CLI's, and it SHALL carry no MCP server entry, credential, hook, local server or top-level `bin/` directory. `ctxr plugin build` SHALL write it, and a ChatGPT plugin from the same render with no MCP server entry, without reading a store.
+contexture's repository SHALL carry the Claude plugin `contexture` under `plugins/contexture/`, generated from the MCP render, and a `.claude-plugin/marketplace.json` at its root listing it by relative path. Its `version` SHALL equal the CLI's, and it SHALL carry no MCP server entry, credential, hook, local server or top-level `bin/` directory. `ctxr plugin build` SHALL write it without reading a store; inside a store that declares `mcp` it SHALL also write that store's ChatGPT plugin from the same render, with the store's connector, as before.
 
 #### Scenario: The plugin carries no connector
 - **WHEN** `ctxr plugin build` runs outside any store
-- **THEN** it writes the Claude and ChatGPT plugins with the rendered skills, neither has an MCP server entry, and the Claude plugin's version is the CLI's version
+- **THEN** it writes the Claude plugin with the rendered skills and no MCP server entry, its version is the CLI's version, and no ChatGPT plugin is written
 
 ### Requirement: The committed plugin is checked against the render
 A test SHALL fail, naming the first differing file, when the committed `plugins/contexture/` differs from what `ctxr plugin build` writes, or when its version differs from the package's, so a skill change cannot merge without the plugin it changes.
