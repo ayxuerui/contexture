@@ -40,7 +40,7 @@ describe('ctxr land for a session across stores (real CLI, two fake forges)', ()
   it('one sweep lands the mounted part, then the home part', async () => {
     await approve();
     const run = await land(['--pending']);
-    expect(run.exitCode, run.stdout + run.stderr).toBe(0);
+    expect(run.exitCode, run.stdout + run.stderr + (await pair.a.forge.log()) + (await pair.b.forge.log())).toBe(0);
     const results = run.json.data.results as { pull_request: number; store: string; outcome: string }[];
     expect(results.map((r) => [r.store, r.pull_request, r.outcome])).toEqual([
       ['example/ctx-b', 5, 'merged'],
@@ -57,7 +57,7 @@ describe('ctxr land for a session across stores (real CLI, two fake forges)', ()
     await approve();
     // ctx-a's clone of ctx-b holds the joined session's worktree, so its own sweep would see the part.
     const run = await land(['--pending'], pair.mount);
-    expect(run.exitCode, run.stdout + run.stderr).toBe(0);
+    expect(run.exitCode, run.stdout + run.stderr + (await pair.a.forge.log()) + (await pair.b.forge.log())).toBe(0);
     expect(run.json.data.results).toEqual([]);
     expect((await pullOf(joined)).merged ?? false).toBe(false);
   });
@@ -86,7 +86,7 @@ describe('ctxr land for a session across stores (real CLI, two fake forges)', ()
     expect((await pullOf(home)).merged ?? false).toBe(false);
     // Nothing merged, yet the session reads as retrying between runs: the run recorded it on the record part.
     const between = await pair.cli(['review', 'list'], pair.a.root);
-    expect(between.exitCode, between.stdout).toBe(0);
+    expect(between.exitCode, between.stdout + (await pair.a.forge.log()) + (await pair.b.forge.log())).toBe(0);
     const rows = between.json.data.sessions as { state: string; part: string; landing_reason: string }[];
     expect(rows.map((r) => r.state)).toEqual(['retrying', 'retrying']);
     expect(rows[0]!.part).toBe('example/ctx-b#5');
@@ -103,7 +103,7 @@ describe('ctxr land for a session across stores (real CLI, two fake forges)', ()
     await approve({ copy: false });
     expect(((await pair.b.forge.read()).reviews ?? {})[5] ?? []).toHaveLength(0);
     const run = await land(['--pending']);
-    expect(run.exitCode, run.stdout + run.stderr).toBe(0);
+    expect(run.exitCode, run.stdout + run.stderr + (await pair.a.forge.log()) + (await pair.b.forge.log())).toBe(0);
     const [copy] = ((await pair.b.forge.read()).reviews ?? {})[5]!;
     const record = parseDecision(((await pair.a.forge.read()).reviews ?? {})[7]![0]!.body)!;
     expect(parseDecision(copy!.body)!.session!.id).toBe(record.session!.id);
@@ -117,16 +117,16 @@ describe('ctxr land for a session across stores (real CLI, two fake forges)', ()
     });
     await recordSessionDecision({ store: pair.b, number: 5, head: joined.head }, [{ store: pair.b, number: 5, head: joined.head }], identity());
     const run = await land(['--pending']);
-    expect(run.exitCode, run.stdout + run.stderr).toBe(0);
+    expect(run.exitCode, run.stdout + run.stderr + (await pair.a.forge.log()) + (await pair.b.forge.log())).toBe(0);
     expect((await pullOf(joined)).merged).toBe(true);
   });
 
   it('counts a part merged by another lander as landed and goes on to the home part', async () => {
     await approve();
     const first = await pair.cli(['land', '5', '--confirm'], pair.mount);
-    expect(first.exitCode, first.stdout + first.stderr).toBe(0);
+    expect(first.exitCode, first.stdout + first.stderr + (await pair.a.forge.log()) + (await pair.b.forge.log())).toBe(0);
     const run = await land(['--pending']);
-    expect(run.exitCode, run.stdout + run.stderr).toBe(0);
+    expect(run.exitCode, run.stdout + run.stderr + (await pair.a.forge.log()) + (await pair.b.forge.log())).toBe(0);
     expect(run.json.data.sessions).toEqual([expect.objectContaining({ state: 'landed', landed: ['example/ctx-b#5', 'example/ctx-a#7'] })]);
     expect((await pullOf(home)).merged).toBe(true);
   });
@@ -134,7 +134,7 @@ describe('ctxr land for a session across stores (real CLI, two fake forges)', ()
   it('--session --confirm lands the mounted part before the home part', async () => {
     expect((await land(['--session', home.name])).exitCode).toBe(2);
     const run = await land(['--session', home.name, '--confirm']);
-    expect(run.exitCode, run.stdout + run.stderr).toBe(0);
+    expect(run.exitCode, run.stdout + run.stderr + (await pair.a.forge.log()) + (await pair.b.forge.log())).toBe(0);
     expect((run.json.data.results as { store: string }[]).map((r) => r.store)).toEqual(['example/ctx-b', 'example/ctx-a']);
     expect(run.json.data.sessions).toEqual([expect.objectContaining({ state: 'landed', landed: ['example/ctx-b#5', 'example/ctx-a#7'], not_attempted: [] })]);
     expect((await pullOf(joined)).merged).toBe(true);
