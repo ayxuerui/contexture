@@ -1,11 +1,23 @@
 ---
-name: ctxr-connection-proposal
-description: Discover the links a note should have, read each candidate before proposing, group by the store relation vocabulary, and write only approved links.
+name: ctxr-mission
+description: Keep the store's mission core current — the primary mission, the top priorities in rank order with status/purpose/next action, and what is not now — with the back burner, sunset candidates, and open debt in a linked register; propose changes and write only on the operator's confirmation.
 ---
 
 ## Before this skill: the store's tools stand in for a checkout
 
-You are working through this store's server, not in a checkout of it. Nothing runs a shell here, so no
+### In a checkout, use the store's own skill
+
+If the working directory has a `contexture.yaml` at its root and a shell here runs `ctxr`, you are in a
+checkout of the store, and this text is not for you. The `ctxr:`-namespaced skills and commands, such as
+`ctxr:ctxr-capture` and `/ctxr:capture`, are this plugin's, written for the store's server. The
+un-namespaced `ctxr-<name>` skills in the store's skills folder are the store's own, written for a checkout.
+In a checkout, invoke the un-namespaced `ctxr-<name>` skill of the same name and follow it, never the
+`ctxr:` one, and ignore the rest of this text. A `/ctxr:` command typed in a checkout asks for that store
+skill.
+
+### Through the store's server
+
+Otherwise you are working through this store's server, not in a checkout of it. Nothing runs a shell here, so no
 `git`, `gh` or `ctxr` command runs as written. The skill below was written for an agent with a checkout:
 follow it as written, and take each step it names through the tool these tables give.
 
@@ -100,26 +112,50 @@ asks you to work inside a store mounted under `shared/`, that step is not yours 
 
 <!-- Owned by contexture — written by `ctxr init`, refreshed by `ctxr update`. Do not edit; add your own skills alongside. -->
 
-# Connection proposal
+# Mission
 
-Link DISCOVERY — complementing `ctxr-connection-finding`, which traverses links that already exist.
+Keep this store's mission current: the short core every agent sees on every turn, inlined into AGENTS.md's
+"Mission" section from the document named on its source line. The core is the operator's statement of what
+matters now, so it is small, ranked, and dated. Everything else it once carried lives in a register note it
+links to. Hand-written content outside the fenced region is never touched.
 
-1. Read the target note in full. If given a name instead of a path, find the file; several candidates →
-   ask which one, never pick.
-2. Extract its key concepts, entities (people, organizations, products), claims, and tags.
-3. Search the store with those terms: content search (grep) for the phrases, the catalog section for the
-   domain (`ctxr catalog show --section <id>`), and `ctxr graph query neighbors <path> --depth 2` for
-   two-hop candidates the note does not link directly.
-4. Read every candidate before proposing it. A keyword match is not a connection; each proposal states in
-   one line why the link is meaningful to a reader of the target note.
-5. Group proposals by the relation vocabulary the connector's instructions list under *This store*, each
-   with its definition. The section headings carrying these names are what `ctxr graph build` types edges
-   from, so a link written under the right heading becomes a typed edge on the next build. Format each item
-   as `[[Note]]` — reason. Choose between two adjacent relations by their definitions, not their names, and
-   remember that an edge is recorded only on the note carrying the link.
-6. Confirm before writing: present the grouped proposals and wait for approval by item. Do not write on
-   silence or on plan-level agreement.
-7. Write approved links into the matching section of the target note, creating the relation sections the
-   sibling notes use when the note lacks them. No other edits to the note in the same pass.
-8. Report: notes scanned, proposals per group, links written, and nearby orphans
-   (`ctxr graph query orphans`) that would also benefit from linking.
+Run `ctxr rollup stale` (or `--for <mission_path>`) first. A mission never confirmed, or one confirmed more than
+`organize.rollup_stale_days` ago, is reported stale on elapsed time alone; `ctxr lint` also reports any due date
+in it that has passed. Use those rather than guessing from memory whether it is out of date.
+
+1. Resolve `<mission_path>` from the source line of AGENTS.md's "Mission" section. If no mission document is
+   configured for this store, STOP — this skill has nothing to maintain; do not invent a path or create one
+   unasked.
+2. Gather from recent work: the current session's own changes, the store log at `<log path>`, and every store
+   location the taxonomy declares (read AGENTS.md's "Placing a new note" section for the configured layers) —
+   not backlinks, and not a sample. A priority absent from every configured layer is not a store priority; treat
+   it as the operator's own working memory instead and leave it out.
+3. Write the core, and only the core:
+   - **Primary mission** — one or two lines on what this store is for, right now.
+   - **Top priorities, in rank order** — three to five. Each names its status, its purpose, and its next useful
+     action; a priority with no next action is not actionable, and one with no purpose is not a priority —
+     resolve or downgrade it rather than carry it silently.
+   - **Not now** — what is deliberately set aside, one line each, so it is not mistaken for forgotten.
+
+   The core stays under `<mission size limit>` bytes; `ctxr doctor` fails above it. Per-item detail an agent
+   already finds elsewhere (a project's own next action, a status its note carries) is linked, not copied.
+4. Keep the register in a note the core links to, placed by `ctxr-placement` like any other: back-burner items,
+   each stating plainly why it is not active right now (a size cutoff, a blocking dependency, a deliberate
+   deprioritization); sunset candidates (work whose end state is in sight or whose relevance is fading); and
+   open operational debt (deferred cleanup, known gaps, workarounds owed a real fix). Debt that is closed is
+   history: record it in `<log path>` and remove it.
+5. Propose, then write. The ranking and the mission are the operator's: show the proposed core and say what
+   moved and why, and write only once the operator confirms. A factual correction — a priority shipped,
+   blocked, or archived — is yours to make, and you say so in the report.
+6. Synthesize into a file — bullets throughout, short clauses; skip any empty section silently (never "N/A",
+   "none", or "TBD"). Nothing dated later than today; no editorializing beyond the shape above.
+7. Write: `ctxr rollup write <mission_path> --content-file <file>` — the same command `ctxr-rollup` uses for an
+   entity, applied here to the store's own mission path. It stamps the confirmation date AGENTS.md shows, and
+   is an idempotent fenced write (`changed: false` and a byte-identical file when the content matches;
+   mismatched markers abort with nothing written).
+
+## Report
+
+Mission path, `changed` or unchanged, what moved since the last write (a priority resolved, re-ranked, or
+added; an item moved to the register), and any factual correction made without confirmation. Anything outside
+the fence you want to fix is a separate, explicit edit.

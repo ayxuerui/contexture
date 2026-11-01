@@ -15,9 +15,17 @@ attached, and ask which store you mean when it is unclear.
 The skills name each store setting by a placeholder such as `<inbox path>`. The connector's instructions
 give your store's value for each one, so the same plugin serves every store.
 
+## Commands
+
+Each command opens one skill, for when you would rather type it than ask in words:
+
+__COMMANDS__
+
+Text after a command is what the skill starts from, as in `/__NAME__:capture` followed by the material.
+
 ## Updates
 
-Install it from the `__MARKETPLACE__` marketplace with **Sync automatically** on, and Claude installs
+Install `__NAME__` from the `__MARKETPLACE__` marketplace with **Sync automatically** on, and Claude installs
 each new release of contexture's skills on its own. This is version __VERSION__, which matches the ctxr
 release it was built from. If a skill names a step your store's connector does not offer, your store's
 server runs an older ctxr; the skill says so and skips that step.

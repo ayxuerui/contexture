@@ -1,11 +1,22 @@
 ---
-name: ctxr-connection-finding
-description: Traverse the wikilink graph of the store (neighbors, paths, hubs, orphans) to find what a note already connects to.
+description: Typed shortcut for /ctxr:rollup, which opens the ctxr-rollup skill. A request in words loads ctxr-rollup itself.
 ---
 
 ## Before this skill: the store's tools stand in for a checkout
 
-You are working through this store's server, not in a checkout of it. Nothing runs a shell here, so no
+### In a checkout, use the store's own skill
+
+If the working directory has a `contexture.yaml` at its root and a shell here runs `ctxr`, you are in a
+checkout of the store, and this text is not for you. The `ctxr:`-namespaced skills and commands, such as
+`ctxr:ctxr-capture` and `/ctxr:capture`, are this plugin's, written for the store's server. The
+un-namespaced `ctxr-<name>` skills in the store's skills folder are the store's own, written for a checkout.
+In a checkout, invoke the un-namespaced `ctxr-<name>` skill of the same name and follow it, never the
+`ctxr:` one, and ignore the rest of this text. A `/ctxr:` command typed in a checkout asks for that store
+skill.
+
+### Through the store's server
+
+Otherwise you are working through this store's server, not in a checkout of it. Nothing runs a shell here, so no
 `git`, `gh` or `ctxr` command runs as written. The skill below was written for an agent with a checkout:
 follow it as written, and take each step it names through the tool these tables give.
 
@@ -100,25 +111,49 @@ asks you to work inside a store mounted under `shared/`, that step is not yours 
 
 <!-- Owned by contexture — written by `ctxr init`, refreshed by `ctxr update`. Do not edit; add your own skills alongside. -->
 
-# Connection finding
+# Rollup
 
-Traversal of links that already exist. To discover links a note SHOULD have, use `ctxr-connection-proposal`;
-to synthesize an entity's current state from its sources, use `ctxr-rollup`.
+Regenerate the machine-synthesized current-state region of an entity note (a person, organization,
+product, initiative, or topic hub) from every note that references it. Hand-written content outside the
+fenced region is never touched.
 
-1. Run `ctxr graph build` to refresh the wikilink graph from the store's current notes, then read the graph
-   document it writes at `<graph document>` — hub notes by cluster, cross-cluster bridges,
-   orphans — for the cluster context the point queries below do not summarize.
-2. To find what a note connects to or from, run `ctxr graph query neighbors <path>` (add `--depth` for
-   further hops, `--direction in|out|both`, `--type <relation>` to follow one configured relation).
-3. To read a neighbourhood rather than enumerate one — every reachable note with its catalog gloss,
-   hop distance, and why it was reached — run `ctxr context gather --seed <path> --hops <n>`. Use it
-   when you need to judge which links matter; use the point queries below when you need the structure.
-4. To find a path between two notes, run `ctxr graph query path <from> <to>`.
-5. To find the most-referenced notes, run `ctxr graph query hubs`; to find unlinked ones,
-   `ctxr graph query orphans`; `ctxr graph query clusters` and `ctxr graph query bridges` show the
-   cluster structure and the notes that span it.
-6. When the store mounts other stores under `shared/`, the graph carries their notes under `shared/<name>/`.
-   Link from this store into a mount with a path link, such as `[[shared/<name>/<path>]]`.
-   A filename link resolves only inside the store that holds the note. A note in a mount never resolves a link back into this store.
-7. Report what the graph says — it enumerates structure and ranks nothing; judgment about which links
-   matter is yours.
+Run `ctxr rollup stale` (or `--for <entity>` for one) to find entities worth re-rolling — it lists every
+entity note whose backlinks have moved since its last synthesis, or which has never been rolled up at
+all; use it instead of guessing from memory which entities are out of date.
+
+An entity under `shared/<name>/` belongs to a mounted store. Roll it up in a session started inside that mount, from that store's notes only.
+Why: a rollup that quotes this store's notes would show them to every reader of the mount.
+
+1. Resolve, never create. `<entity>` is a path or a note name; several candidates → list them and ask.
+   When a location has more than one plausible hub, prefer the shorter-named, undated one. If no entity
+   note exists, STOP and say so — creating it is a separate task, not a side effect of a rollup.
+2. Refuse non-entities. Dated notes, journal entries, meeting notes, generated files, and store
+   infrastructure are INPUTS to rollups, not entities. If the name resolves to one of those, stop and ask
+   which entity was meant.
+3. Gather: `ctxr rollup gather <entity>` enumerates the candidate sources (notes linking to it). Fewer
+   than 3 accepted sources → push back ("only N notes reference this; a rollup would be thin — continue?")
+   and do not auto-continue.
+4. Read EVERY accepted source, not a sample — the value of a rollup is total recall over the entity's
+   corpus. Per source note its date (filename, frontmatter, then mtime as a last resort), its kind, and
+   what it says about THIS entity specifically. For a long source, grep for the entity first.
+5. Synthesize into a file, in this shape — bullets throughout, short clauses; skip any empty subsection
+   silently (never "N/A", "none", or "TBD"):
+
+   ```
+   ## Current state
+   ### Status            — one fact per line; what it is, what is happening now, headline problem or metric
+   ### Recent activity   — `YYYY-MM-DD — what happened [[Source]]`, most recent first
+   ### Open threads      — unresolved decisions, blockers, pending actions; each links where it was raised
+   ### Key people        — `[[Person]] — role in this entity's orbit`; only people present in the corpus
+   ### Sources           — every note consulted, sorted; the audit trail
+   ```
+
+   Provenance rules: every fact traceable to a source note — nothing from memory or earlier conversation;
+   no editorializing or recommendations; nothing dated later than today; inline `[[wikilinks]]` when one
+   claim has one clear source.
+6. Write: `ctxr rollup write <entity> --content-file <file>` — an idempotent fenced write (`changed: false`
+   and a byte-identical file when the content matches; mismatched markers abort with nothing written).
+7. Report: entity path, sources accepted, `changed` or unchanged, and notable findings (e.g. the oldest
+   unresolved thread). Anything outside the fence you want to fix is a separate, explicit edit.
+
+What the person typed after /ctxr:rollup, to start from: $ARGUMENTS

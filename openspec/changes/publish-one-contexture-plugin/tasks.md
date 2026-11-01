@@ -27,10 +27,10 @@
 
 ## 7. Plugin name, commands and the checkout rule
 
-- [ ] 7.1 Rename the plugin to `ctxr`: `plugins/ctxr/`, plugin.json name and displayName, build output `<out>/ctxr/` and `ctxr-claude.zip` with its ignore rule; the marketplace stays `contexture` with entry `ctxr`; the per-store ChatGPT plugin keeps `contexture-<store>`; update README, CONTRIBUTING, the connect page and tests
-- [ ] 7.2 Command map module (command → skill) and generated `commands/<name>.md`: full skill render plus `$ARGUMENTS`, typed-shortcut description, frontmatter `description` only; check that each maps to a carried skill and matches its render
-- [ ] 7.3 Preamble's first rule: in a checkout (a `contexture.yaml` at the root, a shell running `ctxr`), the `ctxr:`-namespaced entries are the plugin's, so invoke the un-namespaced `ctxr-<name>` skill from the store's skills folder; test its wording and that it is first
-- [ ] 7.4 `npm run plugin`; `claude plugin validate .` and `claude plugin validate plugins/ctxr` pass; `npm run typecheck && npm run build && npm test` exit 0
+- [x] 7.1 Rename the plugin to `ctxr`: `plugins/ctxr/`, plugin.json name and displayName, build output `<out>/ctxr/` and `ctxr-claude.zip` with its ignore rule; the marketplace stays `contexture` with entry `ctxr`; the per-store ChatGPT plugin keeps `contexture-<store>`; update README, CONTRIBUTING, the connect page and tests
+- [x] 7.2 Command map module (command → skill) and generated `commands/<name>.md`: full skill render plus `$ARGUMENTS`, typed-shortcut description, frontmatter `description` only; check that each maps to a carried skill and matches its render
+- [x] 7.3 Preamble's first rule: in a checkout (a `contexture.yaml` at the root, a shell running `ctxr`), the `ctxr:`-namespaced entries are the plugin's, so invoke the un-namespaced `ctxr-<name>` skill from the store's skills folder; test its wording and that it is first
+- [x] 7.4 `npm run plugin`; `claude plugin validate .` and `claude plugin validate plugins/ctxr` pass; `npm run typecheck && npm run build && npm test` exit 0
 - [ ] 7.5 Operator gate before the release PR merges: upload the built `ctxr-claude.zip` to claude.ai; it installs, `/ctxr:capture` is offered, and a natural request loads `ctxr-capture`
 
 ## 6. Real clients (operator checkpoint)

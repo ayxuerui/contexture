@@ -1413,6 +1413,22 @@ describe('the MCP render of the owned skills', () => {
     for (const relation of RELATION_VOCABULARY) expect(text, relation.name).not.toMatch(new RegExp(`\\b${relation.name}\\b`));
   });
 
+  it('begins with the checkout rule: the `ctxr:` entries are the plugin\'s, and a checkout invokes the store\'s un-namespaced skill', () => {
+    // publish-one-contexture-plugin D6, revision 8 (harness-portability spec, *In a checkout, the plugin's skills defer to the store's own*).
+    const sections = preamble.split('\n### ');
+    expect(sections[0]).toBe("## Before this skill: the store's tools stand in for a checkout\n");
+    const first = sections[1]!;
+    expect(first.startsWith("In a checkout, use the store's own skill\n")).toBe(true);
+    expect(first).toMatch(/If the working directory has a `contexture\.yaml` at its root and a shell here runs `ctxr`, you are in a\s+checkout of the store/);
+    expect(first).toMatch(/The `ctxr:`-namespaced skills and commands, such as\s+`ctxr:ctxr-capture` and `\/ctxr:capture`, are this plugin's/);
+    expect(first).toMatch(/The\s+un-namespaced `ctxr-<name>` skills in the store's skills folder are the store's own/);
+    expect(first).toMatch(/In a checkout, invoke the un-namespaced `ctxr-<name>` skill of the same name and follow it, never the\s+`ctxr:` one/);
+    for (const skill of mcp) {
+      const body = skill.content.slice(frontmatter(skill.content).length + 1);
+      expect(body.startsWith(`${sections[0]}\n### In a checkout, use the store's own skill\n`), skill.file).toBe(true);
+    }
+  });
+
   it('tells the agent where the values are, which connector to use, and what to do on an older server', () => {
     expect(preamble).toMatch(/The connector's instructions give each\s+one's value under\s+\*This store\*, by the same name/);
     expect(preamble).toMatch(/AGENTS\.md states most of these\s+values; for one it does not state, ask the person rather than guess/);

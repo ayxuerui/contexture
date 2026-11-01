@@ -4,7 +4,7 @@ import type { CommandOutcome, CommandRequires } from '../core/command.js';
 import type { RunEnv } from '../core/env.js';
 import { ExitCode } from '../core/exit-codes.js';
 import { writeFileAtomic } from '../core/fs/atomic.js';
-import { buildChatgptPlugin, buildClaudePlugin, renderedCommit, storeNameFor, type BuiltPlugin, type PluginTarget } from '../core/plugin/build.js';
+import { buildChatgptPlugin, buildClaudePlugin, CLAUDE_PLUGIN_NAME, renderedCommit, storeNameFor, type BuiltPlugin, type PluginTarget } from '../core/plugin/build.js';
 import type { Store } from '../core/store.js';
 import { CLI_VERSION } from '../version.js';
 
@@ -20,9 +20,9 @@ export const DEFAULT_GENERAL_PLUGIN_OUT = 'contexture-plugin';
 /**
  * Where each plugin's directory goes under `--out`. The Claude plugin's is its
  * name, so `--out plugins` in contexture's repository writes the marketplace's
- * `plugins/contexture/`.
+ * `plugins/ctxr/` (publish-one-contexture-plugin revision 9).
  */
-export const PLUGIN_DIRECTORIES: Readonly<Record<PluginTarget, string>> = { claude: 'contexture', chatgpt: 'chatgpt' };
+export const PLUGIN_DIRECTORIES: Readonly<Record<PluginTarget, string>> = { claude: CLAUDE_PLUGIN_NAME, chatgpt: 'chatgpt' };
 
 export interface PluginBuildFlags {
   out?: string;

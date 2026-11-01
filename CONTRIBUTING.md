@@ -36,10 +36,10 @@ To cut a release:
 git checkout -b chore/release-X.Y.Z
 npm version X.Y.Z --no-git-tag-version   # bumps package.json and package-lock.json together
 # hand-edit src/version.ts's CLI_VERSION to match X.Y.Z
-npm run plugin                            # regenerates plugins/contexture/ at the new version
+npm run plugin                            # regenerates plugins/ctxr/ at the new version
 ```
 
-Commit `plugins/contexture/` with the version bump. Its `plugin.json` version is what tells a member's
+Commit `plugins/ctxr/` with the version bump. Its `plugin.json` version is what tells a member's
 Claude that a new copy exists, so the plugin reaches members exactly when the release merges, and
 `test/unit/plugin-committed.test.ts` fails the PR when the committed plugin differs from a fresh build or
 from `package.json`'s version. The same test fails any PR that changes a skill template or the MCP preamble

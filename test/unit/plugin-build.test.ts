@@ -7,6 +7,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { readConfig } from '../../src/config/load.js';
 import { ExitCode } from '../../src/core/exit-codes.js';
 import { buildChatgptPlugin, buildClaudePlugin, MAX_DESCRIPTION_LENGTH, MAX_NAME_LENGTH, pluginName, pluginVersion } from '../../src/core/plugin/build.js';
+import { PLUGIN_COMMANDS } from '../../src/core/plugin/commands.js';
 import { renderMcpSkills } from '../../src/core/skills.js';
 import { CLI_VERSION } from '../../src/version.js';
 import { makeApprovalStore, type ApprovalStore } from '../helpers/approval-store.js';
@@ -79,20 +80,21 @@ describe('ctxr plugin build outside any store', () => {
     const out = path.join(tmp.root, 'contexture-plugin');
     const skills = renderMcpSkills();
     expect(envelope.data).toMatchObject({ out, mcp_url: null, skills: skills.map((s) => s.file) });
-    expect(envelope.data.plugins.map((p) => [p.target, p.name, p.version])).toEqual([['claude', 'contexture', CLI_VERSION]]);
-    expect((await readdir(out)).sort()).toEqual(['contexture', 'contexture-claude.zip']);
+    expect(envelope.data.plugins.map((p) => [p.target, p.name, p.version])).toEqual([['claude', 'ctxr', CLI_VERSION]]);
+    expect((await readdir(out)).sort()).toEqual(['ctxr', 'ctxr-claude.zip']);
 
-    const dir = path.join(out, 'contexture');
-    expect(await filesUnder(dir)).toEqual(['.claude-plugin/plugin.json', 'LICENSE', 'README.md', ...skills.map((s) => `skills/${s.file}/SKILL.md`)].sort());
+    const dir = path.join(out, 'ctxr');
+    expect(await filesUnder(dir)).toEqual(['.claude-plugin/plugin.json', 'LICENSE', 'README.md', ...Object.keys(PLUGIN_COMMANDS).map((c) => `commands/${c}.md`), ...skills.map((s) => `skills/${s.file}/SKILL.md`)].sort());
     const manifest = await json(path.join(dir, '.claude-plugin/plugin.json'));
     expect(Object.keys(manifest).sort()).toEqual(['author', 'description', 'displayName', 'homepage', 'keywords', 'license', 'name', 'repository', 'version']);
     const pkg = JSON.parse(await readFile(path.join(REPO, 'package.json'), 'utf8')) as { version: string; license: string };
-    expect(manifest).toMatchObject({ name: 'contexture', displayName: 'contexture', version: CLI_VERSION, license: pkg.license, author: { name: 'contexture' } });
+    expect(manifest).toMatchObject({ name: 'ctxr', displayName: 'ctxr', version: CLI_VERSION, license: pkg.license, author: { name: 'contexture' } });
     expect(await readFile(path.join(dir, 'LICENSE'), 'utf8')).toBe(await readFile(path.join(REPO, 'LICENSE'), 'utf8'));
     const readme = await readFile(path.join(dir, 'README.md'), 'utf8');
     expect(readme.split(/\s+/).filter(Boolean).length).toBeGreaterThanOrEqual(40);
     expect(readme).toContain('ayxuerui/contexture');
     expect(readme).toContain('**Sync automatically**');
+    expect(readme).toContain('- `/ctxr:submit` opens `ctxr-submit`');
     expect(readme).not.toMatch(/__[A-Z]+__/);
 
     for (const skill of skills) {
@@ -111,11 +113,11 @@ describe('ctxr plugin build outside any store', () => {
 
   it('archives the directory with its manifest at the root, readable by an independent unzip', async () => {
     const out = path.join(tmp.root, 'contexture-plugin');
-    const archive = path.join(out, 'contexture-claude.zip');
+    const archive = path.join(out, 'ctxr-claude.zip');
     expect(await unzip(['-tq', archive])).toMatch(/No errors detected/);
     const listed = (await unzip(['-Z1', archive])).trim().split('\n').sort();
-    expect(listed).toEqual(await filesUnder(path.join(out, 'contexture')));
-    for (const file of listed) expect(await unzip(['-p', archive, file]), file).toBe(await readFile(path.join(out, 'contexture', file), 'utf8'));
+    expect(listed).toEqual(await filesUnder(path.join(out, 'ctxr')));
+    for (const file of listed) expect(await unzip(['-p', archive, file]), file).toBe(await readFile(path.join(out, 'ctxr', file), 'utf8'));
   });
 });
 
@@ -145,13 +147,13 @@ describe('ctxr plugin build in a store', () => {
 
     expect(data).toMatchObject({ out, mcp_url: `${BASE}/mcp`, skills: skills.map((s) => s.file) });
     expect(data.plugins.map((p) => [p.target, p.name, p.version])).toEqual([
-      ['claude', 'contexture', CLI_VERSION],
+      ['claude', 'ctxr', CLI_VERSION],
       ['chatgpt', 'contexture-store', `${CLI_VERSION}+${head.slice(0, 12)}`],
     ]);
-    expect((await readdir(out)).sort()).toEqual(['chatgpt', 'contexture', 'contexture-claude.zip', 'contexture-store-chatgpt.zip']);
+    expect((await readdir(out)).sort()).toEqual(['chatgpt', 'contexture-store-chatgpt.zip', 'ctxr', 'ctxr-claude.zip']);
 
     // The Claude plugin is the same as anywhere else: the store's configuration does not reach it.
-    const claude = path.join(out, 'contexture');
+    const claude = path.join(out, 'ctxr');
     for (const [file, content] of buildClaudePlugin(CLI_VERSION).files) expect(await readFile(path.join(claude, ...file.split('/')), 'utf8'), file).toBe(content);
     expect(await filesUnder(claude)).not.toContain('.mcp.json');
 
@@ -180,7 +182,7 @@ describe('ctxr plugin build in a store', () => {
 
   it('archives each directory with its manifest at the root, readable by an independent unzip', async () => {
     const out = path.join(store.root, '.contexture/cache/plugin');
-    for (const [dir, archiveName] of [['contexture', 'contexture-claude.zip'], ['chatgpt', 'contexture-store-chatgpt.zip']] as const) {
+    for (const [dir, archiveName] of [['ctxr', 'ctxr-claude.zip'], ['chatgpt', 'contexture-store-chatgpt.zip']] as const) {
       const archive = path.join(out, archiveName);
       expect(await unzip(['-tq', archive])).toMatch(/No errors detected/);
       const listed = (await unzip(['-Z1', archive])).trim().split('\n').sort();
@@ -190,7 +192,7 @@ describe('ctxr plugin build in a store', () => {
   });
 
   it('replaces the plugin directories whole, and writes where --out says, relative to the working directory', async () => {
-    const stray = path.join(store.root, '.contexture/cache/plugin/contexture/skills/ctxr-gone/SKILL.md');
+    const stray = path.join(store.root, '.contexture/cache/plugin/ctxr/skills/ctxr-gone/SKILL.md');
     await mkdir(path.dirname(stray), { recursive: true });
     await writeFile(stray, 'left behind\n');
     expect((await runCli(['plugin', 'build'], { cwd: store.root, env: store.env, timeoutMs: 60_000 })).exitCode).toBe(ExitCode.Ok);
@@ -199,7 +201,7 @@ describe('ctxr plugin build in a store', () => {
     const result = await runCli(['plugin', 'build', '--out', '../plugins'], { cwd: store.root, env: store.env, timeoutMs: 60_000 });
     expect(result.exitCode, result.stderr).toBe(ExitCode.Ok);
     expect(result.stdout).toContain('contexture-store-chatgpt.zip');
-    expect((await readdir(path.join(store.tmp.root, 'plugins'))).sort()).toEqual(['chatgpt', 'contexture', 'contexture-claude.zip', 'contexture-store-chatgpt.zip']);
+    expect((await readdir(path.join(store.tmp.root, 'plugins'))).sort()).toEqual(['chatgpt', 'contexture-store-chatgpt.zip', 'ctxr', 'ctxr-claude.zip']);
   });
 
   it('writes only the Claude plugin, and says why, in a store with no mcp block', async () => {
@@ -209,7 +211,7 @@ describe('ctxr plugin build in a store', () => {
     expect(data.mcp_url).toBeNull();
     expect(data.plugins.map((p) => p.target)).toEqual(['claude']);
     expect(result.stderr).toContain('declares no mcp block, so no ChatGPT plugin was written');
-    expect((await readdir(path.join(bare.root, '.contexture/cache/plugin'))).sort()).toEqual(['contexture', 'contexture-claude.zip']);
+    expect((await readdir(path.join(bare.root, '.contexture/cache/plugin'))).sort()).toEqual(['ctxr', 'ctxr-claude.zip']);
   });
 
   it('builds the same archive bytes twice from one commit and configuration, and refuses a ChatGPT plugin without mcp', async () => {

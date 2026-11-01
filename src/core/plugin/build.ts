@@ -9,6 +9,7 @@ import { ContextureError } from '../errors.js';
 import { ExitCode } from '../exit-codes.js';
 import type { GitRunner } from '../git/exec.js';
 import { renderMcpSkills } from '../skills.js';
+import { commandMapProblems, PLUGIN_COMMANDS } from './commands.js';
 import { createZip } from './zip.js';
 
 /**
@@ -23,7 +24,7 @@ import { createZip } from './zip.js';
  * configuration, with a README and contexture's license, and no MCP server
  * entry: each member adds their store's connector once, by its `/mcp` address.
  * Its version is the CLI's, so a member's marketplace installs a new copy
- * exactly at a release (D3). The repository commits it under `plugins/contexture/`.
+ * exactly at a release (D3). The repository commits it under `plugins/ctxr/`.
  *
  * The ChatGPT plugin stays the store's (serve-the-session-lifecycle-to-chat-apps
  * D7): ChatGPT has no marketplace on a personal plan, so it is the store's zip
@@ -43,9 +44,9 @@ export const MAX_NAME_LENGTH = 64;
 export const MAX_DESCRIPTION_LENGTH = 1024;
 const NAME_PREFIX = 'contexture-';
 
-/** The general Claude plugin's name, and the marketplace in contexture's repository that lists it (D1). */
-export const CLAUDE_PLUGIN_NAME = 'contexture';
-export const CLAUDE_PLUGIN_DISPLAY_NAME = 'contexture';
+/** The general Claude plugin's name (D5: `ctxr`, so its commands read `/ctxr:submit`), and the marketplace in contexture's repository that lists it (D1). */
+export const CLAUDE_PLUGIN_NAME = 'ctxr';
+export const CLAUDE_PLUGIN_DISPLAY_NAME = 'ctxr';
 export const PLUGIN_MARKETPLACE = 'ayxuerui/contexture';
 
 export interface BuiltPlugin {
@@ -149,6 +150,32 @@ function checkSkillFrontmatter(folder: string, content: string): void {
   if (description.length === 0 || description.length > MAX_DESCRIPTION_LENGTH) throw new Error(`skill ${folder}'s description is not 1 to ${MAX_DESCRIPTION_LENGTH} characters`);
 }
 
+/** A rendered skill's text below its frontmatter: what a command opening it carries. */
+export function skillBody(content: string): string {
+  const match = /^---\n[^]*?\n---\n\n?/.exec(content);
+  if (match === null) throw new Error('a rendered skill carries no frontmatter');
+  return content.slice(match[0].length).replace(/\n+$/, '');
+}
+
+/**
+ * publish-one-contexture-plugin D5: `commands/<name>.md` for each entry of the
+ * command map, from `templates/plugin/command.md`: a `description` worded as a
+ * typed shortcut and nothing else in the frontmatter, then the whole MCP render
+ * of the skill, then the person's `$ARGUMENTS`. Whichever of the two Claude
+ * loads, it has the whole procedure. A command whose skill the plugin does not
+ * carry fails the build.
+ */
+function commandFiles(skills: readonly { file: string; content: string }[], commands: Readonly<Record<string, string>> = PLUGIN_COMMANDS): Map<string, string> {
+  const problems = commandMapProblems(commands, skills.map((skill) => skill.file));
+  if (problems.length > 0) throw new Error(problems.join('; '));
+  const files = new Map<string, string>();
+  for (const [command, skill] of Object.entries(commands)) {
+    const content = skills.find((s) => s.file === skill)!.content;
+    files.set(`commands/${command}.md`, fillPluginTemplate('command.md', { PLUGIN: CLAUDE_PLUGIN_NAME, COMMAND: command, SKILL: skill, BODY: skillBody(content) }));
+  }
+  return files;
+}
+
 /** The MCP render's skills, as plugin files: the same text in both plugins and for every store. */
 function skillFiles(): { skills: string[]; files: Map<string, string> } {
   const skills = renderMcpSkills();
@@ -187,11 +214,13 @@ export function buildClaudePlugin(cliVersion: string): BuiltPlugin {
   const license = (JSON.parse(packageFile('package.json')) as { license: string }).license;
   const values = { NAME: CLAUDE_PLUGIN_NAME, DISPLAY_NAME: CLAUDE_PLUGIN_DISPLAY_NAME, VERSION: cliVersion, LICENSE: license, MARKETPLACE: PLUGIN_MARKETPLACE };
   const { skills, files } = skillFiles();
+  const commands = Object.entries(PLUGIN_COMMANDS).map(([command, skill]) => `- \`/${CLAUDE_PLUGIN_NAME}:${command}\` opens \`${skill}\``);
   const tree = new Map([
     ['.claude-plugin/plugin.json', jsonDocument('claude-plugin.json', values)],
-    ['README.md', fillPluginTemplate('README.md', values)],
+    ['README.md', fillPluginTemplate('README.md', { ...values, COMMANDS: commands.join('\n') })],
     ['LICENSE', packageFile('LICENSE')],
     ...files,
+    ...commandFiles(renderMcpSkills()),
   ]);
   return finish('claude', CLAUDE_PLUGIN_NAME, cliVersion, skills, tree, `${CLAUDE_PLUGIN_NAME}-claude.zip`);
 }

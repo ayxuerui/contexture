@@ -314,7 +314,7 @@ describe('the MCP surface of ctxr serve (real CLI, fake forge, real signatures)'
         // Claude: contexture's marketplace and plugin, with automatic updates, replacing an uploaded store plugin.
         expect(html.body).toContain('<code>ayxuerui/contexture</code>');
         expect(html.body).toContain('Sync automatically');
-        expect(html.body).toContain('Install the <strong>contexture</strong> plugin');
+        expect(html.body).toContain('Install the <strong>ctxr</strong> plugin');
         expect(html.body).toContain('<code>contexture-store</code>, remove it');
         // This store's connector, and how to add it in each app.
         expect(html.body).toContain(`<code>${BASE}/mcp</code>`);

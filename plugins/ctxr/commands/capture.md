@@ -1,11 +1,22 @@
 ---
-name: ctxr-capture
-description: Bring material from outside the store into the inbox as a faithful record carrying its source identity, then hand off to ingest.
+description: Typed shortcut for /ctxr:capture, which opens the ctxr-capture skill. A request in words loads ctxr-capture itself.
 ---
 
 ## Before this skill: the store's tools stand in for a checkout
 
-You are working through this store's server, not in a checkout of it. Nothing runs a shell here, so no
+### In a checkout, use the store's own skill
+
+If the working directory has a `contexture.yaml` at its root and a shell here runs `ctxr`, you are in a
+checkout of the store, and this text is not for you. The `ctxr:`-namespaced skills and commands, such as
+`ctxr:ctxr-capture` and `/ctxr:capture`, are this plugin's, written for the store's server. The
+un-namespaced `ctxr-<name>` skills in the store's skills folder are the store's own, written for a checkout.
+In a checkout, invoke the un-namespaced `ctxr-<name>` skill of the same name and follow it, never the
+`ctxr:` one, and ignore the rest of this text. A `/ctxr:` command typed in a checkout asks for that store
+skill.
+
+### Through the store's server
+
+Otherwise you are working through this store's server, not in a checkout of it. Nothing runs a shell here, so no
 `git`, `gh` or `ctxr` command runs as written. The skill below was written for an agent with a checkout:
 follow it as written, and take each step it names through the tool these tables give.
 
@@ -202,3 +213,5 @@ Say what you captured and where it landed, then stop and let `ctxr-ingest-orches
 the store should know after this material, which note it changes, and whether it needs a note at all is
 that skill's decision table, and it reads the existing cluster before answering. A capture that has been
 filed straight into a note has skipped the only step that asks whether the store needed a new one.
+
+What the person typed after /ctxr:capture, to start from: $ARGUMENTS

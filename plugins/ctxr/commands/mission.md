@@ -1,11 +1,22 @@
 ---
-name: ctxr-mission
-description: Keep the store's mission core current — the primary mission, the top priorities in rank order with status/purpose/next action, and what is not now — with the back burner, sunset candidates, and open debt in a linked register; propose changes and write only on the operator's confirmation.
+description: Typed shortcut for /ctxr:mission, which opens the ctxr-mission skill. A request in words loads ctxr-mission itself.
 ---
 
 ## Before this skill: the store's tools stand in for a checkout
 
-You are working through this store's server, not in a checkout of it. Nothing runs a shell here, so no
+### In a checkout, use the store's own skill
+
+If the working directory has a `contexture.yaml` at its root and a shell here runs `ctxr`, you are in a
+checkout of the store, and this text is not for you. The `ctxr:`-namespaced skills and commands, such as
+`ctxr:ctxr-capture` and `/ctxr:capture`, are this plugin's, written for the store's server. The
+un-namespaced `ctxr-<name>` skills in the store's skills folder are the store's own, written for a checkout.
+In a checkout, invoke the un-namespaced `ctxr-<name>` skill of the same name and follow it, never the
+`ctxr:` one, and ignore the rest of this text. A `/ctxr:` command typed in a checkout asks for that store
+skill.
+
+### Through the store's server
+
+Otherwise you are working through this store's server, not in a checkout of it. Nothing runs a shell here, so no
 `git`, `gh` or `ctxr` command runs as written. The skill below was written for an agent with a checkout:
 follow it as written, and take each step it names through the tool these tables give.
 
@@ -147,3 +158,5 @@ in it that has passed. Use those rather than guessing from memory whether it is 
 Mission path, `changed` or unchanged, what moved since the last write (a priority resolved, re-ranked, or
 added; an item moved to the register), and any factual correction made without confirmation. Anything outside
 the fence you want to fix is a separate, explicit edit.
+
+What the person typed after /ctxr:mission, to start from: $ARGUMENTS
