@@ -85,6 +85,15 @@ The secret is read from `CONTEXTURE_WEBHOOK_SECRET` or `CONTEXTURE_WEBHOOK_SECRE
 bypass for exactly `/hooks/github`, the same shape as the existing `/mcp` bypass on `brain.ruixue.ai`; the signature
 check is that route's control.
 
+### D10. The agents' update loop is a ctxr command, never a process of `serve`
+
+**Case for a subprocess of `serve`** (the owner's suggestion, to keep `contexture-images` simple): one place runs
+every timer. **Why not:** updating a clone runs git inside it, and git runs that clone's hooks and configuration
+(`post-merge`, `core.hooksPath`, `core.fsmonitor`), which the agent controls; a child of `serve` runs in the container
+holding the App key, next to the key file. The simplicity is kept another way: the loop is `ctxr sync --every`, so
+`contexture-images` adds one supervised line in the agents container, run as the agent's own user with its own token,
+and `serve`'s timer calls the same sync code.
+
 ## Risks / Trade-offs
 
 - **[A `serve` with no forge credential fails every run]** Without App credentials or a host credential, a private

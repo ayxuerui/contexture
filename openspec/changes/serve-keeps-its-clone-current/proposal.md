@@ -10,12 +10,14 @@ Previews have the opposite gap. A page written in a session inside a mounted sto
 - **`serve` keeps its clone current on a timer.** Every `serve.sync_minutes` minutes, `serve` runs one store-update run as a separate process: the landing run (`ctxr land --pending`, which already syncs) when the loaded configuration turns landing on, and `ctxr sync` otherwise. Runs never overlap. A run's output goes to stderr, prefixed, and no run affects how a request is answered.
 - **Pull request previews from the pushed branch.** `serve` addresses each open pull request's pages under `/preview/pull/<number>/`, rendered from the pull request's head on the forge, fetched when the preview is opened (the head re-read at most every 15 seconds). A page previews at the address of the store that will publish it, whichever container wrote it.
 - **A GitHub webhook.** With a webhook secret in its environment, `serve` accepts signed push deliveries at `POST /hooks/github`: a push to the default branch starts a store-update run at once, and a push to any other branch fetches it for its preview. A delivery is only a hint; every change is read from the forge. The timer and on-demand fetching stay as fallbacks, because GitHub does not retry a failed delivery.
+- **`ctxr sync --every <minutes>`**: the same sync as a running loop that also refreshes the store's mounts, so an agents container keeps its own clone and mounts current by starting one process as the agent's own user. `contexture-images` adds one supervised line; the loop lives in ctxr.
+- **A merged pull request's preview redirects to the published page**, so a shared preview link keeps working after the change lands.
 - **`serve.sync_minutes`**: optional, positive whole minutes, absent meaning 5, today's landing interval. The landing sweep's interval follows it too, so one number decides how fresh a store is served.
 
 ## Non-goals
 
-- **Updating agents' clones.** Agents keep their own clones current from their own containers (a timer running `ctxr sync` is the natural shape); the service holding the App key never writes into an agent's files. That belongs to the `contexture-images` work on the single host service.
-- **Updating mounts.** `ctxr shared-stores sync` stays the way a store's mounts are refreshed; a store-update run does not touch `shared/`.
+- **Updating agents' clones from `serve`.** `serve`, which holds the App key, never runs git in an agent's clone: git runs the clone's own hooks and configuration, which the agent controls, so a prompt-injected agent would get code execution next to the key. Agents run `ctxr sync --every` themselves; starting it in the agents container is a one-line `contexture-images` change.
+- **`serve` updating mounts.** A store-update run in `serve` does not touch `shared/`; `ctxr sync --every` refreshes mounts in the agents' own clones.
 - **Resetting, stashing or forcing.** A clone with local work is left exactly as it was, as landing already does.
 - **Pushing anything.** `ctxr sync` only fetches and fast-forwards.
 - **The App-level webhook.** A GitHub App has one webhook URL for every repository it is installed on, which fits a single host service for all stores. Until that exists, each store's repository has its own webhook pointing at its own `serve`.

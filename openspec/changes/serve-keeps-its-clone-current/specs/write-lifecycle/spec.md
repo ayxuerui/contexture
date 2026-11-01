@@ -22,3 +22,17 @@ as unreachable. It SHALL push nothing, and SHALL touch no path under `shared/`.
 #### Scenario: An unreachable forge is reported
 - **WHEN** the fetch fails because the forge cannot be reached
 - **THEN** the command exits with the setup/usage code, naming the forge as unreachable, and the clone is unchanged
+
+### Requirement: The canonical-clone sync can keep running, mounts included
+`ctxr sync --every <minutes>` SHALL run until stopped, and each round SHALL bring the canonical clone up to date by
+the rule above, then refresh the store's mounts as `ctxr shared-stores sync` does. A round that fails SHALL be
+reported on stderr and SHALL NOT stop later rounds. `<minutes>` SHALL be a positive whole number. It SHALL use only
+the credential of the user running it, so an agents container runs it as the agent's own user.
+
+#### Scenario: Rounds keep the clone and its mounts current
+- **WHEN** `ctxr sync --every 5` runs in a store that mounts `ctx-b`, and changes are merged to the store and to `ctx-b`
+- **THEN** within five minutes both the canonical clone and `shared/ctx-b` are fast-forwarded
+
+#### Scenario: A failed round does not end the loop
+- **WHEN** one round's fetch fails because the forge cannot be reached
+- **THEN** the failure is reported on stderr and the next round runs on schedule

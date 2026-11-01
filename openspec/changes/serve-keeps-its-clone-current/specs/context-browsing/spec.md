@@ -87,8 +87,8 @@ will publish it. Only published pages SHALL be addressable there, as for session
 ### Requirement: A pull request preview is fetched when it is opened
 When a pull request preview is requested, the server SHALL ask the forge for the pull request's current head and, if
 its clone lacks that commit, fetch it before answering, into a ref namespace of its own that leaves the clone's
-branches and working tree untouched. It SHALL reuse the head it last read for at most 15 seconds. A closed or unknown
-pull request SHALL receive a `404`.
+branches and working tree untouched. It SHALL reuse the head it last read for at most 15 seconds. An unknown pull
+request SHALL receive a `404`.
 
 #### Scenario: A push is visible on the next open
 - **WHEN** a commit changing a page is pushed to pull request 7's branch and its preview is opened more than 15 seconds after it was last opened
@@ -115,3 +115,12 @@ hint of which branch changed, and SHALL read every change from the forge itself.
 #### Scenario: A merge is served without waiting for the timer
 - **WHEN** a verified push delivery for the default branch arrives
 - **THEN** a store-update run starts within seconds, without waiting for `serve.sync_minutes`
+
+### Requirement: A merged pull request's preview points to the published page
+A `GET` under `/preview/pull/<number>/` for a pull request that has merged SHALL redirect to the same page's address
+under `/publish/`, so a shared preview link keeps working after the change lands. A pull request closed without
+merging SHALL receive a `404`.
+
+#### Scenario: A preview link opened after the merge reaches the published page
+- **WHEN** pull request 7, which added a page, has merged, and its preview address for that page is opened
+- **THEN** the response redirects to that page under `/publish/`

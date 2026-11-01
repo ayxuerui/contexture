@@ -3,7 +3,9 @@
 - [ ] 1.1 Add `src/commands/sync.ts`: take landing's repository lock, fetch the default branch through landing's authenticated fetch, apply `fastForwardIfSafe`, report the outcome as `canonical_sync`; exit with the setup/usage code when the fetch fails
 - [ ] 1.2 Register `ctxr sync` in `src/run.ts`
 - [ ] 1.3 Integration tests against a local bare origin: behind clone fast-forwarded; dirty, wrong-branch and diverged clones left alone with the success code; unreachable origin exits with the setup/usage code; nothing under `shared/` touched
-- [ ] 1.4 Run `npx vitest run -t "ctxr sync"` and confirm it exits 0
+- [ ] 1.4 Add `--every <minutes>`: loop until stopped, each round the canonical sync then `shared-stores sync`; report a failed round on stderr and keep going
+- [ ] 1.5 Tests: rounds fast-forward the clone and a mount; a failed round does not stop the loop
+- [ ] 1.6 Run `npx vitest run -t "ctxr sync"` and confirm it exits 0
 
 ## 2. `serve.sync_minutes`
 
@@ -20,9 +22,9 @@
 
 ## 4. Pull request previews
 
-- [ ] 4.1 Add `/preview/pull/<number>/` to `serve`: read the pull request's head from the forge (reusing it for at most 15 seconds), fetch it into a private ref namespace when missing, and serve only published pages from that commit; `404` for a closed or unknown pull request
+- [ ] 4.1 Add `/preview/pull/<number>/` to `serve`: read the pull request's head from the forge (reusing it for at most 15 seconds), fetch it into a private ref namespace when missing, and serve only published pages from that commit; redirect a merged pull request's page to its `/publish/` address; `404` for a pull request closed without merging or unknown
 - [ ] 4.2 Have `ctxr session submit` and the approval pages report the `/preview/pull/<number>/` address for a store with `serve.base_url`
-- [ ] 4.3 Integration tests against the fake forge: a page from a branch pushed elsewhere previews byte-identical to `/publish/`; a new push shows after the reuse window; a closed pull request is `404`; notes stay unaddressable
+- [ ] 4.3 Integration tests against the fake forge: a page from a branch pushed elsewhere previews byte-identical to `/publish/`; a new push shows after the reuse window; a merged pull request redirects to `/publish/`; one closed unmerged is `404`; notes stay unaddressable
 - [ ] 4.4 Run `npx vitest run -t "preview"` and confirm it exits 0
 
 ## 5. The webhook
