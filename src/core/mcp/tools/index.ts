@@ -1,4 +1,8 @@
-import { packagedTemplate } from '../../templates.js';
+import { RELATION_DIRECTEDNESS_NOTE, RELATION_VOCABULARY } from '../../../config/defaults.js';
+import type { StoreConfig } from '../../../config/schema.js';
+import { CLI_VERSION } from '../../../version.js';
+import { placeholderName, STORE_PLACEHOLDERS } from '../../skill-placeholders.js';
+import { packagedTemplate, substituteBlock } from '../../templates.js';
 import { packagedCliEntry } from '../cli-runner.js';
 import type { ToolAnnotations, ToolDefinition } from '../jsonrpc.js';
 import type { Principal } from '../oauth.js';
@@ -64,8 +68,22 @@ import {
  * implementation and annotations, and refuses to build when the two differ.
  */
 
-export function serverInstructions(storeName: string): string {
-  return packagedTemplate('mcp', 'server-instructions').replaceAll('__STORE_NAME__', storeName);
+/**
+ * The instructions `initialize` returns, rendered from the configuration the
+ * server last loaded. publish-one-contexture-plugin D2: their *This store*
+ * section gives every placeholder the skills of the general plugin name, by
+ * the label `skill-placeholders.ts` gives both, with this store's value, then
+ * the layers, the relation vocabulary and the server's ctxr version.
+ */
+export function serverInstructions(storeName: string, config: StoreConfig): string {
+  const values = STORE_PLACEHOLDERS.map((p) => `- \`${placeholderName(p)}\`: \`${p.value(config)}\``);
+  const layers = config.taxonomy.layers.length === 0 ? ['- none'] : config.taxonomy.layers.map((layer) => `- **${layer.name}** (\`${layer.path.replace(/\/*$/, '/')}\`): ${layer.description}`);
+  const relations = [...RELATION_VOCABULARY.map((relation) => `- **${relation.name}**: ${relation.definition}`), '', RELATION_DIRECTEDNESS_NOTE];
+  let text = packagedTemplate('mcp', 'server-instructions');
+  text = substituteBlock(text, '__STORE_VALUES__', values);
+  text = substituteBlock(text, '__STORE_LAYERS__', layers);
+  text = substituteBlock(text, '__RELATION_VOCABULARY__', relations);
+  return text.replaceAll('__STORE_NAME__', storeName).replaceAll('__CLI_VERSION__', CLI_VERSION);
 }
 
 export interface ToolContext {

@@ -1,10 +1,12 @@
 import { execFile } from 'node:child_process';
 import { createHash, randomBytes } from 'node:crypto';
-import { readFile, writeFile } from 'node:fs/promises';
+import { readFile, rename, writeFile } from 'node:fs/promises';
 import { createServer, request, type Server } from 'node:http';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { parseDocument } from 'yaml';
+import { CLI_VERSION } from '../../src/version.js';
 import { makeApprovalStore, type ApprovalStore } from '../helpers/approval-store.js';
 import { makeTestSigner } from '../helpers/identity-keys.js';
 import { runCliBackground, stopCliBackground } from '../helpers/run-cli.js';
@@ -152,6 +154,12 @@ describe('the MCP surface of ctxr serve (real CLI, fake forge, real signatures)'
         const token = await signIn(url, 'a@example.com');
         const init = await rpc(url, token, 'initialize', { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'test', version: '0' } });
         expect(init.json.result).toMatchObject({ protocolVersion: '2025-06-18', serverInfo: { name: 'contexture' } });
+        // publish-one-contexture-plugin D2 (remote-access spec, *The server instructions give this store's values*).
+        const instructions = (init.json.result as { instructions: string }).instructions;
+        expect(instructions).toContain('## This store');
+        expect(instructions).toContain('- `<inbox path>`: `raw/inbox/`');
+        expect(instructions).toContain('- `<log path>`: `log.md`');
+        expect(instructions).toContain(`This server runs ctxr ${CLI_VERSION}.`);
 
         const tools = (await rpc(url, token, 'tools/list')).json.result as { tools: { name: string; annotations: { readOnlyHint: boolean } }[] };
         expect(tools.tools.map((t) => [t.name, t.annotations.readOnlyHint])).toEqual([
@@ -224,6 +232,16 @@ describe('the MCP surface of ctxr serve (real CLI, fake forge, real signatures)'
         expect(stderr()).toContain('mcp a@example.com: tools/list');
         expect(stderr()).toContain('mcp a@example.com: tools/call find');
         expect(stderr()).toContain('per-process key');
+
+        // A configuration change shows on the next initialize, with no restart.
+        const configPath = path.join(store.root, 'contexture.yaml');
+        const document = parseDocument(await readFile(configPath, 'utf8'));
+        document.setIn(['organize', 'log_path'], 'records/log.md');
+        await writeFile(`${configPath}.next`, document.toString());
+        await rename(`${configPath}.next`, configPath);
+        const next = (await rpc(url, token, 'initialize', { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'test', version: '0' } })).json.result as { instructions: string };
+        expect(next.instructions).toContain('- `<log path>`: `records/log.md`');
+        expect(next.instructions).not.toContain('- `<log path>`: `log.md`');
       });
     } finally {
       await store.tmp.cleanup();

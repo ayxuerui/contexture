@@ -14,7 +14,9 @@ import {
   MANAGED_SKILL_HEADER,
   MCP_SKILL_FILES,
   mcpPreamble,
+  mcpSkillValues,
   OPTIONAL_SKILLS,
+  renderMcpSkills,
   skillPaths,
   SKILLS,
   renderSkills,
@@ -25,6 +27,7 @@ import {
   terminatingLayers,
 } from '../../src/core/skills.js';
 import { GRAPH_DOCUMENT_RELATIVE_PATH } from '../../src/core/graph/persist.js';
+import { placeholderName, STORE_PLACEHOLDERS } from '../../src/core/skill-placeholders.js';
 import { SHIPPED_PROFILES } from '../../src/taxonomy/profiles.js';
 import { makeTmpDir } from '../helpers/tmp-store.js';
 
@@ -1311,13 +1314,26 @@ describe('ctxr-capture-circleback: the opt-in retrieval step for ctxr-capture', 
  */
 describe('the MCP render of the owned skills', () => {
   const config = makeConfig();
-  const mcp = renderSkills(config, 'mcp');
+  const mcp = renderMcpSkills();
   const cli = renderSkills(config);
-  const preamble = mcpPreamble(config);
+  const preamble = mcpPreamble();
   const frontmatter = (content: string): string => content.slice(0, content.indexOf('\n---\n', 4) + '\n---\n'.length);
 
-  it('leaves the CLI render as it was: the default target, the explicit one and the copies sync writes are one text', async () => {
-    expect(renderSkills(config, 'cli')).toEqual(cli);
+  /**
+   * publish-one-contexture-plugin D2: a skill's MCP text with each placeholder
+   * written back as this store's value, and each generic computed step as the
+   * CLI render's step, is the CLI render's text.
+   */
+  function asStore(content: string, store: StoreConfig): string {
+    const values = mcpSkillValues();
+    let text = content
+      .replace(values.LAYER_STEP!, '__LAYER_STEP__')
+      .replace(values.RELATION_GROUPING_STEP!, '__RELATION_GROUPING_STEP__');
+    for (const placeholder of STORE_PLACEHOLDERS) text = text.replaceAll(values[placeholder.token]!, placeholder.value(store));
+    return text;
+  }
+
+  it('leaves the CLI render as it was: the copies sync writes are its text', async () => {
     const shipped = await shippedSkillFiles(config);
     for (const skill of cli) expect(shipped.get(`skills/${skill.file}/SKILL.md`), skill.file).toBe(skill.content);
   });
@@ -1342,26 +1358,66 @@ describe('the MCP render of the owned skills', () => {
     }
   });
 
-  it('is each CLI text unchanged under the preamble, below the frontmatter the Agent Skills format requires first', () => {
+  it('is each CLI text under the preamble, below the frontmatter the Agent Skills format requires first, apart from its placeholders', () => {
     const byFile = new Map(cli.map((s) => [s.file, s]));
+    const computed = new Set(['ctxr-placement', 'ctxr-connection-proposal']);
     for (const skill of mcp) {
       const original = byFile.get(skill.file)!;
       const head = frontmatter(original.content);
-      expect(skill.content, skill.file).toBe(`${head}\n${preamble}\n\n${original.content.slice(head.length + 1)}`);
+      expect(skill.content.startsWith(`${head}\n${preamble}\n\n`), skill.file).toBe(true);
+      const body = skill.content.slice(`${head}\n${preamble}\n\n`.length);
+      const cliBody = original.content.slice(head.length + 1);
+      if (computed.has(skill.file)) {
+        // The computed step is the generic one; every other line is the CLI text with its placeholders written back.
+        const token = skill.file === 'ctxr-placement' ? 'LAYER_STEP' : 'RELATION_GROUPING_STEP';
+        expect(body, skill.file).toContain(mcpSkillValues()[token]!);
+        const [before, after] = asStore(body, config).split(`__${token}__`) as [string, string];
+        expect(cliBody.startsWith(before), skill.file).toBe(true);
+        expect(cliBody.endsWith(after), skill.file).toBe(true);
+      } else {
+        expect(asStore(body, config), skill.file).toBe(cliBody);
+      }
       expect(skill.description).toBe(original.description);
       expect(skill.supportingFiles.size).toBe(0);
     }
     // The spec's scenario, spelled out for one skill.
     const submit = mcp.find((s) => s.file === 'ctxr-submit')!.content;
-    const cliSubmit = byFile.get('ctxr-submit')!.content;
-    expect(submit.endsWith(cliSubmit.slice(frontmatter(cliSubmit).length + 1))).toBe(true);
+    expect(submit).toContain('opens the pull request against `<default branch>`');
     expect(submit.indexOf(preamble)).toBeLessThan(submit.indexOf(MANAGED_SKILL_HEADER));
   });
 
-  it('names the store\'s configured worktrees path, and no placeholder survives', () => {
-    expect(preamble).toContain('`.worktrees/<directory>/`');
-    expect(mcpPreamble(makeConfig({ session: { branch_prefix: 'session/', worktrees_path: '.contexture/worktrees' } }))).toContain('`.contexture/worktrees/<directory>/work/a.md`');
+  it('takes no configuration: a named placeholder wherever the CLI render substitutes a store value, and no shipped default', () => {
+    // Two stores that differ in every value render one plugin, because the render reads neither.
+    expect(renderMcpSkills.length).toBe(0);
+    expect(mcpPreamble.length).toBe(0);
+    expect(renderMcpSkills()).toEqual(mcp);
+
+    const text = mcp.map((s) => s.content).join('\n');
     for (const skill of mcp) expect(skill.content.match(/__[A-Z][A-Z0-9_]*__/g), skill.file).toBeNull();
+    expect(preamble).toContain('`<worktrees path><directory>/`');
+    // Every placeholder a skill template carries is written by its name, and the bare one inside a code span.
+    for (const placeholder of STORE_PLACEHOLDERS.filter((p) => p.token !== 'ARCHIVE_DESTINATION')) {
+      expect(text, placeholder.token).toContain(placeholder.bare === true ? `\`${placeholderName(placeholder)}\`` : placeholderName(placeholder));
+    }
+    expect(text).toContain("The connector's instructions list this store's layers");
+    expect(text).toContain('Group proposals by the relation vocabulary the connector\'s instructions list under *This store*');
+    expect(text).not.toContain('**Alpha**');
+
+    const shipped = { ...config, ...SHIPPED_DEFAULTS, git: { default_branch: 'main' }, organize: { ...SHIPPED_DEFAULTS.organize, archive_destination: 'archive/' } } as unknown as StoreConfig;
+    for (const placeholder of STORE_PLACEHOLDERS) {
+      const value = placeholder.value(shipped);
+      expect(text, `${placeholder.token} = ${value}`).not.toContain(placeholder.bare === true ? `first ${value} path segments` : `\`${value}`);
+    }
+    expect(text).not.toContain('origin/main');
+    for (const name of [...new Set(SHIPPED_PROFILES.flatMap((p) => p.layers.map((l) => l.name)))]) expect(text, name).not.toMatch(new RegExp(`\\*\\*${name}\\*\\*|\\b${name}\\b layer`));
+    for (const relation of RELATION_VOCABULARY) expect(text, relation.name).not.toMatch(new RegExp(`\\b${relation.name}\\b`));
+  });
+
+  it('tells the agent where the values are, which connector to use, and what to do on an older server', () => {
+    expect(preamble).toMatch(/The connector's instructions give each\s+one's value under\s+\*This store\*, by the same name/);
+    expect(preamble).toMatch(/AGENTS\.md states most of these\s+values; for one it does not state, ask the person rather than guess/);
+    expect(preamble).toMatch(/Use the connector of the store the person names[^]*ask when it is unclear/);
+    expect(preamble).toMatch(/tell the person that this store's server runs\s+an older ctxr, then skip that step or take the nearest step the connector does offer\. Never improvise a\s+replacement for a step that writes\./);
   });
 
   it('passes the content guards the CLI render passes: no tier word, ctxr as the executable, only flags the CLI registers', () => {
@@ -1452,7 +1508,7 @@ function driftProblems(skills: readonly { file: string; content: string }[]): st
 }
 
 describe('the MCP render names only what the surface offers', () => {
-  const mcp = renderSkills(makeConfig(), 'mcp');
+  const mcp = renderMcpSkills();
 
   it('passes on the shipped skills', () => {
     expect(mcp.length).toBeGreaterThan(0);

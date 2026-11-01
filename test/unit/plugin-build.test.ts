@@ -6,7 +6,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { readConfig } from '../../src/config/load.js';
 import { ExitCode } from '../../src/core/exit-codes.js';
 import { buildPlugins, MAX_DESCRIPTION_LENGTH, MAX_NAME_LENGTH, pluginName, pluginVersion } from '../../src/core/plugin/build.js';
-import { renderSkills } from '../../src/core/skills.js';
+import { renderMcpSkills } from '../../src/core/skills.js';
 import { CLI_VERSION } from '../../src/version.js';
 import { makeApprovalStore, type ApprovalStore } from '../helpers/approval-store.js';
 import { runCli } from '../helpers/run-cli.js';
@@ -61,7 +61,7 @@ describe('ctxr plugin build', () => {
     const out = path.join(store.root, '.contexture/cache/plugin');
     const head = await store.git(['rev-parse', 'HEAD']);
     const config = await readConfig(store.root);
-    const skills = renderSkills(config, 'mcp');
+    const skills = renderMcpSkills();
 
     expect(data).toMatchObject({ name: 'contexture-store', version: `${CLI_VERSION}+${head.slice(0, 12)}`, mcp_url: `${BASE}/mcp`, out });
     expect(data.skills).toEqual(skills.map((s) => s.file));

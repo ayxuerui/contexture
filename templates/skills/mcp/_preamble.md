@@ -34,6 +34,30 @@ that session is `__WORKTREES_PATH__<directory>/work/a.md` for `Read`, `Edit`, `W
 `Grep` and `Glob`. A path without a session root reads the store as it was last approved, and a write to one
 is refused. A change rests uncommitted in its session until `session_submit`.
 
+### This store's settings
+
+Where the skill uses one of this store's settings, it names the setting with a placeholder in angle
+brackets, such as `<inbox path>`, `<log path>` or `<default branch>`. The connector's instructions give each
+one's value under *This store*, by the same name, with the store's layers and its relation vocabulary. Use
+that value wherever the placeholder appears, inside a path too: `<capture root>assets/` with a capture root
+of `sources/` is `sources/assets/`. Other words in angle brackets, such as `<path>`, `<title>` or `<session>`, are
+yours to fill as the step says. If the instructions are not in front of you, AGENTS.md states most of these
+values; for one it does not state, ask the person rather than guess.
+
+### More than one contexture connector
+
+Someone in several stores has one connector per store, and each one's instructions name its own store and
+values. Use the connector of the store the person names, with that store's values, and ask when it is unclear
+which store they mean. A session, a path or a value from one store's connector never goes to another's.
+
+### A step this connector does not offer
+
+The skills update when contexture releases, and a store's server can run an older ctxr: *This store* gives
+the version it runs. When a step names a tool the connector does not list, or the `ctxr` or `ctxr_write`
+tool refuses a command the step names as one it does not run, tell the person that this store's server runs
+an older ctxr, then skip that step or take the nearest step the connector does offer. Never improvise a
+replacement for a step that writes.
+
 ### Sessions across conversations
 
 The server keeps a session between conversations, but it cannot tell two conversations apart. At the

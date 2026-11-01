@@ -1,13 +1,13 @@
 ## 1. Store-independent render
 
-- [ ] 1.1 MCP render with no configuration input: one static map from each substituted value to a named `<…>` placeholder, generic text for the layer, cluster-depth and relation-grouping blocks; CLI render byte-identical
-- [ ] 1.2 Preamble: placeholders are given under *This store* in the connector's instructions, with AGENTS.md as the fallback; how to choose between two contexture connectors; what to do when a step names a tool or command the connector lacks (an older server: say so, skip or use the nearest offered step, never improvise a write)
-- [ ] 1.3 `npx vitest run test/unit/skills.test.ts` passes, including that the MCP render carries no value from the shipped defaults, and the drift check
+- [x] 1.1 MCP render with no configuration input: one static map from each substituted value to a named `<…>` placeholder, generic text for the layer, cluster-depth and relation-grouping blocks; CLI render byte-identical
+- [x] 1.2 Preamble: placeholders are given under *This store* in the connector's instructions, with AGENTS.md as the fallback; how to choose between two contexture connectors; what to do when a step names a tool or command the connector lacks (an older server: say so, skip or use the nearest offered step, never improvise a write)
+- [x] 1.3 `npx vitest run test/unit/skills.test.ts` passes, including that the MCP render carries no value from the shipped defaults, and the drift check
 
 ## 2. Server instructions
 
-- [ ] 2.1 *This store* section in `templates/mcp/server-instructions.md`: every placeholder's value, layers with descriptions, relation vocabulary, CLI version, from the loaded configuration
-- [ ] 2.2 `npx vitest run test/unit/mcp-protocol.test.ts test/integration/mcp-serve.test.ts` passes, including a configuration reload changing a value
+- [x] 2.1 *This store* section in `templates/mcp/server-instructions.md`: every placeholder's value, layers with descriptions, relation vocabulary, CLI version, from the loaded configuration
+- [x] 2.2 `npx vitest run test/unit/mcp-protocol.test.ts test/integration/mcp-serve.test.ts` passes, including a configuration reload changing a value
 
 ## 3. General plugin build and the repository's marketplace
 

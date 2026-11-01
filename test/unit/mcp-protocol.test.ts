@@ -1,8 +1,21 @@
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { handleMcpRequest, MCP_PATH, type Authentication } from '../../src/core/mcp/http.js';
-import { buildTools, type ToolContext } from '../../src/core/mcp/tools/index.js';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+import { RELATION_DIRECTEDNESS_NOTE, RELATION_VOCABULARY } from '../../src/config/defaults.js';
+import { readConfig } from '../../src/config/load.js';
+import type { StoreConfig } from '../../src/config/schema.js';
+import { buildTools, serverInstructions, type ToolContext } from '../../src/core/mcp/tools/index.js';
+import { placeholderName, STORE_PLACEHOLDERS } from '../../src/core/skill-placeholders.js';
+import { renderMcpSkills } from '../../src/core/skills.js';
+import { CLI_VERSION } from '../../src/version.js';
+import { hermeticGitEnv } from '../helpers/git-env.js';
+import { runCli } from '../helpers/run-cli.js';
+import { makeTmpDir, type TmpDir } from '../helpers/tmp-store.js';
+
+const execFileAsync = promisify(execFile);
 import {
   dispatch,
   JSONRPC_INVALID_PARAMS,
@@ -196,5 +209,56 @@ describe('mcp streamable http transport', () => {
     const url = await start(true);
     const res = await post(url, 'x'.repeat(1024 * 1024 + 1));
     expect(res.status).toBe(413);
+  });
+});
+
+/**
+ * publish-one-contexture-plugin D2 (remote-access spec, *The server
+ * instructions give this store's values*): the store section the general
+ * plugin's skills read their placeholders from.
+ */
+describe('the server instructions', () => {
+  // A store `ctxr init` wrote, so the configuration is the one a real store loads.
+  let loaded: StoreConfig;
+  let tmp: TmpDir;
+  beforeAll(async () => {
+    tmp = await makeTmpDir('contexture-instructions-');
+    const env = hermeticGitEnv();
+    await execFileAsync('git', ['init', '-q', '-b', 'main'], { cwd: tmp.root, env: env as NodeJS.ProcessEnv });
+    const init = await runCli(['init'], { cwd: tmp.root, env, timeoutMs: 60_000 });
+    if (init.exitCode !== 0) throw new Error(`ctxr init failed: ${init.stderr}`);
+    loaded = await readConfig(tmp.root);
+  }, 120_000);
+  afterAll(async () => {
+    await tmp?.cleanup();
+  });
+
+  it("give this store's value for every placeholder the skills name, its layers with descriptions, the relation vocabulary and the CLI version", () => {
+    const config = { ...loaded, ingest: { ...loaded.ingest, inbox_path: 'raw/inbox/' }, organize: { ...loaded.organize, log_path: 'records/log.md' } };
+    const text = serverInstructions('pkm', config);
+    const section = text.slice(text.indexOf('## This store'));
+    expect(section).not.toBe(text);
+    expect(text).not.toMatch(/__[A-Z][A-Z0-9_]*__/);
+
+    expect(section).toContain("These are pkm's values, by the same names:");
+    expect(section).toContain('- `<inbox path>`: `raw/inbox/`');
+    expect(section).toContain('- `<log path>`: `records/log.md`');
+    for (const placeholder of STORE_PLACEHOLDERS) expect(section, placeholder.token).toContain(`- \`${placeholderName(placeholder)}\`: \`${placeholder.value(config)}\``);
+    // Every placeholder the general plugin's skills carry is answered here, by the one label both read.
+    const skills = renderMcpSkills().map((skill) => skill.content).join('\n');
+    const named = new Set([...skills.matchAll(/<([a-z][a-z ]+)>/g)].map((m) => m[1]!).filter((label) => STORE_PLACEHOLDERS.some((p) => p.label === label)));
+    expect(named.size).toBeGreaterThanOrEqual(10);
+    for (const label of named) expect(section, label).toContain(`- \`<${label}>\`: `);
+
+    expect(config.taxonomy.layers.length).toBeGreaterThan(0);
+    for (const layer of config.taxonomy.layers) expect(section).toContain(`- **${layer.name}** (\`${layer.path.replace(/\/*$/, '/')}\`): ${layer.description}`);
+    for (const relation of RELATION_VOCABULARY) expect(section).toContain(`- **${relation.name}**: ${relation.definition}`);
+    expect(section).toContain(RELATION_DIRECTEDNESS_NOTE);
+    expect(section).toContain(`This server runs ctxr ${CLI_VERSION}.`);
+  });
+
+  it('says so when the store declares no layers', async () => {
+    const text = serverInstructions('pkm', { ...loaded, taxonomy: { profile: 'custom', layers: [] } });
+    expect(text).toMatch(/what belongs there:\n\n- none\n/);
   });
 });

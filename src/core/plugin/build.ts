@@ -7,7 +7,7 @@ import { SKILL_FILE_NAME } from '../conventions.js';
 import { ContextureError } from '../errors.js';
 import { ExitCode } from '../exit-codes.js';
 import type { GitRunner } from '../git/exec.js';
-import { renderSkills } from '../skills.js';
+import { renderMcpSkills } from '../skills.js';
 import { createZip } from './zip.js';
 
 /**
@@ -142,7 +142,7 @@ export function buildPlugins(input: PluginBuildInput): PluginBundle {
   const displayName = `${input.storeName} (contexture)`;
   const values = { NAME: name, DISPLAY_NAME: displayName, VERSION: version, STORE_NAME: input.storeName, MCP_URL: mcpUrl, BASE_URL: origin };
 
-  const skills = renderSkills(config, 'mcp');
+  const skills = renderMcpSkills();
   const skillFiles = new Map<string, string>();
   for (const skill of skills) {
     checkSkillFrontmatter(skill.file, skill.content);
