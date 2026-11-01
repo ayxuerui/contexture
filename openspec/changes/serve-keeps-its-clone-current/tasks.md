@@ -9,9 +9,9 @@
 
 ## 2. `serve.sync_minutes`
 
-- [ ] 2.1 Add `sync_minutes` (positive integer) to the `serve` block of `StoreConfigSchema`; absent resolves to 5 from a constant in `config/defaults.ts`
-- [ ] 2.2 Unit tests: absent means 5; 0, negative and fractional values are refused naming the key
-- [ ] 2.3 Run `npx vitest run test/unit/config-schema.test.ts` and confirm it exits 0
+- [x] 2.1 Add `sync_minutes` (positive integer) to the `serve` block of `StoreConfigSchema`; absent resolves to 5 from a constant in `config/defaults.ts`
+- [x] 2.2 Unit tests: absent means 5; 0, negative and fractional values are refused naming the key
+- [x] 2.3 Run `npx vitest run test/unit/config-schema.test.ts` and confirm it exits 0
 
 ## 3. The store-update runner
 
