@@ -43,10 +43,11 @@ import type { CommandOutcome } from './core/command.js';
 import type { Finding } from './core/envelope.js';
 import { buildEnvelope } from './core/envelope.js';
 import type { RunEnv } from './core/env.js';
-import { ContextureError } from './core/errors.js';
+import { ContextureError, NoStoreRootError } from './core/errors.js';
 import { ExitCode } from './core/exit-codes.js';
 import { createReporter } from './core/reporter.js';
-import { openStore, openStoreMigrating } from './core/store.js';
+import { openStore, openStoreMigrating, type Store } from './core/store.js';
+import { resolveExistingRoot } from './core/root.js';
 import * as updateCommand from './commands/update.js';
 import * as verifyCommand from './commands/verify.js';
 import * as versionCommand from './commands/version.js';
@@ -80,6 +81,21 @@ function deriveRunEnv(env: RunEnv, cmd: Command): { runEnv: RunEnv; jsonMode: bo
   const jsonMode = Boolean(globalOpts.json);
   const runEnv: RunEnv = { ...env, noInput: env.noInput || globalOpts.input === false || jsonMode };
   return { runEnv, jsonMode, root: globalOpts.root };
+}
+
+/**
+ * publish-one-contexture-plugin D1: the store a command that needs none opens
+ * when one resolves, or undefined when none does. Only "no store root found" is
+ * an absence; a store that resolves but cannot be opened fails as for any command.
+ */
+async function storeIfAny(runEnv: RunEnv, root: string | undefined): Promise<Store | undefined> {
+  try {
+    resolveExistingRoot(runEnv, { root });
+  } catch (err) {
+    if (err instanceof NoStoreRootError) return undefined;
+    throw err;
+  }
+  return openStore(runEnv, { root });
 }
 
 /**
@@ -721,17 +737,19 @@ export function buildProgram(env: RunEnv): { program: Command; state: { result: 
       });
     });
 
-  // serve-the-session-lifecycle-to-chat-apps D7: the chat-app plugins, built from the MCP render of the owned skills.
-  const pluginCommand = program.command('plugin').description("build the store's Claude and ChatGPT plugins: its skills and its MCP server");
+  // serve-the-session-lifecycle-to-chat-apps D7, publish-one-contexture-plugin D1: the chat-app plugins, built from
+  // the MCP render of the owned skills. contexture's Claude plugin needs no store; in a store with `mcp`, its ChatGPT
+  // plugin is written too.
+  const pluginCommand = program.command('plugin').description("build contexture's Claude plugin, and a store's ChatGPT plugin with its MCP server");
 
   pluginCommand
     .command('build')
-    .description('write the Claude and ChatGPT plugins, each as a directory and a zip archive, from the MCP render of the owned skills and serve.base_url')
-    .option('--out <dir>', 'where to write them (default: .contexture/cache/plugin/ under the store root)')
+    .description("write contexture's Claude plugin (its skills, no connector) and, inside a store that declares mcp, the store's ChatGPT plugin with its connector, each as a directory and a zip archive")
+    .option('--out <dir>', 'where to write them (default: .contexture/cache/plugin/ under the store root, or ./contexture-plugin/ outside a store)')
     .action(async (cmdOpts: { out?: string }, cmd: Command) => {
       const { runEnv, jsonMode, root } = deriveRunEnv(env, cmd);
       state.result = await runCommand('plugin.build', runEnv, jsonMode, async () => {
-        const store = await openStore(runEnv, { root });
+        const store = (await storeIfAny(runEnv, root)) ?? null;
         return pluginBuildCommand.execute(runEnv, store, { out: cmdOpts.out });
       });
     });

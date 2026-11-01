@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs';
+import { readdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { StoreConfig } from '../../config/schema.js';
@@ -11,16 +12,26 @@ import { renderMcpSkills } from '../skills.js';
 import { createZip } from './zip.js';
 
 /**
- * serve-the-session-lifecycle-to-chat-apps D7 (harness-portability spec,
- * *`ctxr plugin build` writes the store's chat-app plugins*): the one builder
- * behind both `ctxr plugin build` and serve's `/plugin/` downloads. It does no
- * I/O of its own beyond reading the packaged templates, so the command writes
- * what it returns to disk and the server answers with it from memory.
+ * The one builder behind `ctxr plugin build`, `npm run plugin` and serve's
+ * `/plugin/` page. It does no I/O of its own beyond reading the packaged
+ * templates, so the command writes what it returns to disk and the server
+ * answers with it from memory.
  *
- * Each plugin is the MCP render of the owned skills plus one remote MCP server
- * entry at `serve.base_url` + `/mcp`, in that vendor's manifest format. Neither
- * carries a credential (sign-in is the server's own OAuth with dynamic client
- * registration), a variable in the address, a hook, a local server or a
+ * publish-one-contexture-plugin D1 (harness-portability spec, *contexture
+ * publishes one plugin for every store*): the Claude plugin is contexture's,
+ * not a store's. It is the MCP render of the owned skills, which takes no
+ * configuration, with a README and contexture's license, and no MCP server
+ * entry: each member adds their store's connector once, by its `/mcp` address.
+ * Its version is the CLI's, so a member's marketplace installs a new copy
+ * exactly at a release (D3). The repository commits it under `plugins/contexture/`.
+ *
+ * The ChatGPT plugin stays the store's (serve-the-session-lifecycle-to-chat-apps
+ * D7): ChatGPT has no marketplace on a personal plan, so it is the store's zip
+ * from `/plugin/`, carrying the same skills and one remote MCP server entry at
+ * `serve.base_url` + `/mcp`.
+ *
+ * Neither carries a credential (sign-in is the server's own OAuth with dynamic
+ * client registration), a variable in an address, a hook, a local server or a
  * top-level `bin/` directory: the trees below are the whole of what is written.
  */
 
@@ -32,43 +43,46 @@ export const MAX_NAME_LENGTH = 64;
 export const MAX_DESCRIPTION_LENGTH = 1024;
 const NAME_PREFIX = 'contexture-';
 
-export interface PluginBuildInput {
+/** The general Claude plugin's name, and the marketplace in contexture's repository that lists it (D1). */
+export const CLAUDE_PLUGIN_NAME = 'contexture';
+export const CLAUDE_PLUGIN_DISPLAY_NAME = 'contexture';
+export const PLUGIN_MARKETPLACE = 'ayxuerui/contexture';
+
+export interface BuiltPlugin {
+  target: PluginTarget;
+  name: string;
+  version: string;
+  /** Every file of the plugin directory, by posix path relative to it. */
+  files: ReadonlyMap<string, string>;
+  /** The skill directories it carries. */
+  skills: string[];
+  archiveName: string;
+  /** The same files, as one ZIP archive with the manifest at its root. */
+  archive: Buffer;
+}
+
+export interface StorePluginInput {
   config: StoreConfig;
-  /** The store's name, which the plugin's name and display name derive from. */
+  /** The store's name, which the ChatGPT plugin's name and display name derive from. */
   storeName: string;
   cliVersion: string;
   /** The commit the plugin is rendered from; null in a repository with no commit yet. */
   commit: string | null;
 }
 
-export interface BuiltPlugin {
-  target: PluginTarget;
-  /** Every file of the plugin directory, by posix path relative to it. */
-  files: ReadonlyMap<string, string>;
-  /** `<name>-<target>.zip`. */
-  archiveName: string;
-  /** The same files, as one ZIP archive with the manifest at its root. */
-  archive: Buffer;
-}
-
-export interface PluginBundle {
+export interface StorePlugin extends BuiltPlugin {
   storeName: string;
-  name: string;
   displayName: string;
-  version: string;
   mcpUrl: string;
-  /** The skill directories both plugins carry. */
-  skills: string[];
-  plugins: BuiltPlugin[];
 }
 
-/** The configuration error a store without the MCP surface gets: there is no server for a plugin to name. */
+/** The configuration error a store without the MCP surface gets for its ChatGPT plugin: there is no server for it to name. */
 export class PluginWithoutMcpError extends ContextureError {
   constructor() {
     super(ExitCode.Usage, {
       code: 'plugin.mcp_not_declared',
       severity: 'error',
-      message: 'This store declares no mcp block in contexture.yaml, so there is no MCP server for a chat-app plugin to connect to. Declare mcp (which needs change_approval and serve.base_url) first.',
+      message: 'This store declares no mcp block in contexture.yaml, so there is no MCP server for a ChatGPT plugin to connect to. Declare mcp (which needs change_approval and serve.base_url) first.',
     });
   }
 }
@@ -86,6 +100,11 @@ function pluginTemplate(file: string): string {
     templateCache.set(file, text);
   }
   return text;
+}
+
+/** A file at the package root (LICENSE, package.json), which npm ships with every install. */
+function packageFile(file: string): string {
+  return readFileSync(fileURLToPath(new URL(`../../../${file}`, import.meta.url)), 'utf8');
 }
 
 type Escape = (value: string) => string;
@@ -130,7 +149,55 @@ function checkSkillFrontmatter(folder: string, content: string): void {
   if (description.length === 0 || description.length > MAX_DESCRIPTION_LENGTH) throw new Error(`skill ${folder}'s description is not 1 to ${MAX_DESCRIPTION_LENGTH} characters`);
 }
 
-export function buildPlugins(input: PluginBuildInput): PluginBundle {
+/** The MCP render's skills, as plugin files: the same text in both plugins and for every store. */
+function skillFiles(): { skills: string[]; files: Map<string, string> } {
+  const skills = renderMcpSkills();
+  const files = new Map<string, string>();
+  for (const skill of skills) {
+    checkSkillFrontmatter(skill.file, skill.content);
+    files.set(`skills/${skill.file}/${SKILL_FILE_NAME}`, skill.content);
+    for (const [rel, content] of skill.supportingFiles) files.set(`skills/${skill.file}/${rel}`, content);
+  }
+  return { skills: skills.map((skill) => skill.file), files };
+}
+
+function finish(target: PluginTarget, name: string, version: string, skills: string[], files: Map<string, string>, archiveName: string): BuiltPlugin {
+  for (const file of files.keys()) {
+    // A Claude plugin with a top-level bin/ is refused at upload, and neither app runs a hook from a plugin we ship.
+    if (file === 'bin' || file.startsWith('bin/') || file.startsWith('hooks/') || file === '.mcp.json') throw new Error(`plugin file ${file} is one this plugin may not carry`);
+  }
+  // Sorted by path, so the archive and a directory comparison never depend on insertion order.
+  const sorted = new Map([...files].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)));
+  return {
+    target,
+    name,
+    version,
+    files: sorted,
+    skills,
+    archiveName,
+    archive: createZip([...sorted].map(([file, content]) => ({ path: file, data: Buffer.from(content, 'utf8') }))),
+  };
+}
+
+/**
+ * publish-one-contexture-plugin D1, D3: contexture's Claude plugin, read from
+ * nothing but the package. `cliVersion` is the version it carries, the CLI's.
+ */
+export function buildClaudePlugin(cliVersion: string): BuiltPlugin {
+  const license = (JSON.parse(packageFile('package.json')) as { license: string }).license;
+  const values = { NAME: CLAUDE_PLUGIN_NAME, DISPLAY_NAME: CLAUDE_PLUGIN_DISPLAY_NAME, VERSION: cliVersion, LICENSE: license, MARKETPLACE: PLUGIN_MARKETPLACE };
+  const { skills, files } = skillFiles();
+  const tree = new Map([
+    ['.claude-plugin/plugin.json', jsonDocument('claude-plugin.json', values)],
+    ['README.md', fillPluginTemplate('README.md', values)],
+    ['LICENSE', packageFile('LICENSE')],
+    ...files,
+  ]);
+  return finish('claude', CLAUDE_PLUGIN_NAME, cliVersion, skills, tree, `${CLAUDE_PLUGIN_NAME}-claude.zip`);
+}
+
+/** The store's ChatGPT plugin, with its connector: refused for a store that declares no `mcp` block. */
+export function buildChatgptPlugin(input: StorePluginInput): StorePlugin {
   const { config } = input;
   const baseUrl = config.serve?.base_url;
   if (config.mcp === undefined || baseUrl === undefined) throw new PluginWithoutMcpError();
@@ -141,46 +208,48 @@ export function buildPlugins(input: PluginBuildInput): PluginBundle {
   const version = pluginVersion(input.cliVersion, input.commit);
   const displayName = `${input.storeName} (contexture)`;
   const values = { NAME: name, DISPLAY_NAME: displayName, VERSION: version, STORE_NAME: input.storeName, MCP_URL: mcpUrl, BASE_URL: origin };
+  const { skills, files } = skillFiles();
+  const tree = new Map([
+    ['plugin.json', jsonDocument('chatgpt-plugin.json', values)],
+    ['mcp.json', jsonDocument('chatgpt-mcp.json', values)],
+    ['README.md', fillPluginTemplate('chatgpt-README.md', values)],
+    ...files,
+  ]);
+  return { ...finish('chatgpt', name, version, skills, tree, `${name}-chatgpt.zip`), storeName: input.storeName, displayName, mcpUrl };
+}
 
-  const skills = renderMcpSkills();
-  const skillFiles = new Map<string, string>();
-  for (const skill of skills) {
-    checkSkillFrontmatter(skill.file, skill.content);
-    skillFiles.set(`skills/${skill.file}/${SKILL_FILE_NAME}`, skill.content);
-    for (const [rel, content] of skill.supportingFiles) skillFiles.set(`skills/${skill.file}/${rel}`, content);
+/**
+ * publish-one-contexture-plugin D3 (harness-portability spec, *The committed
+ * plugin is checked against the render*): the first path at which a plugin
+ * directory on disk differs from a build, or null when every file matches
+ * byte for byte and the directory holds nothing else.
+ */
+export async function firstDifference(plugin: BuiltPlugin, dir: string): Promise<string | null> {
+  const onDisk = await listFiles(dir);
+  const paths = [...new Set([...plugin.files.keys(), ...onDisk])].sort();
+  for (const file of paths) {
+    const wanted = plugin.files.get(file);
+    if (wanted === undefined) return `${file}: on disk, but not in the build`;
+    if (!onDisk.includes(file)) return `${file}: in the build, but missing on disk`;
+    if (!(await readFile(path.join(dir, ...file.split('/')))).equals(Buffer.from(wanted, 'utf8'))) return `${file}: differs from the build`;
   }
-  const readme = fillPluginTemplate('README.md', values);
+  return null;
+}
 
-  const trees: Record<PluginTarget, Map<string, string>> = {
-    claude: new Map([
-      ['.claude-plugin/plugin.json', jsonDocument('claude-plugin.json', values)],
-      ['.mcp.json', jsonDocument('claude-mcp.json', values)],
-      ['README.md', readme],
-      ...skillFiles,
-    ]),
-    chatgpt: new Map([
-      ['plugin.json', jsonDocument('chatgpt-plugin.json', values)],
-      ['mcp.json', jsonDocument('chatgpt-mcp.json', values)],
-      ['README.md', readme],
-      ...skillFiles,
-    ]),
-  };
-
-  const plugins = PLUGIN_TARGETS.map((target): BuiltPlugin => {
-    const files = trees[target];
-    for (const file of files.keys()) {
-      // A Claude plugin with a top-level bin/ is refused at upload, and neither app runs a hook from a plugin we ship.
-      if (file === 'bin' || file.startsWith('bin/') || file.startsWith('hooks/')) throw new Error(`plugin file ${file} is one neither app may be shipped`);
-    }
-    return {
-      target,
-      files,
-      archiveName: `${name}-${target}.zip`,
-      archive: createZip([...files].map(([file, content]) => ({ path: file, data: Buffer.from(content, 'utf8') }))),
-    };
-  });
-
-  return { storeName: input.storeName, name, displayName, version, mcpUrl, skills: skills.map((skill) => skill.file), plugins };
+async function listFiles(dir: string, sub = ''): Promise<string[]> {
+  let entries;
+  try {
+    entries = await readdir(path.join(dir, sub), { withFileTypes: true });
+  } catch {
+    return [];
+  }
+  const out: string[] = [];
+  for (const entry of entries) {
+    const rel = sub === '' ? entry.name : `${sub}/${entry.name}`;
+    if (entry.isDirectory()) out.push(...(await listFiles(dir, rel)));
+    else out.push(rel);
+  }
+  return out;
 }
 
 /**

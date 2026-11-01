@@ -6,6 +6,7 @@ import path from 'node:path';
 import { promisify } from 'node:util';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { parseDocument } from 'yaml';
+import { renderMcpSkills } from '../../src/core/skills.js';
 import { CLI_VERSION } from '../../src/version.js';
 import { makeApprovalStore, type ApprovalStore } from '../helpers/approval-store.js';
 import { makeTestSigner } from '../helpers/identity-keys.js';
@@ -266,9 +267,9 @@ describe('the MCP surface of ctxr serve (real CLI, fake forge, real signatures)'
         await writeFile(`${configPath}.next`, without);
         await import('node:fs/promises').then((fs) => fs.rename(`${configPath}.next`, configPath));
         expect((await http(metaUrl)).status).toBe(404);
-        // serve-the-session-lifecycle-to-chat-apps D7: the plugin downloads go with the block, even for a verified member.
+        // publish-one-contexture-plugin D4: the connect page and its download go with the block, even for a verified member.
         expect((await http(new URL('/plugin/', url).toString(), { headers: { [HEADER]: assertion('a@example.com') } })).status).toBe(404);
-        expect((await http(new URL('/plugin/contexture-store-claude.zip', url).toString(), { headers: { [HEADER]: assertion('a@example.com') } })).status).toBe(404);
+        expect((await http(new URL('/plugin/contexture-store-chatgpt.zip', url).toString(), { headers: { [HEADER]: assertion('a@example.com') } })).status).toBe(404);
       });
     } finally {
       await store.tmp.cleanup();
@@ -292,35 +293,43 @@ describe('the MCP surface of ctxr serve (real CLI, fake forge, real signatures)'
   });
 
   /**
-   * serve-the-session-lifecycle-to-chat-apps D7 (remote-access spec, *Members
-   * download the store's plugins from the server*).
+   * publish-one-contexture-plugin D4 (remote-access spec, *The server's connect
+   * page tells a member how to add the plugin and this store's connector*, and
+   * *The connect page admits only the store's members*).
    */
-  it('serves the plugin page and both archives to a verified member, built as ctxr plugin build builds them', async () => {
+  it("serves the connect page and the store's ChatGPT archive to a verified member, and no Claude archive", async () => {
     const store = await approvalStore(true);
     try {
       await withServer(store, async (url) => {
         const page = new URL('/plugin/', url).toString();
         expect((await http(page)).status).toBe(401);
-        expect((await http(new URL('/plugin/contexture-store-claude.zip', url).toString())).status).toBe(401);
+        expect((await http(new URL('/plugin/contexture-store-chatgpt.zip', url).toString())).status).toBe(401);
         expect((await http(page, { headers: { [HEADER]: assertion('z@elsewhere.example') } })).status).toBe(403);
+        expect((await http(new URL('/plugin/contexture-store-chatgpt.zip', url).toString(), { headers: { [HEADER]: assertion('z@elsewhere.example') } })).status).toBe(403);
 
         const member = { [HEADER]: assertion('b@example.com') };
         const html = await http(page, { headers: member });
         expect(html.status).toBe(200);
         expect(html.headers['content-type']).toBe('text/html; charset=utf-8');
-        expect(html.body).toContain('href="/plugin/contexture-store-claude.zip"');
-        expect(html.body).toContain('href="/plugin/contexture-store-chatgpt.zip"');
-        expect(html.body).toContain('Upload plugin');
+        // Claude: contexture's marketplace and plugin, with automatic updates, replacing an uploaded store plugin.
+        expect(html.body).toContain('<code>ayxuerui/contexture</code>');
+        expect(html.body).toContain('Sync automatically');
+        expect(html.body).toContain('Install the <strong>contexture</strong> plugin');
+        expect(html.body).toContain('<code>contexture-store</code>, remove it');
+        // This store's connector, and how to add it in each app.
+        expect(html.body).toContain(`<code>${BASE}/mcp</code>`);
+        expect(html.body).toContain('Add custom connector');
         expect(html.body).toContain('developer mode');
-        expect(html.body).toContain(`${BASE}/mcp`);
+        // ChatGPT: the store's archive, and no Claude archive.
+        expect(html.body).toContain('href="/plugin/contexture-store-chatgpt.zip"');
+        expect(html.body).not.toContain('claude.zip');
+        expect(html.body).not.toContain('Upload plugin');
         expect((await http(new URL('/plugin', url).toString(), { headers: member })).status).toBe(200);
+        expect((await http(new URL('/plugin/contexture-store-claude.zip', url).toString(), { headers: member })).status).toBe(404);
         expect((await http(new URL('/plugin/contexture-store-other.zip', url).toString(), { headers: member })).status).toBe(404);
 
         const exec = promisify(execFile);
-        for (const [target, entry, server] of [
-          ['claude', '.mcp.json', { type: 'http', url: `${BASE}/mcp` }],
-          ['chatgpt', 'mcp.json', { type: 'streamable-http', url: `${BASE}/mcp` }],
-        ] as const) {
+        for (const [target, entry, server] of [['chatgpt', 'mcp.json', { type: 'streamable-http', url: `${BASE}/mcp` }]] as const) {
           const zip = await download(new URL(`/plugin/contexture-store-${target}.zip`, url).toString(), member);
           expect(zip.status).toBe(200);
           expect(zip.headers['content-type']).toBe('application/zip');
@@ -332,6 +341,8 @@ describe('the MCP surface of ctxr serve (real CLI, fake forge, real signatures)'
           expect(listed).not.toContain('skills/ctxr-land/SKILL.md');
           const mcp = JSON.parse((await exec('unzip', ['-p', file, entry])).stdout) as { mcpServers: Record<string, Record<string, unknown>> };
           expect(mcp.mcpServers['contexture-store']).toMatchObject(server);
+          // The store-independent skills, the same text the general Claude plugin carries.
+          expect((await exec('unzip', ['-p', file, 'skills/ctxr-submit/SKILL.md'])).stdout).toBe(renderMcpSkills().find((s) => s.file === 'ctxr-submit')!.content);
 
           // The same bytes a second time: one build per served commit and configuration.
           const again = await download(new URL(`/plugin/contexture-store-${target}.zip`, url).toString(), member);

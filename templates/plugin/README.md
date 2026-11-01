@@ -1,13 +1,27 @@
 # __DISPLAY_NAME__
 
-This plugin connects an app to the __STORE_NAME__ contexture store, at `__MCP_URL__`. It carries:
+contexture's skills for working in a contexture store from Claude. A contexture store is a git repository
+of markdown notes that a group of people keep together. The skills say how to capture material into the
+store's inbox, file it into notes, find and propose connections between notes, keep rollups and the mission
+current, and submit a change for someone to approve.
 
-- the store's skills, which say how to capture material, file it into notes, find connections, keep
-  rollups and the mission current, and submit a change for approval;
-- the store's server, which reads the store and keeps each change in a session of your own until you
-  submit it. Nothing lands until someone approves it on the store's approval page, at `__BASE_URL__/approve/`.
+## What you need
 
-Signing in goes through the store's own login. The plugin holds no credential.
+This plugin carries no connector. Add your store's connector once, as a custom connector at the address
+your store's connect page gives (`<the store's address>/mcp`), and sign in through the store's own login.
+Someone in two stores adds two connectors; the skills work with whichever contexture connector is
+attached, and ask which store you mean when it is unclear.
 
-Version __VERSION__, built by ctxr from the store's configuration. Download a newer one from
-`__BASE_URL__/plugin/` when the store's skills change.
+The skills name each store setting by a placeholder such as `<inbox path>`. The connector's instructions
+give your store's value for each one, so the same plugin serves every store.
+
+## Updates
+
+Install it from the `__MARKETPLACE__` marketplace with **Sync automatically** on, and Claude installs
+each new release of contexture's skills on its own. This is version __VERSION__, which matches the ctxr
+release it was built from. If a skill names a step your store's connector does not offer, your store's
+server runs an older ctxr; the skill says so and skips that step.
+
+## License
+
+__LICENSE__. See `LICENSE`.

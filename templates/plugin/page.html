@@ -22,24 +22,35 @@
 <body>
 <main>
 <h1>Use __STORE_NAME__ from Claude or ChatGPT</h1>
-<p>Each download is a plugin for one app. It carries the store's skills and connects the app to the store at <code>__MCP_URL__</code>. You install it once; signing in goes through this store's own login, and the plugin holds no password or key.</p>
-<p class="muted">Version __VERSION__. When the store's skills change, download it again and install it over the old one.</p>
+<p>Two things connect an app to this store: contexture's skills, which say how to work in a store, and this store's connector, which reaches it. You set each up once. Signing in goes through this store's own login; nothing you install holds a password or key.</p>
 
-<h2>Claude</h2>
-<p><a class="download" href="__CLAUDE_HREF__" download>Download __CLAUDE_ARCHIVE__</a></p>
+<h2>This store's connector</h2>
+<p>The address to add:</p>
+<p><code>__MCP_URL__</code></p>
+<ol>
+<li><strong>Claude:</strong> open <strong>Customize</strong>, then <strong>Connectors</strong>. Choose <strong>Add custom connector</strong>, give it the name __STORE_NAME__, and paste the address above.</li>
+<li><strong>ChatGPT:</strong> the plugin below brings this connector with it. To add the connector on its own, open <strong>Settings</strong>, then <strong>Apps &amp; Connectors</strong>, turn on developer mode under <strong>Advanced settings</strong>, then choose <strong>Create</strong> and paste the address above.</li>
+<li>The first time an app uses the store, it asks you to sign in to the store.</li>
+</ol>
+<p class="muted">In more than one contexture store? Add each store's connector. The same skills work with all of them, and ask which store you mean when it is unclear.</p>
+
+<h2>Claude: contexture's plugin</h2>
 <ol>
 <li>In Claude, open <strong>Customize</strong>, then <strong>Plugins</strong>.</li>
-<li>Choose <strong>Add</strong>, then <strong>Upload plugin</strong>, and pick the file you downloaded.</li>
-<li>Start a conversation and ask about something the store holds. The first time, Claude asks you to sign in to the store.</li>
+<li>Choose <strong>Add</strong>, then <strong>Add marketplace</strong>, and enter <code>__MARKETPLACE__</code>.</li>
+<li>Turn on <strong>Sync automatically</strong>, so each new release of the skills arrives on its own.</li>
+<li>Install the <strong>__PLUGIN_NAME__</strong> plugin from that marketplace.</li>
+<li>If you uploaded an older plugin for this store, such as <code>__OLD_PLUGIN_NAME__</code>, remove it: the <strong>__PLUGIN_NAME__</strong> plugin replaces it, and your connector stays.</li>
 </ol>
 
-<h2>ChatGPT</h2>
+<h2>ChatGPT: this store's plugin</h2>
 <p><a class="download" href="__CHATGPT_HREF__" download>Download __CHATGPT_ARCHIVE__</a></p>
 <ol>
 <li>If your workspace has an admin, send them the file: an admin uploads a plugin once for the whole workspace.</li>
 <li>Otherwise, turn on developer mode in ChatGPT's settings and upload the file there.</li>
-<li>Start a conversation and ask about something the store holds. The first time, ChatGPT asks you to sign in to the store.</li>
+<li>ChatGPT does not update an uploaded plugin. When contexture releases new skills, download this file again and upload it over the old one.</li>
 </ol>
+<p class="muted">Version __VERSION__.</p>
 
 <p class="muted">Changes you make through either app wait in a session of your own until you ask to submit them, and land only once someone approves them on the store's approval page.</p>
 </main>
