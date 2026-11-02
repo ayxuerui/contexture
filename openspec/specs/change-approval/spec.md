@@ -317,8 +317,8 @@ recorded on the forge as a review attributed to the decider" requires).
 ### Requirement: The server lands what was approved
 While the configuration `ctxr serve` has loaded declares `change_approval`, and its `land` key is absent or
 `auto`, the server SHALL land approved changes by running `ctxr land --pending` for its store as a separate
-process. It SHALL start a run after it accepts an Approve decision, and SHALL also start one at least every five
-minutes while it runs. It SHALL NOT run two at once. A start requested while a run is in progress SHALL produce
+process. It SHALL start a run after it accepts an Approve decision, and SHALL also start one as its store-update run every
+`serve.sync_minutes` minutes while it runs (per context-browsing). It SHALL NOT run two at once. A start requested while a run is in progress SHALL produce
 exactly one further run after it ends. A run's output SHALL go to the server's stderr, and SHALL NOT go to its
 stdout. No run, and no failure of a run, SHALL change how any request is answered, beyond what the run itself
 records on the forge.
@@ -348,7 +348,7 @@ mean `auto`.
 
 #### Scenario: The periodic sweep catches an approval made while the server was down
 - **WHEN** a pull request was approved while the server was stopped, and the server is then started
-- **THEN** a landing run starts within five minutes of startup and lands it
+- **THEN** a landing run starts within one minute of startup and lands it
 
 ### Requirement: The approval index lists sessions across the store and its mounts
 A store that declares no `shared_stores` SHALL list, show and decide its own pull requests exactly as before this
