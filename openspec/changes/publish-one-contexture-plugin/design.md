@@ -222,3 +222,17 @@ A three-model critique of D5 and D6 approved them with changes from all three re
 ### Fourth round (one text)
 
 13. **D7 replaces the separate MCP render and the checkout rule (D6)** with one shared text, after research on how vendors write skills for both a CLI and MCP. The requirement *Owned skills render for the MCP surface from the same source* is replaced by *The shared skills are one text on both surfaces*. The drift check now asks for the server-side tool to be named beside each `git` or `gh` step.
+
+14. **The shared opening section is ordered by intent, then place, then tools.** Two reviewers raised the first point, and all three the inventory.
+    - **First, which store.** The store the person means; with several connectors, the connector for that store, and ask when it is unclear.
+    - **Then where.** A checkout of that store (a `contexture.yaml` at the root and a shell that runs `ctxr`) means the shell, even when its connector is also attached. Otherwise, that store's connector.
+    - **The rules today's preamble carries are all kept:**
+      - `session` names the session for a command or a runner, and `ctxr_write` always needs one;
+      - options become fields, and a prepared file's text goes as `input`, with `@input` in `args`;
+      - several connectors;
+      - sessions across conversations;
+      - steps not done through the server (landing, upgrading, working inside a mount);
+      - the older-server rule;
+      - *This store*.
+15. **Unavailable steps are marked at the step, not by a general rule.** The two cases are `ctxr sync` and `ctxr shared-stores sync` in the lifecycle skill, which read like "in a shell, run `ctxr sync`; through the store's server, skip this step, since the server keeps its own clone current". The mapping module still lists them as unavailable, so the drift check can require that marking wherever they appear.
+16. **The drift check is a prohibition.** A shared skill names no `git` or `gh` step unless the same sentence names the server-side tool. That leaves only `git mv` with `Move`.

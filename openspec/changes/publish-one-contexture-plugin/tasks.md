@@ -36,9 +36,9 @@
 
 ## 8. One skill text for both surfaces (D7)
 
-- [ ] 8.1 Replace the MCP preamble and the checkout rule with one shared opening section (probe, command/path/commit rules, unavailable steps, *This store*, older server), in `templates/skills/`, included in both the store render and the plugin render of the 11 shared skills
-- [ ] 8.2 Reword the remaining git steps: the canonical-clone refresh in `ctxr-session-lifecycle` becomes `ctxr sync`, and `ctxr sync` is marked unavailable over MCP in the mapping module; `git mv` in `ctxr-placement` names `Move` in the same sentence
-- [ ] 8.3 The store render and the plugin render differ only in values: a test replaces each store value by its placeholder and compares; the drift check requires the server-side tool beside each `git`/`gh` step
+- [ ] 8.1 Replace the MCP preamble and the checkout rule with one shared opening section in `templates/skills/`, included in both renders of the 11 shared skills, in this order (revision 14): which store (several connectors, ask when unclear); where (a checkout of that store means the shell, even with its connector attached; else its connector); through the server: `ctxr session <verb>` → `session_<verb>`, other `ctxr` → `ctxr`/`ctxr_write` with `args`, options as fields, `session` (always for `ctxr_write`), `input` and `@input`, paths under the session root, commits only in `session_submit`; sessions across conversations; steps not done through the server (landing, upgrading, mounts); older server; *This store*
+- [ ] 8.2 Reword the remaining steps: the canonical-clone refresh in `ctxr-session-lifecycle` becomes `ctxr sync`, and it and `ctxr shared-stores sync` each say at the step to skip it through the store's server (both stay listed as unavailable in the mapping module); `git mv` in `ctxr-placement` names `Move` in the same sentence
+- [ ] 8.3 The store render and the plugin render differ only in values: a test replaces each store value by its placeholder and compares; the drift check forbids a `git`/`gh` step in a shared skill unless its sentence names the server-side tool, and requires every unavailable command to carry its skip at the step
 - [ ] 8.4 `npm run plugin`; `claude plugin validate`; `npm run typecheck && npm run build && npm test` exit 0
 
 ## 6. Real clients (operator checkpoint)
