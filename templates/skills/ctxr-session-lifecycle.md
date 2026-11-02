@@ -22,10 +22,11 @@ session's worktree is gone. The name becomes a git ref and a directory, so keep 
 that should not be written down.
 
 Before starting, bring the store's canonical clone up to date — the repository's main worktree, not
-whichever checkout you are standing in. From the canonical clone: `git fetch origin`, then
-`git merge --ff-only origin/__DEFAULT_BRANCH__`. If it is on another branch, carries uncommitted
-changes, or the fast-forward fails because it has diverged from origin, report exactly that and start
-the session anyway — never check it out, reset it, stash, or force the merge to make it comply. The
+whichever checkout you are standing in. In a shell, run `ctxr sync`; through the store's server, skip
+this step, because the server keeps its own clone current. It fetches `__DEFAULT_BRANCH__` and
+fast-forwards the canonical clone, and leaves it alone when it is on another branch, carries uncommitted
+changes, or has diverged from origin. If it reports that, report exactly that and start the session
+anyway — never check it out, reset it, stash, or force the merge to make it comply. The
 session's base is unaffected either way, because `ctxr session start` branches from the
 `origin/__DEFAULT_BRANCH__` it fetches itself. What a stale clone costs is the context you read out of
 it: notes, catalog sections, the graph document, and AGENTS.md would all be the versions it last had.
@@ -56,7 +57,7 @@ It reports each session with its open pull request and the decision made on the 
 
 Skip this section when the store mounts no other stores under `shared/`.
 
-- After you bring the canonical clone up to date, run `ctxr shared-stores sync`. It clones a missing mount and fast-forwards the others.
+- After you bring the canonical clone up to date, run `ctxr shared-stores sync` in a shell; through the store's server, skip this step, because the server keeps no mounts. It clones a missing mount and fast-forwards the others.
 - Report a mount that sync left alone, with its reason. Do not reset, stash or force it. Why: local work in a mount is somebody's session.
 - To write into a mount for the work of this store's session, change into `shared/<name>`. Run `ctxr session start --joins <session>` there, with this store's session name. Why: the mount's session then joins this one, and one decision covers both pull requests.
 - The command refuses outside a mount, or for a session this store does not have. Report the refusal. Do not start a plain session instead.

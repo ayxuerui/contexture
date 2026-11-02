@@ -12,7 +12,7 @@ import { makeTmpDir, type TmpDir } from '../helpers/tmp-store.js';
  * publish-one-contexture-plugin D3 (harness-portability spec, *The committed
  * plugin is checked against the render*): the plugin the repository's
  * marketplace lists is what `ctxr plugin build` writes, byte for byte, at the
- * package's version. A pull request that changes a skill, the preamble or the
+ * package's version. A pull request that changes a skill, the shared opening section or the
  * version without `npm run plugin` fails here, naming the first file that differs.
  */
 

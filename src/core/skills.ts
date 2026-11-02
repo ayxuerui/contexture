@@ -10,7 +10,6 @@ import { scanDocsDir, SKILL_FILE_NAME, type ScannedDoc } from './conventions.js'
 import { writeFileAtomic } from './fs/atomic.js';
 import { fillTokens, lazyValues, placeholderValues, storeValueEntries } from './skill-placeholders.js';
 import { packagedTemplate } from './templates.js';
-import { GIT_STEP_TOOLS, SESSION_COMMAND_TOOLS, UNAVAILABLE_COMMANDS } from './mcp/tool-map.js';
 
 /**
  * The canonical skill bodies live as plain markdown under
@@ -141,6 +140,7 @@ function skillDocument(seed: SkillSeed, values: SkillValues): string {
     '',
     `# ${seed.name}`,
     '',
+    ...(MCP_SKILL_FILES.includes(seed.file) ? [fillTokens(packagedTemplate('skills', '_surfaces'), values), ''] : []),
     ...seed.body(values),
   ];
   return `${lines.join('\n')}\n`;
@@ -440,7 +440,11 @@ export const SKILLS: readonly SkillSeed[] = [
 
 /**
  * serve-the-session-lifecycle-to-chat-apps D6: the owned skills a chat app's
- * plugin carries, rendered from the same templates as the CLI copies. Left
+ * plugin carries, rendered from the same templates as the CLI copies.
+ * publish-one-contexture-plugin D7: these are the shared skills, one text on
+ * both surfaces: each opens with `templates/skills/_surfaces.md`, in a
+ * store's copy and the plugin's alike, saying which store, whether to work in
+ * a shell or through the store's server, and how a step is done there. Left
  * out: the skills that run local programs (upgrade, second opinion,
  * Circleback), landing (a person lands from the approval page), and the
  * derived-artifacts, organize-audit and publish procedures, whose steps the
@@ -497,46 +501,20 @@ export function renderSkills(config: StoreConfig): Skill[] {
 }
 
 /**
- * The owned skills a chat app's plugin carries: the included subset, each its
- * CLI template under the one preamble that maps its commands and git steps
- * onto the MCP surface's tools (serve-the-session-lifecycle-to-chat-apps D6).
- * publish-one-contexture-plugin D2: it takes no configuration, so every store
- * gets the same text, and the connector's instructions give the values.
+ * The owned skills a chat app's plugin carries: the shared subset, each the
+ * same text a store's copy is (publish-one-contexture-plugin D7), with every
+ * store value as its placeholder. It takes no configuration, so every store
+ * gets the same text, and the connector's instructions give the values (D2).
  */
 export function renderMcpSkills(): Skill[] {
-  const preamble = mcpPreamble();
   const values = mcpSkillValues();
   return SKILLS.filter((seed) => MCP_SKILL_FILES.includes(seed.file)).map((seed) => ({
     file: seed.file,
     name: seed.name,
     description: seed.description,
-    content: withPreamble(skillDocument(seed, values), preamble),
+    content: skillDocument(seed, values),
     supportingFiles: new Map<string, string>(),
   }));
-}
-
-/** `templates/skills/mcp/_preamble.md`, with its tables from the mapping module and the session root as a placeholder. */
-export function mcpPreamble(): string {
-  // Revision 6: the tables come from the mapping module, never from a second copy here.
-  const commands = [
-    ...Object.entries(SESSION_COMMAND_TOOLS).map(([command, tool]) => `| \`ctxr ${command}\` | \`${tool}\` |`),
-    ...UNAVAILABLE_COMMANDS.map((command) => `| \`ctxr ${command}\` | none |`),
-  ];
-  const gitSteps = Object.entries(GIT_STEP_TOOLS).map(([step, tool]) => `| \`${step}\` | ${tool === null ? 'none' : `\`${tool}\``} |`);
-  return fillTokens(packagedTemplate('skills/mcp', '_preamble'), {
-    ...placeholderValues(),
-    COMMAND_TABLE: ['| Command | Tool |', '| --- | --- |', ...commands].join('\n'),
-    GIT_STEP_TABLE: ['| Git step | Tool |', '| --- | --- |', ...gitSteps].join('\n'),
-  });
-}
-
-/** The preamble goes below the frontmatter, which the Agent Skills format requires first, and above the CLI text. */
-function withPreamble(content: string, preamble: string): string {
-  const end = content.indexOf('\n---\n', 4);
-  if (!content.startsWith('---\n') || end === -1) throw new Error('a rendered skill carries no frontmatter');
-  const head = content.slice(0, end + '\n---\n'.length);
-  const rest = content.slice(head.length).replace(/^\n/, '');
-  return `${head}\n${preamble}\n\n${rest}`;
 }
 
 function renderSkillSeeds(seeds: readonly SkillSeed[], config: StoreConfig): Skill[] {

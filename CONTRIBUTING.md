@@ -42,7 +42,7 @@ npm run plugin                            # regenerates plugins/contexture/ at t
 Commit `plugins/contexture/` with the version bump. Its `plugin.json` version is what tells a member's
 Claude that a new copy exists, so the plugin reaches members exactly when the release merges, and
 `test/unit/plugin-committed.test.ts` fails the PR when the committed plugin differs from a fresh build or
-from `package.json`'s version. The same test fails any PR that changes a skill template or the MCP preamble
+from `package.json`'s version. The same test fails any PR that changes a skill template or the shared opening section
 without running `npm run plugin`.
 
 Open a PR and merge it. The workflow then builds, tests, publishes to npm (via trusted publishing —

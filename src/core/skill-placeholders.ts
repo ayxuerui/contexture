@@ -48,7 +48,7 @@ export const STORE_PLACEHOLDERS: readonly StorePlaceholder[] = [
   { token: 'HOUSE_CONVENTIONS_PATH', label: 'house conventions path', value: houseConventionsPath },
   { token: 'ARCHIVE_DESTINATION', label: 'archive destination', value: (config) => config.organize.archive_destination },
   { token: 'SCRATCH_PATH', label: 'scratch path', value: (config) => config.harness.scratch_path ?? DEFAULT_SCRATCH_PATH },
-  // The preamble's session root: `<worktrees path><directory>/`.
+  // The shared opening section's session root (publish-one-contexture-plugin D7): `<worktrees path><directory>/`.
   { token: 'WORKTREES_PATH', label: 'worktrees path', value: (config) => config.session.worktrees_path.replace(/\/*$/, '/') },
 ];
 
