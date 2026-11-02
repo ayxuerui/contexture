@@ -44,6 +44,7 @@ export async function execute(env: RunEnv, store: Store, opts: SessionSubmitOpti
 
   const lines = [`Pull request #${result.pull_request.number} (${result.steps.pull_request}) for "${result.branch}": ${result.pull_request.url}`];
   if (result.approval_url !== null) lines.push(`Approval page: ${result.approval_url}`);
+  if (result.preview_url !== null) lines.push(`Pages preview at: ${result.preview_url}`);
   return {
     exitCode: ExitCode.Ok,
     data: result,

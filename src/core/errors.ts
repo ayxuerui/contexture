@@ -838,3 +838,33 @@ export class SessionRefusedError extends ContextureError {
     super(exitCode, { code: `session.${reason}`, severity: 'error', message, details, ...(subject === undefined ? {} : { subject }) });
   }
 }
+
+/** context-browsing spec (serve-keeps-its-clone-current D9): a webhook secret that is ambiguous, unreadable or empty. */
+export class WebhookSecretError extends ContextureError {
+  constructor(message: string, variables: readonly string[]) {
+    super(ExitCode.Usage, { code: 'serve.webhook_secret', severity: 'error', message, details: { variables: [...variables] } });
+  }
+}
+
+/** write-lifecycle spec (serve-keeps-its-clone-current): `ctxr sync --every` takes a positive whole number of minutes. */
+export class SyncFlagsError extends ContextureError {
+  constructor(message: string) {
+    super(ExitCode.Usage, { code: 'sync.flags', severity: 'error', message });
+  }
+}
+
+/**
+ * write-lifecycle spec ("The canonical-clone sync fetches as landing does and
+ * changes nothing else"): the fetch failed, so the forge is unreachable and
+ * the clone was left as it was.
+ */
+export class SyncForgeUnreachableError extends ContextureError {
+  constructor(branch: string, detail: string) {
+    super(ExitCode.Usage, {
+      code: 'sync.forge_unreachable',
+      severity: 'error',
+      message: `The forge is unreachable: fetching ${branch} from origin failed (${detail}). The canonical clone was left as it was.`,
+      details: { branch, detail },
+    });
+  }
+}

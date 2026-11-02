@@ -161,6 +161,13 @@ const ServeSchema = z.object({
    * deployment, unknowable to the tool. Absent means `local`.
    */
   previews: z.enum(['local', 'none']).optional(),
+  /**
+   * serve-keeps-its-clone-current (D3): how often, in whole minutes, `ctxr
+   * serve` runs a store-update run. Optional with no SHIPPED_DEFAULTS entry,
+   * because the block it sits in is optional; absent resolves to
+   * `DEFAULT_SERVE_SYNC_MINUTES` through `serveSyncMinutes`.
+   */
+  sync_minutes: z.number().int({ message: 'must be a positive whole number of minutes' }).positive({ message: 'must be a positive whole number of minutes' }).optional(),
 });
 
 /** An exact email address or an `@domain` suffix — the one form every list of people in this file takes. */

@@ -36,6 +36,14 @@ export interface GitRunOptions {
 
 export interface GitRunner {
   run(args: readonly string[], opts: GitRunOptions): Promise<GitResult>;
+  /**
+   * serve-keeps-its-clone-current (D12): set by `hardenGit` — the arguments it
+   * puts ahead of every command, for code that spawns git outside `run`
+   * (`patchIds`), so those commands carry them too.
+   */
+  leadingArgs?(cwd: string): Promise<readonly string[]>;
+  /** True for a runner `hardenGit` built, so wrapping it again changes nothing. */
+  hardened?: boolean;
 }
 
 /**
@@ -65,6 +73,20 @@ export function createExecFileGitRunner(): GitRunner {
       }
     },
   };
+}
+
+/**
+ * serve-keeps-its-clone-current (D6): one blob's exact bytes — `git cat-file
+ * blob <object>` with its output kept as a Buffer, so a page's images and
+ * documents reach a pull request preview byte for byte, as `/publish/` serves
+ * them from disk. `leading` carries a hardened runner's arguments.
+ */
+export async function readBlobBytes(cwd: string, object: string, leading: readonly string[] = []): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    execFile('git', [...leading, 'cat-file', 'blob', object], { cwd, maxBuffer: MAX_OUTPUT_BYTES, encoding: 'buffer' }, (err, stdout) =>
+      err ? reject(err) : resolve(stdout),
+    );
+  });
 }
 
 /**
@@ -117,9 +139,9 @@ export async function readBlobs(cwd: string, objectIds: readonly string[]): Prom
  * each was applied to. Rejects when either process fails, as for an unknown
  * commit; the caller treats that as "not the same".
  */
-export async function patchIds(cwd: string, range: string): Promise<string[]> {
+export async function patchIds(cwd: string, range: string, leading: readonly string[] = []): Promise<string[]> {
   const order = await new Promise<string>((resolve, reject) => {
-    execFile('git', ['rev-list', '--reverse', '--no-merges', range], { cwd, maxBuffer: MAX_OUTPUT_BYTES }, (err, stdout) =>
+    execFile('git', [...leading, 'rev-list', '--reverse', '--no-merges', range], { cwd, maxBuffer: MAX_OUTPUT_BYTES }, (err, stdout) =>
       err ? reject(err) : resolve(stdout),
     );
   });
@@ -127,8 +149,8 @@ export async function patchIds(cwd: string, range: string): Promise<string[]> {
   if (commits.length === 0) return [];
 
   const byCommit = await new Promise<Map<string, string>>((resolve, reject) => {
-    const log = spawn('git', ['log', '-p', '--no-merges', '--no-color', '--format=commit %H', range], { cwd, stdio: ['ignore', 'pipe', 'pipe'] });
-    const patchId = spawn('git', ['patch-id', '--stable'], { cwd, stdio: ['pipe', 'pipe', 'pipe'] });
+    const log = spawn('git', [...leading, 'log', '-p', '--no-merges', '--no-color', '--format=commit %H', range], { cwd, stdio: ['ignore', 'pipe', 'pipe'] });
+    const patchId = spawn('git', [...leading, 'patch-id', '--stable'], { cwd, stdio: ['pipe', 'pipe', 'pipe'] });
     log.stdout.pipe(patchId.stdin);
     const chunks: Buffer[] = [];
     patchId.stdout.on('data', (chunk: Buffer) => chunks.push(chunk));

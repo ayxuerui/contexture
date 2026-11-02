@@ -47,8 +47,10 @@ export async function carriesOver(git: GitRunner, cwd: string, base: string, app
   try {
     const forkOf = async (head: string): Promise<string> =>
       (await git.run(['merge-base', head, base], { cwd })).stdout.trim();
-    const before = await patchIds(cwd, `${await forkOf(approvedHead)}..${approvedHead}`);
-    const after = await patchIds(cwd, `${await forkOf(currentHead)}..${currentHead}`);
+    // A hardened runner (land's) hands its arguments on, so the two processes spawned here carry them too.
+    const leading = (await git.leadingArgs?.(cwd)) ?? [];
+    const before = await patchIds(cwd, `${await forkOf(approvedHead)}..${approvedHead}`, leading);
+    const after = await patchIds(cwd, `${await forkOf(currentHead)}..${currentHead}`, leading);
     return before.length > 0 && before.length === after.length && before.every((id, i) => id === after[i]);
   } catch {
     return false;

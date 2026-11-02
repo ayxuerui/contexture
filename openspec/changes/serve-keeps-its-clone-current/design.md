@@ -135,6 +135,18 @@ now, and stay useful after. They are not a guarantee, and the design does not cl
 - **[A clone with local work never updates]** → Reported on every run as the reason, exactly as landing does; nothing
   is forced.
 
+## Implementation findings
+
+- **The approval page and the page routes run hardened git too.** They fetch mounted parts into clones the agent can
+  write and render diffs, where a repository-declared `textconv` would run, in the container holding the App key.
+- **The MCP surface's git is not hardened, on purpose.** Its commits deliberately run the store's pre-commit hook as a
+  gate; overriding the hook path would remove that gate. Its exposure is the shared clone, which `serve`'s own clone
+  (a later `contexture-images` change) removes.
+- **Every repository-declared filter is blanked, Git LFS included.** No store uses LFS or any filter driver today; a
+  store that adopts LFS would get pointer files in `serve`'s clone until hardening learns an allowlist.
+- **`git config` commands are not hardened:** they run no hooks or drivers, and overriding the hook path broke
+  `doctor`'s hook check during resolver landings.
+
 ## Migration Plan
 
 None. Stores without the key get the 5-minute default, and stores without `change_approval` start being synced on
