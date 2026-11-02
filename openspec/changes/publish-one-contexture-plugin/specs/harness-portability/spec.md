@@ -49,7 +49,7 @@ The plugin SHALL carry a command for each entry of a declared map from command n
 - **THEN** the check fails naming that command
 
 ### Requirement: The shared skills are one text on both surfaces
-The owned skills the plugin carries SHALL be one text, from one template, that an agent follows in a shell running `ctxr` or through the store's server's tools. Each SHALL open with one shared section saying how to tell the two apart and how a `ctxr` step, a path and a commit are done through the server. A store's copy and the plugin's copy SHALL differ only in store values, which the plugin names by placeholders. Skills that run local programs, land and derived-artifacts SHALL NOT be in the plugin.
+The owned skills the plugin carries SHALL be one text, from one template, that an agent follows in a shell running `ctxr` or through the store's server's tools. Each SHALL open with one shared section saying how to tell the two apart and how a `ctxr` step, a path and a commit are done through the server. A store's copy and the plugin's copy SHALL differ only in store values, which the plugin names by placeholders. Skills that run local programs, land and derived-artifacts SHALL stay out of it.
 
 #### Scenario: A store's copy and the plugin's copy differ only in values
 - **WHEN** a shared skill is rendered for a store and for the plugin
