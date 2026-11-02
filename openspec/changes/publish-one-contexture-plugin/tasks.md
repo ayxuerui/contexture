@@ -29,10 +29,17 @@
 
 - [x] 7.1 Rename the plugin to `ctxr` (renamed back to `contexture` in revision 11, task 7.6): `plugins/ctxr/`, plugin.json name and displayName, build output `<out>/ctxr/` and `ctxr-claude.zip` with its ignore rule; the marketplace stays `contexture` with entry `ctxr`; the per-store ChatGPT plugin keeps `contexture-<store>`; update README, CONTRIBUTING, the connect page and tests
 - [x] 7.2 Command map module (command → skill) and generated `commands/<name>.md`: full skill render plus `$ARGUMENTS`, typed-shortcut description, frontmatter `description` only; check that each maps to a carried skill and matches its render
-- [x] 7.3 Preamble's first rule: in a checkout (a `contexture.yaml` at the root, a shell running `ctxr`), the `ctxr:`-namespaced entries are the plugin's, so invoke the un-namespaced `ctxr-<name>` skill from the store's skills folder; test its wording and that it is first
+- [x] 7.3 (superseded by 8.1) Preamble's first rule: in a checkout (a `contexture.yaml` at the root, a shell running `ctxr`), the `ctxr:`-namespaced entries are the plugin's, so invoke the un-namespaced `ctxr-<name>` skill from the store's skills folder; test its wording and that it is first
 - [x] 7.4 `npm run plugin`; `claude plugin validate .` and `claude plugin validate plugins/ctxr` pass; `npm run typecheck && npm run build && npm test` exit 0
 - [x] 7.6 Rename the plugin to `contexture` (revision 11): `plugins/contexture/`, `contexture-claude.zip`, commands `/contexture:<name>`, the checkout rule naming `contexture:`; MIT license text; regenerate, validate, full suite
 - [ ] 7.5 Operator gate before the release PR merges: upload the built `contexture-claude.zip` to claude.ai; it installs, `/contexture:capture` is offered, and a natural request loads `ctxr-capture`
+
+## 8. One skill text for both surfaces (D7)
+
+- [ ] 8.1 Replace the MCP preamble and the checkout rule with one shared opening section (probe, command/path/commit rules, unavailable steps, *This store*, older server), in `templates/skills/`, included in both the store render and the plugin render of the 11 shared skills
+- [ ] 8.2 Reword the remaining git steps: the canonical-clone refresh in `ctxr-session-lifecycle` becomes `ctxr sync`, and `ctxr sync` is marked unavailable over MCP in the mapping module; `git mv` in `ctxr-placement` names `Move` in the same sentence
+- [ ] 8.3 The store render and the plugin render differ only in values: a test replaces each store value by its placeholder and compares; the drift check requires the server-side tool beside each `git`/`gh` step
+- [ ] 8.4 `npm run plugin`; `claude plugin validate`; `npm run typecheck && npm run build && npm test` exit 0
 
 ## 6. Real clients (operator checkpoint)
 

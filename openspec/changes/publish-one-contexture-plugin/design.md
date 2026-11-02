@@ -134,6 +134,44 @@ A plugin added on claude.ai syncs into the same person's Claude Code. There its 
 
 **Accepted gap:** an operator without the plugin gets no `/contexture:` commands locally, and asks in words as today.
 
+### D7. One skill text for both surfaces (supersedes D6 and the separate MCP render)
+
+Until now, each shared skill had two renders from one template: a store copy written for a shell, and a plugin copy behind a preamble that translated every `ctxr`, `git` and `gh` step into a tool. That made it two instruction texts. The translation cost the model a step at every instruction, and a step the table missed failed silently.
+
+**The research** (2026-11-02, read from the vendors' skill files) found no pattern where a capability phrased alone ("check the store with lint") works on both surfaces. Every vendor that ships both a CLI and MCP does one of three things:
+- names both forms at the step, as Supabase does ("use `execute_sql` (MCP) or `supabase db query` (CLI)") and Vercel does ("MCP-first, CLI-fallback");
+- ships separate per-surface skills with a router that probes which surface is present, as Box does;
+- makes the CLI mirror the MCP tools one for one, as Airtable does.
+
+contexture already has the third. Its MCP surface mirrors the CLI: the `ctxr` runner takes the CLI's own arguments, and `session_<verb>` is `ctxr session <verb>` (`2026-11-01-serve-the-session-lifecycle-to-chat-apps` D9). So the translation reduces to rules that apply to every step, plus the two-name form for the one remaining shell-only step.
+
+**The design:**
+- **One shared opening section, in both the store copies and the plugin copies, replacing the preamble and the checkout rule:**
+  - **The probe:** if `session_start` and a `ctxr` tool are in your tool list, you are working through the store's server. Otherwise run `ctxr` in a shell.
+  - **Command steps:** through the server, a `ctxr session <verb>` step is the tool `session_<verb>`, and every other `ctxr …` step is the `ctxr` tool, or `ctxr_write` when it writes, with the words after `ctxr` as `args`.
+  - **Paths:** through the server, paths go under the session's root.
+  - **Commits:** through the server, commits and pushes happen only in `session_submit`.
+  - **Unavailable steps:** a step the mapping marks unavailable is skipped.
+  - **Store values:** the plugin's `<…>` values are given under *This store*.
+  - **Older servers:** the rule for a server older than the skills.
+- **The three remaining git steps are reworded:**
+  - **The canonical-clone refresh in `ctxr-session-lifecycle`** (`git fetch` plus `git merge --ff-only`) becomes `ctxr sync` (#225). That is the same fast-forward rule, leaving a clone with local work alone. Through the server it is marked unavailable, because the server keeps its own clone current.
+  - **`git mv` in `ctxr-placement`** names both forms at the step: "`git mv` in a shell, or the `Move` tool through the store's server".
+- **The drift check changes to match:** every `git` or `gh` step in a shared skill names its server-side tool in the same sentence. The mapping module (`tool-map.ts`) stays the single source for routes and for unavailable commands.
+- **The checkout rule (D6) is removed.** The plugin's text is correct in a checkout too, so a synced plugin in Claude Code and the store's own copy say the same thing.
+
+**What it costs:** every agent, local or remote, reads the opening section (about 15 lines). And each store's copies change once, through the `ctxr update` re-render PR.
+
+**Opposing case (keep two renders), steelmanned:**
+- Each agent reads only the text for its own surface: less to read, no branch to choose wrong.
+- One template already prevents drift.
+
+**Why it loses:**
+- **The shared section is short and fixed.** It replaces a per-step translation that cost a step at every instruction and failed silently on any row it lacked.
+- **A plugin skill can end up in front of a local agent.** A claude.ai plugin syncs into Claude Code, where two different texts with the same name would compete. That is the problem the checkout rule existed to patch.
+
+**Rejected alternative: serve the MCP skills from the server** (MCP SEP-2640, `skill://` resources). It is attractive because text and tools would version together, but no client support could be confirmed.
+
 ## Risks / Trade-offs
 
 - **A client that does not pass server instructions to the model** never sees *This store*. → The preamble also says that a missing value can be read from AGENTS.md, which states most of them, and that otherwise the agent asks. Claude passes server instructions; ChatGPT is checked in task 6.2.
@@ -180,3 +218,7 @@ A three-model critique of D5 and D6 approved them with changes from all three re
 
 11. **The plugin is `contexture`, not `ctxr`,** after a survey of popular plugins showed that plugins are named for the product, even where its CLI is shorter (GitHub's `gh`, `sentry-cli`); see D5. Commands read `/contexture:capture` and the like. Skills keep `ctxr-*`. The build writes `<out>/contexture/` and `contexture-claude.zip`, and the repository commits `plugins/contexture/`.
 12. **The license is MIT.** `package.json`, the README and every published release already said MIT, while `LICENSE` held the Apache 2.0 text from the initial commit. The file now carries the MIT text, so the plugin's manifest and the `LICENSE` file it copies agree.
+
+### Fourth round (one text)
+
+13. **D7 replaces the separate MCP render and the checkout rule (D6)** with one shared text, after research on how vendors write skills for both a CLI and MCP. The requirement *Owned skills render for the MCP surface from the same source* is replaced by *The shared skills are one text on both surfaces*. The drift check now asks for the server-side tool to be named beside each `git` or `gh` step.

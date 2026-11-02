@@ -1,21 +1,17 @@
 ## MODIFIED Requirements
 
-### Requirement: Owned skills render for the MCP surface from the same source
-The owned skills SHALL render for a second target, the MCP surface, alongside the CLI render, which SHALL be unchanged by it. The MCP render SHALL include a declared subset of the owned skills; every included skill SHALL render from its CLI template with one shared preamble naming how each command and git step maps to the surface's tools. The MCP render SHALL take no store configuration: each value the CLI render takes from `contexture.yaml` SHALL render as a named placeholder, and the preamble SHALL state that each placeholder's value is given in the connector's instructions. The upgrade, Circleback and second-opinion skills, which run local programs, the land skill and the derived-artifacts skill SHALL NOT be included.
+### Requirement: An MCP-rendered skill names only what the surface offers
+A test over the shared skills SHALL fail, naming the skill and the term, when one names a tool the surface does not register, a `ctxr` command the surface's command-to-tool mapping neither routes nor marks unavailable, or a `git` or `gh` step whose sentence does not also name the tool that does it through the store's server. The tool names, allowlists and unavailable commands SHALL be read from the same definitions the server uses.
 
-#### Scenario: The CLI render is unchanged
-- **WHEN** the owned skills are rendered for the CLI on a store before and after this rendering exists
-- **THEN** the two renders are byte-identical
-
-#### Scenario: A capture skill reaches the chat app
-- **WHEN** the owned skills are rendered for the MCP surface
-- **THEN** the capture skill is included with the shared preamble, the submit skill's text equals the CLI render's under the preamble apart from its placeholders, and the upgrade, second-opinion and land skills are absent
-
-#### Scenario: Two stores render one plugin
-- **WHEN** the owned skills are rendered for the MCP surface
-- **THEN** the render takes no configuration, carries a named placeholder wherever the CLI render substitutes a store value, and contains no path, layer name or relation name from the shipped defaults
+#### Scenario: An unmapped git step fails the check
+- **WHEN** a shared skill instructs `git rebase -i` with no tool named beside it
+- **THEN** the check exits non-zero naming that skill and the command
 
 ## REMOVED Requirements
+
+### Requirement: Owned skills render for the MCP surface from the same source
+**Reason**: The shared skills become one text for both surfaces, so there is no separate MCP render to require (publish-one-contexture-plugin D7).
+**Migration**: Replaced by *The shared skills are one text on both surfaces*.
 
 ### Requirement: `ctxr plugin build` writes the store's chat-app plugins
 **Reason**: The plugin is contexture's, not a store's; a per-store plugin cannot update itself on a personal plan without exposing the store's repository (publish-one-contexture-plugin D1).
@@ -52,10 +48,14 @@ The plugin SHALL carry a command for each entry of a declared map from command n
 - **WHEN** the command map names a skill the plugin does not include
 - **THEN** the check fails naming that command
 
-### Requirement: In a checkout, the plugin's skills defer to the store's own
-The MCP render's preamble SHALL begin by telling an agent that a working directory with a `contexture.yaml` at its root and a shell that runs `ctxr` is a checkout, where it invokes the un-namespaced `ctxr-<name>` skill from the store's skills folder and never the plugin's `contexture:`-namespaced one. A test over the render SHALL assert that this rule, so worded, is the preamble's first.
+### Requirement: The shared skills are one text on both surfaces
+The owned skills the plugin carries SHALL be one text, from one template, that an agent follows in a shell running `ctxr` or through the store's server's tools. Each SHALL open with one shared section saying how to tell the two apart and how a `ctxr` step, a path and a commit are done through the server. A store's copy and the plugin's copy SHALL differ only in store values, which the plugin names by placeholders. Skills that run local programs, land and derived-artifacts SHALL NOT be in the plugin.
 
-#### Scenario: The checkout rule comes first
-- **WHEN** the MCP render is produced
-- **THEN** the first section of every included skill's preamble is the checkout rule
+#### Scenario: A store's copy and the plugin's copy differ only in values
+- **WHEN** a shared skill is rendered for a store and for the plugin
+- **THEN** replacing each of the store's values in the store's copy by its placeholder yields the plugin's copy
+
+#### Scenario: The plugin carries no shell-only skill
+- **WHEN** the plugin is built
+- **THEN** it carries the capture skill with the shared section, and not the upgrade, second-opinion or land skills
 
