@@ -141,7 +141,7 @@ export class McpSurface {
       mutex: this.mutex,
       baseUrl: config.serve?.base_url,
     });
-    const instructions = serverInstructions(storeName);
+    const instructions = serverInstructions(storeName, config);
     await handleMcpRequest<Principal>(
       {
         originAllowed: (origin) => origin === issuer,

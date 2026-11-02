@@ -4,3 +4,6 @@ coverage/
 *.log
 .DS_Store
 test/fixtures/retrieval-corpus/baseline.json.candidate
+# publish-one-contexture-plugin: `npm run plugin` writes the archive beside the committed plugin; only the directory is committed.
+plugins/contexture-claude.zip
+plugins/*.zip

@@ -73,7 +73,7 @@ is doing the right thing.
 
 ## Relocating an existing note
 
-`ctxr archive <path>` to retire it; a plain tracked `git mv` for an ordinary re-placement. Either way the
+`ctxr archive <path>` to retire it; for an ordinary re-placement, a plain tracked `git mv` in a shell, or the `Move` tool through the store's server. Either way the
 note's frontmatter is left untouched.
 
 ## Verify

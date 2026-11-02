@@ -2,7 +2,7 @@
  * serve-the-session-lifecycle-to-chat-apps D9 and revisions 2, 3 and 6: the
  * one place a `ctxr` command is mapped to the MCP tool that runs it. The tool
  * registry (`tools/index.ts`) registers exactly the tools listed here, in
- * this order; the rendered skills' preamble, the drift check over the MCP
+ * this order; the shared skills' opening section, the drift check over the shared
  * render and the tool/command alignment check all read this module, so no
  * tool name is ever derived from a command name by rule.
  *
@@ -75,12 +75,14 @@ export const CTXR_WRITE_COMMANDS = [
 ] as const;
 
 /**
- * Commands a shipped skill names that have no counterpart over MCP, so the
- * preamble marks them `none` and the agent skips the step. `shared-stores
- * sync` refreshes the canonical clone's mounts; the server keeps no mounts,
- * and a chat session cannot change into one (mount-shared-stores).
+ * Commands a shipped skill names that have no counterpart over MCP. Each step
+ * naming one says at the step to skip it through the store's server, and the
+ * drift check requires that (publish-one-contexture-plugin revision 15).
+ * `sync` refreshes the canonical clone, which the server keeps current
+ * itself; `shared-stores sync` refreshes the canonical clone's mounts, and the
+ * server keeps no mounts (mount-shared-stores).
  */
-export const UNAVAILABLE_COMMANDS = ['shared-stores sync'] as const;
+export const UNAVAILABLE_COMMANDS = ['sync', 'shared-stores sync'] as const;
 
 /** D3: the session commands with a typed tool of their own. */
 export const SESSION_COMMAND_TOOLS = {
@@ -93,11 +95,11 @@ export const SESSION_COMMAND_TOOLS = {
 } as const;
 
 /**
- * D6: the git and gh steps the shipped skills name, and the tool each one is in
- * this environment; null marks the server's own work, which the agent skips (the
- * lifecycle skill's canonical-clone refresh). A step not listed here has no
- * counterpart over MCP, and the drift check over the MCP render refuses it. The
- * preamble's tables are rendered from this and `SESSION_COMMAND_TOOLS`.
+ * D6: the git and gh steps and the tool each one is through the store's
+ * server; null marks the server's own work. publish-one-contexture-plugin
+ * revision 16: a shared skill names a git or gh step only in a sentence that
+ * also names its tool here, so a step mapped to null, or not listed, cannot
+ * appear in one.
  */
 export const GIT_STEP_TOOLS: Readonly<Record<string, string | null>> = {
   'git mv': 'Move',

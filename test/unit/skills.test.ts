@@ -13,8 +13,10 @@ import {
   activeSkillSeeds,
   MANAGED_SKILL_HEADER,
   MCP_SKILL_FILES,
-  mcpPreamble,
+  cliSkillValues,
+  mcpSkillValues,
   OPTIONAL_SKILLS,
+  renderMcpSkills,
   skillPaths,
   SKILLS,
   renderSkills,
@@ -25,6 +27,7 @@ import {
   terminatingLayers,
 } from '../../src/core/skills.js';
 import { GRAPH_DOCUMENT_RELATIVE_PATH } from '../../src/core/graph/persist.js';
+import { fillTokens, placeholderName, STORE_PLACEHOLDERS } from '../../src/core/skill-placeholders.js';
 import { SHIPPED_PROFILES } from '../../src/taxonomy/profiles.js';
 import { makeTmpDir } from '../helpers/tmp-store.js';
 
@@ -1146,8 +1149,11 @@ describe('research-verified-claims: the research skill keeps only claims an open
   it('briefs a delegate, which marks unverified figures and never delegates further', () => {
     expect(research).toMatch(/A delegate marks every figure it could not check against a source it opened, and never delegates further/);
   });
-  it('stays at or under 12 KB', () => {
-    expect(Buffer.byteLength(research, 'utf8')).toBeLessThanOrEqual(12 * 1024);
+  it('stays at or under 12 KB, apart from the opening section every shared skill carries', () => {
+    // publish-one-contexture-plugin D7: that section is fixed text, the same in every shared skill, and bounded on its own.
+    const opening = fillTokens(packagedTemplate('skills', '_surfaces'), cliSkillValues(makeConfig()));
+    expect(research).toContain(opening);
+    expect(Buffer.byteLength(research.replace(opening, ''), 'utf8')).toBeLessThanOrEqual(12 * 1024);
   });
 });
 
@@ -1304,20 +1310,37 @@ describe('ctxr-capture-circleback: the opt-in retrieval step for ctxr-capture', 
 });
 
 /**
- * serve-the-session-lifecycle-to-chat-apps D6 (harness-portability spec,
- * *Owned skills render for the MCP surface from the same source*): one text
- * per skill, with one preamble mapping its commands and git steps onto the
- * surface's tools.
+ * publish-one-contexture-plugin D7 (harness-portability spec, *The shared
+ * skills are one text on both surfaces*): a store's copy and the plugin's copy
+ * of each shared skill are one text, differing only in store values, and both
+ * open with the one section that says which store and where.
  */
-describe('the MCP render of the owned skills', () => {
+describe('the shared skills, in a store and in the plugin', () => {
   const config = makeConfig();
-  const mcp = renderSkills(config, 'mcp');
+  const mcp = renderMcpSkills();
   const cli = renderSkills(config);
-  const preamble = mcpPreamble(config);
-  const frontmatter = (content: string): string => content.slice(0, content.indexOf('\n---\n', 4) + '\n---\n'.length);
+  const shared = cli.filter((s) => MCP_SKILL_FILES.includes(s.file));
+  const opening = packagedTemplate('skills', '_surfaces');
 
-  it('leaves the CLI render as it was: the default target, the explicit one and the copies sync writes are one text', async () => {
-    expect(renderSkills(config, 'cli')).toEqual(cli);
+  /**
+   * A plugin copy with each placeholder written back as this store's value, and
+   * each generic computed step (layers, relation grouping) as this store's step:
+   * the computed steps are store values too, rendered from its taxonomy.
+   */
+  function asStore(content: string, store: StoreConfig): string {
+    const values = mcpSkillValues();
+    const storeValues = cliSkillValues(store);
+    // The opening section's own examples (`<inbox path>`) are literal on both surfaces; only its session root is a value.
+    const [head, tail] = content.split(fillTokens(opening, values)) as [string, string];
+    expect(tail).toBeDefined();
+    let text = tail
+      .replace(values.LAYER_STEP!, () => storeValues.LAYER_STEP!)
+      .replace(values.RELATION_GROUPING_STEP!, () => storeValues.RELATION_GROUPING_STEP!);
+    for (const placeholder of STORE_PLACEHOLDERS) text = text.replaceAll(values[placeholder.token]!, placeholder.value(store));
+    return `${head}${fillTokens(opening, storeValues)}${text}`;
+  }
+
+  it('writes, in a store, the CLI render: the copies sync writes are its text', async () => {
     const shipped = await shippedSkillFiles(config);
     for (const skill of cli) expect(shipped.get(`skills/${skill.file}/SKILL.md`), skill.file).toBe(skill.content);
   });
@@ -1342,26 +1365,80 @@ describe('the MCP render of the owned skills', () => {
     }
   });
 
-  it('is each CLI text unchanged under the preamble, below the frontmatter the Agent Skills format requires first', () => {
-    const byFile = new Map(cli.map((s) => [s.file, s]));
+  it("differs from the store's copy only in store values: each placeholder written back gives the store render, byte for byte", () => {
+    expect(shared.map((s) => s.file)).toEqual(mcp.map((s) => s.file));
     for (const skill of mcp) {
-      const original = byFile.get(skill.file)!;
-      const head = frontmatter(original.content);
-      expect(skill.content, skill.file).toBe(`${head}\n${preamble}\n\n${original.content.slice(head.length + 1)}`);
+      const original = shared.find((s) => s.file === skill.file)!;
+      expect(asStore(skill.content, config), skill.file).toBe(original.content);
       expect(skill.description).toBe(original.description);
       expect(skill.supportingFiles.size).toBe(0);
     }
+    // And for a second store, whose every value differs.
+    const other = makeConfig({ git: { default_branch: 'release' }, ingest: { inbox_path: 'in/', capture_root: 'src/', tracking_params: [] }, session: { branch_prefix: 'session/', worktrees_path: '.trees' } });
+    for (const skill of mcp) expect(asStore(skill.content, other), skill.file).toBe(renderSkills(other).find((s) => s.file === skill.file)!.content);
     // The spec's scenario, spelled out for one skill.
-    const submit = mcp.find((s) => s.file === 'ctxr-submit')!.content;
-    const cliSubmit = byFile.get('ctxr-submit')!.content;
-    expect(submit.endsWith(cliSubmit.slice(frontmatter(cliSubmit).length + 1))).toBe(true);
-    expect(submit.indexOf(preamble)).toBeLessThan(submit.indexOf(MANAGED_SKILL_HEADER));
+    expect(mcp.find((s) => s.file === 'ctxr-submit')!.content).toContain('opens the pull request against `<default branch>`');
   });
 
-  it('names the store\'s configured worktrees path, and no placeholder survives', () => {
-    expect(preamble).toContain('`.worktrees/<directory>/`');
-    expect(mcpPreamble(makeConfig({ session: { branch_prefix: 'session/', worktrees_path: '.contexture/worktrees' } }))).toContain('`.contexture/worktrees/<directory>/work/a.md`');
+  it('opens every shared skill, on both surfaces, with the one section, right below its title; no other skill carries it', () => {
+    for (const skill of [...mcp, ...shared]) {
+      const below = skill.content.slice(skill.content.indexOf(`\n# ${skill.name}\n`) + `\n# ${skill.name}\n\n`.length);
+      expect(below.startsWith('## Which store, and where\n'), skill.file).toBe(true);
+    }
+    for (const skill of cli.filter((s) => !MCP_SKILL_FILES.includes(s.file))) expect(skill.content, skill.file).not.toContain('## Which store, and where');
+    expect(mcp[0]!.content).toContain('`<worktrees path><directory>/work/a.md`');
+    expect(shared[0]!.content).toContain('`.worktrees/<directory>/work/a.md`');
+    expect(opening.split('\n').length).toBeLessThanOrEqual(34);
+  });
+
+  it('says which store, then where, then how a step is done through the server, in that order (revision 14)', () => {
+    const text = opening.replace(/\s+/g, ' ');
+    const order = [
+      '**Which store:** the one the person means. With several contexture connectors attached, use that store\'s, and ask when it is unclear.',
+      '**Where:** in a checkout of that store (a `contexture.yaml` at the working directory\'s root and a shell that runs `ctxr`), follow each step in the shell as written, even when the store\'s connector is attached too. Otherwise work through the store\'s connector',
+      'A `ctxr session <verb>` step is the tool `session_<verb>`',
+      'Every other `ctxr` step is the `ctxr` tool, or `ctxr_write` when it writes, with the words after `ctxr` as `args`',
+      "A command's options are the tool's fields",
+      '`ctxr_write` always needs one',
+      'goes as `input`, with `@input` in `args`',
+      "Paths go under the session's root",
+      'Commits, pushes and pull requests happen only in `session_submit`',
+      'call `session_list` and mention each open session',
+      'Landing, upgrading and work inside a store mounted under `shared/` are not done through the server',
+      'the server runs an older ctxr (*This store* gives its version). Say so, then skip the step or take the nearest one offered. Never improvise a replacement for a step that writes.',
+      "takes the value the connector's instructions give under *This store*",
+    ];
+    let at = -1;
+    for (const phrase of order) {
+      const found = text.indexOf(phrase);
+      expect(found, phrase).toBeGreaterThan(at);
+      at = found;
+    }
+  });
+
+  it('takes no configuration: a named placeholder wherever the CLI render substitutes a store value, and no shipped default', () => {
+    // Two stores that differ in every value render one plugin, because the render reads neither.
+    expect(renderMcpSkills.length).toBe(0);
+    expect(renderMcpSkills()).toEqual(mcp);
+
+    const text = mcp.map((s) => s.content).join('\n');
     for (const skill of mcp) expect(skill.content.match(/__[A-Z][A-Z0-9_]*__/g), skill.file).toBeNull();
+    // Every placeholder a skill template carries is written by its name, and the bare one inside a code span.
+    for (const placeholder of STORE_PLACEHOLDERS.filter((p) => p.token !== 'ARCHIVE_DESTINATION')) {
+      expect(text, placeholder.token).toContain(placeholder.bare === true ? `\`${placeholderName(placeholder)}\`` : placeholderName(placeholder));
+    }
+    expect(text).toContain("The connector's instructions list this store's layers");
+    expect(text).toContain('Group proposals by the relation vocabulary the connector\'s instructions list under *This store*');
+    expect(text).not.toContain('**Alpha**');
+
+    const shippedConfig = { ...config, ...SHIPPED_DEFAULTS, git: { default_branch: 'main' }, organize: { ...SHIPPED_DEFAULTS.organize, archive_destination: 'archive/' } } as unknown as StoreConfig;
+    for (const placeholder of STORE_PLACEHOLDERS) {
+      const value = placeholder.value(shippedConfig);
+      expect(text, `${placeholder.token} = ${value}`).not.toContain(placeholder.bare === true ? `first ${value} path segments` : `\`${value}`);
+    }
+    expect(text).not.toContain('origin/main');
+    for (const name of [...new Set(SHIPPED_PROFILES.flatMap((p) => p.layers.map((l) => l.name)))]) expect(text, name).not.toMatch(new RegExp(`\\*\\*${name}\\*\\*|\\b${name}\\b layer`));
+    for (const relation of RELATION_VOCABULARY) expect(text, relation.name).not.toMatch(new RegExp(`\\b${relation.name}\\b`));
   });
 
   it('passes the content guards the CLI render passes: no tier word, ctxr as the executable, only flags the CLI registers', () => {
@@ -1374,75 +1451,42 @@ describe('the MCP render of the owned skills', () => {
       for (const flag of ctxrFlagsIn(content)) expect(options.has(flag), `${file}: ${flag}`).toBe(true);
     }
   });
-
-  /** Rows of the preamble's two tables: `| \`command\` | \`tool\` |`, or `none` for a step the server does itself. */
-  function mappingRows(heading: string): [string, string][] {
-    const section = preamble.split(`### ${heading}\n`)[1]!.split('\n### ')[0]!;
-    return section
-      .split('\n')
-      .filter((line) => line.startsWith('| `'))
-      .map((line) => {
-        const m = /^\| `([^`]+)` \| (?:`([A-Za-z_]+)`|(none)) \|$/.exec(line);
-        expect(m, line).not.toBeNull();
-        return [m![1]!, m![2] ?? m![3]!];
-      });
-  }
-
-  it('states its mapping as tables a check can read: each session command to its tool, and each git step to a tool or to none', () => {
-    expect(mappingRows('Commands')).toEqual([
-      ...['start', 'list', 'status', 'submit', 'rebase', 'discard'].map((verb): [string, string] => [`ctxr session ${verb}`, `session_${verb}`]),
-      ...UNAVAILABLE_COMMANDS.map((command): [string, string] => [`ctxr ${command}`, 'none']),
-    ]);
-    const git = new Map(mappingRows('Git steps'));
-    expect(git.get('git mv')).toBe('Move');
-    expect(git.get('git rm')).toBe('Delete');
-    expect(git.get('git status')).toBe('session_status');
-    expect(git.get('git diff')).toBe('session_status');
-    expect(git.get('git commit')).toBe('session_submit');
-    expect(git.get('git push')).toBe('session_submit');
-    // Every git step an included skill names is a row, so the drift check has something to pass on.
-    let named = 0;
-    for (const { file, content } of mcp) {
-      const body = content.slice(content.indexOf(MANAGED_SKILL_HEADER));
-      for (const m of body.matchAll(/`((?:git|gh) [a-z-]+(?: --[a-z-]+)?)/g)) {
-        const step = m[1]!;
-        const known = [...git.keys()].some((row) => step === row || step.startsWith(`${row} `) || row.startsWith(`${step} `) || step.split(' ').slice(0, 2).join(' ') === row);
-        expect(known, `${file} names ${step}`).toBe(true);
-        named += 1;
-      }
-    }
-    expect(named).toBeGreaterThanOrEqual(3); // git mv, git fetch, git merge --ff-only
-  });
-
-  it('routes every other ctxr command through the ctxr and ctxr_write tools, and commits only in session_submit', () => {
-    expect(preamble).toMatch(/Every other `ctxr` step runs through the `ctxr` tool when the command only reads, and through `ctxr_write`\s+when it writes/);
-    expect(preamble).toMatch(/`args`/);
-    expect(preamble).toMatch(/Commits, pushes and pull requests happen only in `session_submit`/);
-    expect(preamble).toMatch(/At the\s+start of a conversation, call `session_list` and mention each open session/);
-  });
 });
 
 /**
- * serve-the-session-lifecycle-to-chat-apps task 6.3, and the harness-portability
- * delta "An MCP-rendered skill names only what the surface offers": every `ctxr`
- * command an included skill names routes to a tool through the mapping module,
- * every `git` or `gh` step is a row of its git-step table, and every tool the
- * preamble names is one the surface registers.
+ * The harness-portability delta *An MCP-rendered skill names only what the
+ * surface offers*, as publish-one-contexture-plugin revisions 15 and 16 make
+ * it: in a shared skill every `ctxr` command routes to a tool through the
+ * mapping module or is one it marks unavailable, and then the step says to skip
+ * it through the store's server; every `git` or `gh` step names, in the same
+ * sentence, the tool that does it there; and every tool named is registered.
  */
 function driftProblems(skills: readonly { file: string; content: string }[]): string[] {
   const problems: string[] = [];
-  const gitSteps = Object.keys(GIT_STEP_TOOLS);
+  const gitSteps = Object.entries(GIT_STEP_TOOLS);
   for (const { file, content: rendered } of skills) {
     // The managed header names `ctxr init` and `ctxr update` as provenance, not as a step.
-    const content = rendered.replace(MANAGED_SKILL_HEADER, '');
+    const content = rendered.replace(MANAGED_SKILL_HEADER, '').replace(/\s+/g, ' ');
+    const sentenceAt = (index: number): string => {
+      const before = content.slice(0, index);
+      const start = Math.max(before.lastIndexOf('. '), before.lastIndexOf(': '), before.lastIndexOf(' - ')) + 1;
+      const rest = content.slice(index);
+      const end = rest.search(/\.(?: |$)/);
+      return content.slice(start, end === -1 ? content.length : index + end);
+    };
     for (const m of content.matchAll(/`ctxr ([a-z][a-z-]*(?: [a-z][a-z-]*)?)/g)) {
       const unavailable = (UNAVAILABLE_COMMANDS as readonly string[]).some((c) => m[1] === c || m[1]!.startsWith(`${c} `));
-      if (!unavailable && routeForCommand(m[1]!) === null) problems.push(`${file}: ctxr ${m[1]}`);
+      // The opening section's generic form, `ctxr session <verb>`, names every session command at once.
+      if (m[1] === 'session' && content.startsWith(' <verb>`', m.index + m[0].length)) continue;
+      if (unavailable) {
+        if (!/through the store's server, skip this step/.test(sentenceAt(m.index))) problems.push(`${file}: ctxr ${m[1]} without its skip`);
+      } else if (routeForCommand(m[1]!) === null) problems.push(`${file}: ctxr ${m[1]}`);
     }
     for (const m of content.matchAll(/`((?:git|gh) [a-z][a-z-]*(?: (?:-{1,2}[a-z-]+|[a-z][a-z-]*))?)/g)) {
       const step = m[1]!;
-      const known = gitSteps.some((row) => step === row || step.startsWith(`${row} `) || row === step.split(' ').slice(0, 2).join(' '));
-      if (!known) problems.push(`${file}: ${step}`);
+      const row = gitSteps.find(([name]) => step === name || step.startsWith(`${name} `) || name === step.split(' ').slice(0, 2).join(' '));
+      if (row === undefined || row[1] === null) problems.push(`${file}: ${step}`);
+      else if (!sentenceAt(m.index).includes(`\`${row[1]}\``)) problems.push(`${file}: ${step} without \`${row[1]}\``);
     }
     for (const m of content.matchAll(/`(session_[a-z]+|ctxr_write|Move|Delete)`/g)) {
       if (!TOOL_NAMES.includes(m[1]!)) problems.push(`${file}: tool ${m[1]}`);
@@ -1451,16 +1495,38 @@ function driftProblems(skills: readonly { file: string; content: string }[]): st
   return problems;
 }
 
-describe('the MCP render names only what the surface offers', () => {
-  const mcp = renderSkills(makeConfig(), 'mcp');
-
-  it('passes on the shipped skills', () => {
+describe('a shared skill names only what the store\'s server offers', () => {
+  it('passes on the shipped skills, in the plugin and in a store', () => {
+    const mcp = renderMcpSkills();
     expect(mcp.length).toBeGreaterThan(0);
     expect(driftProblems(mcp)).toEqual([]);
+    expect(driftProblems(renderSkills(makeConfig()).filter((s) => MCP_SKILL_FILES.includes(s.file)))).toEqual([]);
+    // The two shell-only steps carry their skip, and the one git step its tool.
+    const text = mcp.map((s) => s.content.replace(/\s+/g, ' ')).join('\n');
+    expect(text).toContain("In a shell, run `ctxr sync`; through the store's server, skip this step");
+    expect(text).toContain("run `ctxr shared-stores sync` in a shell; through the store's server, skip this step");
+    expect(text).toContain("a plain tracked `git mv` in a shell, or the `Move` tool through the store's server");
+    expect(text).not.toMatch(/`git (fetch|merge)/);
   });
 
-  it('fails, naming the skill and the term, for an unmapped git step, an unknown command and an unknown tool', () => {
-    const seeded = { file: 'ctxr-seeded', content: 'Run `git cherry-pick`, then `ctxr session reap`, then call `session_publish`.' };
-    expect(driftProblems([seeded])).toEqual(['ctxr-seeded: ctxr session reap', 'ctxr-seeded: git cherry-pick', 'ctxr-seeded: tool session_publish']);
+  it('fails, naming the skill and the term, for each kind of drift', () => {
+    const seeded = {
+      file: 'ctxr-seeded',
+      content: [
+        'Run `git cherry-pick` first.',
+        'Then `git mv` the note.',
+        'Then run `ctxr sync`.',
+        'Then `ctxr session reap`, then call `session_publish`.',
+        'Fetch with `git fetch origin`.',
+      ].join('\n'),
+    };
+    expect(driftProblems([seeded])).toEqual([
+      'ctxr-seeded: ctxr sync without its skip',
+      'ctxr-seeded: ctxr session reap',
+      'ctxr-seeded: git cherry-pick',
+      'ctxr-seeded: git mv without `Move`',
+      'ctxr-seeded: git fetch origin',
+      'ctxr-seeded: tool session_publish',
+    ]);
   });
 });

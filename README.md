@@ -469,21 +469,26 @@ curl -i https://ctx.example.com/.well-known/oauth-authorization-server   # 200, 
 curl -i -X POST https://ctx.example.com/mcp                              # 401 with WWW-Authenticate: Bearer resource_metadata=…
 ```
 
-**Installing the plugin.** The plugin is what gives an app the store's skills as well as its tools, so an agent in Claude or ChatGPT follows the same session practice as a local one. `serve` offers it at `https://ctx.example.com/plugin/`, a page naming two downloads, one for each app: `contexture-<store>-claude.zip` and `contexture-<store>-chatgpt.zip`. The page and both downloads need the same verified identity as the approval page, and only people the `mcp` block admits get them, so keep `/plugin/` behind the access proxy, outside the Bypass list above. Each person installs it once:
+**Installing the skills and the connector.** Two things connect an app to a store, and each person sets each up once:
 
-- **Claude:** Customize → Plugins → *Add* → *Upload plugin*, and pick the Claude download.
-- **ChatGPT:** a workspace admin uploads the ChatGPT download for the whole workspace; without an admin, turn on developer mode and upload it there.
+- **contexture's plugin** gives the app the skills, so an agent in Claude follows the same session practice as a local one. It is the same plugin for every store and lives in this repository, at [`plugins/contexture/`](plugins/contexture/), listed by the `contexture` marketplace in [`.claude-plugin/marketplace.json`](.claude-plugin/marketplace.json). In Claude: Customize → Plugins → *Add* → *Add marketplace*, enter `ayxuerui/contexture`, turn on **Sync automatically**, and install `contexture` (`contexture@contexture`). It needs no GitHub account, and with Sync on Claude installs each release by itself: the plugin's version is the CLI's, so a new copy arrives when a release merges and not between releases. It also carries typed commands that open its entry-point skills: `/contexture:capture`, `/contexture:ingest`, `/contexture:research`, `/contexture:rollup`, `/contexture:mission`, `/contexture:session` and `/contexture:submit`. A plugin added on claude.ai also syncs into Claude Code, where it says what the store's own copies say.
+- **The store's connector** reaches one store. In Claude: Customize → Connectors → *Add custom connector*, with the URL `https://ctx.example.com/mcp`. In ChatGPT, turn on developer mode and add a connector with the same URL and OAuth. Someone in two stores adds two connectors; the skills work with whichever is attached and ask which store is meant when it is unclear.
 
-Each plugin carries the store's skills, rendered from the same templates as the skill copies in the store under a preamble that maps every `ctxr`, `git` and `gh` step onto the server's tools, and one server entry naming `serve.base_url` and `/mcp`. It carries no credential: the app signs in through the store's own login. Its version is the CLI's version plus the commit it was built from, so download it again after upgrading `ctxr` or changing the skills. To hand the plugin out yourself, for instance to a Claude organization's or ChatGPT workspace's admin, build it from a checkout:
+The plugin carries no connector, because one plugin serves every store. Its skills name each store setting by a placeholder such as `<inbox path>` or `<default branch>`, and the connector's instructions answer them: the instructions `serve` returns when an app connects end with a *This store* section giving the store's value for each placeholder, its layers with their descriptions, the relation vocabulary and the server's ctxr version. Each shared skill is one text on both surfaces, the same as the store's own copy apart from those values. It opens with one short section, in the store's copies too: which store the person means, whether to work in a shell (a checkout of that store) or through its connector, and how a `ctxr` step, a path and a commit are done through the server. The few shell-only steps say at the step what to do through the server instead. A store's server can run an older ctxr than the plugin; when a skill names a tool the connector does not offer, the agent says so and skips that step rather than improvising a write.
+
+**The connect page.** `serve` answers `https://ctx.example.com/plugin/` with a page giving a member both steps: the marketplace and plugin for Claude, and this store's connector address with how to add it in each app. It also links the store's ChatGPT plugin, `contexture-<store>-chatgpt.zip`: ChatGPT has no marketplace on personal plans, so its plugin stays the store's own download, bundling the same skills and the store's connector. A workspace admin uploads it for the whole workspace; without an admin, turn on developer mode and upload it there. ChatGPT does not update an uploaded plugin, so download it again after a release. The page and the download need the same verified identity as the approval page, and only people the `mcp` block admits get them, so keep `/plugin/` behind the access proxy, outside the Bypass list above. Someone who uploaded an earlier `contexture-<store>` plugin to Claude removes it once they install `contexture`, and keeps their connector.
+
+To build the plugins yourself:
 
 ```sh
-ctxr plugin build              # both plugins, as directories and zips, under .contexture/cache/plugin/
-ctxr plugin build --out dist/  # somewhere else
+ctxr plugin build                # outside a store: contexture's Claude plugin, under ./contexture-plugin/
+ctxr plugin build                # inside a store with mcp: also its ChatGPT plugin, under .contexture/cache/plugin/
+ctxr plugin build --out dist/    # somewhere else
 ```
 
-It refuses with exit `2`, writing nothing, on a store without an `mcp` block.
+Each plugin is written as a directory (`contexture/`, `chatgpt/`) and a zip beside it. A store without an `mcp` block gets the Claude plugin alone, with a notice. If the marketplace ever has to be withdrawn, members can upload `contexture-claude.zip` from a build instead, and keep their store connector; an uploaded plugin does not update itself. In this repository, `npm run plugin` regenerates `plugins/contexture/`, and a test fails any change whose committed plugin differs from a fresh build.
 
-**Connecting without the plugin.** In Claude: Settings → Connectors → *Add custom connector*, with the URL `https://ctx.example.com/mcp`. In ChatGPT, turn on developer mode and add a connector with the same URL and OAuth. Reads come from a checkout `serve` keeps for itself under `.contexture/cache/mcp/view`, brought up to date from `origin` at most once a minute. It never touches the checkout your agents work in. Each MCP request writes one line to `serve`'s stderr, naming the person, the method and the tool, but never the arguments or the results.
+**Where reads come from.** Reads come from a checkout `serve` keeps for itself under `.contexture/cache/mcp/view`, brought up to date from `origin` at most once a minute. It never touches the checkout your agents work in. Each MCP request writes one line to `serve`'s stderr, naming the person, the method and the tool, but never the arguments or the results.
 
 ## Keeping a store current
 
@@ -548,7 +553,7 @@ To pin a value against a future default change, declare it. Nothing rewrites wha
 | `shared-stores sync \| status` | Clone and fast-forward the stores this store mounts under `shared/`, or report their state |
 | `adapters generate` | Regenerate harness outputs (`ctxr update` does this too) |
 | `serve` | Read the store in a browser |
-| `plugin build [--out <dir>]` | Build the Claude and ChatGPT plugins: the store's skills and its MCP server |
+| `plugin build [--out <dir>]` | Build contexture's Claude plugin (no store needed) and, in a store with `mcp`, its ChatGPT plugin with its connector |
 | `update` | Bring contexture-owned files up to the installed version |
 | `version [--check]` | Report the installed version; `--check` compares it against the latest published release |
 | `verify [--portable]` | Exercise core store operations end to end |
