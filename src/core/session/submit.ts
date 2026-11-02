@@ -15,6 +15,7 @@ import { ExitCode } from '../exit-codes.js';
 import { hasRemote } from '../git/worktree.js';
 import type { Store } from '../store.js';
 import { packagedTemplate, substituteBlock } from '../templates.js';
+import { joinBaseUrl, pullPreviewRoute } from '../browse/page-url.js';
 import { commitStaged, type CommitOptions } from './commit.js';
 import { firstLines, publishSession, remoteTip, SessionRemoteError, type PushOutcome, type RemoteDeps } from './remote.js';
 import { commitsAhead, rebaseInProgress, type SessionRef } from './resolve.js';
@@ -64,6 +65,11 @@ export interface SubmitResult {
   /** The session the pull request belongs to, as its marker names it; null when the store has no `origin` to name it by. */
   session_identity: SessionIdentity | null;
   approval_url: string | null;
+  /**
+   * serve-keeps-its-clone-current D6: where the pull request's pages preview, at the address of the store that will
+   * publish them; null when that store declares no `serve.base_url`.
+   */
+  preview_url: string | null;
 }
 
 export interface SubmitDeps extends RemoteDeps {
@@ -157,6 +163,12 @@ async function sessionApprovalAddress(deps: SubmitDeps, session: SessionRef, ide
     if (mounting !== null && identity.home !== ownSlug) return approvalAddress(mounting.config, sessionRouteName(identity));
   }
   return approvalAddress(deps.config, session.name);
+}
+
+/** The pull request's preview root at the publishing store's `serve.base_url`; null when it declares none. */
+export function pullPreviewAddress(config: Store['config'], number: number): string | null {
+  const baseUrl = config.serve?.base_url;
+  return baseUrl === undefined ? null : joinBaseUrl(baseUrl, pullPreviewRoute(number));
 }
 
 export function approvalAddress(config: Store['config'], name: string): string | null {
@@ -309,6 +321,8 @@ export async function submitSession(deps: SubmitDeps, session: SessionRef, input
     pull_request: { number: published.pull.number, url: published.pull.url },
     session_identity: identity,
     approval_url: await sessionApprovalAddress(deps, session, identity),
+    // The worktree's own configuration: the store whose repository the pull request is on publishes its pages.
+    preview_url: pullPreviewAddress((await openWorktreeStore(session)).config, published.pull.number),
   };
 }
 

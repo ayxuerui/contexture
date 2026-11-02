@@ -2,7 +2,7 @@ import { readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_CAPTURE_ROOT, DEFAULT_PUBLISH_PATH, DEFAULT_VENDORED_SKILLS, SHIPPED_DEFAULTS } from '../../src/config/defaults.js';
+import { DEFAULT_CAPTURE_ROOT, DEFAULT_PUBLISH_PATH, DEFAULT_SERVE_SYNC_MINUTES, DEFAULT_VENDORED_SKILLS, serveSyncMinutes, SHIPPED_DEFAULTS } from '../../src/config/defaults.js';
 import { readConfig } from '../../src/config/load.js';
 import { SUPPORTED_SCHEMA_VERSION } from '../../src/config/schema.js';
 import { renderStoreConfig } from '../../src/config/render.js';
@@ -345,6 +345,48 @@ describe('readConfig', () => {
       }
     }
   });
+
+  /** serve-keeps-its-clone-current: serve.sync_minutes, absent meaning 5, positive whole minutes only. */
+  it('resolves an absent serve.sync_minutes to 5, with or without a serve block', async () => {
+    expect(DEFAULT_SERVE_SYNC_MINUTES).toBe(5);
+    for (const extra of ['', 'serve: { base_url: "https://ctx-a.example.test" }\n']) {
+      const tmp = await makeTmpDir();
+      try {
+        await writeFile(path.join(tmp.root, CONFIG_FILE_NAME), `${minimalConfig()}${extra}`);
+        const config = await readConfig(tmp.root);
+        expect(config.serve?.sync_minutes).toBeUndefined();
+        expect(serveSyncMinutes(config)).toBe(5);
+      } finally {
+        await tmp.cleanup();
+      }
+    }
+  });
+
+  it('reads a positive whole serve.sync_minutes', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      await writeFile(path.join(tmp.root, CONFIG_FILE_NAME), `${minimalConfig()}serve: { sync_minutes: 2 }\n`);
+      const config = await readConfig(tmp.root);
+      expect(config.serve?.sync_minutes).toBe(2);
+      expect(serveSyncMinutes(config)).toBe(2);
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  for (const value of ['0', '-3', '2.5', '"five"']) {
+    it(`refuses serve.sync_minutes: ${value}, naming the key`, async () => {
+      const tmp = await makeTmpDir();
+      try {
+        await writeFile(path.join(tmp.root, CONFIG_FILE_NAME), `${minimalConfig()}serve: { sync_minutes: ${value} }\n`);
+        const error = await readConfig(tmp.root).catch((err: unknown) => err);
+        expect(error).toBeInstanceOf(InvalidConfigError);
+        expect((error as InvalidConfigError).message).toContain('serve.sync_minutes');
+      } finally {
+        await tmp.cleanup();
+      }
+    });
+  }
 
   /** approve-from-the-review-page: opt-in, no shipped default, and only alongside a base URL. */
   const CHANGE_APPROVAL_BLOCK =

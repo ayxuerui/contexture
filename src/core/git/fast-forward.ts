@@ -43,3 +43,34 @@ export async function fastForwardIfSafe(run: CloneGit, branch: string, label: st
   if (ff.exitCode !== 0) return leave(`git refused the fast-forward: ${ff.stderr.trim().split('\n')[0] ?? ''}`);
   return { synced: true, from, to: await head('HEAD'), reason: null };
 }
+
+/** The canonical sync's result: the fetch failed (git's first error line), or it succeeded and the rule ran. */
+export type CanonicalSyncResult =
+  | { fetched: false; error: string; outcome: FastForwardOutcome }
+  | { fetched: true; error: null; outcome: FastForwardOutcome };
+
+/** The reason a canonical sync whose fetch failed reports, naming git's first error line. */
+export function fetchFailedReason(error: string): string {
+  return `fetch failed: ${error}`;
+}
+
+/**
+ * serve-keeps-its-clone-current (D11, write-lifecycle spec "A canonical sync
+ * never reports a clone current after a failed fetch"): the canonical sync
+ * `ctxr land` ends with and `ctxr sync` runs. The fetch's exit status is
+ * checked first: a failed fetch leaves the clone as it was and reports it as
+ * not synced, never compares it with a stale `origin/<branch>` that could
+ * equal HEAD and read as current.
+ *
+ * `fetch` runs the caller's authenticated fetch, failures allowed.
+ */
+export async function syncCanonicalClone(fetch: () => Promise<GitResult>, run: CloneGit, branch: string, label: string): Promise<CanonicalSyncResult> {
+  const fetched = await fetch();
+  if (fetched.exitCode !== 0) {
+    const error = fetched.stderr.trim().split('\n')[0]?.trim() || `git fetch exited ${fetched.exitCode}`;
+    const head = await run(['rev-parse', '--verify', '--quiet', 'HEAD^{commit}']);
+    const from = head.exitCode === 0 ? head.stdout.trim() : null;
+    return { fetched: false, error, outcome: { synced: false, from, to: from, reason: fetchFailedReason(error) } };
+  }
+  return { fetched: true, error: null, outcome: await fastForwardIfSafe(run, branch, label) };
+}

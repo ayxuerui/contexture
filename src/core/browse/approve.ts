@@ -37,6 +37,7 @@ import { storePrefix } from '../graph/tree.js';
 import type { Store } from '../store.js';
 import { packagedTemplate } from '../templates.js';
 import type { LinkResolver } from './link-resolver.js';
+import { joinBaseUrl, pullPreviewRoute, PUBLISH_ROUTE_PREFIX } from './page-url.js';
 import { escapeHtml, renderNoteBody, type RenderedBody } from './render.js';
 import { configStamp, createMemo } from './memo.js';
 import { renderReviewAt } from './review.js';
@@ -338,13 +339,21 @@ async function changeSections(server: ApprovalServer, kit: PageKit, view: PartVi
   if (pages.length > 0) {
     const link = (address: { route: string; url: string | null } | null): string =>
       address === null ? '—' : `<a href="${escapeHtml(address.url ?? address.route)}">${escapeHtml(address.url ?? address.route)}</a>`;
+    // serve-keeps-its-clone-current D6: with a base URL, a page previews from the pull request's pushed head, at the
+    // address of the store that will publish it, which every decider can open; otherwise at its session worktree.
+    const previewOf = (p: (typeof pages)[number]): { route: string; url: string | null } | null => {
+      const baseUrl = view.config.serve?.base_url;
+      if (baseUrl === undefined || !p.published.route.startsWith(PUBLISH_ROUTE_PREFIX)) return p.preview;
+      const route = pullPreviewRoute(pull.number, decodeURI(p.published.route.slice(PUBLISH_ROUTE_PREFIX.length)));
+      return { route, url: joinBaseUrl(baseUrl, route) };
+    };
     const rows = pages.map(
       (p) =>
         `<tr><td>${escapeHtml(p.status)}</td><td>${escapeHtml(p.lifespan)}</td><td><code>${escapeHtml(p.path)}</code></td>` +
-        `<td>${p.status === 'removed' ? '—' : link(p.preview)}</td><td>${link(p.published)}</td></tr>`,
+        `<td>${p.status === 'removed' ? '—' : link(previewOf(p))}</td><td>${link(p.published)}</td></tr>`,
     );
     html.push(
-      `<section class="ctxr-pages"><h2>${escapeHtml(copy('pages-heading'))}</h2><p class="ctxr-summary">${escapeHtml(copy('pages-note'))}</p>`,
+      `<section class="ctxr-pages"><h2>${escapeHtml(copy('pages-heading'))}</h2><p class="ctxr-summary">${escapeHtml(copy(view.config.serve?.base_url === undefined ? 'pages-note' : 'pages-note-pull'))}</p>`,
       `<table><thead><tr><th>Status</th><th>Lifespan</th><th>Page</th><th>Preview</th><th>Published</th></tr></thead><tbody>${rows.join('')}</tbody></table></section>`,
     );
   }

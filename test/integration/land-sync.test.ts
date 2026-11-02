@@ -1,4 +1,5 @@
-import { appendFile, readFile } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
+import { appendFile, chmod, mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { makeApprovalStore, recordApproval, type ApprovalStore } from '../helpers/approval-store.js';
@@ -85,6 +86,66 @@ describe('every landing run brings the canonical clone up to date when it is saf
       expect(r.envelope.data.results[0]).toMatchObject({ outcome: 'merged', canonical_sync: { synced: false } });
       expect(String((r.envelope.data.results[0]!.canonical_sync as { reason: string }).reason)).toContain('uncommitted');
       expect(await snapshot(store)).toEqual(before);
+    } finally {
+      await store.tmp.cleanup();
+    }
+  });
+});
+
+describe('a landing run reports a failed fetch, and ignores the repository hooks and drivers', () => {
+  it('reports a failed fetch as not synced, even when the stale origin/main equals HEAD', async () => {
+    const store = await makeApprovalStore();
+    try {
+      const head = await store.git(['rev-parse', 'HEAD']);
+      expect(await store.git(['rev-parse', 'origin/main'])).toBe(head);
+      await store.git(['remote', 'set-url', 'origin', path.join(store.tmp.root, 'no-such-origin.git')]);
+      const r = await land(store, ['--pending']);
+      expect(r.exitCode, r.stdout + r.stderr + (await store.forge.log())).toBe(0);
+      expect(r.envelope.data.canonical_sync).toMatchObject({ synced: false, from: head, to: head });
+      const reason = String(r.envelope.data.canonical_sync!.reason);
+      expect(reason).toMatch(/^fetch failed: \S/);
+      expect(reason).not.toContain('\n');
+      expect(r.envelope.findings).toEqual([expect.objectContaining({ code: 'land.canonical_not_synced', severity: 'warning' })]);
+      const human = await runCli(['land', '--pending'], { cwd: store.root, env: store.env, timeoutMs: 60_000 });
+      expect(human.stdout).toContain('canonical clone not synced: fetch failed: ');
+      expect(human.stdout).not.toContain('already current');
+    } finally {
+      await store.tmp.cleanup();
+    }
+  });
+
+  it('runs neither a planted post-merge hook nor a declared filter driver during the fast-forward', async () => {
+    const store = await makeApprovalStore();
+    try {
+      const gitDir = path.resolve(store.root, await store.git(['rev-parse', '--git-dir']));
+      const markers = path.join(store.tmp.root, 'markers');
+      await mkdir(markers);
+      // A hook the repository's own configuration points at, executable, as a writer of .git/ could leave it.
+      await mkdir(path.join(gitDir, 'hooks'), { recursive: true });
+      await writeFile(path.join(gitDir, 'hooks', 'post-merge'), `#!/bin/sh\ntouch "${markers}/post-merge"\n`);
+      await chmod(path.join(gitDir, 'hooks', 'post-merge'), 0o755);
+      await store.git(['config', 'core.hooksPath', path.join(gitDir, 'hooks')]);
+      // A filter driver declared in .git/config, applied to every path through .git/info/attributes.
+      await mkdir(path.join(gitDir, 'info'), { recursive: true });
+      await writeFile(path.join(gitDir, 'info', 'attributes'), '* filter=ctxa\n');
+      await store.git(['config', 'filter.ctxa.smudge', `sh -c 'touch "${markers}/smudge"; cat'`]);
+      await store.git(['config', 'filter.ctxa.clean', `sh -c 'touch "${markers}/clean"; cat'`]);
+
+      const merged = await store.advanceMain({ 'projects/elsewhere.md': '# Merged elsewhere\n' });
+      const r = await land(store, ['--pending']);
+      expect(r.exitCode, r.stdout + r.stderr + (await store.forge.log())).toBe(0);
+      expect(await store.git(['rev-parse', 'HEAD'])).toBe(merged);
+      expect(r.envelope.data.canonical_sync).toMatchObject({ synced: true, to: merged });
+      expect(existsSync(path.join(markers, 'post-merge'))).toBe(false);
+      expect(existsSync(path.join(markers, 'smudge'))).toBe(false);
+      expect(existsSync(path.join(markers, 'clean'))).toBe(false);
+
+      // The control: the same fast-forward through plain git runs both, so the plant was live.
+      const next = await store.advanceMain({ 'projects/next.md': '# Next\n' });
+      await store.git(['merge', '--ff-only', '--quiet', 'origin/main']);
+      expect(await store.git(['rev-parse', 'HEAD'])).toBe(next);
+      expect(existsSync(path.join(markers, 'post-merge'))).toBe(true);
+      expect(existsSync(path.join(markers, 'smudge'))).toBe(true);
     } finally {
       await store.tmp.cleanup();
     }

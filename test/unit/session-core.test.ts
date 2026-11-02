@@ -109,6 +109,8 @@ describe('the session core (real git, bare origin, fake gh)', () => {
     expect(pull!.body!).toContain('## Knowledge changes');
     expect(pull!.body!).not.toContain('## Pages');
     expect(result.approval_url).toBe(`http://127.0.0.1:1/approve/${encodeURIComponent(session.name)}/`);
+    // serve-keeps-its-clone-current D6: the pull request's preview root at the publishing store's base URL.
+    expect(result.preview_url).toBe(`http://127.0.0.1:1/preview/pull/${result.pull_request.number}/`);
   });
 
   it('adds a Pages section when the change set carries a page, from the publish urls report', async () => {
