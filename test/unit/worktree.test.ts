@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { existsSync } from 'node:fs';
 import { readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import { ghCredentials } from '../../src/core/forge/credentials.js';
 import { createExecFileGitRunner } from '../../src/core/git/exec.js';
 import {
   addDetachedWorktree,
@@ -33,14 +34,24 @@ describe('hasRemote', () => {
 describe('fetchOrigin', () => {
   it('returns true on a successful fetch', async () => {
     const { git } = fakeGitRunner(new Map([['fetch origin main', { exitCode: 0, stdout: '', stderr: '' }]]));
-    expect(await fetchOrigin(git, '/repo', 'main')).toBe(true);
+    expect(await fetchOrigin(git, ghCredentials({}), {}, '/repo', 'main')).toBe(true);
   });
 
   it('returns false (does not throw) when the fetch fails — e.g. an empty remote', async () => {
     const { git } = fakeGitRunner(
       new Map([['fetch origin main', { exitCode: 128, stdout: '', stderr: "couldn't find remote ref main" }]]),
     );
-    expect(await fetchOrigin(git, '/repo', 'main')).toBe(false);
+    expect(await fetchOrigin(git, ghCredentials({}), {}, '/repo', 'main')).toBe(false);
+  });
+
+  it("fetches through the credential's token, carried only in that git process's environment", async () => {
+    const calls: { args: readonly string[]; env: Readonly<Record<string, string | undefined>> | undefined }[] = [];
+    const git = { run: async (args: readonly string[], opts: { env?: Readonly<Record<string, string | undefined>> }) => (calls.push({ args, env: opts.env }), { exitCode: 0, stdout: '', stderr: '' }) };
+    const credentials = { ...ghCredentials({}), kind: 'owner-token' as const, owner: 'ctx-b-org', gitToken: async () => 'tok-b' };
+    expect(await fetchOrigin(git, credentials, { PATH: '/bin' }, '/repo', 'main')).toBe(true);
+    expect(calls[0]!.args.slice(-3)).toEqual(['fetch', 'origin', 'main']);
+    expect(calls[0]!.args.join(' ')).not.toContain('tok-b');
+    expect(calls[0]!.env).toMatchObject({ PATH: '/bin', CTXR_GIT_TOKEN: 'tok-b', GIT_TERMINAL_PROMPT: '0' });
   });
 });
 
