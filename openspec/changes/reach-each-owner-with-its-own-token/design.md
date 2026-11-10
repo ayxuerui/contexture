@@ -172,3 +172,26 @@ failing with a 403 as today.
 ## Open Questions
 
 None.
+
+## Implementation notes
+
+Recorded while implementing; none changes a decision.
+
+- **`origin` is read as configured (D2).** The owner comes from `git config --get remote.origin.url`, not
+  `git remote get-url origin`, which applies `url.<base>.insteadOf` rewriting. The configured URL is the one the
+  store declared, and its owner is the one GitHub enforces; a host that rewrites github.com https URLs to ssh still
+  resolves the owner, and git then authenticates with ssh as D3 says. App mode keeps reading `get-url`, as before.
+- **Where the owner is reported (D7).** Each envelope that reported `credential` gains `credential_owner` beside it
+  (`review list`, `land`, `session list --review`, `sync`, `serve`), and `session submit` now reports both.
+  `review list` and `land` also report `store_credentials`, one entry per store reached (the home store, then each
+  mount), because their top-level `credential` is the home store's only and the spec's scenario asks for the
+  mount's.
+- **`shared-stores sync` in App mode.** Moving its clone and fetch onto `runRemoteGit` (D4) means that in App mode a
+  mount is now cloned and fetched with the App's installation token for the mount's repository, found from the
+  declared URL before a clone. This is the write-lifecycle requirement as written, and the approvals App is
+  installed on each mounted store (D6). A token the App cannot mint (not installed there) fails that mount with the
+  reason, like a refused fetch, rather than the whole run.
+- **Refusals come first.** `shared-stores sync` resolves every mount's credential before it runs any git command, so
+  an unusable setup (D5) exits with the setup/usage code having changed nothing.
+- **Skill prose (task 4.2).** No shipped skill or `templates/*.md` text needed a change: the skills already route
+  every remote operation through `ctxr` commands, which now carry the owner's token.

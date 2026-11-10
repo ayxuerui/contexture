@@ -8,26 +8,26 @@
 
 ## 2. Every remote git call through the forge credential
 
-- [ ] 2.1 Move `ctxr shared-stores sync`'s clone and fetch onto `runRemoteGit`, resolving the clone's credential from the declared URL (D4)
-- [ ] 2.2 Move `ctxr session start`'s fetch (`fetchOrigin` in `src/core/git/worktree.ts`) and `ctxr update`'s `ls-remote` onto `runRemoteGit` with the repository's credential
-- [ ] 2.3 Confirm `storeForges` resolves a mount's credential from the mount clone's origin, so `review list`, `land` and `session submit` in a mount pick up the owner's token; grep `src` for `git.run([` with `fetch|push|ls-remote|clone` and confirm none remains outside `runRemoteGit`
-- [ ] 2.4 Integration tests with the fake forge: a fake remote that accepts only token A for owner `ctx-a-owner` and only token B for `ctx-b-org`; sync clones and fetches `ctx-b`, a session started in `shared/ctx-b` fetches and submits, `ctxr land --session` lands both parts, each with its own token; with the variable unset every existing test passes unchanged
-- [ ] 2.5 Test that after those runs the mount's `origin` URL, `.git/config`, working tree and `--json` output contain no part of either token
-- [ ] 2.6 Run `npx vitest run test/integration -t "shared-stores|session|land"` and confirm it exits 0
+- [x] 2.1 Move `ctxr shared-stores sync`'s clone and fetch onto `runRemoteGit`, resolving the clone's credential from the declared URL (D4)
+- [x] 2.2 Move `ctxr session start`'s fetch (`fetchOrigin` in `src/core/git/worktree.ts`) and `ctxr update`'s `ls-remote` onto `runRemoteGit` with the repository's credential
+- [x] 2.3 Confirm `storeForges` resolves a mount's credential from the mount clone's origin, so `review list`, `land` and `session submit` in a mount pick up the owner's token; grep `src` for `git.run([` with `fetch|push|ls-remote|clone` and confirm none remains outside `runRemoteGit`
+- [x] 2.4 Integration tests with the fake forge: a fake remote that accepts only token A for owner `ctx-a-owner` and only token B for `ctx-b-org`; sync clones and fetches `ctx-b`, a session started in `shared/ctx-b` fetches and submits, `ctxr land --session` lands both parts, each with its own token; with the variable unset every existing test passes unchanged
+- [x] 2.5 Test that after those runs the mount's `origin` URL, `.git/config`, working tree and `--json` output contain no part of either token
+- [x] 2.6 Run `npx vitest run test/integration -t "shared-stores|session|land"` and confirm it exits 0
 
 ## 3. Reporting
 
-- [ ] 3.1 `ctxr shared-stores status`: report each mount's resolved credential (`owner-token` and owner, `gh`, `github-app`) without a network call; add it to the JSON and human output
-- [ ] 3.2 `ctxr shared-stores sync`: when a clone or fetch fails with HTTP 401/403 or GitHub's "Repository not found", name the owner, the credential kind used, and `CONTEXTURE_GITHUB_OWNER_TOKENS_DIR` in the cause (D7)
-- [ ] 3.3 Tests for both, including a status run that changes no file and spawns no network git command
-- [ ] 3.4 Run `npx vitest run -t "shared-stores"` and confirm it exits 0
+- [x] 3.1 `ctxr shared-stores status`: report each mount's resolved credential (`owner-token` and owner, `gh`, `github-app`) without a network call; add it to the JSON and human output
+- [x] 3.2 `ctxr shared-stores sync`: when a clone or fetch fails with HTTP 401/403 or GitHub's "Repository not found", name the owner, the credential kind used, and `CONTEXTURE_GITHUB_OWNER_TOKENS_DIR` in the cause (D7)
+- [x] 3.3 Tests for both, including a status run that changes no file and spawns no network git command
+- [x] 3.4 Run `npx vitest run -t "shared-stores"` and confirm it exits 0
 
 ## 4. Documentation and checks
 
-- [ ] 4.1 Document `CONTEXTURE_GITHUB_OWNER_TOKENS_DIR` in the README beside the GitHub App variables: one file per owner, mode 0600, fine-grained token with Contents and Pull requests read/write and Metadata read on the mounted repositories
-- [ ] 4.2 Confirm no shipped skill or `templates/*.md` prose needs a change; record in design.md if one does
-- [ ] 4.3 Run `npm run typecheck && npm test` and confirm both exit 0
-- [ ] 4.4 Run `openspec validate reach-each-owner-with-its-own-token --strict` and confirm it reports the change valid
+- [x] 4.1 Document `CONTEXTURE_GITHUB_OWNER_TOKENS_DIR` in the README beside the GitHub App variables: one file per owner, mode 0600, fine-grained token with Contents and Pull requests read/write and Metadata read on the mounted repositories
+- [x] 4.2 Confirm no shipped skill or `templates/*.md` prose needs a change; record in design.md if one does
+- [x] 4.3 Run `npm run typecheck && npm test` and confirm both exit 0
+- [x] 4.4 Run `openspec validate reach-each-owner-with-its-own-token --strict` and confirm it reports the change valid
 
 ## Workflow follow-up
 
