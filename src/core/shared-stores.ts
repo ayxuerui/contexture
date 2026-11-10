@@ -71,6 +71,16 @@ export async function listReadView(storeRoot: string, config: StoreConfig): Prom
   return { notes, scopes, mounts };
 }
 
+/**
+ * Where a read-view note's file is on disk: a mounted note under its mount's root, which lives in the main
+ * working tree (so not under a linked worktree's root), and anything else under the store's own root.
+ */
+export function readViewFilePath(storeRoot: string, view: ReadView, notePath: string): string {
+  const mount = view.mounts.find((m) => m.state === 'present' && notePath.startsWith(`${m.location}/`));
+  if (mount === undefined) return path.join(storeRoot, notePath);
+  return path.join(mount.root, notePath.slice(mount.location.length + 1));
+}
+
 /** The graph of a store's read view: the one build every caller that writes or compares the persisted graph uses. */
 export async function buildReadViewGraph(storeRoot: string, config: StoreConfig): Promise<{ graph: GraphBuildResult; view: ReadView }> {
   const view = await listReadView(storeRoot, config);
