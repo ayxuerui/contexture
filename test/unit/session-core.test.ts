@@ -176,6 +176,27 @@ describe('the session core (real git, bare origin, fake gh)', () => {
     expect(await pulls()).toHaveLength(0);
   });
 
+  it('submits when the ignored cache folder exists, and never ships it', async () => {
+    const session = await start('ctx-a-intro');
+    await edit(session, { 'projects/intro.md': '# Intro\n', '.contexture/cache/graph.md': '# Graph\n' });
+    const result = await submitSession(deps, session, input());
+    expect(result.steps.staged).toContain('projects/intro.md');
+    expect(result.steps.staged.filter((p) => p.startsWith('.contexture/cache/'))).toEqual([]);
+    expect(await store.git(['ls-tree', '-r', '--name-only', 'origin/notes/intro'])).not.toContain('.contexture/cache/');
+  });
+
+  it('never stages a change to a derived file that was committed before it was ignored', async () => {
+    const session = await start('ctx-a-intro');
+    await edit(session, { '.contexture/cache/legacy.json': '{}\n' });
+    await store.git(['add', '-f', '.contexture/cache/legacy.json'], session.path);
+    await store.git(['commit', '-q', '--no-verify', '-m', 'Legacy derived file'], session.path);
+    await edit(session, { 'projects/intro.md': '# Intro\n', '.contexture/cache/legacy.json': '{"changed":true}\n' });
+    const result = await submitSession(deps, session, input());
+    expect(result.steps.staged).toEqual(expect.arrayContaining(['projects/intro.md']));
+    expect(result.steps.staged.filter((p) => p.startsWith('.contexture/cache/'))).toEqual([]);
+    expect(await store.git(['show', 'origin/notes/intro:.contexture/cache/legacy.json'])).toBe('{}');
+  });
+
   it('stops before the commit when the store-scope check fails', async () => {
     const session = await start('ctx-a-intro');
     await edit(session, { 'projects/intro.md': '# Intro\n' });

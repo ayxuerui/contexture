@@ -254,8 +254,11 @@ export async function submitSession(deps: SubmitDeps, session: SessionRef, input
     );
   }
 
-  const added = await run(['add', '-A', '--', ':/', ...derived.map((d) => `:(top,exclude)${d}`)]);
-  if (added.exitCode !== 0) throw stopped(ExitCode.CheckFailed, 'stage_failed', 'staged', {}, `The session's changes could not be staged: ${added.stderr.trim()}`);
+  // Stage everything, then unstage the derived paths. An exclude pathspec is refused by `git add` once it
+  // names a gitignored folder that exists (#231); the reset also keeps out a derived file tracked before it was ignored.
+  const added = await run(['add', '-A', '--', ':/']);
+  const settled = added.exitCode === 0 ? await run(['reset', '-q', '--', ...derived.map((d) => `:(top)${d}`)]) : added;
+  if (settled.exitCode !== 0) throw stopped(ExitCode.CheckFailed, 'stage_failed', 'staged', {}, `The session's changes could not be staged: ${settled.stderr.trim()}`);
   const staged = (await run(['diff', '--cached', '--name-only', '-z'])).stdout.split('\0').filter((p) => p !== '');
   const completed: Partial<SubmitSteps> = { staged };
 
