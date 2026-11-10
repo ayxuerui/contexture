@@ -1,9 +1,8 @@
 import { readFile } from 'node:fs/promises';
-import path from 'node:path';
 import { isUnderAnyPrefix } from '../../fs/prefix.js';
 import { readAdmittedGraph } from '../../graph/persist.js';
-import { listNotes } from '../../notes/list.js';
 import { gather as runPass, type GatherOutcome, type GatherResult } from '../../retrieval/pass.js';
+import { listReadView, readViewFilePath } from '../../shared-stores.js';
 import { ToolRefusal } from '../jsonrpc.js';
 import type { Snapshot } from '../sync.js';
 
@@ -108,7 +107,9 @@ export async function gatherWithBodies(snapshot: Snapshot, args: GatherArgs, max
     }
   }
 
-  const notes = await listNotes(store.root, store.config);
+  // The pass covers the read view, as `ctxr context gather` does: the same notes the view's graph was built from.
+  const view = await listReadView(store.root, store.config);
+  const notes = view.notes;
   const graph = await readAdmittedGraph(store);
   const pass = await runPass(store, notes, graph, {
     seeds: args.seeds,
@@ -130,7 +131,7 @@ export async function gatherWithBodies(snapshot: Snapshot, args: GatherArgs, max
       withBodies.push({ ...note, body: null });
       continue;
     }
-    const text = await readFile(path.join(store.root, note.path), 'utf8');
+    const text = await readFile(readViewFilePath(store.root, view, note.path), 'utf8');
     const bytes = Buffer.byteLength(text, 'utf8');
     if (spent + bytes <= maxBytes) {
       spent += bytes;
