@@ -1,10 +1,10 @@
 ## 1. Owner tokens in the credential resolver
 
-- [ ] 1.1 In `src/core/forge/credentials.ts`, add `CONTEXTURE_GITHUB_OWNER_TOKENS_DIR` and the `owner-token` credential kind; resolve a credential from a repository URL as well as from a clone's `origin`; outside App mode, read the owner's file (case-insensitive name, trimmed text) and return a credential whose `env()` sets `GH_TOKEN` and whose `gitToken()` returns the token; leave App mode untouched (design.md D1-D3, D6)
-- [ ] 1.2 Refuse with `ForgeCredentialsError` (setup/usage exit) an unreadable directory (naming the variable), an unreadable or empty owner file (naming its path), and two names differing only by case (naming both); never put the token in a message (D5)
-- [ ] 1.3 Report the owner beside the kind wherever a forge client's `credential` reaches an envelope (`review list`, `land`, `session submit`, `sync`)
-- [ ] 1.4 Unit tests: unset variable reads nothing and yields `gh`; a file for the owner yields `owner-token` for both `gh` env and git; a missing file yields `gh`; case-insensitive match; each refusal; App mode with the directory set never reads it; no token in any error text
-- [ ] 1.5 Run `npx vitest run test/unit -t "credential"` and confirm it exits 0
+- [x] 1.1 In `src/core/forge/credentials.ts`, add `CONTEXTURE_GITHUB_OWNER_TOKENS_DIR` and the `owner-token` credential kind; resolve a credential from a repository URL as well as from a clone's `origin`; outside App mode, read the owner's file (case-insensitive name, trimmed text) and return a credential whose `env()` sets `GH_TOKEN` and whose `gitToken()` returns the token; leave App mode untouched (design.md D1-D3, D6)
+- [x] 1.2 Refuse with `ForgeCredentialsError` (setup/usage exit) an unreadable directory (naming the variable), an unreadable or empty owner file (naming its path), and two names differing only by case (naming both); never put the token in a message (D5)
+- [x] 1.3 Report the owner beside the kind wherever a forge client's `credential` reaches an envelope (`review list`, `land`, `session submit`, `sync`)
+- [x] 1.4 Unit tests: unset variable reads nothing and yields `gh`; a file for the owner yields `owner-token` for both `gh` env and git; a missing file yields `gh`; case-insensitive match; each refusal; App mode with the directory set never reads it; no token in any error text
+- [x] 1.5 Run `npx vitest run test/unit -t "credential"` and confirm it exits 0
 
 ## 2. Every remote git call through the forge credential
 

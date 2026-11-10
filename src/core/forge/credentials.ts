@@ -1,5 +1,6 @@
 import { createPrivateKey, hkdfSync, sign, type KeyObject } from 'node:crypto';
-import { readFile } from 'node:fs/promises';
+import { readdir, readFile } from 'node:fs/promises';
+import path from 'node:path';
 import { ForgeCredentialsError } from '../errors.js';
 import type { GitResult, GitRunner } from '../git/exec.js';
 
@@ -11,11 +12,18 @@ import type { GitResult, GitRunner } from '../git/exec.js';
  * private key. `broker` is reserved for a hosted contexture App that would hold
  * the key centrally; nothing selects it yet, and adding it is one more provider
  * behind these same methods.
+ *
+ * reach-each-owner-with-its-own-token: `owner-token` is a fine-grained token
+ * for one GitHub owner, read from that owner's file in the directory
+ * `CONTEXTURE_GITHUB_OWNER_TOKENS_DIR` names, for that owner's repositories
+ * only (design.md D1-D3).
  */
-export type CredentialKind = 'gh' | 'github-app' | 'broker';
+export type CredentialKind = 'gh' | 'github-app' | 'owner-token' | 'broker';
 
 export interface ForgeCredentials {
   kind: CredentialKind;
+  /** The GitHub owner whose token this is, for `owner-token`; null otherwise. Reported beside the kind, never the token. */
+  owner: string | null;
   /** The environment for the next `gh` call — the caller's own, with `GH_TOKEN` set to a fresh token in App mode. */
   env(): Promise<Readonly<Record<string, string | undefined>>>;
   /** The App's bot login (`<slug>[bot]`); null for `gh`, whose login the forge client asks `gh` for. */
@@ -38,6 +46,8 @@ export const APP_KEY_VAR = 'CONTEXTURE_GITHUB_APP_PRIVATE_KEY';
 export const APP_REPOSITORY_VAR = 'CONTEXTURE_GITHUB_REPOSITORY';
 /** The API base; github.com's unless a GitHub-compatible test server is named. */
 export const API_URL_VAR = 'CONTEXTURE_GITHUB_API_URL';
+/** reach-each-owner-with-its-own-token D1: a directory holding one token file per GitHub owner, named after the owner. */
+export const OWNER_TOKENS_DIR_VAR = 'CONTEXTURE_GITHUB_OWNER_TOKENS_DIR';
 
 const DEFAULT_API_URL = 'https://api.github.com';
 /** design.md D3: a token is replaced once less than this much of its life remains. */
@@ -55,18 +65,28 @@ export interface ResolveOptions {
   git: GitRunner;
   /** A directory inside the store's repository, for reading `origin`. */
   cwd: string;
+  /**
+   * The repository's URL, when there is no clone to read `origin` from yet: a
+   * mount before `shared-stores sync` clones it (reach-each-owner-with-its-own-token D2).
+   */
+  url?: string;
   fetch?: FetchLike;
   now?: () => Date;
 }
 
-/** The credential source a command's forge calls go through, resolved from the command's own environment. */
-export function credentialsFor(env: { env: Env; git: GitRunner; now(): Date }, cwd: string): Promise<ForgeCredentials> {
-  return resolveForgeCredentials({ env: env.env, git: env.git, cwd, now: () => env.now() });
+/**
+ * The credential source a command's forge calls go through, resolved from the
+ * command's own environment, for the repository `cwd` is in — or, given `url`,
+ * for the repository at that URL.
+ */
+export function credentialsFor(env: { env: Env; git: GitRunner; now(): Date }, cwd: string, url?: string): Promise<ForgeCredentials> {
+  return resolveForgeCredentials({ env: env.env, git: env.git, cwd, ...(url === undefined ? {} : { url }), now: () => env.now() });
 }
 
 export function ghCredentials(env: Env): ForgeCredentials {
   return {
     kind: 'gh',
+    owner: null,
     env: async () => env,
     botLogin: async () => null,
     gitToken: async () => null,
@@ -86,7 +106,8 @@ export async function resolveForgeCredentials(opts: ResolveOptions): Promise<For
   const appId = opts.env[APP_ID_VAR];
   const keyFile = opts.env[APP_KEY_FILE_VAR];
   const keyText = opts.env[APP_KEY_VAR];
-  if (!set(appId) && !set(keyFile) && !set(keyText)) return ghCredentials(opts.env);
+  // reach-each-owner-with-its-own-token D6: App mode never reads the owner tokens directory.
+  if (!set(appId) && !set(keyFile) && !set(keyText)) return ownerOrGhCredentials(opts);
 
   if (set(keyFile) && set(keyText)) {
     throw new ForgeCredentialsError(`Both ${APP_KEY_FILE_VAR} and ${APP_KEY_VAR} are set; set one of them.`, [APP_KEY_FILE_VAR, APP_KEY_VAR]);
@@ -123,6 +144,7 @@ export async function resolveForgeCredentials(opts: ResolveOptions): Promise<For
     env: opts.env,
     git: opts.git,
     cwd: opts.cwd,
+    url: opts.url,
     fetch: opts.fetch ?? ((url, init) => fetch(url, init)),
     now: opts.now ?? (() => new Date()),
   });
@@ -156,12 +178,92 @@ export function githubRepositoryOf(remoteUrl: string): string | null {
   return null;
 }
 
+/** The owner of a github.com repository URL, as `githubRepositoryOf` reads it; null for any other URL (design.md D2). */
+export function githubOwnerOf(remoteUrl: string): string | null {
+  return githubRepositoryOf(remoteUrl)?.split('/')[0] ?? null;
+}
+
+/**
+ * reach-each-owner-with-its-own-token D2: a clone's `origin` as configured,
+ * before any `url.<base>.insteadOf` rewriting — the URL the store declared,
+ * whose owner is the one GitHub enforces. Null when there is none.
+ */
+async function originUrl(git: GitRunner, cwd: string): Promise<string | null> {
+  const remote = await git.run(['config', '--get', 'remote.origin.url'], { cwd, allowFailure: true });
+  return remote.exitCode === 0 && remote.stdout.trim() !== '' ? remote.stdout.trim() : null;
+}
+
+/**
+ * reach-each-owner-with-its-own-token D1, D5: outside App mode, the token in
+ * the file named after the repository's owner, compared without regard to
+ * case, when `CONTEXTURE_GITHUB_OWNER_TOKENS_DIR` is set and holds one;
+ * otherwise `gh`'s own credential, exactly as before. A directory that cannot
+ * be read, an owner file that cannot be read or is empty, and two names that
+ * differ only by case are refused, naming the variable or the paths and never
+ * a token. A missing file is not an error: `gh`'s credential may reach the
+ * repository.
+ */
+async function ownerOrGhCredentials(opts: ResolveOptions): Promise<ForgeCredentials> {
+  const dir = opts.env[OWNER_TOKENS_DIR_VAR];
+  if (!set(dir)) return ghCredentials(opts.env);
+
+  let names: string[];
+  try {
+    names = await readdir(dir);
+  } catch (err) {
+    throw new ForgeCredentialsError(
+      `${OWNER_TOKENS_DIR_VAR} names "${dir}", which is not a readable directory (${(err as NodeJS.ErrnoException).code ?? 'error'}).`,
+      [OWNER_TOKENS_DIR_VAR],
+    );
+  }
+  const url = opts.url ?? (await originUrl(opts.git, opts.cwd));
+  const owner = url === null ? null : githubOwnerOf(url);
+  if (owner === null) return ghCredentials(opts.env);
+
+  const matching = names.filter((name) => name.toLowerCase() === owner.toLowerCase()).sort();
+  if (matching.length === 0) return ghCredentials(opts.env);
+  const files = matching.map((name) => path.join(dir, name));
+  if (files.length > 1) {
+    throw new ForgeCredentialsError(
+      `${OWNER_TOKENS_DIR_VAR} holds ${files.map((f) => `"${f}"`).join(' and ')}, whose names differ only by case; keep one token file for GitHub owner ${owner}.`,
+      [OWNER_TOKENS_DIR_VAR],
+    );
+  }
+  const file = files[0]!;
+  let token: string;
+  try {
+    token = (await readFile(file, 'utf8')).trim();
+  } catch (err) {
+    throw new ForgeCredentialsError(`The token file "${file}" for GitHub owner ${owner} cannot be read (${(err as NodeJS.ErrnoException).code ?? 'error'}).`, [OWNER_TOKENS_DIR_VAR]);
+  }
+  if (token === '') throw new ForgeCredentialsError(`The token file "${file}" for GitHub owner ${owner} is empty.`, [OWNER_TOKENS_DIR_VAR]);
+  return ownerTokenCredentials(opts.env, owner, token);
+}
+
+/**
+ * reach-each-owner-with-its-own-token D3: one token for both sides of the
+ * forge — `GH_TOKEN` in each `gh` call's environment only, and the same token
+ * to git through `runRemoteGit`'s command-line helper.
+ */
+function ownerTokenCredentials(env: Env, owner: string, token: string): ForgeCredentials {
+  return {
+    kind: 'owner-token',
+    owner,
+    env: async () => ({ ...env, GH_TOKEN: token }),
+    botLogin: async () => null,
+    gitToken: async () => token,
+    derivedSecret: () => null,
+  };
+}
+
 interface AppInputs {
   appId: string;
   key: KeyObject;
   env: Env;
   git: GitRunner;
   cwd: string;
+  /** The repository's URL when it has no clone yet; otherwise its installation is found from `origin`. */
+  url: string | undefined;
   fetch: FetchLike;
   now: () => Date;
 }
@@ -200,6 +302,13 @@ function createAppCredentials(inputs: AppInputs): ForgeCredentials {
     if (set(explicit)) {
       if (!/^[^/\s]+\/[^/\s]+$/.test(explicit)) throw new ForgeCredentialsError(`${APP_REPOSITORY_VAR} must be "owner/repo".`, [APP_REPOSITORY_VAR]);
       return explicit;
+    }
+    if (inputs.url !== undefined) {
+      const declared = githubRepositoryOf(inputs.url);
+      if (declared === null) {
+        throw new ForgeCredentialsError(`GitHub App mode needs a github.com repository, and "${inputs.url}" is not one. Set ${APP_REPOSITORY_VAR} to name the repository.`, [APP_REPOSITORY_VAR]);
+      }
+      return declared;
     }
     const remote = await inputs.git.run(['remote', 'get-url', 'origin'], { cwd: inputs.cwd, allowFailure: true });
     const repo = remote.exitCode === 0 ? githubRepositoryOf(remote.stdout) : null;
@@ -244,6 +353,7 @@ function createAppCredentials(inputs: AppInputs): ForgeCredentials {
 
   return {
     kind: 'github-app',
+    owner: null,
     async env() {
       return { ...inputs.env, GH_TOKEN: await token() };
     },
@@ -274,6 +384,10 @@ function createAppCredentials(inputs: AppInputs): ForgeCredentials {
  * environment only — never a remote URL, a config file, or the command line.
  * Otherwise git uses the credential it already has. Shared by `ctxr land` and
  * the MCP surface's fetch and push (serve-the-store-over-mcp D6, D9).
+ *
+ * reach-each-owner-with-its-own-token D3, D4: an owner's token reaches git
+ * the same way, and every fetch, push, `ls-remote` and clone ctxr runs goes
+ * through here, so `gh` and git use one token for one repository.
  */
 const TOKEN_HELPER = '!f() { echo username=x-access-token; echo "password=$CTXR_GIT_TOKEN"; }; f';
 

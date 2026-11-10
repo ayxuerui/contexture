@@ -51,6 +51,8 @@ export interface ServeData {
   root: string;
   /** The forge credential kind the approval routes use; null when the store declares no change approval. */
   credential: CredentialKind | null;
+  /** For `owner-token`, the GitHub owner whose token the approval routes use; null otherwise. */
+  credential_owner: string | null;
 }
 
 /**
@@ -539,7 +541,7 @@ export async function execute(env: RunEnv, store: Store, flags: ServeFlags): Pro
 
   return {
     exitCode: ExitCode.Ok,
-    data: { url, port, host, root: store.root, credential: approval?.forge.credential ?? null },
+    data: { url, port, host, root: store.root, credential: approval?.forge.credential ?? null, credential_owner: approval?.forge.credentialOwner ?? null },
     findings: [],
     humanSummary: `serving ${store.root} at ${url}`,
     storeRoot: store.root,
