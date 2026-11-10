@@ -32,7 +32,7 @@ Text after a command is what the skill starts from, as in `/contexture:capture` 
 ## Updates
 
 Install `contexture` from the `ayxuerui/contexture` marketplace with **Sync automatically** on, and Claude installs
-each new release of contexture's skills on its own. This is version 0.36.0, which matches the ctxr
+each new release of contexture's skills on its own. This is version 0.37.0, which matches the ctxr
 release it was built from. If a skill names a step your store's connector does not offer, your store's
 server runs an older ctxr; the skill says so and skips that step.
 
