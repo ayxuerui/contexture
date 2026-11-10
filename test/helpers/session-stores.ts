@@ -4,6 +4,7 @@ import path from 'node:path';
 import { promisify } from 'node:util';
 import { makeFakeForges, type FakeForge, type FakePull } from './fake-forge.js';
 import { hermeticGitEnv } from './git-env.js';
+import { startGitHttpOrigin, type GitHttpOrigin } from './git-http-origin.js';
 import { runCli } from './run-cli.js';
 import { makeTmpDir, type TmpDir } from './tmp-store.js';
 import { RECORDING_LOGIN } from './approval-store.js';
@@ -44,6 +45,22 @@ export interface SessionPair {
   commitIn(worktree: string, files: Record<string, string>, message: string): Promise<string>;
   /** Commits straight onto an origin's main, as a change landed elsewhere would. */
   advance(store: PairStore, files: Record<string, string>): Promise<string>;
+  /** With `ownerTokens`: the tokens, the directory holding them, and the git server that takes only them. */
+  owners?: OwnerTokensSetup;
+  /** Stops whatever the pair started beyond its directory (the git server); call before `tmp.cleanup()`. */
+  close(): Promise<void>;
+}
+
+export interface OwnerTokensSetup {
+  /** ctx-a's owner's token, and ctx-b's. */
+  tokenA: string;
+  tokenB: string;
+  /** The directory `CONTEXTURE_GITHUB_OWNER_TOKENS_DIR` names, with a file `ctx-a-owner` and a file `ctx-b-org`. */
+  dir: string;
+  /** Serves both origins over http, taking only token A under `/ctx-a-owner/` and only token B under `/ctx-b-org/`. */
+  http: GitHttpOrigin;
+  /** The environment for git run by the test itself: the CLI's, plus a credential helper per owner the CLI does not have. */
+  fixtureEnv: Record<string, string | undefined>;
 }
 
 export interface SessionPairOptions {
@@ -53,6 +70,13 @@ export interface SessionPairOptions {
   bDeciders?: string;
   /** Leave ctx-b without a change_approval block. */
   bNoApproval?: boolean;
+  /**
+   * reach-each-owner-with-its-own-token: ctx-a is `github.com/ctx-a-owner/ctx-a` and ctx-b is
+   * `github.com/ctx-b-org/ctx-b`, served over http (git's `insteadOf`) by a server that takes only token A for the
+   * first owner and only token B for the second; each fake forge takes only its owner's token too. The CLI gets
+   * the tokens through `CONTEXTURE_GITHUB_OWNER_TOKENS_DIR` and has no other git credential.
+   */
+  ownerTokens?: boolean;
 }
 
 async function writeFiles(cwd: string, files: Record<string, string>): Promise<void> {
@@ -70,17 +94,63 @@ async function writeFiles(cwd: string, files: Record<string, string>): Promise<v
  */
 export async function makeSessionPair(opts: SessionPairOptions = {}): Promise<SessionPair> {
   const tmp = await makeTmpDir();
+  const owned = opts.ownerTokens === true;
+  const githubRoot = path.join(tmp.root, 'github');
   const originDir = path.join(tmp.root, 'example');
-  await mkdir(originDir, { recursive: true });
-  const aOrigin = path.join(originDir, 'ctx-a.git');
-  const bOrigin = path.join(originDir, 'ctx-b.git');
-  const { env: forgeEnv, forges } = await makeFakeForges(tmp.root, [
-    { origin: aOrigin, state: { login: RECORDING_LOGIN, pulls: [] } },
-    { origin: bOrigin, state: { login: RECORDING_LOGIN, pulls: [] } },
-  ]);
-  const env = hermeticGitEnv(forgeEnv);
+  const aOrigin = owned ? path.join(githubRoot, 'ctx-a-owner', 'ctx-a.git') : path.join(originDir, 'ctx-a.git');
+  const bOrigin = owned ? path.join(githubRoot, 'ctx-b-org', 'ctx-b.git') : path.join(originDir, 'ctx-b.git');
+  await mkdir(path.dirname(aOrigin), { recursive: true });
+  await mkdir(path.dirname(bOrigin), { recursive: true });
+
+  let owners: OwnerTokensSetup | undefined;
+  let forgeEnv: Record<string, string>;
+  let forges: FakeForge[];
+  let env: Record<string, string | undefined>;
+  let fixtureEnv: Record<string, string | undefined>;
+  if (owned) {
+    const tokenA = 'github_pat_ctxAownerAAAA0123456789';
+    const tokenB = 'github_pat_ctxBorgBBBB9876543210';
+    const dir = path.join(tmp.root, 'owner-tokens');
+    await mkdir(dir);
+    await writeFile(path.join(dir, 'ctx-a-owner'), `${tokenA}\n`, { mode: 0o600 });
+    await writeFile(path.join(dir, 'ctx-b-org'), `${tokenB}\n`, { mode: 0o600 });
+    const http = await startGitHttpOrigin(githubRoot, 'unused', (password, pathname) =>
+      pathname.startsWith('/ctx-a-owner/') ? password === tokenA : pathname.startsWith('/ctx-b-org/') && password === tokenB,
+    );
+    ({ env: forgeEnv, forges } = await makeFakeForges(tmp.root, [
+      { origin: aOrigin, url: `${http.base}/ctx-a-owner/ctx-a.git`, state: { login: RECORDING_LOGIN, pulls: [], expectTokenPrefix: tokenA } },
+      { origin: bOrigin, url: `${http.base}/ctx-b-org/ctx-b.git`, state: { login: RECORDING_LOGIN, pulls: [], expectTokenPrefix: tokenB } },
+    ]));
+    // github.com is reached through the local server; nothing but the tokens directory gives the CLI a credential.
+    env = hermeticGitEnv({
+      ...forgeEnv,
+      GIT_CONFIG_COUNT: '2',
+      GIT_CONFIG_KEY_1: `url.${http.base}/.insteadOf`,
+      GIT_CONFIG_VALUE_1: 'https://github.com/',
+      GIT_TERMINAL_PROMPT: '0',
+      CONTEXTURE_GITHUB_OWNER_TOKENS_DIR: dir,
+    });
+    const helper = (token: string) => `!f() { echo username=x-access-token; echo password=${token}; }; f`;
+    fixtureEnv = {
+      ...env,
+      GIT_CONFIG_COUNT: '4',
+      GIT_CONFIG_KEY_2: `credential.${http.base}/ctx-a-owner.helper`,
+      GIT_CONFIG_VALUE_2: helper(tokenA),
+      GIT_CONFIG_KEY_3: `credential.${http.base}/ctx-b-org.helper`,
+      GIT_CONFIG_VALUE_3: helper(tokenB),
+    };
+    owners = { tokenA, tokenB, dir, http, fixtureEnv };
+  } else {
+    ({ env: forgeEnv, forges } = await makeFakeForges(tmp.root, [
+      { origin: aOrigin, state: { login: RECORDING_LOGIN, pulls: [] } },
+      { origin: bOrigin, state: { login: RECORDING_LOGIN, pulls: [] } },
+    ]));
+    env = hermeticGitEnv(forgeEnv);
+    fixtureEnv = env;
+  }
+  const remoteOf = (name: 'ctx-a' | 'ctx-b', origin: string) => (owned ? `https://github.com/${name === 'ctx-a' ? 'ctx-a-owner' : 'ctx-b-org'}/${name}.git` : origin);
   const git = async (args: readonly string[], cwd: string): Promise<string> =>
-    (await execFileAsync('git', [...args], { cwd, env: env as NodeJS.ProcessEnv })).stdout.trim();
+    (await execFileAsync('git', [...args], { cwd, env: fixtureEnv as NodeJS.ProcessEnv })).stdout.trim();
   const cli = async (args: readonly string[], cwd: string) => {
     const r = await runCli([...args, '--json'], { cwd, env, timeoutMs: 120_000 });
     let json: unknown = null;
@@ -110,21 +180,21 @@ export async function makeSessionPair(opts: SessionPairOptions = {}): Promise<Se
     if (init.exitCode !== 0) throw new Error(`init failed (exit ${init.exitCode}): ${init.stderr}${init.stdout}`);
     await appendFile(path.join(root, 'contexture.yaml'), `serve:\n  base_url: "${opts.baseUrl ?? `https://${name}.example.test`}"\n${extra}`);
     await git(['commit', '-qam', 'declare change approval'], root);
-    await git(['remote', 'add', 'origin', origin], root);
+    await git(['remote', 'add', 'origin', remoteOf(name, origin)], root);
     await git(['push', '-q', '--no-verify', 'origin', 'main'], root);
     await git(['fetch', '-q', 'origin'], root);
     return root;
   };
 
   const bRoot = await makeStore('ctx-b', bOrigin, opts.bNoApproval ? '' : approvalBlock(opts.bDeciders ?? '"@example.com"'));
-  const aRoot = await makeStore('ctx-a', aOrigin, `${approvalBlock('"@example.com"')}shared_stores:\n  - { name: ctx-b, url: "${bOrigin}" }\n`);
+  const aRoot = await makeStore('ctx-a', aOrigin, `${approvalBlock('"@example.com"')}shared_stores:\n  - { name: ctx-b, url: "${remoteOf('ctx-b', bOrigin)}" }\n`);
   const synced = await runCli(['shared-stores', 'sync'], { cwd: aRoot, env, timeoutMs: 60_000 });
   if (synced.exitCode !== 0) throw new Error(`shared-stores sync failed: ${synced.stderr}${synced.stdout}`);
   // A fresh clone has no hooks wired; the first `ctxr doctor` there wires them, as it would for a person.
   await runCli(['doctor'], { cwd: path.join(aRoot, 'shared', 'ctx-b'), env, timeoutMs: 60_000 });
 
-  const a: PairStore = { name: 'ctx-a', slug: 'example/ctx-a', root: aRoot, origin: aOrigin, forge: forges[0]! };
-  const b: PairStore = { name: 'ctx-b', slug: 'example/ctx-b', root: bRoot, origin: bOrigin, forge: forges[1]! };
+  const a: PairStore = { name: 'ctx-a', slug: owned ? 'ctx-a-owner/ctx-a' : 'example/ctx-a', root: aRoot, origin: aOrigin, forge: forges[0]! };
+  const b: PairStore = { name: 'ctx-b', slug: owned ? 'ctx-b-org/ctx-b' : 'example/ctx-b', root: bRoot, origin: bOrigin, forge: forges[1]! };
   const mount = path.join(aRoot, 'shared', 'ctx-b');
   const { sessionMarker } = await import('../../src/core/approval/session-marker.js');
 
@@ -156,6 +226,10 @@ export async function makeSessionPair(opts: SessionPairOptions = {}): Promise<Se
     git,
     cli,
     commitIn,
+    owners,
+    close: async () => {
+      await owners?.http.close();
+    },
     openHome: (label, number, files, pull = {}) => open(a, aRoot, [label], number, files, pull),
     openJoined: (home, number, files, pull = {}) => open(b, mount, ['--joins', home.name], number, files, pull),
     async advance(store, files) {
