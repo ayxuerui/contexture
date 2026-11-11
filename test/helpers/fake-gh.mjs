@@ -12,6 +12,7 @@ import path from 'node:path';
 
 // Several repositories: $FAKE_GH_REPOS names a JSON file mapping each bare origin's path to its own state file. The
 // repository a call is about is the one `gh` would fill `{owner}/{repo}` from: the `origin` of the directory it runs in.
+// An entry keyed by a URL rather than a path maps to { state, origin }: the state file and the bare repository behind it.
 function repoFromCwd() {
   const reposPath = process.env.FAKE_GH_REPOS;
   if (reposPath === undefined) return { statePath: process.env.FAKE_GH_STATE, origin: process.env.FAKE_GH_ORIGIN };
@@ -22,11 +23,12 @@ function repoFromCwd() {
   } catch {
     url = '';
   }
-  const found = repos[path.resolve(url)];
+  const found = repos[url] ?? repos[path.resolve(url)];
   if (found === undefined) {
     process.stderr.write(`gh: no fake repository for origin "${url}" (HTTP 404)\n`);
     process.exit(1);
   }
+  if (typeof found === 'object') return { statePath: found.state, origin: found.origin };
   return { statePath: found, origin: path.resolve(url) };
 }
 const { statePath, origin } = repoFromCwd();

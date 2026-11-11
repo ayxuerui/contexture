@@ -15,6 +15,8 @@ export interface SessionListData {
   sessions: SessionInfo[];
   /** `--review` only: which kind of forge credential was used; never the credential. */
   credential?: CredentialKind;
+  /** `--review` only: for `owner-token`, the GitHub owner whose token was used; null otherwise. */
+  credential_owner?: string | null;
 }
 
 export interface SessionListOptions {
@@ -49,7 +51,7 @@ export async function execute(env: RunEnv, store: Store, opts: SessionListOption
 
   return {
     exitCode: ExitCode.Ok,
-    data: { sessions: list.sessions, ...(review === undefined ? {} : { credential: review.forge.credential }) },
+    data: { sessions: list.sessions, ...(review === undefined ? {} : { credential: review.forge.credential, credential_owner: review.forge.credentialOwner }) },
     findings,
     humanSummary: [`${list.sessions.length} session(s).`, ...lines].join('\n'),
     storeRoot: store.root,

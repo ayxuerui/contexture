@@ -10,8 +10,8 @@ import { findSessionWorktreeByLabel, generateSessionBranchName, sessionLabelSlug
  * fetched default branch, shared by `ctxr session start` and the MCP surface's
  * `session_start` and `capture` (serve-the-session-lifecycle-to-chat-apps D3),
  * so the two surfaces name, place and refuse a session identically. Each
- * surface brings its own fetch: the CLI's plain `git fetch`, the server's
- * through its forge credential.
+ * surface brings its own fetch, both through the repository's forge credential
+ * (reach-each-owner-with-its-own-token D4).
  */
 export interface StartDeps {
   git: GitRunner;

@@ -1,5 +1,5 @@
 import { forgeRead, sessionPulls, sessionWorktrees } from '../core/approval/sessions.js';
-import { groupSessions, listOpen, readAsSessionPart, sessionState, storeReach, type SessionStateName } from '../core/approval/session-group.js';
+import { groupSessions, listOpen, readAsSessionPart, sessionState, storeCredentials, storeReach, type SessionStateName, type StoreCredential } from '../core/approval/session-group.js';
 import { sessionKey } from '../core/approval/session-marker.js';
 import { storeForges } from '../core/approval/store-forges.js';
 import type { CommandOutcome, CommandRequires } from '../core/command.js';
@@ -44,6 +44,10 @@ export interface ReviewEntry {
 export interface ReviewListData {
   /** Which kind of forge credential the command used; never the credential. */
   credential: CredentialKind;
+  /** For `owner-token`, the GitHub owner whose token was used; null otherwise. */
+  credential_owner: string | null;
+  /** Each store reached — this one and the stores it mounts — with the credential it was read with. Empty without a forge slug. */
+  store_credentials: StoreCredential[];
   sessions: ReviewEntry[];
 }
 
@@ -127,7 +131,7 @@ export async function execute(env: RunEnv, store: Store, forge?: ForgeClient): P
 
   return {
     exitCode: ExitCode.Ok,
-    data: { credential: client.credential, sessions },
+    data: { credential: client.credential, credential_owner: client.credentialOwner, store_credentials: reach === null ? [] : storeCredentials(reach), sessions },
     findings,
     humanSummary: sessions.length === 0 ? 'No session has an open pull request.' : lines.join('\n'),
     storeRoot: store.root,
