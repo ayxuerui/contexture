@@ -87,7 +87,7 @@
 ## 5. contexture-images (paired PR, D1)
 
 - [x] 5.1 In `runtime/compose.yaml`, set `serve`'s `HARNESSES` to `claude,codex,agy` and raise its memory limit to the value measured in 6.1, with a comment naming this change. Leave the App key's mount and the default seccomp profile unchanged.
-- [ ] 5.2 Add to the README `serve` section: the CLIs, that their runs are confined by `setpriv`/Landlock (already in the image), and the one-time sign-in (`docker compose exec serve` then each CLI's login). Then the images CI passes on the branch (`ci.yml`).
+- [x] 5.2 Add to the README `serve` section: the CLIs, that their runs are confined by `setpriv`/Landlock (already in the image), and the one-time sign-in (`docker compose exec serve` then each CLI's login). Then the images CI passes on the branch (`ci.yml`).
 
 ## 6. Real clients (operator checkpoint)
 
