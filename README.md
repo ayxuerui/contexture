@@ -436,6 +436,16 @@ contexture finds the installation from the store's github.com `origin` (or from 
 
 **A token for an account.** Without the App variables, `serve`, `land` and `review list` use `gh`'s own credential (`GH_TOKEN` or its credential file), so a dedicated machine account with a fine-grained token (Contents, Issues and Pull requests read and write on the store's repository) also works. It needs a rotation whenever the token expires.
 
+**A token for each owner a store mounts.** A store owned by one GitHub account can mount a store owned by another, such as an organization. A fine-grained token covers one owner, so the token `gh` holds for the first gets HTTP 403 from the second's repository. Give the agent a second fine-grained token, scoped to that owner, instead of a classic token that reaches everything you can reach:
+
+```sh
+CONTEXTURE_GITHUB_OWNER_TOKENS_DIR=/home/agent/.config/contexture/owner-tokens   # mode 0700
+# one file per GitHub owner, named after the owner, holding its token (mode 0600):
+#   /home/agent/.config/contexture/owner-tokens/acme-org
+```
+
+For a repository whose owner has a file there (`origin`'s owner, or a mount's declared URL before it is cloned; names compared without regard to case), `ctxr` hands that token to `gh` and to git for that one command: `shared-stores sync`, `session start`, `session submit`, `review list`, `land` and `update` alike. It is never written to a remote URL, a git configuration file, the store, or any output. A repository whose owner has no file keeps `gh`'s own credential, and with the variable unset nothing changes. An unreadable directory, an empty or unreadable file, or two files whose names differ only by case stop the command before any forge call. The organization's token needs **Contents** and **Pull requests** read and write and **Metadata** read on the mounted repositories, and nothing else. In App mode the directory is not read. Envelopes report `credential: owner-token` with `credential_owner`, `ctxr shared-stores status` names each mount's credential without a network call, and a clone or fetch the forge refuses names the owner. Only commands `ctxr` runs use the token: a bare `git fetch` in a mount still uses git's own credential.
+
 GitHub Free cannot protect a private repository on a personal account, so such a store has no required-review rule; `ctxr land`'s consent check is what gates the merge either way. Where branch protection is available, require one approving review and leave **"Require approval of the most recent reviewable push"** off: the runner pushes a rebase and then approves the carry-over as the same identity.
 
 ## Connecting chat apps (MCP)

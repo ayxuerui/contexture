@@ -1,10 +1,11 @@
 import { generateKeyPairSync, verify } from 'node:crypto';
-import { writeFile } from 'node:fs/promises';
+import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { ForgeCredentialsError } from '../../src/core/errors.js';
 import {
   appAssertion,
+  githubOwnerOf,
   githubRepositoryOf,
   resolveForgeCredentials,
   type FetchLike,
@@ -166,6 +167,141 @@ describe('App mode', () => {
     expect((await refusal(refused.env())).message).toContain('CONTEXTURE_GITHUB_REPOSITORY');
     const named = await resolveForgeCredentials({ env: { ...appEnv, CONTEXTURE_GITHUB_REPOSITORY: 'ayxuerui/ctx-a' }, git: local, cwd: '/', fetch: github.fetch, now });
     expect((await named.env()).GH_TOKEN).toBe('ghs_1');
+  });
+});
+
+/** reach-each-owner-with-its-own-token: a tokens directory holding `files`, removed after `body`. */
+async function withTokensDir(files: Record<string, string>, body: (dir: string) => Promise<void>): Promise<void> {
+  const tmp = await makeTmpDir();
+  try {
+    const dir = path.join(tmp.root, 'owner-tokens');
+    await mkdir(dir);
+    for (const [name, text] of Object.entries(files)) await writeFile(path.join(dir, name), text);
+    await body(dir);
+  } finally {
+    await tmp.cleanup();
+  }
+}
+
+/** A git that answers every command with `url`, and counts what it was asked. */
+function countingGit(url: string): GitRunner & { calls: string[][] } {
+  const calls: string[][] = [];
+  return { calls, run: async (args) => (calls.push([...args]), { stdout: `${url}\n`, stderr: '', exitCode: 0 }) };
+}
+
+const TOKEN_B = 'github_pat_11ctxBorgSECRETtokenvalue';
+
+describe('owner token credentials', () => {
+  it('reads no directory and asks git nothing when the variable is unset', async () => {
+    const git = countingGit('https://github.com/ctx-b-org/ctx-b.git');
+    const env = { PATH: '/bin' };
+    const credentials = await resolveForgeCredentials({ env, git, cwd: '/' });
+    expect(credentials.kind).toBe('gh');
+    expect(credentials.owner).toBeNull();
+    expect(await credentials.env()).toBe(env);
+    expect(git.calls).toEqual([]);
+  });
+
+  it("uses the owner's file for gh and git alike, trimmed, keeping the rest of the environment", async () => {
+    await withTokensDir({ 'ctx-b-org': `  ${TOKEN_B}\n` }, async (dir) => {
+      const env = { CONTEXTURE_GITHUB_OWNER_TOKENS_DIR: dir, GH_TOKEN: 'the-persons-own', PATH: '/bin' };
+      const credentials = await resolveForgeCredentials({ env, git: originGit('https://github.com/ctx-b-org/ctx-b.git'), cwd: '/' });
+      expect(credentials.kind).toBe('owner-token');
+      expect(credentials.owner).toBe('ctx-b-org');
+      expect(await credentials.env()).toEqual({ ...env, GH_TOKEN: TOKEN_B });
+      expect(await credentials.gitToken()).toBe(TOKEN_B);
+      expect(await credentials.botLogin()).toBeNull();
+      expect(credentials.derivedSecret('x')).toBeNull();
+    });
+  });
+
+  it('reads the owner from an ssh origin, and from a declared URL before any clone', async () => {
+    await withTokensDir({ 'ctx-b-org': TOKEN_B }, async (dir) => {
+      const env = { CONTEXTURE_GITHUB_OWNER_TOKENS_DIR: dir };
+      const ssh = await resolveForgeCredentials({ env, git: originGit('git@github.com:ctx-b-org/ctx-b.git'), cwd: '/' });
+      expect(ssh.kind).toBe('owner-token');
+      const git = countingGit('https://github.com/ctx-a-owner/ctx-a.git');
+      const declared = await resolveForgeCredentials({ env, git, cwd: '/', url: 'https://github.com/ctx-b-org/ctx-b.git' });
+      expect(declared.owner).toBe('ctx-b-org');
+      expect(git.calls).toEqual([]);
+    });
+  });
+
+  it("keeps gh's credential for an owner with no file, and for a repository not on github.com", async () => {
+    await withTokensDir({ 'ctx-b-org': TOKEN_B }, async (dir) => {
+      const env = { CONTEXTURE_GITHUB_OWNER_TOKENS_DIR: dir };
+      expect((await resolveForgeCredentials({ env, git: originGit('https://github.com/ctx-a-owner/ctx-a.git'), cwd: '/' })).kind).toBe('gh');
+      expect((await resolveForgeCredentials({ env, git: originGit('/srv/git/ctx-b-org/ctx-b.git'), cwd: '/' })).kind).toBe('gh');
+      const noOrigin: GitRunner = { run: async () => ({ stdout: '', stderr: '', exitCode: 1 }) };
+      expect((await resolveForgeCredentials({ env, git: noOrigin, cwd: '/' })).kind).toBe('gh');
+    });
+  });
+
+  it("matches the owner's name without regard to case", async () => {
+    await withTokensDir({ 'ctx-b-org': TOKEN_B }, async (dir) => {
+      const credentials = await resolveForgeCredentials({ env: { CONTEXTURE_GITHUB_OWNER_TOKENS_DIR: dir }, git: originGit('https://github.com/CTX-B-Org/ctx-b.git'), cwd: '/' });
+      expect(credentials.kind).toBe('owner-token');
+      expect(credentials.owner).toBe('CTX-B-Org');
+      expect(await credentials.gitToken()).toBe(TOKEN_B);
+    });
+  });
+
+  it('refuses a directory that cannot be read, naming the variable', async () => {
+    const error = await refusal(resolveForgeCredentials({ env: { CONTEXTURE_GITHUB_OWNER_TOKENS_DIR: '/nonexistent/owner-tokens' }, git: originGit('https://github.com/ctx-b-org/ctx-b.git'), cwd: '/' }));
+    expect(error.message).toContain('CONTEXTURE_GITHUB_OWNER_TOKENS_DIR');
+    expect(error.exitCode).toBe(2);
+  });
+
+  it('refuses an empty or unreadable owner file, naming its path and never a token', async () => {
+    await withTokensDir({ 'ctx-b-org': ' \n', 'ctx-a-owner': TOKEN_B }, async (dir) => {
+      const env = { CONTEXTURE_GITHUB_OWNER_TOKENS_DIR: dir };
+      const empty = await refusal(resolveForgeCredentials({ env, git: originGit('https://github.com/ctx-b-org/ctx-b.git'), cwd: '/' }));
+      expect(empty.message).toContain(path.join(dir, 'ctx-b-org'));
+      await mkdir(path.join(dir, 'ctx-c-org'));
+      const unreadable = await refusal(resolveForgeCredentials({ env, git: originGit('https://github.com/ctx-c-org/ctx-c.git'), cwd: '/' }));
+      expect(unreadable.message).toContain(path.join(dir, 'ctx-c-org'));
+      for (const error of [empty, unreadable]) expect(JSON.stringify({ message: error.message, details: error.finding })).not.toContain(TOKEN_B);
+    });
+  });
+
+  it('refuses two files whose names differ only by case, naming both, rather than choosing one', async () => {
+    await withTokensDir({ 'ctx-b-org': TOKEN_B, 'CTX-B-ORG': `${TOKEN_B}-other` }, async (dir) => {
+      const error = await refusal(resolveForgeCredentials({ env: { CONTEXTURE_GITHUB_OWNER_TOKENS_DIR: dir }, git: originGit('https://github.com/ctx-b-org/ctx-b.git'), cwd: '/' }));
+      expect(error.message).toContain(path.join(dir, 'ctx-b-org'));
+      expect(error.message).toContain(path.join(dir, 'CTX-B-ORG'));
+      expect(error.message).not.toContain(TOKEN_B);
+    });
+  });
+
+  it('never reads the directory in App mode', async () => {
+    const now = () => new Date();
+    const github = fakeGithub({ now });
+    const appEnv = { CONTEXTURE_GITHUB_APP_ID: '5354981', CONTEXTURE_GITHUB_APP_PRIVATE_KEY: PEM };
+    // A directory that cannot be read would be refused if App mode looked at it.
+    const unread = await resolveForgeCredentials({ env: { ...appEnv, CONTEXTURE_GITHUB_OWNER_TOKENS_DIR: '/nonexistent/owner-tokens' }, git: originGit('https://github.com/ayxuerui/ctx-a.git'), cwd: '/', fetch: github.fetch, now });
+    expect(unread.kind).toBe('github-app');
+    await withTokensDir({ ayxuerui: TOKEN_B }, async (dir) => {
+      const credentials = await resolveForgeCredentials({ env: { ...appEnv, CONTEXTURE_GITHUB_OWNER_TOKENS_DIR: dir }, git: originGit('https://github.com/ayxuerui/ctx-a.git'), cwd: '/', fetch: github.fetch, now });
+      expect(credentials.kind).toBe('github-app');
+      expect(credentials.owner).toBeNull();
+      expect(await credentials.gitToken()).toMatch(/^ghs_/);
+    });
+  });
+
+  it("finds an App's installation from a declared URL before any clone", async () => {
+    const now = () => new Date();
+    const github = fakeGithub({ now });
+    const appEnv = { CONTEXTURE_GITHUB_APP_ID: '5354981', CONTEXTURE_GITHUB_APP_PRIVATE_KEY: PEM };
+    const credentials = await resolveForgeCredentials({ env: appEnv, git: originGit('/not/read'), cwd: '/', url: 'https://github.com/ayxuerui/ctx-a.git', fetch: github.fetch, now });
+    expect(await credentials.gitToken()).toBe('ghs_1');
+  });
+});
+
+describe('githubOwnerOf', () => {
+  it('is the first path segment of a github.com URL, and null otherwise', () => {
+    expect(githubOwnerOf('https://github.com/ReadyRun-AI/readyrun-brain.git')).toBe('ReadyRun-AI');
+    expect(githubOwnerOf('git@github.com:ayxuerui/pkm.git')).toBe('ayxuerui');
+    expect(githubOwnerOf('/srv/git/pkm.git')).toBeNull();
   });
 });
 

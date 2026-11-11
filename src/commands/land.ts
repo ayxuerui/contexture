@@ -7,7 +7,7 @@ import { decisionBody, landingBody, recordPartOf, type LandingRecordState } from
 import { writeLandingRecord } from '../core/approval/landing-record.js';
 import { resolverPrompt, runResolver } from '../core/approval/resolver.js';
 import { carriesOver, forgeRead, reviewStateOf, sessionPulls, sessionWorktrees, type SessionWorktree } from '../core/approval/sessions.js';
-import { groupSessions, landingOrder, listOpen, readAsSessionPart, sessionState, storeReach, type OpenPart, type SessionStore, type StoreReach } from '../core/approval/session-group.js';
+import { groupSessions, landingOrder, listOpen, readAsSessionPart, sessionState, storeCredentials, storeReach, type OpenPart, type SessionStore, type StoreCredential, type StoreReach } from '../core/approval/session-group.js';
 import { identityOfWorktree, sessionKey, sessionsEqual, type SessionIdentity } from '../core/approval/session-marker.js';
 import { storeForges } from '../core/approval/store-forges.js';
 import { readConfig } from '../config/load.js';
@@ -86,6 +86,10 @@ export type CanonicalSync = FastForwardOutcome;
 export interface LandData {
   /** Which kind of forge credential the command used; never the credential. */
   credential: CredentialKind;
+  /** For `owner-token`, the GitHub owner whose token was used; null otherwise. */
+  credential_owner: string | null;
+  /** Each store this run reached across a session — this one and the stores it mounts — with its credential. */
+  store_credentials?: StoreCredential[];
   results: LandResult[];
   /** `--pending` only: the sync every run ends with, whether or not it landed anything. */
   canonical_sync?: CanonicalSync;
@@ -551,10 +555,13 @@ async function landHoldingLock(
 
   const results: LandResult[] = [];
   const sessionResults: SessionLandResult[] = [];
+  // reach-each-owner-with-its-own-token D7: the stores reached across sessions, for the envelope's credentials.
+  let reached: StoreReach | null = null;
   if (flags.pending) {
     await remoteGit(ctx, ['fetch', '--quiet', 'origin'], canonical, true);
     // A pull request carrying a session marker is its session's: landed below when homed here, left to its home otherwise.
     const reach = await storeReach(env.git, { root: store.root, canonical, config: store.config, forge: client, credentials }, storeForges(env, forge));
+    reached = reach;
     const approved = (await sessionPulls(env.git, canonical, store.config, client, recordingLogin!)).filter(
       (p) => p.review.state === 'approved' && !readAsSessionPart(p.pull, reach?.home.slug ?? null, store.config),
     );
@@ -570,7 +577,11 @@ async function landHoldingLock(
       }
     }
   } else if (flags.session !== undefined) {
-    sessionResults.push(await landSessionByName(ctx, flags.session, forge, results));
+    sessionResults.push(
+      await landSessionByName(ctx, flags.session, forge, results, (reach) => {
+        reached = reach;
+      }),
+    );
   } else {
     if (!flags.confirm && approval === undefined) throw new ChangeApprovalNotDeclaredError('ctxr land without --confirm');
     results.push(await landOne(ctx, flags.pr!, flags.confirm));
@@ -596,6 +607,8 @@ async function landHoldingLock(
     exitCode: failed ? ExitCode.CheckFailed : ExitCode.Ok,
     data: {
       credential: client.credential,
+      credential_owner: client.credentialOwner,
+      ...(reached === null ? {} : { store_credentials: storeCredentials(reached) }),
       results,
       ...(sweepSync === undefined ? {} : { canonical_sync: sweepSync }),
       ...(sessionResults.length === 0 ? {} : { sessions: sessionResults }),
@@ -834,8 +847,9 @@ function heldResult(part: string, outcome: LandOutcome, reason: string): LandRes
 }
 
 /** `--session`: the session named by its worktree name or branch in this store, landed whole on `--confirm`. */
-async function landSessionByName(ctx: Context, name: string, forge: ForgeClient | undefined, results: LandResult[]): Promise<SessionLandResult> {
+async function landSessionByName(ctx: Context, name: string, forge: ForgeClient | undefined, results: LandResult[], noteReach: (reach: StoreReach) => void): Promise<SessionLandResult> {
   const reach = await storeReach(ctx.env.git, { root: ctx.store.root, canonical: ctx.canonical, config: ctx.store.config, forge: ctx.forge, credentials: ctx.credentials }, storeForges(ctx.env, forge));
+  if (reach !== null) noteReach(reach);
   if (reach === null) throw new LandRefusedError('session_not_found', 'This store has no "origin" remote to name a session by.', { session: name });
   const worktree = (await sessionWorktrees(ctx.env.git, ctx.canonical, ctx.store.config)).find((w) => w.name === name || w.branch === name);
   const identity: SessionIdentity | null =

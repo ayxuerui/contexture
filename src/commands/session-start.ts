@@ -3,6 +3,7 @@ import type { CommandOutcome, CommandRequires } from '../core/command.js';
 import type { RunEnv } from '../core/env.js';
 import { ExitCode } from '../core/exit-codes.js';
 import { SessionRefusedError } from '../core/errors.js';
+import { credentialsFor } from '../core/forge/credentials.js';
 import { fetchOrigin, hasRemote } from '../core/git/worktree.js';
 import { sessionWorktrees } from '../core/approval/sessions.js';
 import { identityOfWorktree, joinedBranchName, joinedWorktreeName, type SessionIdentity } from '../core/approval/session-marker.js';
@@ -83,7 +84,8 @@ export async function execute(
     {
       git: env.git,
       config: store.config,
-      fetch: async (cwd) => (await hasRemote(env.git, cwd)) && (await fetchOrigin(env.git, cwd, store.config.git.default_branch)),
+      fetch: async (cwd) =>
+        (await hasRemote(env.git, cwd)) && (await fetchOrigin(env.git, await credentialsFor(env, cwd), env.env, cwd, store.config.git.default_branch)),
       now: () => new Date(),
     },
     store.root,

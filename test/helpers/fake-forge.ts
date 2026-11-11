@@ -88,20 +88,25 @@ export async function makeFakeForge(dir: string, state: FakeForgeState, originGi
  * bare origin gets its own state, and a call answers from the state of the
  * repository whose `origin` the calling directory has — as `gh` fills
  * `{owner}/{repo}`. The returned forges share one `binDir` and `env`.
+ *
+ * `url`, when given, is the `origin` URL `gh` sees for that repository (an
+ * http URL a test's `insteadOf` rewrites a github.com one to), in place of the
+ * bare repository's path.
  */
-export async function makeFakeForges(dir: string, repos: readonly { origin: string; state: FakeForgeState }[]): Promise<{ env: Record<string, string>; forges: FakeForge[] }> {
+export async function makeFakeForges(dir: string, repos: readonly { origin: string; state: FakeForgeState; url?: string }[]): Promise<{ env: Record<string, string>; forges: FakeForge[] }> {
   const binDir = path.join(dir, 'fake-gh-bin');
   await mkdir(binDir, { recursive: true });
   const ghPath = path.join(binDir, 'gh');
   await writeFile(ghPath, `#!/bin/sh\nexec "${process.execPath}" "${FAKE_GH_SCRIPT}" "$@"\n`);
   await chmod(ghPath, 0o755);
   const reposPath = path.join(dir, 'fake-gh-repos.json');
-  const map: Record<string, string> = {};
+  const map: Record<string, string | { state: string; origin: string }> = {};
   const env = { FAKE_GH_REPOS: reposPath, PATH: `${binDir}${path.delimiter}${process.env.PATH ?? ''}` };
   const forges: FakeForge[] = [];
   for (const [index, repo] of repos.entries()) {
     const statePath = path.join(dir, `fake-gh-state-${index}.json`);
-    map[path.resolve(repo.origin)] = statePath;
+    if (repo.url === undefined) map[path.resolve(repo.origin)] = statePath;
+    else map[repo.url] = { state: statePath, origin: path.resolve(repo.origin) };
     const forge: FakeForge = {
       binDir,
       env,

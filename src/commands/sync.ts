@@ -23,6 +23,8 @@ export interface SyncFlags {
 export interface SyncData {
   /** Which kind of forge credential the fetch used; never the credential. */
   credential: CredentialKind | null;
+  /** For `owner-token`, the GitHub owner whose token the fetch used; null otherwise (reach-each-owner-with-its-own-token D7). */
+  credential_owner: string | null;
   /** The canonical sync, reported as `ctxr land` reports it; null when another landing held the lock. */
   canonical_sync: FastForwardOutcome | null;
   /** `--every` only: the minutes between rounds. */
@@ -34,8 +36,8 @@ export interface SyncData {
 /** One canonical sync: stepped aside for a landing, fetch failed, or the fast-forward rule's outcome. */
 type CanonicalRound =
   | { kind: 'busy'; holder: { pid: number; host: string } }
-  | { kind: 'fetch-failed'; branch: string; error: string; outcome: FastForwardOutcome; credential: CredentialKind }
-  | { kind: 'ran'; outcome: FastForwardOutcome; credential: CredentialKind };
+  | { kind: 'fetch-failed'; branch: string; error: string; outcome: FastForwardOutcome; credential: CredentialKind; owner: string | null }
+  | { kind: 'ran'; outcome: FastForwardOutcome; credential: CredentialKind; owner: string | null };
 
 /**
  * write-lifecycle spec ("A command brings the canonical clone up to date"):
@@ -58,8 +60,8 @@ async function canonicalRound(env: RunEnv, store: Store): Promise<CanonicalRound
       branch,
       'the canonical clone',
     );
-    if (!result.fetched) return { kind: 'fetch-failed', branch, error: result.error, outcome: result.outcome, credential: credentials.kind };
-    return { kind: 'ran', outcome: result.outcome, credential: credentials.kind };
+    if (!result.fetched) return { kind: 'fetch-failed', branch, error: result.error, outcome: result.outcome, credential: credentials.kind, owner: credentials.owner };
+    return { kind: 'ran', outcome: result.outcome, credential: credentials.kind, owner: credentials.owner };
   } finally {
     await lock.release();
   }
@@ -95,12 +97,12 @@ function envelope(store: Store, exitCode: ExitCode, data: SyncData, findings: Fi
 async function once(env: RunEnv, store: Store): Promise<CommandOutcome<SyncData>> {
   const round = await canonicalRound(env, store);
   if (round.kind === 'busy') {
-    return envelope(store, ExitCode.Ok, { credential: null, canonical_sync: null }, [], [busyLine(round.holder)], [`sync: another landing is running (process ${round.holder.pid} on ${round.holder.host}); stepped aside.`]);
+    return envelope(store, ExitCode.Ok, { credential: null, credential_owner: null, canonical_sync: null }, [], [busyLine(round.holder)], [`sync: another landing is running (process ${round.holder.pid} on ${round.holder.host}); stepped aside.`]);
   }
   if (round.kind === 'fetch-failed') throw new SyncForgeUnreachableError(round.branch, round.error);
   const finding = leftAloneFinding(round.outcome);
   // A clone left alone is a warning that keeps the success code, as in every landing run.
-  return envelope(store, ExitCode.Ok, { credential: round.credential, canonical_sync: round.outcome }, finding === null ? [] : [finding], [syncLine(round.outcome)]);
+  return envelope(store, ExitCode.Ok, { credential: round.credential, credential_owner: round.owner, canonical_sync: round.outcome }, finding === null ? [] : [finding], [syncLine(round.outcome)]);
 }
 
 export interface RoundReport {
@@ -109,6 +111,7 @@ export interface RoundReport {
   lines: string[];
   canonical: FastForwardOutcome | null;
   credential: CredentialKind | null;
+  credentialOwner: string | null;
   mounts: sharedStoresSyncCommand.MountSyncResult[];
 }
 
@@ -123,12 +126,13 @@ export async function syncRound(env: RunEnv, root: string): Promise<RoundReport>
   try {
     store = { root, config: await readConfig(root, env.migrationSteps ?? MIGRATION_STEPS) };
   } catch (err) {
-    return { failed: true, lines: [`the configuration could not be read: ${err instanceof Error ? err.message : String(err)}`], canonical: null, credential: null, mounts: [] };
+    return { failed: true, lines: [`the configuration could not be read: ${err instanceof Error ? err.message : String(err)}`], canonical: null, credential: null, credentialOwner: null, mounts: [] };
   }
   const lines: string[] = [];
   let failed = false;
   let canonical: FastForwardOutcome | null = null;
   let credential: CredentialKind | null = null;
+  let credentialOwner: string | null = null;
   try {
     const round = await canonicalRound(env, store);
     if (round.kind === 'busy') {
@@ -136,6 +140,7 @@ export async function syncRound(env: RunEnv, root: string): Promise<RoundReport>
     } else {
       canonical = round.outcome;
       credential = round.credential;
+      credentialOwner = round.owner;
       if (round.kind === 'fetch-failed') failed = true;
       lines.push(syncLine(round.outcome));
     }
@@ -153,7 +158,7 @@ export async function syncRound(env: RunEnv, root: string): Promise<RoundReport>
     failed = true;
     lines.push(`the mounts could not be refreshed: ${err instanceof Error ? err.message : String(err)}`);
   }
-  return { failed, lines, canonical, credential, mounts };
+  return { failed, lines, canonical, credential, credentialOwner, mounts };
 }
 
 export interface SyncLoop {
@@ -214,7 +219,7 @@ async function every(env: RunEnv, store: Store, minutes: number): Promise<Comman
   }
   const lines = [...first.lines.map((line) => (first.failed ? `round failed: ${line}` : line)), `Syncing again every ${minutes} minute(s) until stopped.`];
   // The loop is running: a failed first round is a warning, never an exit code that reads as "stopped".
-  return envelope(store, ExitCode.Ok, { credential: first.credential, canonical_sync: first.canonical, every_minutes: minutes, mounts: first.mounts }, findings, lines);
+  return envelope(store, ExitCode.Ok, { credential: first.credential, credential_owner: first.credentialOwner, canonical_sync: first.canonical, every_minutes: minutes, mounts: first.mounts }, findings, lines);
 }
 
 export async function execute(callerEnv: RunEnv, store: Store, flags: SyncFlags = {}): Promise<CommandOutcome<SyncData>> {

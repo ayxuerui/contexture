@@ -51,6 +51,8 @@ export type MergeMethod = 'squash' | 'merge' | 'rebase';
 export interface ForgeClient {
   /** The credential kind behind every call — reported by commands, never the credential itself. */
   credential: CredentialKind;
+  /** For `owner-token`, the GitHub owner whose token it is (reach-each-owner-with-its-own-token D7); null otherwise. */
+  credentialOwner: string | null;
   login(): Promise<string>;
   pull(number: number): Promise<PullRequest>;
   openPulls(): Promise<PullRequest[]>;
@@ -145,6 +147,7 @@ export function createGhForgeClient(cwd: string, credentials: ForgeCredentials):
   const repo = 'repos/{owner}/{repo}';
   return {
     credential: credentials.kind,
+    credentialOwner: credentials.owner,
     async login() {
       // An installation token cannot call GET /user; an App's login is its bot login (change-approval spec).
       const bot = await credentials.botLogin();
