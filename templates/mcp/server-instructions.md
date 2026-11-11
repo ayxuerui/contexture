@@ -23,3 +23,19 @@ How to change the store, for people allowed to edit: work in a session, as a loc
 Changes rest in the session between calls; nothing is published until `session_submit`. Keep one session per piece of work.
 
 Every result read from the store carries `store.head`, the commit it was read from, and `store.sync_error` when the server could not fetch the latest version; mention that the answer may be out of date if it is set.
+
+## This store
+
+The skills name each of this store's settings by a placeholder in angle brackets, such as `<inbox path>`. These are __STORE_NAME__'s values, by the same names:
+
+__STORE_VALUES__
+
+The taxonomy's layers, each with its location and what belongs there:
+
+__STORE_LAYERS__
+
+The relation vocabulary. A note groups its links under section headings carrying these names, and `ctxr graph build` types each link's edge from its heading:
+
+__RELATION_VOCABULARY__
+
+This server runs ctxr __CLI_VERSION__. A skill can be newer than the server: when one names a tool this connector does not list, the server is the older one.

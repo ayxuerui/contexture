@@ -1,0 +1,19 @@
+{
+  "name": "contexture",
+  "displayName": "contexture",
+  "version": "0.37.0",
+  "description": "contexture's skills for working in a contexture store from Claude: capture material, file it into notes, find and propose connections, keep rollups and the mission current, and submit a change for approval. Add your store's connector separately.",
+  "author": {
+    "name": "contexture",
+    "url": "https://github.com/ayxuerui/contexture"
+  },
+  "homepage": "https://github.com/ayxuerui/contexture#connecting-chat-apps-mcp",
+  "repository": "https://github.com/ayxuerui/contexture",
+  "license": "MIT",
+  "keywords": [
+    "contexture",
+    "knowledge-base",
+    "notes",
+    "mcp"
+  ]
+}

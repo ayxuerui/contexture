@@ -11,9 +11,8 @@ import { isUnderAnyPrefix } from '../fs/prefix.js';
 import type { GitRunner } from '../git/exec.js';
 import { pruneWorktrees } from '../git/worktree.js';
 import { renderGraphDocument } from '../graph/document.js';
-import { buildGraphFromNotes, graphBuildOptions } from '../graph/model.js';
 import { readGraph, writeGraph, writeGraphDocument } from '../graph/persist.js';
-import { listNotes } from '../notes/list.js';
+import { buildReadViewGraph } from '../shared-stores.js';
 import type { Store } from '../store.js';
 import { ToolRefusal } from './jsonrpc.js';
 import { ReadWriteLock } from './rwlock.js';
@@ -208,12 +207,14 @@ export class McpView {
     return null;
   }
 
-  /** The configuration committed at the view's commit, and that commit's graph. */
+  /**
+   * The configuration committed at the view's commit, and that commit's graph — built over the read view, as
+   * `ctxr graph build` builds it, so doctor's staleness check in the view compares like with like (#233).
+   */
   private async rebuild(viewRoot: string): Promise<Store> {
     const config = await readConfig(viewRoot, MIGRATION_STEPS);
     const store: Store = { root: viewRoot, config };
-    const notes = await listNotes(store.root, store.config);
-    const graph = buildGraphFromNotes(notes, graphBuildOptions(store.config));
+    const { graph } = await buildReadViewGraph(store.root, store.config);
     await writeGraph(store, graph);
     await writeGraphDocument(store, renderGraphDocument(graph, store.config.retrieval.graph).text);
     return store;
