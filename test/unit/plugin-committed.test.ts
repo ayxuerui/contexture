@@ -94,7 +94,7 @@ describe("the plugin's commands", () => {
   const plugin = buildClaudePlugin(CLI_VERSION);
   const skills = renderMcpSkills();
 
-  it('are the seven the map declares, each opening a skill the plugin carries', () => {
+  it('are the eight the map declares, each opening a skill the plugin carries', () => {
     expect(PLUGIN_COMMANDS).toEqual({
       capture: 'ctxr-capture',
       ingest: 'ctxr-ingest-orchestration',
@@ -103,6 +103,7 @@ describe("the plugin's commands", () => {
       mission: 'ctxr-mission',
       session: 'ctxr-session-lifecycle',
       submit: 'ctxr-submit',
+      'second-opinion': 'ctxr-second-opinion',
     });
     expect(commandMapProblems(PLUGIN_COMMANDS, [...MCP_SKILL_FILES])).toEqual([]);
     expect([...plugin.files.keys()].filter((f) => f.startsWith('commands/')).sort()).toEqual(Object.keys(PLUGIN_COMMANDS).map((c) => `commands/${c}.md`).sort());

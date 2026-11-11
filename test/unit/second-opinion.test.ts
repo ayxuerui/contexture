@@ -1,10 +1,11 @@
 import { spawnSync } from 'node:child_process';
-import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { ExitCode } from '../../src/core/exit-codes.js';
 import { DIST_BIN } from '../helpers/dist-bin.js';
+import { installSecondOpinionStubs } from '../helpers/second-opinion-stubs.js';
 import { makeTmpDir, type TmpDir } from '../helpers/tmp-store.js';
 
 /**
@@ -21,31 +22,6 @@ import { makeTmpDir, type TmpDir } from '../helpers/tmp-store.js';
  * on the allowlist (D3): nothing else would reach them.
  */
 const SRC = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../src');
-
-/** The stub every CLI name points at: records what it was given, then behaves as scripted. */
-const STUB = `#!/usr/bin/env node
-const fs = require('node:fs');
-const name = require('node:path').basename(process.argv[1]);
-const dir = process.env.CTXR_SECOND_OPINION_STUB_DIR;
-const args = process.argv.slice(2);
-const behavior = JSON.parse(process.env['CTXR_SECOND_OPINION_STUB_' + name.toUpperCase()] || '{"kind":"ok","text":"PONG"}');
-const isHelp = args.includes('--help');
-let stdin = '';
-if (!isHelp && behavior.kind !== 'hang') { try { stdin = fs.readFileSync(0, 'utf8'); } catch {} }
-if (!isHelp) {
-  const file = dir + '/' + name + '.json';
-  const prior = fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf8')) : [];
-  prior.push({ args, stdin, cwd: process.cwd(), ppid: process.ppid, env: process.env });
-  fs.writeFileSync(file, JSON.stringify(prior));
-}
-if (isHelp) { console.log(behavior.help ?? '--tools --model --effort --no-session-persistence --disable-slash-commands --output-format --skip-git-repo-check --sandbox --ephemeral --color --config --print'); process.exit(0); }
-if (behavior.kind === 'exit') { console.error(behavior.stderr ?? 'boom'); process.exit(behavior.code ?? 1); }
-if (behavior.kind === 'hang') { setInterval(() => {}, 1000); return; }
-const text = behavior.text;
-if (name === 'claude') console.log(JSON.stringify({ result: text, modelUsage: { 'claude-stub-1': {} } }));
-else if (name === 'codex') console.log('OpenAI Codex v0\\n--------\\nmodel: gpt-stub\\nsandbox: read-only\\n--------\\nuser\\n(prompt echo)\\ncodex\\n' + text + '\\ntokens used\\n42\\n' + text);
-else console.log(text);
-`;
 
 const PLAN = '# Plan: rename the thing\n\n## Steps\nS1. Rename the module and update its callers.\nS2. Delete the old module once nothing imports it.\n\n## Reversibility\nIrreversible: S2.\n';
 
@@ -68,11 +44,7 @@ beforeEach(async () => {
   outDir = path.join(tmp.root, 'out');
   mkdirSync(binDir);
   mkdirSync(logDir);
-  for (const name of ['claude', 'codex', 'agy']) {
-    const file = path.join(binDir, name);
-    writeFileSync(file, STUB.replace(/^#!.*\n/, '#!/usr/bin/env node\n"use strict";(function(){\n') + '\n})();\n');
-    chmodSync(file, 0o755);
-  }
+  installSecondOpinionStubs(binDir);
 });
 afterEach(async () => {
   await tmp.cleanup();
@@ -605,5 +577,149 @@ describe('no other command depends on the second opinion', () => {
       .map((file) => path.relative(SRC, file).split(path.sep).join('/'))
       .sort();
     expect(importers).toEqual(['commands/second-opinion.ts', 'run.ts']);
+  });
+});
+
+/**
+ * serve-the-second-opinion-to-chat-apps D1, harness-portability requirements
+ * "Each model CLI runs from a fresh home holding only its login" and "A model
+ * CLI's run is confined to its folder where the kernel allows", and the
+ * cli-contract requirement on `--require-confinement`. A stub `setpriv` on
+ * PATH stands in for util-linux: it advertises Landlock (or not) and runs the
+ * command after `--` without confining it, so the fresh home, the seeding and
+ * the copy-back are tested on any machine. The canary test needs the real
+ * thing and runs only where `setpriv` applies Landlock.
+ */
+describe('a fresh, confined home for each run', () => {
+
+
+  const LANDLOCK = { CTXR_SECOND_OPINION_STUB_SETPRIV: 'landlock' };
+  const login = (rel: string, body: string) => {
+    const file = path.join(tmp.root, rel);
+    mkdirSync(path.dirname(file), { recursive: true });
+    writeFileSync(file, body);
+    return file;
+  };
+  const setprivCalls = (): string[][] =>
+    readdirSync(logDir)
+      .filter((f) => f.startsWith('setpriv-'))
+      .map((f) => JSON.parse(readFileSync(path.join(logDir, f), 'utf8')));
+
+  it('starts each CLI in a fresh home holding only its own login, removed afterwards', () => {
+    login('.claude/.credentials.json', 'claude login');
+    login('.codex/auth.json', 'codex login');
+    login('.gemini/antigravity-cli/antigravity-oauth-token', 'agy login');
+    login('.ssh/id_ed25519', 'not for critics');
+    const r = run(critiqueArgs(), {}, { env: { ...LANDLOCK, CTXR_SECOND_OPINION_STUB_LISTHOME: '1' } });
+    expect(r.status, r.output).toBe(ExitCode.Ok);
+    const expected: Record<string, string> = { claude: '.claude/.credentials.json', codex: '.codex/auth.json', agy: '.gemini/antigravity-cli/antigravity-oauth-token' };
+    for (const [cli, file] of Object.entries(expected)) {
+      const call = calls(cli)[0]!;
+      expect(call.env.HOME, cli).toBe(call.cwd);
+      expect(call.env.HOME, cli).not.toBe(tmp.root);
+      expect((call as Call & { home: string[] }).home.filter((f) => !f.startsWith('.tmp/')).sort(), cli).toEqual([file]);
+      expect(existsSync(call.cwd), `${cli}'s folder is removed`).toBe(false);
+    }
+    // Every CLI ran behind setpriv, with its own folder the one writable rule.
+    const wrapped = setprivCalls().filter((a) => a.includes('--landlock-rule'));
+    expect(wrapped.length).toBe(3);
+    for (const args of wrapped) {
+      expect(args.slice(0, 2)).toEqual(['--landlock-access', 'fs']);
+      const writable = args.filter((a) => a.startsWith('path-beneath:') && a.includes('write-file') && !a.startsWith('path-beneath:read-file,write-file:'));
+      expect(writable).toHaveLength(1);
+    }
+    expect(manifest()).toMatchObject({ confined: true, confinement_reason: null });
+  });
+
+  it('copies a refreshed login back, unless the original changed meanwhile', () => {
+    const codexLogin = login('.codex/auth.json', 'original');
+    const claudeLogin = login('.claude/.credentials.json', 'original');
+    const r = run(critiqueArgs(), {
+      codex: { kind: 'ok', text: critique('skeptic'), rewrite: '.codex/auth.json' },
+      claude: { kind: 'ok', text: critique('architect'), rewrite: '.claude/.credentials.json', touchOriginal: claudeLogin },
+    }, { env: LANDLOCK });
+    expect(r.status, r.output).toBe(ExitCode.Ok);
+    expect(readFileSync(codexLogin, 'utf8')).toBe('rotated by codex');
+    expect(readFileSync(claudeLogin, 'utf8')).toBe('changed meanwhile');
+  });
+
+  it('says when it cannot confine, and keeps the real home', () => {
+    const r = run(['preflight'], PONG);
+    expect(r.status, r.output).toBe(ExitCode.Ok);
+    expect(r.stdout).toMatch(/confined: no \(this setpriv cannot apply Landlock/);
+    for (const c of allCalls()) expect(c.env.HOME).toBe(tmp.root);
+    const json = run(['preflight', '--json'], PONG);
+    expect(JSON.parse(json.stdout).data).toMatchObject({ ok: true, confined: false });
+  });
+
+  it('--require-confinement stops before any model CLI starts', () => {
+    const r = run([...critiqueArgs(), '--require-confinement']);
+    expect(r.status, r.output).toBe(ExitCode.CheckFailed);
+    expect(r.output).toMatch(/cannot confine the model CLIs here/);
+    expect(allCalls()).toEqual([]);
+  });
+
+  const realSetpriv = spawnSync('setpriv', ['--help'], { encoding: 'utf8' });
+  const landlock = process.platform === 'linux' && `${realSetpriv.stdout ?? ''}`.includes('--landlock-access');
+  it.skipIf(!landlock)('a confined critic cannot read a file outside its folder (needs setpriv with Landlock, util-linux 2.40+)', async () => {
+    const elsewhere = await makeTmpDir('second-opinion-canary-');
+    try {
+      const canary = path.join(elsewhere.root, 'canary.txt');
+      writeFileSync(canary, 'CANARY-7731');
+      rmSync(path.join(binDir, 'setpriv')); // the real one, this time
+      const r = run(critiqueArgs(), { codex: { kind: 'ok', text: critique('skeptic'), read: canary } });
+      expect(r.status, r.output).toBe(ExitCode.Ok);
+      expect(manifest()).toMatchObject({ confined: true });
+      const answer = readdirSync(outDir)
+        .filter((f) => f.startsWith('critique-'))
+        .map((f) => readFileSync(path.join(outDir, f), 'utf8'))
+        .find((t) => t.includes('READ-RESULT'));
+      expect(answer).toContain('READ-RESULT: refused EACCES');
+      expect(answer).not.toContain('CANARY-7731');
+    } finally {
+      await elsewhere.cleanup();
+    }
+  });
+});
+
+describe('--print', () => {
+  it('prints the critiques in letter order, then the letter table, and writes no files', () => {
+    const before = readdirSync(path.dirname(tmp.root)).filter((d) => d.startsWith('ctxr-second-opinion-out-')).length;
+    const r = run(['critique', '--plan-file', planFile(), '--print', '--seed', '7']);
+    expect(r.status, r.output).toBe(ExitCode.Ok);
+    const a = r.stdout.indexOf('===== critique-A =====');
+    const b = r.stdout.indexOf('===== critique-B =====');
+    const c = r.stdout.indexOf('===== critique-C =====');
+    const table = r.stdout.indexOf('===== letters');
+    expect(a).toBeGreaterThan(-1);
+    expect(a).toBeLessThan(b);
+    expect(b).toBeLessThan(c);
+    expect(c).toBeLessThan(table);
+    expect(r.stdout.slice(0, a)).not.toMatch(/claude|codex|agy/);
+    expect(r.stdout.slice(table)).toMatch(/architect\s+claude/);
+    expect(r.stdout).not.toContain('out: ');
+    expect(readdirSync(path.dirname(tmp.root)).filter((d) => d.startsWith('ctxr-second-opinion-out-')).length).toBe(before);
+    const json = run(['critique', '--plan-file', planFile(), '--print', '--json']);
+    const data = JSON.parse(json.stdout).data;
+    expect(data.out).toBeNull();
+    expect(Object.keys(data.texts).sort()).toEqual(['A', 'B', 'C']);
+  });
+
+  it('keeps the exit codes of a run without it', () => {
+    const r = run(['critique', '--plan-file', planFile(), '--print'], { agy: { kind: 'exit', code: 1 }, codex: { kind: 'exit', code: 1 } });
+    expect(r.status).toBe(ExitCode.CheckFailed);
+    expect(r.stdout).toContain('PARTIAL');
+  });
+
+  it('prints a poll under each model', () => {
+    const r = run(['poll', '--prompt-file', planFile('Which name? A or B.'), '--print'], { claude: { kind: 'ok', text: 'A, clearly' }, codex: { kind: 'ok', text: 'B' }, agy: { kind: 'ok', text: 'A' } });
+    expect(r.status, r.output).toBe(ExitCode.Ok);
+    expect(r.stdout).toMatch(/===== poll-claude =====\nA, clearly/);
+  });
+
+  it('refuses --print with --out before any CLI starts', () => {
+    const r = run(['poll', '--print', '--out', outDir, '--prompt-file', planFile('q')]);
+    expect(r.status).toBe(ExitCode.Usage);
+    expect(allCalls()).toEqual([]);
   });
 });
