@@ -146,7 +146,8 @@ describe('single-source-literals guard', () => {
     // session-keeps-only-what-git-cannot-do removed. The store's configured
     // conflict resolver is spawned only from core/approval/resolver.ts, and
     // serve's own landing runs (`ctxr land --pending`) only from
-    // core/approval/lander.ts (serve-lands-approved-changes D2). The
+    // core/store-update-runner.ts, with `ctxr sync` (serve-lands-approved-changes D2,
+    // serve-keeps-its-clone-current D1). The
     // invariant this guards is "no ad hoc, scattered subprocess spawning,"
     // not "only one file in the whole codebase may ever spawn anything."
     const allow = [
@@ -155,9 +156,15 @@ describe('single-source-literals guard', () => {
       'core/harness/isolated-run.ts',
       'core/forge/github.ts',
       'core/approval/resolver.ts',
-      'core/approval/lander.ts',
+      'core/store-update-runner.ts',
       // serve-the-store-over-mcp D12: ripgrep, for the MCP surface's Grep and Glob.
       'core/mcp/ripgrep.ts',
+      // serve-the-session-lifecycle-to-chat-apps D4: the server's own CLI, for the MCP surface's ctxr and ctxr_write.
+      'core/mcp/cli-runner.ts',
+      // run-the-second-opinion-from-the-cli D1: the model CLIs, from the one command that invokes them.
+      'core/second-opinion/launch.ts',
+      // install-tools-in-the-home D4: `npm prefix -g`, where `npm install -g` writes.
+      'core/npm-prefix.ts',
     ];
     const hits = new Set([
       ...filesContainingSubstring("'node:child_process'", allow),

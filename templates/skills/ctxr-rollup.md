@@ -6,6 +6,9 @@ Run `ctxr rollup stale` (or `--for <entity>` for one) to find entities worth re-
 entity note whose backlinks have moved since its last synthesis, or which has never been rolled up at
 all; use it instead of guessing from memory which entities are out of date.
 
+An entity under `shared/<name>/` belongs to a mounted store. Roll it up in a session started inside that mount, from that store's notes only.
+Why: a rollup that quotes this store's notes would show them to every reader of the mount.
+
 1. Resolve, never create. `<entity>` is a path or a note name; several candidates → list them and ask.
    When a location has more than one plausible hub, prefer the shorter-named, undated one. If no entity
    note exists, STOP and say so — creating it is a separate task, not a side effect of a rollup.

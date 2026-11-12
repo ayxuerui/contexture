@@ -31,8 +31,11 @@ export interface ApprovalStore {
   git(args: readonly string[], cwd?: string): Promise<string>;
   /** Starts a session, writes `files` in it, commits, pushes, and opens a pull request numbered `number`. */
   openSession(label: string, number: number, files: Record<string, string>, pull?: Partial<FakePull>): Promise<ApprovalSession>;
-  /** Commits `files` straight onto origin's main, as another landed change would. */
-  advanceMain(files: Record<string, string>, message?: string): Promise<string>;
+  /**
+   * Commits `files` straight onto origin's main, as another landed change would. With `catalogued`, the catalog is
+   * rebuilt in the same commit, so the store still passes `ctxr doctor` — what a gate such as `session submit` runs.
+   */
+  advanceMain(files: Record<string, string>, message?: string, opts?: { catalogued?: boolean }): Promise<string>;
   commitInWorktree(worktree: string, files: Record<string, string>, message: string): Promise<string>;
 }
 
@@ -119,11 +122,16 @@ export async function makeApprovalStore(opts: ApprovalStoreOptions = {}): Promis
       });
       return { number, worktree: data.worktree, name: path.basename(data.worktree), branch: data.branch, head };
     },
-    async advanceMain(files, message = 'advance main') {
+    async advanceMain(files, message = 'advance main', opts = {}) {
       const scratch = path.join(tmp.root, `scratch-${Date.now()}-${Math.random().toString(16).slice(2)}`);
       await git(['clone', '-q', origin, scratch], tmp.root);
       await writeFiles(scratch, files);
       await git(['add', ...Object.keys(files)], scratch);
+      if (opts.catalogued === true) {
+        const built = await runCli(['catalog', 'build'], { cwd: scratch, env, timeoutMs: 60_000 });
+        if (built.exitCode !== 0) throw new Error(`catalog build failed: ${built.stderr}${built.stdout}`);
+        await git(['add', '-A'], scratch);
+      }
       await git(['commit', '-q', '--no-verify', '-m', message], scratch);
       await git(['push', '-q', '--no-verify', 'origin', 'HEAD:main'], scratch);
       await git(['fetch', '-q', 'origin']);

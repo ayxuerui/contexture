@@ -90,8 +90,10 @@ preference before its author styles it further.
   without requiring its author to add it before the page is otherwise complete
 
 ### Requirement: A published page's structural invariants are checked mechanically
-`ctxr publish check <path>` SHALL verify, for the `index.html` at `<path>`: it contains no external
-network reference (no `http://` or `https://` value in a `src` or `href` attribute), it declares a
+`ctxr publish check <path>` SHALL verify, for the `index.html` at `<path>`: it loads nothing from an
+external network address (no `http://` or `https://` value in a `src`, `srcset`, `poster` or `data`
+attribute, in an `href` attribute on any element other than `<a>` and `<area>`, or in a CSS `url()` or
+`@import` anywhere in the file), it declares a
 viewport meta tag, it declares at least one `@media print` rule, it states a provenance line pairing a
 date with a link to its sibling README, it declares a non-empty `<title>`, its sibling README exists,
 its sibling README's frontmatter declares no `kind` field, and — when it contains one or more
@@ -106,6 +108,26 @@ not only the first.
 #### Scenario: A page referencing an external network resource fails the check
 - **WHEN** `ctxr publish check <path>` runs against a page whose `index.html` loads a script or
   stylesheet from an external URL
+- **THEN** the command exits non-zero and names the external-reference check as failing
+
+#### Scenario: An outbound link does not fail the external-reference check
+- **WHEN** `ctxr publish check <path>` runs against a page whose only external address is the `href`
+  of an `<a>` element, such as `<a href="https://example.com/">`
+- **THEN** the external-reference check is not among the failing checks
+
+#### Scenario: An external stylesheet link still fails the check
+- **WHEN** `ctxr publish check <path>` runs against a page containing
+  `<link rel="stylesheet" href="https://cdn.example.com/x.css">`
+- **THEN** the command exits non-zero and names the external-reference check as failing
+
+#### Scenario: An external image still fails the check
+- **WHEN** `ctxr publish check <path>` runs against a page containing an `<img>` whose `src` is an
+  `https://` address
+- **THEN** the command exits non-zero and names the external-reference check as failing
+
+#### Scenario: An external address in the page's CSS fails the check
+- **WHEN** `ctxr publish check <path>` runs against a page whose `<style>` block imports a stylesheet
+  with `@import` or loads a background image with `url()` from an `https://` address
 - **THEN** the command exits non-zero and names the external-reference check as failing
 
 #### Scenario: A page missing its sibling README fails the check

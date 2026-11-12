@@ -23,7 +23,7 @@ const tool = (name: string, scope: string): ToolDefinition<Principal> => ({
   description: name,
   inputSchema: { type: 'object' },
   scope,
-  readOnly: scope === 'read',
+  annotations: { readOnlyHint: scope === 'read', destructiveHint: false, idempotentHint: scope === 'read', openWorldHint: false },
   run: async () => ({ ok: true }),
 });
 const TOOLS = [tool('find', 'read'), tool('capture', 'capture')];

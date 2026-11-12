@@ -341,6 +341,17 @@ describe('standardize-store-operating-guidance: the baseline carries the every-t
     expect(baseline).toMatch(/more than seven days old or missing, suggest a lint pass/);
   });
 
+  // install-tools-in-the-home: the tool-install rule, and that it names no deployment's layout.
+  it('states the tool-install rule without naming any directory, variable or container', () => {
+    const baseline = renderBaselineConventions(makeConfig());
+    const section = baseline.slice(baseline.indexOf('## Installing tools'), baseline.indexOf('\n## ', baseline.indexOf('## Installing tools') + 1));
+    expect(section).toMatch(/as your own user, with its publisher's own installer, into your home/);
+    expect(section).toContain('never with `sudo`, and never into the store');
+    expect(section).toContain('`npm config get prefix`');
+    expect(section).toMatch(/report that and stop/);
+    expect(section).not.toMatch(/~\/\.local|NPM_CONFIG_PREFIX|container|docker/i);
+  });
+
   it('renders the configured scratch and log paths', () => {
     const base = makeConfig();
     const config = { ...base, harness: { ...base.harness, scratch_path: '/var/tmp/ctx/' }, organize: { ...base.organize, log_path: 'journal/log.md' } };

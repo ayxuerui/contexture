@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Use __STORE_NAME__ from Claude or ChatGPT</title>
+<style>
+  :root { color-scheme: light dark; --fg: #1d1d1f; --muted: #5f6368; --bg: #f6f6f4; --card: #ffffff; --line: #d9d9d4; --accent: #2f5d50; }
+  @media (prefers-color-scheme: dark) { :root { --fg: #ececea; --muted: #a4a4a0; --bg: #1b1b1a; --card: #262624; --line: #3a3a37; --accent: #8cc5b2; } }
+  * { box-sizing: border-box; }
+  body { margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 16px; background: var(--bg); color: var(--fg); font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { width: 100%; max-width: 560px; background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 28px 24px; }
+  h1 { font-size: 1.25rem; margin: 0 0 12px; }
+  h2 { font-size: 1.05rem; margin: 24px 0 8px; }
+  p { margin: 0 0 12px; }
+  .muted { color: var(--muted); }
+  ol { margin: 0 0 12px; padding-left: 20px; }
+  code { font: 0.95em ui-monospace, SFMono-Regular, Menlo, monospace; overflow-wrap: anywhere; }
+  a.download { display: inline-block; padding: 10px 14px; border-radius: 8px; background: var(--accent); color: var(--card); font-weight: 600; text-decoration: none; }
+</style>
+</head>
+<body>
+<main>
+<h1>Use __STORE_NAME__ from Claude or ChatGPT</h1>
+<p>Two things connect an app to this store: contexture's skills, which say how to work in a store, and this store's connector, which reaches it. You set each up once. Signing in goes through this store's own login; nothing you install holds a password or key.</p>
+
+<h2>This store's connector</h2>
+<p>The address to add:</p>
+<p><code>__MCP_URL__</code></p>
+<ol>
+<li><strong>Claude:</strong> open <strong>Customize</strong>, then <strong>Connectors</strong>. Choose <strong>Add custom connector</strong>, give it the name __STORE_NAME__, and paste the address above.</li>
+<li><strong>ChatGPT:</strong> the plugin below brings this connector with it. To add the connector on its own, open <strong>Settings</strong>, then <strong>Apps &amp; Connectors</strong>, turn on developer mode under <strong>Advanced settings</strong>, then choose <strong>Create</strong> and paste the address above.</li>
+<li>The first time an app uses the store, it asks you to sign in to the store.</li>
+</ol>
+<p class="muted">In more than one contexture store? Add each store's connector. The same skills work with all of them, and ask which store you mean when it is unclear.</p>
+
+<h2>Claude: contexture's plugin</h2>
+<ol>
+<li>In Claude, open <strong>Customize</strong>, then <strong>Plugins</strong>.</li>
+<li>Choose <strong>Add</strong>, then <strong>Add marketplace</strong>, and enter <code>__MARKETPLACE__</code>.</li>
+<li>Turn on <strong>Sync automatically</strong>, so each new release of the skills arrives on its own.</li>
+<li>Install the <strong>__PLUGIN_NAME__</strong> plugin from that marketplace.</li>
+<li>If you uploaded an older plugin for this store, such as <code>__OLD_PLUGIN_NAME__</code>, remove it: the <strong>__PLUGIN_NAME__</strong> plugin replaces it, and your connector stays.</li>
+</ol>
+
+<h2>ChatGPT: this store's plugin</h2>
+<p><a class="download" href="__CHATGPT_HREF__" download>Download __CHATGPT_ARCHIVE__</a></p>
+<ol>
+<li>If your workspace has an admin, send them the file: an admin uploads a plugin once for the whole workspace.</li>
+<li>Otherwise, turn on developer mode in ChatGPT's settings and upload the file there.</li>
+<li>ChatGPT does not update an uploaded plugin. When contexture releases new skills, download this file again and upload it over the old one.</li>
+</ol>
+<p class="muted">Version __VERSION__.</p>
+
+<p class="muted">Changes you make through either app wait in a session of your own until you ask to submit them, and land only once someone approves them on the store's approval page.</p>
+</main>
+</body>
+</html>

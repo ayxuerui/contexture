@@ -1,0 +1,269 @@
+---
+name: ctxr-second-opinion
+description: Get an independent critique of a plan, or a poll on a taste call, from three different model families run in parallel, and synthesize their answers without running the plan.
+---
+
+<!-- Owned by contexture — written by `ctxr init`, refreshed by `ctxr update`. Do not edit; add your own skills alongside. -->
+
+# Second opinion
+
+## Which store, and where
+
+This skill runs in a shell that runs `ctxr`, or through a contexture store's server. Settle two things first.
+
+**Which store:** the one the person means. With several contexture connectors attached, use that store's,
+and ask when it is unclear. Nothing from one store's connector goes to another's.
+
+**Where:** in a checkout of that store (a `contexture.yaml` at the working directory's root and a shell
+that runs `ctxr`), follow each step in the shell as written, even when the store's connector is attached
+too. Otherwise work through the store's connector:
+
+- A `ctxr session <verb>` step is the tool `session_<verb>`; `session_start` takes the session's name as
+  `label`. Every other `ctxr` step is the `ctxr` tool, or `ctxr_write` when it writes, with the words after
+  `ctxr` as `args`, one per entry: `ctxr lint` is the `ctxr` tool with `args` set to `["lint"]`.
+- A command's options are the tool's fields, named without the dashes. `session` names the session's
+  directory, which `session_start` returns and `session_list` lists; `ctxr_write` always needs one. A file
+  you prepared goes as `input`, with `@input` in `args` where its path goes.
+- Paths go under the session's root: the note `work/a.md` is `<worktrees path><directory>/work/a.md` for
+  `Read`, `Edit`, `Write`, `Move`, `Delete`, `Grep` and `Glob`. A path outside a session reads the store as
+  last approved and cannot be written. Commits, pushes and pull requests happen only in `session_submit`.
+- The server keeps sessions between conversations but cannot tell conversations apart. At the start of
+  one, call `session_list` and mention each open session, what it holds and any requested changes.
+- Landing, upgrading and work inside a store mounted under `shared/` are not done through the server. A
+  person lands an approved change from the store's approval page.
+- When a step names a tool the connector does not list, or the `ctxr` tool refuses a command as one it
+  does not run, the server runs an older ctxr (*This store* gives its version). Say so, then skip the step
+  or take the nearest one offered. Never improvise a replacement for a step that writes.
+- A store setting written as a placeholder, such as `<inbox path>` or `<default branch>`, takes the value
+  the connector's instructions give under *This store*, inside a path too. AGENTS.md states most of them;
+  otherwise ask.
+
+Get an independent read from models built by different labs before you commit to something you cannot
+cheaply take back, or when your own taste is one vote among several. A second opinion from the same model
+family you are running as mostly repeats you, so this skill sends the work to three command-line tools backed
+by three different families and hands you their answers. `ctxr second-opinion critique` and its `poll`
+sibling do the mechanics: they launch the tools, contain them, time them out, and anonymize what comes
+back. They do not decide anything, and they never carry out what they review. Weighing the answers is your job, and steps 4 and 5 are how.
+
+## 1. Critique, poll, or just answer?
+
+- **Critique** when the question is *will this work?* A plan with several steps, an architectural or
+  data-model choice, anything that deletes, force-pushes, sends, spends money, or touches secrets. Also a
+  recovery sequence run against a broken system: those plans look fine right up to the step that makes it
+  worse.
+- **Poll** when the question is *which of these is better?* and being wrong costs mild regret: a name, a
+  framing, a piece of copy, which of several tools fits. If all three agreeing would settle it, it is a poll.
+  If you would still want each reviewer's top objections and a suggested edit, it is a critique.
+A critique is required, not optional, before implementing a change that is architectural, irreversible, or touches
+what may be disclosed and to whom — run it on the written plan before the work, never as a justification after it.
+Its verdict, and the reasoning behind the option chosen, land in the pull request's body: for a structural change
+the pull request and its commit are the decision record, and there is no separate governance step.
+
+- **Answer directly** when there is one right answer, when the operator has already decided and wants
+  confirmation, or when the work is read-only investigation.
+
+Push back when asked for a critique of a taste question. "Which domain suffix should I pick?" is a poll. "Should
+I move my mail to a custom domain?" is a critique: it has steps, an order, and parts that cannot be undone. Say
+which you are running and why in one line before you start.
+
+A poll that asks a lens to judge whether something will *work* has become a critique. Stop and use that mode.
+
+## 2. Check the tools before spending anything
+
+```
+ctxr second-opinion preflight
+```
+
+Each of the three should report `OK` within about twenty seconds. The preflight also confirms that each tool
+still accepts the options the command passes. Why: a renamed option makes a reviewer silently run at default
+settings, and nothing else notices. Give `ctxr second-opinion preflight` the same `--tier` you will run with.
+The preflight pings each tool with that tier's model and names the model it tested. Why: a model the tool no
+longer offers fails only at the tier that uses it.
+
+If one is down, stop and give the operator the two real choices: sign that tool in and re-run, or continue
+with the others by rerunning `ctxr second-opinion critique` with `--only` and naming them. Do not quietly run with one
+model. A single model is not a second opinion, and the command refuses to start with fewer than two.
+
+Failure signatures: `Not logged in` means Claude needs `/login`; a `401` or an invalid refresh token from
+Codex means `codex login`; an agy call that hangs usually means its sign-in expired and it needs one
+interactive run.
+
+Through the store's server, the operator signs the tools in on the server. Tell the person which tool is
+down. Ask them to pass that on to the operator.
+
+Each tool runs in a new folder that is its home and holds only its own login. Where the machine supports it,
+the kernel also stops the tool from reading anything outside that folder, and the preflight reports
+`confined: yes`. Why: a plan can carry instructions from whoever wrote it, and a tool that cannot read a
+secret cannot quote it. The store's server runs a second opinion only when it is confined.
+
+The tools see only an allowlisted environment: the search path, home, locale, proxies, and their own login
+variables. Forge and contexture variables never reach them. When a tool fails because it needed a variable the
+allowlist dropped, a failing `ctxr second-opinion preflight` names the variables it withheld (names, never
+values). Name that variable in `CTXR_SECOND_OPINION_PASS_ENV` for the run. A forge or contexture variable there
+stops the command before any tool starts. Through the store's server, these variables are the operator's to
+set on the server. Ask the operator to set one. Do not try to set it from the conversation.
+
+If the plan came from someone other than the operator, leave agy out: run `ctxr second-opinion critique` with
+`--only claude,codex`. Claude runs with no tools at all and Codex in a read-only sandbox. Agy has no mode that
+removes its ability to act: it runs in an empty scratch directory with terminal restrictions, which contains
+an accident and not an attack.
+
+## 3. Run a critique
+
+Write the plan down in this shape. Why: the reviewers can only cite what is written down, and they cite by
+step number.
+
+```
+# Plan: <one-line goal>
+
+## Context
+<two to five lines: what is being attempted and what constrains it>
+
+## Steps
+S1. <step>
+S2. <step>
+
+## Assumptions
+- <what the plan takes for granted>
+
+## Reversibility
+- Reversible: <steps>
+- Irreversible: <steps>
+```
+
+In a shell, write the plan to a file and run:
+
+```
+ctxr second-opinion critique --plan-file <plan> --out <dir>
+```
+
+Through the store's server, give the plan as `input`. Run the `ctxr` tool with `args` set to
+`["second-opinion", "critique", "--plan-file", "@input"]`. The critiques come back in the result.
+
+Three reviewers each read the plan alone: structure and ordering, failure modes and trust boundaries,
+simplicity and cost. None sees another's answer. That is deliberate: reviewers who read each other converge
+on whoever spoke first, and a correct one gets talked out of it. Do not add a second round.
+
+The command prints the letters it wrote, whether each is valid or blind, and any reviewer that failed. It
+never prints which model wrote which letter. With `ctxr second-opinion critique --json` the same result, with
+the manifest, arrives as one envelope instead. With `ctxr second-opinion critique --print`, the command prints
+each critique under its letter, then the letter table, and writes no files. Through the store's server it
+always prints. A **blind** critique returned a well-formed verdict but cited
+nothing in the plan, so it was written without reading it; it does not count. **Partial** means fewer than
+two valid critiques, and the command then exits with the failed-check status rather than success: say so at
+the top of your answer and do not call anything a consensus.
+
+The default tier, `strong`, runs each family's frontier model. Run `ctxr second-opinion critique` with
+`--tier fast` to use each family's workhorse model instead, for a plan that is small and easy to redo. Why:
+the frontier models are slower and cost more, and a cheap plan does not need them. The default tier is right
+for anything the operator will act on.
+
+Each reviewer runs at its provider's own recommended default effort, not one this skill chose. Claude gets no
+effort setting, so Claude Code applies its default for the model. Codex gets the default its model catalog
+declares, which the command passes explicitly. Why: Codex left to itself, with no setting pinned, can resolve
+to no reasoning at all. Gemini's effort is part of its model name, and the command names each model at its
+default level. Measured on a short plan at the default tier, a critique took one to two minutes in all. Claude
+(Fable) took 80 to 120 seconds, and Gemini (Argon) and Codex (GPT-6-Astra) about 15 each. The fast tier is
+quicker and costs less. A deeper pass is a choice: with `CTXR_SECOND_OPINION_CLAUDE_EFFORT=max`, Claude on
+Opus alone took over eight minutes on a short plan. That is close to the command's ten-minute limit per tool,
+and Fable is slower than Opus; raise it with `ctxr second-opinion critique --timeout <seconds>` for such a
+run. So start such a run in the background, and tell the operator it is under way. Through the store's
+server, each tool gets at most 200 seconds and the whole run four minutes. Run a deep pass in a shell.
+Why: the chat app stops waiting for a tool after about four minutes. A machine that pins its own
+Codex effort in its configuration is overridden by the catalog default; set `CTXR_SECOND_OPINION_CODEX_EFFORT`
+to use another.
+
+## 4. Synthesize on the letters first
+
+Read the `critique-A`, `critique-B` and `critique-C` files and write your synthesis before you open
+`manifest.json`. When the critiques were printed, write your synthesis before you read the letter table
+below them. You share a model family with one of the reviewers, and models rate their own family's
+writing higher. Reading letters first is what keeps that from steering you. Then open the manifest and
+attach roles and models to the letters in the final report.
+
+Write it in this order:
+
+- **Verdicts.** One line per letter, and any blind or failed reviewer stated plainly, not buried.
+- **Consensus (all agree).** Highest signal. When all three independently flag the same simplification,
+  take it whole; do not keep a reduced version of complexity all three called wrong.
+- **Majority (two of three).** Say whether the two agree on the fix or only on the diagnosis. Two
+  reviewers who name the same problem often propose different repairs: choose on merit, meaning which
+  repair keeps more of what you want (granular rollback, fewer side effects, smaller blast radius), and do
+  not default to the majority's.
+- **Evidence-backed dissent.** A lone finding that cites the plan gets its own section and stays there. The
+  minority is right often enough that overruling it on your own authority is a net loss. Overrule only by
+  showing what the dissent missed.
+- **Vetoes.** A REJECT that carries a critical finding is stated as a veto, first, with its evidence.
+- **Revised plan**, and **what changed and why**: each change tied to the letter and finding that drove it.
+- **Recommendation**: proceed with the revision, revise further, or stop.
+
+Where the reviewers pull apart on ceremony, one wanting more safeguards and another fewer, decide by blast
+radius. If being wrong is expensive to undo, side with more safeguards. If it is cheap to undo, side with
+fewer. Where a safeguard needs machinery an earlier round already turned down (a background job, a state file
+kept across sessions, a hook), side with fewer: adding it now defeats the earlier decision.
+
+When you have critiqued this plan before, reread that synthesis first. The reviewers only see the current text
+and drift toward their own local optimum. Name any proposal that reverses an earlier decision, and hold the
+earlier line unless the new critique brings evidence the old one lacked.
+
+## 5. Say what you are biased about, then stop
+
+State in the report that one reviewer shares your model family, and say when that reviewer's finding is what
+drove the recommendation. Name any reviewer that ran a different model from the one you expected: the
+manifest records the model each tool reported.
+
+Then hand the synthesis to the operator and stop. This skill never executes a step of the plan it critiqued.
+If the operator says to go, proceed with the revised plan. If they push back, treat that as a fourth critique
+and run the skill again on the changed plan. It is a new run and not a continuation.
+
+To record the outcome in the plan itself, add a section near the top headed `## Revisions after critique`
+that says it overrides anything inconsistent below, one numbered item per change, each naming the finding
+behind it. Leave the original text in place as the record of what was reviewed. Run one more critique after a
+plan has been substantially rewritten and before you carry it out: new wording creates new gaps. Do not rerun
+for a typo.
+
+## 6. Run a poll
+
+Write the question and the options down. In a shell, write them to a file and run:
+
+```
+ctxr second-opinion poll --prompt-file <question>
+```
+
+Through the store's server, give them as `input`. Run the `ctxr` tool with `args` set to
+`["second-opinion", "poll", "--prompt-file", "@input"]`. The answers come back in the result.
+
+The same question goes to all three models, each answering with a pick, reasons, and anything surprising.
+This mode names its files by model, because what you are reading is whether the models agree.
+
+To get breadth as well as model diversity, run `ctxr second-opinion poll` with `--lens` and two or three taste
+lenses. Each model then answers as every lens in one response, giving a lens-by-model grid. The built-in
+lenses are minimalist, marketer, contrarian, end-user and brand-strategist. A store's own lens goes in as
+`Name:description`, for example `--lens "minimalist,Plainspoken:blunt, substance first, distrusts slogans"`.
+A description may contain commas: a comma starts the next lens only when what follows is a built-in lens name
+or begins `Name:`. So a description must not contain a colon. Choose lenses that pull in different
+directions; if two would obviously agree, drop one.
+
+Read a lens grid on both axes. Down a column (one lens across the three models) agreement means that
+taste value is robust to the model. Across a row (one model across the lenses) disagreement is where the
+real decision is. Give your own recommendation and say which axis it rests on.
+
+Report the answers, where they agree, where they split, and your read. The answers are evidence and not a
+vote: one dissent with a substantive reason can outweigh two agreements. If two of the three agreeing models
+include your own family, say so.
+
+## 7. When something goes wrong
+
+- A reviewer that timed out, exited non-zero, or returned no verdict is `failed` and carries its cause in
+  the manifest. Report it. Do not rerun that one reviewer on a different model to fill the gap.
+- The command's status says which kind of trouble it is. Success means at least two valid answers. The
+  failed-check status means it ran and the result is partial, or the preflight found a tool down. The usage
+  status means nothing ran: an argument was wrong, fewer than two tools were named, or the pass-through
+  variable named a forge or contexture variable.
+- Do not poll from inside a critique to settle a quick doubt. If you want a gut check mid-critique, answer it
+  yourself.
+- Model names change faster than releases. When a default is stale, set
+  `CTXR_SECOND_OPINION_CLAUDE_MODEL`, `CTXR_SECOND_OPINION_CLAUDE_EFFORT`, `CTXR_SECOND_OPINION_CODEX_MODEL`,
+  `CTXR_SECOND_OPINION_CODEX_EFFORT` or `CTXR_SECOND_OPINION_AGY_MODEL` in the environment for the run. Nothing about the lineup lives in the store's configuration. Through the store's server, the operator sets them on the server.
+- The scratch files under the output directory hold each reviewer's raw output and are safe to delete when the
+  operator has the synthesis. They can contain the plan, so do not commit them. A printed run writes none.

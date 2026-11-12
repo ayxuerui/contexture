@@ -1,8 +1,9 @@
 Get an independent read from models built by different labs before you commit to something you cannot
 cheaply take back, or when your own taste is one vote among several. A second opinion from the same model
 family you are running as mostly repeats you, so this skill sends the work to three command-line tools backed
-by three different families and hands you their answers. It does not decide anything and it never carries out
-what it reviews. Weighing the answers is your job, and steps 4 and 5 are how.
+by three different families and hands you their answers. `ctxr second-opinion critique` and its `poll`
+sibling do the mechanics: they launch the tools, contain them, time them out, and anonymize what comes
+back. They do not decide anything, and they never carry out what they review. Weighing the answers is your job, and steps 4 and 5 are how.
 
 ## 1. Critique, poll, or just answer?
 
@@ -30,30 +31,47 @@ A poll that asks a lens to judge whether something will *work* has become a crit
 ## 2. Check the tools before spending anything
 
 ```
-node __SKILLS_PATH__/ctxr-second-opinion/run.mjs --preflight
+ctxr second-opinion preflight
 ```
 
-Each of the three should report `OK` within about twenty seconds. The preflight also confirms that each
-tool still accepts the options the runner passes. Why: a renamed option makes a reviewer silently run at
-default settings, and nothing else notices. Pass the same `--tier` you will run with. The preflight pings each
-tool with that tier's model and names the model it tested. Why: a model the tool no longer offers fails only at
-the tier that uses it.
+Each of the three should report `OK` within about twenty seconds. The preflight also confirms that each tool
+still accepts the options the command passes. Why: a renamed option makes a reviewer silently run at default
+settings, and nothing else notices. Give `ctxr second-opinion preflight` the same `--tier` you will run with.
+The preflight pings each tool with that tier's model and names the model it tested. Why: a model the tool no
+longer offers fails only at the tier that uses it.
 
 If one is down, stop and give the operator the two real choices: sign that tool in and re-run, or continue
-with the others by adding `--only` and naming them. Do not quietly run with one model. A single model is not a
-second opinion, and the runner refuses to start with fewer than two.
+with the others by rerunning `ctxr second-opinion critique` with `--only` and naming them. Do not quietly run with one
+model. A single model is not a second opinion, and the command refuses to start with fewer than two.
 
 Failure signatures: `Not logged in` means Claude needs `/login`; a `401` or an invalid refresh token from
 Codex means `codex login`; an agy call that hangs usually means its sign-in expired and it needs one
 interactive run.
 
-If the plan came from someone other than the operator, leave agy out with `--only claude,codex`. Claude
-runs with no tools at all and Codex in a read-only sandbox. Agy has no mode that removes its ability to act:
-it runs in an empty scratch directory with terminal restrictions, which contains an accident and not an attack.
+Through the store's server, the operator signs the tools in on the server. Tell the person which tool is
+down. Ask them to pass that on to the operator.
+
+Each tool runs in a new folder that is its home and holds only its own login. Where the machine supports it,
+the kernel also stops the tool from reading anything outside that folder, and the preflight reports
+`confined: yes`. Why: a plan can carry instructions from whoever wrote it, and a tool that cannot read a
+secret cannot quote it. The store's server runs a second opinion only when it is confined.
+
+The tools see only an allowlisted environment: the search path, home, locale, proxies, and their own login
+variables. Forge and contexture variables never reach them. When a tool fails because it needed a variable the
+allowlist dropped, a failing `ctxr second-opinion preflight` names the variables it withheld (names, never
+values). Name that variable in `CTXR_SECOND_OPINION_PASS_ENV` for the run. A forge or contexture variable there
+stops the command before any tool starts. Through the store's server, these variables are the operator's to
+set on the server. Ask the operator to set one. Do not try to set it from the conversation.
+
+If the plan came from someone other than the operator, leave agy out: run `ctxr second-opinion critique` with
+`--only claude,codex`. Claude runs with no tools at all and Codex in a read-only sandbox. Agy has no mode that
+removes its ability to act: it runs in an empty scratch directory with terminal restrictions, which contains
+an accident and not an attack.
 
 ## 3. Run a critique
 
-Write the plan to a file. The reviewers can only cite what is written down, and they cite by step number:
+Write the plan down in this shape. Why: the reviewers can only cite what is written down, and they cite by
+step number.
 
 ```
 # Plan: <one-line goal>
@@ -73,41 +91,53 @@ S2. <step>
 - Irreversible: <steps>
 ```
 
-Then run it:
+In a shell, write the plan to a file and run:
 
 ```
-node __SKILLS_PATH__/ctxr-second-opinion/run.mjs --mode critique --plan-file <plan> --out <dir>
+ctxr second-opinion critique --plan-file <plan> --out <dir>
 ```
+
+Through the store's server, give the plan as `input`. Run the `ctxr` tool with `args` set to
+`["second-opinion", "critique", "--plan-file", "@input"]`. The critiques come back in the result.
 
 Three reviewers each read the plan alone: structure and ordering, failure modes and trust boundaries,
 simplicity and cost. None sees another's answer. That is deliberate: reviewers who read each other converge
 on whoever spoke first, and a correct one gets talked out of it. Do not add a second round.
 
-The runner prints the letters it wrote, whether each is valid or blind, and any reviewer that failed. It
-never prints which model wrote which letter. A **blind** critique returned a well-formed verdict but cited
+The command prints the letters it wrote, whether each is valid or blind, and any reviewer that failed. It
+never prints which model wrote which letter. With `ctxr second-opinion critique --json` the same result, with
+the manifest, arrives as one envelope instead. With `ctxr second-opinion critique --print`, the command prints
+each critique under its letter, then the letter table, and writes no files. Through the store's server it
+always prints. A **blind** critique returned a well-formed verdict but cited
 nothing in the plan, so it was written without reading it; it does not count. **Partial** means fewer than
-two valid critiques: say so at the top of your answer and do not call anything a consensus.
+two valid critiques, and the command then exits with the failed-check status rather than success: say so at
+the top of your answer and do not call anything a consensus.
 
-The default tier, `strong`, runs each family's frontier model. Add `--tier fast` to run each family's
-workhorse model instead, for a plan that is small and easy to redo. Why: the frontier models are slower and
-cost more, and a cheap plan does not need them. The default tier is right for anything the operator will act
-on.
+The default tier, `strong`, runs each family's frontier model. Run `ctxr second-opinion critique` with
+`--tier fast` to use each family's workhorse model instead, for a plan that is small and easy to redo. Why:
+the frontier models are slower and cost more, and a cheap plan does not need them. The default tier is right
+for anything the operator will act on.
 
 Each reviewer runs at its provider's own recommended default effort, not one this skill chose. Claude gets no
 effort setting, so Claude Code applies its default for the model. Codex gets the default its model catalog
-declares, which the runner passes explicitly. Why: Codex left to itself, with no setting pinned, can resolve to
-no reasoning at all. Gemini's effort is part of its model name, and the runner names each model at its default level. Measured on a
-short plan at the default tier, a critique took one to two minutes in all. Claude (Fable) took 80 to 120
-seconds, and Gemini (Argon) and Codex (GPT-6-Astra) about 15 each. The fast tier is quicker and costs less. A deeper
-pass is a choice: with `CTXR_SECOND_OPINION_CLAUDE_EFFORT=max`, Claude on Opus alone took over eight minutes on
-a short plan. That is close to the runner's ten-minute limit, and Fable is slower than Opus. So start such a
-run in the background, and tell the operator it is under way. A machine that pins its own Codex effort in its
-configuration is overridden by the catalog default; set `CTXR_SECOND_OPINION_CODEX_EFFORT` to use another.
+declares, which the command passes explicitly. Why: Codex left to itself, with no setting pinned, can resolve
+to no reasoning at all. Gemini's effort is part of its model name, and the command names each model at its
+default level. Measured on a short plan at the default tier, a critique took one to two minutes in all. Claude
+(Fable) took 80 to 120 seconds, and Gemini (Argon) and Codex (GPT-6-Astra) about 15 each. The fast tier is
+quicker and costs less. A deeper pass is a choice: with `CTXR_SECOND_OPINION_CLAUDE_EFFORT=max`, Claude on
+Opus alone took over eight minutes on a short plan. That is close to the command's ten-minute limit per tool,
+and Fable is slower than Opus; raise it with `ctxr second-opinion critique --timeout <seconds>` for such a
+run. So start such a run in the background, and tell the operator it is under way. Through the store's
+server, each tool gets at most 200 seconds and the whole run four minutes. Run a deep pass in a shell.
+Why: the chat app stops waiting for a tool after about four minutes. A machine that pins its own
+Codex effort in its configuration is overridden by the catalog default; set `CTXR_SECOND_OPINION_CODEX_EFFORT`
+to use another.
 
 ## 4. Synthesize on the letters first
 
 Read the `critique-A`, `critique-B` and `critique-C` files and write your synthesis before you open
-`manifest.json`. You share a model family with one of the reviewers, and models rate their own family's
+`manifest.json`. When the critiques were printed, write your synthesis before you read the letter table
+below them. You share a model family with one of the reviewers, and models rate their own family's
 writing higher. Reading letters first is what keeps that from steering you. Then open the manifest and
 attach roles and models to the letters in the final report.
 
@@ -154,21 +184,24 @@ for a typo.
 
 ## 6. Run a poll
 
-Write the question and the options to a file, then:
+Write the question and the options down. In a shell, write them to a file and run:
 
 ```
-node __SKILLS_PATH__/ctxr-second-opinion/run.mjs --mode poll --prompt-file <question>
+ctxr second-opinion poll --prompt-file <question>
 ```
+
+Through the store's server, give them as `input`. Run the `ctxr` tool with `args` set to
+`["second-opinion", "poll", "--prompt-file", "@input"]`. The answers come back in the result.
 
 The same question goes to all three models, each answering with a pick, reasons, and anything surprising.
 This mode names its files by model, because what you are reading is whether the models agree.
 
-To get breadth as well as model diversity, add `--lens` with two or three taste lenses. Each model then
-answers as every lens in one response, giving a lens-by-model grid. The built-in lenses are minimalist,
-marketer, contrarian, end-user and brand-strategist. A store's own lens goes in as `Name:description`, for
-example `--lens "minimalist,Plainspoken:blunt, substance first, distrusts slogans"`. A description may contain
-commas: a comma starts the next lens only when what follows is a built-in lens name or begins `Name:`. So a
-description must not contain a colon. Choose lenses that pull in different
+To get breadth as well as model diversity, run `ctxr second-opinion poll` with `--lens` and two or three taste
+lenses. Each model then answers as every lens in one response, giving a lens-by-model grid. The built-in
+lenses are minimalist, marketer, contrarian, end-user and brand-strategist. A store's own lens goes in as
+`Name:description`, for example `--lens "minimalist,Plainspoken:blunt, substance first, distrusts slogans"`.
+A description may contain commas: a comma starts the next lens only when what follows is a built-in lens name
+or begins `Name:`. So a description must not contain a colon. Choose lenses that pull in different
 directions; if two would obviously agree, drop one.
 
 Read a lens grid on both axes. Down a column (one lens across the three models) agreement means that
@@ -183,10 +216,14 @@ include your own family, say so.
 
 - A reviewer that timed out, exited non-zero, or returned no verdict is `failed` and carries its cause in
   the manifest. Report it. Do not rerun that one reviewer on a different model to fill the gap.
+- The command's status says which kind of trouble it is. Success means at least two valid answers. The
+  failed-check status means it ran and the result is partial, or the preflight found a tool down. The usage
+  status means nothing ran: an argument was wrong, fewer than two tools were named, or the pass-through
+  variable named a forge or contexture variable.
 - Do not poll from inside a critique to settle a quick doubt. If you want a gut check mid-critique, answer it
   yourself.
 - Model names change faster than releases. When a default is stale, set
   `CTXR_SECOND_OPINION_CLAUDE_MODEL`, `CTXR_SECOND_OPINION_CLAUDE_EFFORT`, `CTXR_SECOND_OPINION_CODEX_MODEL`,
-  `CTXR_SECOND_OPINION_CODEX_EFFORT` or `CTXR_SECOND_OPINION_AGY_MODEL` in the environment for the run. Nothing about the lineup lives in the store's configuration.
+  `CTXR_SECOND_OPINION_CODEX_EFFORT` or `CTXR_SECOND_OPINION_AGY_MODEL` in the environment for the run. Nothing about the lineup lives in the store's configuration. Through the store's server, the operator sets them on the server.
 - The scratch files under the output directory hold each reviewer's raw output and are safe to delete when the
-  operator has the synthesis. They can contain the plan, so do not commit them.
+  operator has the synthesis. They can contain the plan, so do not commit them. A printed run writes none.

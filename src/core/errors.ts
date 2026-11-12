@@ -815,3 +815,68 @@ export class ForgeCredentialsError extends ContextureError {
     });
   }
 }
+
+/**
+ * run-the-second-opinion-from-the-cli D2: invalid arguments, unreadable input, fewer than two requested
+ * model CLIs, or a pass-through list naming a protected variable — always before any CLI launches.
+ */
+export class SecondOpinionUsageError extends ContextureError {
+  constructor(message: string, details?: Record<string, unknown>) {
+    super(ExitCode.Usage, { code: 'second_opinion.usage', severity: 'error', message, ...(details ? { details } : {}) });
+  }
+}
+
+/**
+ * serve-the-second-opinion-to-chat-apps D1: `--require-confinement` on a
+ * machine that cannot confine the run — the failed-check code, since the
+ * arguments were valid and the machine is what fell short. Raised before any
+ * model CLI starts.
+ */
+export class SecondOpinionUnconfinedError extends ContextureError {
+  constructor(reason: string) {
+    super(ExitCode.CheckFailed, { code: 'second_opinion.unconfined', severity: 'error', message: `cannot confine the model CLIs here: ${reason}`, details: { reason } });
+  }
+}
+
+/**
+ * bring-the-session-lifecycle-into-the-cli D3: a session command's refusal —
+ * the usage code for what the caller named (a session that is not one, a
+ * branch another session carries, a body with a generated section's heading),
+ * the failed-check code for what the session holds (uncommitted work discard
+ * would destroy, a derived path in the index, a rebase in progress).
+ */
+export class SessionRefusedError extends ContextureError {
+  constructor(exitCode: ExitCode, reason: string, message: string, details: Record<string, unknown> = {}, subject?: string) {
+    super(exitCode, { code: `session.${reason}`, severity: 'error', message, details, ...(subject === undefined ? {} : { subject }) });
+  }
+}
+
+/** context-browsing spec (serve-keeps-its-clone-current D9): a webhook secret that is ambiguous, unreadable or empty. */
+export class WebhookSecretError extends ContextureError {
+  constructor(message: string, variables: readonly string[]) {
+    super(ExitCode.Usage, { code: 'serve.webhook_secret', severity: 'error', message, details: { variables: [...variables] } });
+  }
+}
+
+/** write-lifecycle spec (serve-keeps-its-clone-current): `ctxr sync --every` takes a positive whole number of minutes. */
+export class SyncFlagsError extends ContextureError {
+  constructor(message: string) {
+    super(ExitCode.Usage, { code: 'sync.flags', severity: 'error', message });
+  }
+}
+
+/**
+ * write-lifecycle spec ("The canonical-clone sync fetches as landing does and
+ * changes nothing else"): the fetch failed, so the forge is unreachable and
+ * the clone was left as it was.
+ */
+export class SyncForgeUnreachableError extends ContextureError {
+  constructor(branch: string, detail: string) {
+    super(ExitCode.Usage, {
+      code: 'sync.forge_unreachable',
+      severity: 'error',
+      message: `The forge is unreachable: fetching ${branch} from origin failed (${detail}). The canonical clone was left as it was.`,
+      details: { branch, detail },
+    });
+  }
+}

@@ -5,6 +5,8 @@ import path from 'node:path';
 export interface GitHttpOrigin {
   /** The clone URL of `repoName` under this server. */
   url: string;
+  /** The server's root URL, without a trailing slash: `<base>/<path under projectRoot>` addresses any repository there. */
+  base: string;
   /** Each request's method, path and whether it carried an accepted credential. */
   requests: { method: string; path: string; authorized: boolean }[];
   close(): Promise<void>;
@@ -14,15 +16,16 @@ export interface GitHttpOrigin {
  * Serves the bare repositories under `projectRoot` over smart HTTP through
  * `git http-backend`, answering 401 to any request whose basic credential is
  * not `x-access-token` with a password `accept` approves — the way GitHub treats
- * an installation token.
+ * an installation token. `accept` is also given the request's path, so one
+ * server can take a different token for each owner's repositories.
  */
-export async function startGitHttpOrigin(projectRoot: string, repoName: string, accept: (password: string) => boolean): Promise<GitHttpOrigin> {
+export async function startGitHttpOrigin(projectRoot: string, repoName: string, accept: (password: string, pathname: string) => boolean): Promise<GitHttpOrigin> {
   const requests: GitHttpOrigin['requests'] = [];
   const server: Server = createServer((req, res) => {
     const url = new URL(req.url ?? '/', 'http://x');
     const basic = /^Basic (.+)$/.exec(req.headers.authorization ?? '')?.[1];
     const [user, password] = basic === undefined ? [] : Buffer.from(basic, 'base64').toString().split(':');
-    const authorized = user === 'x-access-token' && password !== undefined && accept(password);
+    const authorized = user === 'x-access-token' && password !== undefined && accept(password, url.pathname);
     requests.push({ method: req.method ?? 'GET', path: url.pathname, authorized });
     if (!authorized) {
       res.writeHead(401, { 'WWW-Authenticate': 'Basic realm="git"' });
@@ -66,6 +69,7 @@ export async function startGitHttpOrigin(projectRoot: string, repoName: string, 
   const port = (server.address() as { port: number }).port;
   return {
     url: `http://127.0.0.1:${port}/${path.basename(repoName)}`,
+    base: `http://127.0.0.1:${port}`,
     requests,
     close: () => new Promise<void>((resolve) => server.close(() => resolve())),
   };

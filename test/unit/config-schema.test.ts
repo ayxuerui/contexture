@@ -2,7 +2,7 @@ import { readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_CAPTURE_ROOT, DEFAULT_PUBLISH_PATH, DEFAULT_VENDORED_SKILLS, SHIPPED_DEFAULTS } from '../../src/config/defaults.js';
+import { DEFAULT_CAPTURE_ROOT, DEFAULT_PUBLISH_PATH, DEFAULT_SERVE_SYNC_MINUTES, DEFAULT_VENDORED_SKILLS, serveSyncMinutes, SHIPPED_DEFAULTS } from '../../src/config/defaults.js';
 import { readConfig } from '../../src/config/load.js';
 import { SUPPORTED_SCHEMA_VERSION } from '../../src/config/schema.js';
 import { renderStoreConfig } from '../../src/config/render.js';
@@ -346,6 +346,48 @@ describe('readConfig', () => {
     }
   });
 
+  /** serve-keeps-its-clone-current: serve.sync_minutes, absent meaning 5, positive whole minutes only. */
+  it('resolves an absent serve.sync_minutes to 5, with or without a serve block', async () => {
+    expect(DEFAULT_SERVE_SYNC_MINUTES).toBe(5);
+    for (const extra of ['', 'serve: { base_url: "https://ctx-a.example.test" }\n']) {
+      const tmp = await makeTmpDir();
+      try {
+        await writeFile(path.join(tmp.root, CONFIG_FILE_NAME), `${minimalConfig()}${extra}`);
+        const config = await readConfig(tmp.root);
+        expect(config.serve?.sync_minutes).toBeUndefined();
+        expect(serveSyncMinutes(config)).toBe(5);
+      } finally {
+        await tmp.cleanup();
+      }
+    }
+  });
+
+  it('reads a positive whole serve.sync_minutes', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      await writeFile(path.join(tmp.root, CONFIG_FILE_NAME), `${minimalConfig()}serve: { sync_minutes: 2 }\n`);
+      const config = await readConfig(tmp.root);
+      expect(config.serve?.sync_minutes).toBe(2);
+      expect(serveSyncMinutes(config)).toBe(2);
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  for (const value of ['0', '-3', '2.5', '"five"']) {
+    it(`refuses serve.sync_minutes: ${value}, naming the key`, async () => {
+      const tmp = await makeTmpDir();
+      try {
+        await writeFile(path.join(tmp.root, CONFIG_FILE_NAME), `${minimalConfig()}serve: { sync_minutes: ${value} }\n`);
+        const error = await readConfig(tmp.root).catch((err: unknown) => err);
+        expect(error).toBeInstanceOf(InvalidConfigError);
+        expect((error as InvalidConfigError).message).toContain('serve.sync_minutes');
+      } finally {
+        await tmp.cleanup();
+      }
+    });
+  }
+
   /** approve-from-the-review-page: opt-in, no shipped default, and only alongside a base URL. */
   const CHANGE_APPROVAL_BLOCK =
     'change_approval:\n' +
@@ -623,7 +665,7 @@ describe('renderStoreConfig (config-defaults-as-the-convention)', () => {
   });
 
   /**
-   * circleback-sweep: the opt-in block that ships the `ctxr-circleback` skill.
+   * circleback-sweep: the opt-in block that ships the `ctxr-capture-circleback` skill.
    * Optional with no shipped default, like `serve`, and its own optional keys
    * stay absent, so a rewritten config never gains a key the store did not write.
    */
@@ -693,4 +735,45 @@ describe('adapters', () => {
     }
   });
 
+});
+
+describe('shared_stores (mount-shared-stores)', () => {
+  async function load(extra: string) {
+    const tmp = await makeTmpDir();
+    try {
+      await writeFile(path.join(tmp.root, CONFIG_FILE_NAME), `${minimalConfig()}${extra}`);
+      return await readConfig(tmp.root);
+    } finally {
+      await tmp.cleanup();
+    }
+  }
+
+  it('is absent when undeclared, and rendering does not add it', async () => {
+    const config = await load('');
+    expect(config.shared_stores).toBeUndefined();
+    expect(renderStoreConfig(config)).not.toContain('shared_stores');
+  });
+
+  it('loads declared mounts and round-trips them', async () => {
+    const config = await load('shared_stores:\n  - { name: ctx-b, url: "https://example.test/ctx-b.git" }\n');
+    expect(config.shared_stores).toEqual([{ name: 'ctx-b', url: 'https://example.test/ctx-b.git' }]);
+    expect(renderStoreConfig(config)).toContain('shared_stores');
+  });
+
+  for (const [what, name] of [
+    ['contains a /', 'ctx/b'],
+    ['changes under slugification', 'Ctx B'],
+  ] as const) {
+    it(`refuses a mount name that ${what}, naming the entry`, async () => {
+      const err = await load(`shared_stores:\n  - { name: "${name}", url: u }\n`).catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(InvalidConfigError);
+      expect(String((err as InvalidConfigError).message)).toContain(name);
+    });
+  }
+
+  it('refuses two mounts with one name', async () => {
+    const err = await load('shared_stores:\n  - { name: ctx-b, url: u1 }\n  - { name: ctx-b, url: u2 }\n').catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(InvalidConfigError);
+    expect(String((err as InvalidConfigError).message)).toContain('more than once');
+  });
 });

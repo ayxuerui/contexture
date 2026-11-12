@@ -15,10 +15,9 @@ import { catalogSectionsFor } from '../core/catalog/model.js';
 import type { Finding } from '../core/envelope.js';
 import { ExitCode } from '../core/exit-codes.js';
 import { readFencedRegionFromFile } from '../core/fs/fenced-region.js';
-import { buildGraphFromNotes, graphBuildOptions } from '../core/graph/model.js';
+import { buildReadViewGraph } from '../core/shared-stores.js';
 import { writeGraph } from '../core/graph/persist.js';
 import type { Fence } from '../core/markers.js';
-import { listNotes } from '../core/notes/list.js';
 import { resolveOnPath } from '../core/environment/probe.js';
 import { scanSkills } from '../core/skills.js';
 import { sanctionedPath } from '../core/write-lifecycle/path-gate.js';
@@ -104,8 +103,7 @@ export async function execute(env: RunEnv, store: Store, flags: VerifyFlags = {}
 
   // 2. A derived-artifact build.
   try {
-    const notes = await listNotes(store.root, store.config);
-    await writeGraph(store, buildGraphFromNotes(notes, graphBuildOptions(store.config)));
+    await writeGraph(store, (await buildReadViewGraph(store.root, store.config)).graph);
     steps.push({ operation: 'derived-artifact build (graph build)', status: 'pass' });
   } catch (err) {
     steps.push({

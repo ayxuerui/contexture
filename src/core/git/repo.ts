@@ -123,6 +123,29 @@ export function isWorktreeOf(candidate: string, owner: string): boolean {
 }
 
 /**
+ * The main working tree of the repository `root` belongs to, decided from the
+ * filesystem alone. A session worktree does not contain the ignored `shared/`
+ * directory, so mounts are always read from the main working tree (D7); this is
+ * how a command run in a session worktree finds them.
+ *
+ * A linked worktree's `.git` points at `<main>/.git/worktrees/<name>`, whose
+ * `commondir` file names the shared `.git`. Anything that is not a linked
+ * worktree is its own main working tree.
+ */
+export function mainWorkingTreeRoot(root: string): string {
+  const gitDir = linkedWorktreeGitDir(root);
+  if (gitDir === null) return root;
+  let commonDir = path.resolve(gitDir, '..', '..');
+  try {
+    const pointer = readFileSync(path.join(gitDir, 'commondir'), 'utf8').trim();
+    if (pointer !== '') commonDir = path.resolve(gitDir, pointer);
+  } catch {
+    // No commondir file: fall back to the standard `<main>/.git/worktrees/<name>` layout.
+  }
+  return path.dirname(commonDir);
+}
+
+/**
  * Whether git has an explicit author identity available, from either source
  * it actually uses at commit time: `GIT_AUTHOR_*`/`GIT_COMMITTER_*`
  * env vars, or `git config user.email`/`user.name`. If neither, init

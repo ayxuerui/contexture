@@ -44,6 +44,24 @@ export async function renderReview(
 ): Promise<RenderedBody> {
   const prefix = await storePrefix(git, store.root);
   const worktreeStoreRoot = path.join(store.root, store.config.session.worktrees_path, worktree, prefix);
+  return renderReviewAt(git, worktreeStoreRoot, store.config, prefix, recordedHead, linkFor, resolveLink, until);
+}
+
+/**
+ * The same view for a store root inside any checkout of the repository — a mounted store's clone, where a part of
+ * a session homed elsewhere has no worktree (approve-sessions-across-stores). `until` names the head to compare.
+ */
+export async function renderReviewAt(
+  git: GitRunner,
+  worktreeStoreRoot: string,
+  config: Store['config'],
+  prefix: string,
+  recordedHead: string | null,
+  linkFor: (notePath: string) => string | null,
+  resolveLink: LinkResolver,
+  until?: string,
+): Promise<RenderedBody> {
+  const store = { config };
   const defaultBranch = store.config.git.default_branch;
   const remote = await git.run(['rev-parse', '--verify', '--quiet', `refs/remotes/origin/${defaultBranch}`], {
     cwd: worktreeStoreRoot,

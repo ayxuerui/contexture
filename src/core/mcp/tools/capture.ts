@@ -10,20 +10,14 @@ import { listCaptures, listNotes } from '../../notes/list.js';
 import { parseNoteText } from '../../notes/parse.js';
 import { slugifySegment } from '../../slug.js';
 import { isUnderAnyPrefix } from '../../fs/prefix.js';
+import { SessionRefusedError } from '../../errors.js';
+import { listSessionWorktreeDirs, sessionLabelFromDirName } from '../../session.js';
+import { pullStateFor, removeSession } from '../../session/remote.js';
+import { resolveSession, type SessionRef } from '../../session/resolve.js';
+import { submitSession } from '../../session/submit.js';
 import { ToolRefusal } from '../jsonrpc.js';
-import {
-  approvalUrl,
-  commitAs,
-  publish,
-  pullStateFor,
-  removeSession,
-  repoPathOf,
-  sessionsLabelled,
-  startSession,
-  WriteRefusal,
-  type Session,
-  type WriteDeps,
-} from '../sessions.js';
+import { ownershipOf, repoPrefixOf } from '../member-sessions.js';
+import { approvalUrl, memberCommit, startSession, WriteRefusal, type WriteDeps } from '../sessions.js';
 import type { McpView, SyncDeps } from '../sync.js';
 
 /**
@@ -33,6 +27,13 @@ import type { McpView, SyncDeps } from '../sync.js';
  * capture is idempotent by source identity — derived from the content when
  * the caller names none — so a call that failed after committing resumes into
  * the same pull request instead of being refused as its own duplicate.
+ *
+ * serve-the-session-lifecycle-to-chat-apps task 3.3: the named exception
+ * (D9) is `session_start`, a `Write` into the inbox, the source check and
+ * `session_submit` in one call, so it runs on their core — the shared start,
+ * and the shared submit with its doctor gate and the member as author — and
+ * records its session as the member's capture, which `session_list` lists but
+ * the session cap does not count (revision 8).
  */
 
 export const MAX_CAPTURE_BODY_BYTES = 256 * 1024;
@@ -102,10 +103,10 @@ function captureText(args: CaptureArgs, sourceId: string): string {
 }
 
 /** The inbox file a capture session's committed tip adds, as an identity record; null when it adds none. */
-async function sessionCapture(write: WriteDeps, session: Session, inbox: string): Promise<IdentityRecord | null> {
+async function sessionCapture(write: WriteDeps, session: SessionRef, inbox: string): Promise<IdentityRecord | null> {
   const base = `refs/remotes/origin/${write.config.git.default_branch}`;
   const added = await write.git.run(['diff', '--name-only', '--diff-filter=A', '--no-renames', `${base}...HEAD`], { cwd: session.path, allowFailure: true });
-  const prefix = await repoPathOf(write, '');
+  const prefix = await repoPrefixOf(write);
   for (const repoPath of added.stdout.split('\n').filter((p) => p.length > 0)) {
     if (!repoPath.startsWith(prefix)) continue;
     const rel = repoPath.slice(prefix.length);
@@ -132,8 +133,8 @@ function pullBody(email: string, args: CaptureArgs, sourceId: string, rel: strin
   ].join('\n');
 }
 
-function resultFor(write: WriteDeps, session: Session, pull: { number: number; url: string }, rel: string, sourceId: string, resumed: boolean): CaptureResult {
-  const approval = approvalUrl(write, session);
+function resultFor(write: WriteDeps, session: SessionRef, pull: { number: number; url: string }, rel: string, sourceId: string, resumed: boolean): CaptureResult {
+  const approval = approvalUrl(write, session.name);
   return {
     saved: true,
     resumed,
@@ -143,6 +144,42 @@ function resultFor(write: WriteDeps, session: Session, pull: { number: number; u
     approval_url: approval,
     message: `Saved for approval as pull request #${pull.number}. It lands in the inbox once someone approves it at ${approval}.`,
   };
+}
+
+/** The capture sessions on disk: recorded as captures, or labelled as one by the surface before the record existed. */
+async function captureSessions(write: WriteDeps): Promise<SessionRef[]> {
+  const recorded = new Set((await ownershipOf(write).captures()).map((entry) => entry.name));
+  const found: SessionRef[] = [];
+  for (const name of await listSessionWorktreeDirs(write.canonicalRoot, write.config)) {
+    if (!recorded.has(name) && !(sessionLabelFromDirName(write.config, name) ?? '').startsWith(CAPTURE_LABEL_PREFIX)) continue;
+    try {
+      found.push(await resolveSession(write.git, write.canonicalRoot, write.config, name, write.canonicalRoot));
+    } catch (err) {
+      if (!(err instanceof SessionRefusedError)) throw err;
+    }
+  }
+  return found;
+}
+
+/**
+ * The shared submit, with the member as author and the session's own branch: nothing to name, since a capture's
+ * branch is never renamed. A retry whose commit already exists publishes it without a second one.
+ */
+async function submitCapture(write: WriteDeps, email: string, session: SessionRef, title: string, body: string): Promise<{ number: number; url: string }> {
+  try {
+    const submitted = await submitSession({ ...write, commit: memberCommit(write, email, 'Captured-by') }, session, { branch: session.branch, message: `Capture: ${title}`, title: `Capture: ${title}`, body });
+    return submitted.pull_request;
+  } catch (err) {
+    if (!(err instanceof SessionRefusedError)) throw err;
+    const reason = err.finding.code;
+    if (reason === 'session.push_failed') {
+      throw new WriteRefusal('mcp.push_failed', `The capture is saved in its session but could not be pushed yet. Retry the same call to publish it. (${err.finding.message})`, { session: session.name });
+    }
+    if (reason === 'session.pull_request_failed') {
+      throw new WriteRefusal('mcp.pull_request_failed', `The capture is pushed but its pull request could not be opened yet. Retry the same call to open it. (${err.finding.message})`, { session: session.name });
+    }
+    throw err;
+  }
 }
 
 /** Run under the write mutex (design.md D9). */
@@ -165,21 +202,20 @@ export async function capture(ctx: CaptureContext, email: string, args: CaptureA
   // The hash is over the canonical body, which the frontmatter does not enter, so any id gives the same hash.
   const hash = contentHash(captureText(args, 'pending'), 'capture');
   const sourceId = args.source_id ?? `${args.source_type}/${hash}`;
-  const pullText = (rel: string) => ({ title: `Capture: ${args.title}`, body: pullBody(email, args, sourceId, rel) });
 
   // Capture sessions on disk: reclaim the closed, resume the unpublished, count the open as pending.
   const pending: IdentityRecord[] = [];
-  for (const session of await sessionsLabelled(ctx.write, CAPTURE_LABEL_PREFIX)) {
-    const state = await pullStateFor(ctx.write, session.branch);
+  for (const session of await captureSessions(ctx.write)) {
+    const state = await pullStateFor(ctx.write.forge, session.branch);
     if (state.kind === 'closed-unmerged') {
-      await removeSession(ctx.write, session);
+      await removeSession(ctx.write.git, ctx.write.canonicalRoot, session);
       continue;
     }
     if (state.kind === 'merged') continue;
     const record = await sessionCapture(ctx.write, session, inbox);
     if (record === null) continue;
     if (state.kind === 'none' && record.frontmatter?.[SOURCE_ID_FIELD] === sourceId) {
-      const pull = await publish(ctx.write, session, pullText(record.path));
+      const pull = await submitCapture(ctx.write, email, session, args.title, pullBody(email, args, sourceId, record.path));
       return resultFor(ctx.write, session, pull, record.path, sourceId, true);
     }
     if (state.kind === 'open') pending.push({ path: `${record.path} (pull request #${state.pull.number}, awaiting approval)`, frontmatter: record.frontmatter });
@@ -197,24 +233,22 @@ export async function capture(ctx: CaptureContext, email: string, args: CaptureA
   const date = ctx.write.now().toISOString().slice(0, 10);
   const slug = slugifySegment(args.title).slice(0, 40).replace(/-+$/, '') || 'capture';
   const id = randomBytes(3).toString('hex');
-  const session = await startSession(ctx.write, `${CAPTURE_LABEL_PREFIX}${slug.slice(0, 30)}-${id}`);
+  const started = await startSession(ctx.write, `${CAPTURE_LABEL_PREFIX}${slug.slice(0, 30)}-${id}`);
+  await ownershipOf(ctx.write).record(started.name, { owner: email, kind: 'capture', started_at: ctx.write.now().toISOString() });
+  const session = await resolveSession(ctx.write.git, ctx.write.canonicalRoot, ctx.write.config, started.name, ctx.write.canonicalRoot);
   // posix join: the schema accepts an inbox path with or without its trailing slash.
   const rel = path.posix.join(inbox, `${date}-${slug}-${id}.md`);
-  const repoPath = await repoPathOf(ctx.write, rel);
-  const absolute = path.join(session.path, repoPath);
+  const absolute = path.join(session.storeRoot, rel);
   await mkdir(path.dirname(absolute), { recursive: true });
   await writeFile(absolute, captureText(args, sourceId));
+  let pull: { number: number; url: string };
   try {
-    await commitAs(ctx.write, session, email, [repoPath], `Capture: ${args.title}`, 'Captured-by');
+    pull = await submitCapture(ctx.write, email, session, args.title, pullBody(email, args, sourceId, rel));
   } catch (err) {
-    await removeSession(ctx.write, session);
+    // Refused before anything was committed (the gate, or the hooks): nothing of it should stay behind.
+    const committed = (await ctx.write.git.run(['rev-list', '--count', `refs/remotes/origin/${ctx.write.config.git.default_branch}..HEAD`], { cwd: session.path, allowFailure: true })).stdout.trim();
+    if (committed === '0') await removeSession(ctx.write.git, ctx.write.canonicalRoot, session);
     throw err;
   }
-  const pull = await publish(ctx.write, session, pullText(rel));
   return resultFor(ctx.write, session, pull, rel, sourceId, false);
-}
-
-/** WriteRefusal → ToolRefusal, so the client reads the reason rather than a protocol error. */
-export function asToolRefusal(err: unknown): unknown {
-  return err instanceof WriteRefusal ? new ToolRefusal(err.code, err.message, err.details) : err;
 }

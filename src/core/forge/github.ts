@@ -51,6 +51,8 @@ export type MergeMethod = 'squash' | 'merge' | 'rebase';
 export interface ForgeClient {
   /** The credential kind behind every call — reported by commands, never the credential itself. */
   credential: CredentialKind;
+  /** For `owner-token`, the GitHub owner whose token it is (reach-each-owner-with-its-own-token D7); null otherwise. */
+  credentialOwner: string | null;
   login(): Promise<string>;
   pull(number: number): Promise<PullRequest>;
   openPulls(): Promise<PullRequest[]>;
@@ -58,11 +60,21 @@ export interface ForgeClient {
   pullsForHead(branch: string): Promise<PullRequest[]>;
   /** serve-the-store-over-mcp D9, D13: opens a pull request for `head` against `base`. */
   createPull(input: { head: string; base: string; title: string; body: string }): Promise<PullRequest>;
+  /**
+   * bring-the-session-lifecycle-into-the-cli D3: a resubmitted session updates its open pull request's title and
+   * body rather than opening another, and `session discard --close-pull-request` closes it.
+   */
+  updatePull(number: number, input: { title?: string; body?: string; state?: 'open' | 'closed' }): Promise<PullRequest>;
   reviews(number: number): Promise<Review[]>;
   comments(number: number): Promise<IssueComment[]>;
   createReview(number: number, input: { event: ReviewEvent; body: string; commitId: string }): Promise<void>;
   createComment(number: number, body: string): Promise<void>;
   merge(number: number, input: { method: MergeMethod; sha: string }): Promise<void>;
+  /**
+   * approve-sessions-across-stores D5: a file's text on `ref` as the forge holds it; null when it is not there.
+   * A mounted store's deciders are read this way, at decision time, never from a clone that can be behind.
+   */
+  fileAt(filePath: string, ref: string): Promise<string | null>;
 }
 
 /** A `gh api` call that did not succeed. `status` is the HTTP status when `gh` reported one. */
@@ -135,6 +147,7 @@ export function createGhForgeClient(cwd: string, credentials: ForgeCredentials):
   const repo = 'repos/{owner}/{repo}';
   return {
     credential: credentials.kind,
+    credentialOwner: credentials.owner,
     async login() {
       // An installation token cannot call GET /user; an App's login is its bot login (change-approval spec).
       const bot = await credentials.botLogin();
@@ -152,6 +165,9 @@ export function createGhForgeClient(cwd: string, credentials: ForgeCredentials):
     },
     async createPull(input) {
       return toPull((await api(`${repo}/pulls`, { method: 'POST', input: { head: input.head, base: input.base, title: input.title, body: input.body } })) as RawPull);
+    },
+    async updatePull(number, input) {
+      return toPull((await api(`${repo}/pulls/${number}`, { method: 'PATCH', input })) as RawPull);
     },
     async reviews(number) {
       const raw = (await api(`${repo}/pulls/${number}/reviews?per_page=100`)) as {
@@ -188,6 +204,17 @@ export function createGhForgeClient(cwd: string, credentials: ForgeCredentials):
     },
     async merge(number, input) {
       await api(`${repo}/pulls/${number}/merge`, { method: 'PUT', input: { merge_method: input.method, sha: input.sha } });
+    },
+    async fileAt(filePath, ref) {
+      const encoded = filePath.split('/').map(encodeURIComponent).join('/');
+      try {
+        const raw = (await api(`${repo}/contents/${encoded}?ref=${encodeURIComponent(ref)}`)) as { content?: string; encoding?: string } | null;
+        if (raw === null || typeof raw.content !== 'string') return null;
+        return raw.encoding === 'base64' ? Buffer.from(raw.content, 'base64').toString('utf8') : raw.content;
+      } catch (err) {
+        if (err instanceof ForgeRequestError && err.status === 404) return null;
+        throw err;
+      }
     },
   };
 }

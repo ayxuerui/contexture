@@ -19,6 +19,7 @@ import { extractDocMetadata, scanConventions } from '../conventions.js';
 import type { Finding } from '../envelope.js';
 import { readFencedRegion, removeFencedRegion } from '../fs/fenced-region.js';
 import { buildGraphFromNotes, graphBuildOptions } from '../graph/model.js';
+import { buildReadViewGraph, declaresSharedStores } from '../shared-stores.js';
 import { effectiveSkillsDir, isBridgeBroken } from '../harness/bridge.js';
 import { harnessEntryFence } from '../markers.js';
 import type { StagedFile } from './types.js';
@@ -83,7 +84,12 @@ export const derivedArtifactStalenessCheck = defineCheck({
 
     const persistedGraph = await ctx.graph();
     if (persistedGraph) {
-      const freshGraph = buildGraphFromNotes(await ctx.notes(), graphBuildOptions(ctx.config));
+      // mount-shared-stores: the persisted graph is built from the read view, so a
+      // store with mounts is compared against one. Without mounts the view is
+      // exactly the store's own notes, which the run already memoizes.
+      const freshGraph = declaresSharedStores(ctx.config)
+        ? (await buildReadViewGraph(ctx.storeRoot, ctx.config)).graph
+        : buildGraphFromNotes(await ctx.notes(), graphBuildOptions(ctx.config));
       if (JSON.stringify(persistedGraph) !== JSON.stringify(freshGraph)) {
         findings.push({
           code: 'derived_artifacts.graph_stale',

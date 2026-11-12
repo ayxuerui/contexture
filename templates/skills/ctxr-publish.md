@@ -127,7 +127,8 @@ lower is the same material in shorter words.
 
 Run `ctxr publish check <path>`. It runs the mechanical half of the checklist:
 
-- no external network address, a viewport meta tag, at least one print rule, and a provenance line;
+- nothing loaded from an external address (a link the reader follows is fine), a viewport meta tag,
+  at least one print rule, and a provenance line;
 - a sibling README, balanced tags, and valid syntax in every embedded script;
 - the page's filing location from step 4;
 - for a disposable page, its shape (`disposable-shape`): one folder directly under `disposable/`,

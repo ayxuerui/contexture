@@ -6,11 +6,11 @@ import { describe, expect, it } from 'vitest';
 import { makeTmpDir } from '../helpers/tmp-store.js';
 
 /**
- * circleback-sweep: the ctxr-circleback runner, run for real against a git store with a bare origin and stand-in
+ * circleback-sweep: the ctxr-capture-circleback runner, run for real against a git store with a bare origin and stand-in
  * `cb` and `gh` commands. It must route by tag, read tags from `cb meetings read` (search returns none), and
  * render only what the store owes.
  */
-const RUNNER = fileURLToPath(new URL('../../templates/skills/ctxr-circleback/sweep.mjs', import.meta.url));
+const RUNNER = fileURLToPath(new URL('../../templates/skills/ctxr-capture-circleback/sweep.mjs', import.meta.url));
 const NOW = Date.now();
 const daysAgo = (days: number): string => new Date(NOW - days * 86_400_000).toISOString();
 
@@ -22,6 +22,7 @@ const MEETINGS = [
   { id: 'bothE5', name: 'Two homes', createdAt: daysAgo(5), tags: ['alpha-store', 'beta-store'], notes: 'n' },
   { id: 'declF6', name: 'Doorstep', createdAt: daysAgo(2), tags: ['no-capture'], notes: 'n' },
   { id: 'elseG7', name: 'Other store', createdAt: daysAgo(4), tags: ['beta-store'], notes: 'n' },
+  { id: 'sessH8', name: 'Captured in a session', createdAt: daysAgo(6), tags: ['alpha-store'], notes: 'n' },
 ].map((m) => ({
   ...m,
   duration: 125,
@@ -53,7 +54,7 @@ process.stdout.write(JSON.stringify(out));
   chmodSync(path.join(dir, 'gh'), 0o755);
 }
 
-describe('ctxr-circleback runner', () => {
+describe('ctxr-capture-circleback runner', () => {
   it('routes by tag, renders only what the store owes, and reports the rest', async () => {
     const tmp = await makeTmpDir();
     try {
@@ -68,6 +69,11 @@ describe('ctxr-circleback runner', () => {
       git(store, 'add', '.');
       git(store, 'commit', '-q', '-m', 'seed');
       git(store, 'push', '-q', 'origin', 'HEAD:trunk');
+      // An agent's session that captured a meeting and has not committed it: work in flight, not a gap.
+      const session = path.join(tmp.root, 'session');
+      git(store, 'worktree', 'add', '-q', '-b', 'session/one', session, 'HEAD');
+      mkdirSync(path.join(session, 'raw', 'inbox'), { recursive: true });
+      writeFileSync(path.join(session, 'raw', 'inbox', 'held.md'), '---\nsource_id: circleback/sessH8\n---\n');
 
       const skill = path.join(tmp.root, 'skill');
       mkdirSync(skill);
@@ -87,16 +93,17 @@ describe('ctxr-circleback runner', () => {
       });
 
       expect(report).not.toContain('COLLECTION FAILED');
-      expect(report).toContain('Already in this store or an open pull request: 1.');
+      expect(report).toContain('Already in this store, an open pull request or a local worktree: 2.');
       const toCapture = report.split('TO CAPTURE')[1]?.split('\n\n')[0] ?? '';
       expect(toCapture).toContain('owedA1');
-      for (const id of ['hereB2', 'lockC3', 'noneD4', 'bothE5', 'declF6', 'elseG7']) expect(toCapture, id).not.toContain(id);
+      for (const id of ['hereB2', 'lockC3', 'noneD4', 'bothE5', 'declF6', 'elseG7', 'sessH8']) expect(toCapture, id).not.toContain(id);
+      expect(report.split('UNPUSHED')[1]?.split('\n\n')[0]).toMatch(/sessH8 .*\(in .*session\)/);
       expect(report.split('LOCKED')[1]).toMatch(/lockC3/);
       expect(report.split('UNTAGGED')[1]).toMatch(/noneD4 \| Nobody decided \(URGENT, locks soon\)/);
       expect(report.split('TAGGED FOR MORE THAN ONE STORE')[1]).toMatch(/bothE5 .*\(also beta-store\)/);
       expect(report.split('DECLINED IN THE LAST 8 DAYS')[1]).toMatch(/declF6/);
 
-      const worktree = path.join(scratch, 'ctxr-circleback-store');
+      const worktree = path.join(scratch, 'ctxr-capture-circleback-store');
       expect(git(worktree, 'rev-parse', '--abbrev-ref', 'HEAD').trim()).toBe('circleback-capture');
       const inbox = path.join(worktree, 'raw', 'inbox');
       const files = readdirSync(inbox);
@@ -114,7 +121,8 @@ describe('ctxr-circleback runner', () => {
         env: { ...process.env, PATH: `${bin}${path.delimiter}${process.env.PATH}`, CONTEXTURE_STORE_ROOT: store, TMPDIR: scratch },
       });
       expect(again).not.toContain('COLLECTION FAILED');
-      expect(again).toContain('owedA1');
+      // Its own review worktree, holding last run's capture, is not counted as the meeting being present.
+      expect(again.split('TO CAPTURE')[1]?.split('\n\n')[0]).toContain('owedA1');
     } finally {
       await tmp.cleanup();
     }

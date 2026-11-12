@@ -112,7 +112,7 @@ The pre-commit hook SHALL refuse a commit that stages a change to a convention f
 - **THEN** `ctxr doctor` reports no drift finding
 
 ### Requirement: Generated sections render in a fixed order
-The entry document's contexture-managed sections SHALL render, on a freshly initialized store, in a fixed order: store fundamentals, mission (when configured), retrieval routing, capture, placement, store conventions, then the guidance index (when any document loads on demand). On an existing store whose managed sections are contiguous (separated only by blank lines), `ctxr update` SHALL reorder them to match. When hand-written content interrupts that contiguity, `ctxr update` SHALL leave the existing section order unchanged rather than reordering around foreign content. It SHALL report this via `ctxr lint` as an observation, not as a `ctxr doctor` failure. `doctor` runs only invariant-severity checks (per store-integrity's own "observation checks never fail a run"), so a non-blocking finding is a `lint` finding by construction, never a `doctor` one.
+The entry document's contexture-managed sections SHALL render, on a freshly initialized store, in a fixed order: store fundamentals, mission (when configured), retrieval routing, capture, placement, shared stores (when the store declares any), store conventions, then the guidance index (when any document loads on demand). The shared-stores section SHALL name each declared mount and its location, and SHALL state that a write to a mounted store is a session started inside that mount, reviewed and landed by that store. On an existing store whose managed sections are contiguous (separated only by blank lines), `ctxr update` SHALL reorder them to match. When hand-written content interrupts that contiguity, `ctxr update` SHALL leave the existing section order unchanged rather than reordering around foreign content. It SHALL report this via `ctxr lint` as an observation, not as a `ctxr doctor` failure. `doctor` runs only invariant-severity checks (per store-integrity's own "observation checks never fail a run"), so a non-blocking finding is a `lint` finding by construction, never a `doctor` one.
 
 #### Scenario: A first-time init writes sections in the fixed order
 - **WHEN** `ctxr init` runs against a store with no existing `AGENTS.md`
@@ -125,6 +125,14 @@ The entry document's contexture-managed sections SHALL render, on a freshly init
 #### Scenario: Hand-written content between sections blocks reordering
 - **WHEN** hand-written content sits between two managed sections and `ctxr update` runs
 - **THEN** the existing order is left unchanged, and `ctxr lint` reports the interruption as an observation
+
+#### Scenario: A store with mounts gets the shared-stores section after placement
+- **WHEN** a store declares a `shared_stores` key and its entry document is generated
+- **THEN** a shared-stores section naming each mount and its location appears after the placement section and before the store conventions section
+
+#### Scenario: A store without mounts gets no shared-stores section
+- **WHEN** a store has no `shared_stores` key and its entry document is generated
+- **THEN** no shared-stores section appears, and the document is byte-identical to one generated before this section existed
 
 ### Requirement: The canonical section states the harness/store identity boundary
 The canonical section SHALL state, on every store regardless of configuration, that agent identity, persona, and the agent's conversational recall — what it remembers of the user and of itself across sessions — are the harness's responsibility, not the store's, and that subject-matter knowledge, including knowledge worth retrieving in a later session, is the store's — the store holds knowledge and skills. This statement SHALL reference paths (the skills path) rather than inlining any identity content, and SHALL NOT introduce a configuration key, command, or adapter kind for identity.
@@ -140,13 +148,17 @@ The canonical section SHALL state, on every store regardless of configuration, t
 ### Requirement: Root resolution precedence
 Any contexture command SHALL resolve the store root in this order: an explicit `--root` argument; the
 store root found by walking up from the current working directory when that root is a linked git
-worktree of the store named by the `CONTEXTURE_STORE_ROOT` environment variable; the
+worktree of the store named by the `CONTEXTURE_STORE_ROOT` environment variable; the store root found
+by walking up from the current working directory when that root is a mount the named store declares
+(per shared-stores), or a linked git worktree of such a mount; the
 `CONTEXTURE_STORE_ROOT` environment variable; walking up from the current working directory looking
 for `contexture.yaml`. If none resolves, the command SHALL exit non-zero naming that no store root
 was found, and SHALL NOT guess a fallback location.
 
 The worktree step SHALL be consulted only when `CONTEXTURE_STORE_ROOT` is set and no `--root`
-argument was given, and SHALL redirect only to a checkout of the very store that variable names. When
+argument was given, and SHALL redirect only to a checkout of the very store that variable names. The
+mount step SHALL be consulted under the same conditions, and SHALL redirect only to a root located at,
+or a worktree of, a mount location that the named store's configuration declares. When
 the store root found from the current directory belongs to a different repository than the one the
 variable names, the variable SHALL resolve unchanged. The step SHALL be decided from the filesystem
 without invoking git, and SHALL fall back to resolving the variable whenever it cannot decide.
@@ -164,7 +176,7 @@ without invoking git, and SHALL fall back to resolving the variable whenever it 
 - **THEN** the command operates against the worktree rather than against the store the variable names
 
 #### Scenario: The environment variable still pins across different stores
-- **WHEN** a command is invoked with no `--root` from inside a store, or a worktree of a store, that is a different repository than the one `CONTEXTURE_STORE_ROOT` names
+- **WHEN** a command is invoked with no `--root` from inside a store, or a worktree of a store, that is a different repository than the one `CONTEXTURE_STORE_ROOT` names and is not a mount that store declares
 - **THEN** the command operates against the store the variable names
 
 #### Scenario: The main working tree does not redirect to itself
@@ -182,6 +194,14 @@ without invoking git, and SHALL fall back to resolving the variable whenever it 
 #### Scenario: Store creation is never redirected into an existing worktree
 - **WHEN** `ctxr init` is invoked from inside a linked worktree of the store named by `CONTEXTURE_STORE_ROOT`
 - **THEN** it resolves its root by its own rule — `--root`, then the variable, then the current directory — and the worktree step does not apply
+
+#### Scenario: A command run inside a declared mount operates on the mount
+- **WHEN** a command is invoked with no `--root` from inside `shared/ctx-b` of the store named by `CONTEXTURE_STORE_ROOT`, and that store declares the mount `ctx-b`
+- **THEN** the command operates against the mounted store `ctx-b`, not the store the variable names
+
+#### Scenario: An undeclared clone under the mount path does not redirect
+- **WHEN** a command is invoked with no `--root` from inside a store located under `shared/` that the store named by `CONTEXTURE_STORE_ROOT` does not declare
+- **THEN** the command operates against the store the variable names
 
 ### Requirement: Exactly one root environment variable and one root flag
 The store root SHALL be addressable by exactly one environment variable and one command-line flag. No alias environment variable or flag name SHALL be introduced for the same purpose.
@@ -335,61 +355,6 @@ The configured skills path SHALL be usable as a harness's native skill directory
 #### Scenario: A skill-discovering harness surfaces every skill without an intermediate hop
 - **WHEN** a store's skills path is that harness's skill directory
 - **THEN** every skill is discoverable there as a complete skill file — the file the harness loads is the file `AGENTS.md` indexes
-
-### Requirement: Submit and land are owned skills over git and gh
-contexture SHALL ship `ctxr-submit` and `ctxr-land` as contexture-owned skills delivered by init and update. The submit skill SHALL state the entry condition that admits it — an explicit operator request to wrap up, or the operator's own closing signal — alongside the anti-triggers that do not admit it, naming an agent's own judgment that its assigned task is finished as the chief one; that stated condition is what makes the absent confirmation below sound rather than assumed. The submit skill SHALL run the re-scan, run the capture skill exactly once, stage named paths, run `ctxr doctor` for store-scope validation, and end in `git push` followed by `gh pr create` — whose body carries a Pages section, listing the preview and published address of every page the change set adds, modifies, moves or removes as reported by `ctxr publish urls`, with the condition under which a preview resolves, whenever that report is non-empty and omitting the section otherwise, and a Knowledge changes section that is the output of `ctxr graph diff --format markdown` pasted verbatim — the agent writes none of that section's text, adds nothing to it and removes nothing from it, so the body carries a record of the change's effect on the store that names its commits and the command reproducing it — without an intervening confirmation step, because the request to submit is itself the consent for both — and SHALL close by reporting the pull request, naming the target a subsequent land will need, and, when the store declares change approval, the pull request's approval page address under `serve.base_url`. The land skill SHALL name its target explicitly (never inferring it from the currently checked-out branch), read the pull request's state and decision state with `gh pr view` and `ctxr review list` before any side effect, and gate the landing behind an explicit confirmation unless the pull request is already `approved` from the approval page, since that recorded decision is the consent. It SHALL then land with `ctxr land <pr>`, passing `--confirm` only after an explicit go. When `ctxr land` reports a conflict, the skill SHALL route it to the lifecycle skill's conflict playbook and then run the command again. The skill SHALL NOT merge with `gh pr merge` itself, because `ctxr land` holds the consent check, the merge confirmation and the synchronization. The lifecycle skill SHALL cover start, including running `ctxr review list` when the store declares change approval and acting on each `changes-requested` comment as review feedback on that session and each `blocked` landing as work to resolve, the session's resting state between turns, re-scan, conflicts, sequencing, and reclaiming worktrees; SHALL state that ending a turn with uncommitted work on the session branch is that resting state rather than an obligation to discharge, and that completing a deliverable is not what ends a session; and SHALL reference both skills without repeating their steps.
-
-#### Scenario: The lifecycle frame names the resting state
-- **WHEN** the session-lifecycle skill is rendered for a store
-- **THEN** it carries a section on the state between turns, stating that the worktree persists across exchanges, that ending a turn with uncommitted work on the branch is normal rather than unfinished, and that having completed a deliverable is not the signal that ends the session
-
-#### Scenario: Submit states what admits it
-- **WHEN** the submit skill is rendered for a store
-- **THEN** it carries an entry-condition section, positioned ahead of the procedure's first step, naming the operator request or closing signal that admits it and the anti-triggers that do not — including that having finished the assigned task is not a closing signal and that the agent's own summary is not one either
-
-#### Scenario: Submit ends in git and gh, gated
-- **WHEN** an agent follows the rendered submit skill
-- **THEN** `ctxr doctor` runs before staging, the capture skill is invoked exactly once, and the branch rename is followed directly by `git push` and `gh pr create` with no confirmation step between them — the gate on this path is `ctxr doctor`, which submit may not proceed past, not a confirmation of the push itself
-
-#### Scenario: Submit hands off with a target land can use
-- **WHEN** an agent reaches the end of the rendered submit skill
-- **THEN** it reports the pull request's number and url and names the target that landing it will take, without merging or invoking the land skill itself
-
-#### Scenario: Land checks state before merging and confirms after
-- **WHEN** an agent follows the rendered land skill
-- **THEN** it reads the pull request's state and decision state before landing, gates the landing behind an explicit confirmation unless the pull request is already `approved`, and lands with `ctxr land`, which confirms from the forge that the pull request merged, instead of running `gh pr merge` itself
-
-#### Scenario: Land names its target explicitly
-- **WHEN** the land skill is rendered for a store
-- **THEN** it instructs naming the target by branch name or pull-request number instead of relying on the current checkout
-
-#### Scenario: Update delivers both to an existing store
-- **WHEN** a store initialized before this change runs the update command
-- **THEN** both skills are present at the configured skills path with the managed header, driving `git` and `gh` rather than a `ctxr session` subcommand, and the lifecycle skill no longer contains the submit or land steps
-
-#### Scenario: Submit puts the pages' addresses in the pull request body
-- **WHEN** an agent follows the rendered submit skill and the change set adds or moves a page under the publish path
-- **THEN** the pull request body carries a Pages section naming each page's status and its addresses, takes them from `ctxr publish urls` rather than deriving them, and states the condition under which a preview resolves
-
-#### Scenario: Submit omits the Pages section when no page changed
-- **WHEN** `ctxr publish urls` reports no pages for the change set
-- **THEN** the pull request body carries no Pages section
-
-#### Scenario: Submit pastes the knowledge-changes block verbatim
-- **WHEN** an agent follows the rendered submit skill
-- **THEN** it runs `ctxr graph diff --since` with `--format markdown` before `gh pr create`, and the pull request body carries that command's output unchanged, naming the base and head commit ids and the reproducing command
-
-#### Scenario: Submit carries the block even when no note changed
-- **WHEN** `ctxr graph diff` reports no note, link, rollup or source change for the change set
-- **THEN** the pull request body still carries the block, which states that the range changes no note, rather than omitting the section or filling it with the agent's own description
-
-#### Scenario: Submit names the approval page
-- **WHEN** an agent reaches the end of the rendered submit skill for a store that declares change approval
-- **THEN** its hand-off names the pull request's approval page address under `serve.base_url` alongside the pull request's number and url
-
-#### Scenario: Session start picks up requested changes
-- **WHEN** the session-lifecycle skill is rendered for a store that declares change approval
-- **THEN** its start section runs `ctxr review list` and treats a `changes-requested` comment as review feedback for that session's branch and a `blocked` landing as work to resolve
 
 ### Requirement: The session-capture skill applies through the command
 The owned session-capture skill SHALL instruct the agent to write the approved items to a proposal file and run `ctxr session capture --proposal <file>`, and to take its report from the command's output.
@@ -722,9 +687,9 @@ A store wanting a variant SHALL keep it under a name the packaged library does n
 - **THEN** that file is byte-identical afterwards, and is neither removed nor reported
 
 ### Requirement: Capture is an owned skill over connected sources
-contexture SHALL ship `ctxr-capture` as a contexture-owned skill, delivered by `init` and refreshed by `update` like every other owned skill. The skill SHALL carry the procedure for bringing external material into the configured inbox: locate the material among whatever sources the harness has connected rather than assuming a particular one is present; write the source's record into the inbox; stamp the source type and source id while leaving the two fields ingest assigns unset; run the dedupe check when the material may already be in the store; and end by handing off to the ingest-orchestration skill. The skill SHALL NOT instruct the agent to decide what the store should know, which note to write, or where it belongs — those are the ingest-orchestration and placement skills' procedures, and capture ends before them.
+contexture SHALL ship `ctxr-capture` as a contexture-owned skill, delivered by `init` and refreshed by `update` like every other owned skill. The skill SHALL carry the procedure for bringing external material into the configured inbox: locate the material among whatever sources the harness has connected rather than assuming a particular one is present, retrieving through a `ctxr-capture-<source>` skill for the material's source when the store ships one and continuing from the record it wrote; write the source's record into the inbox; stamp the source type and source id while leaving the two fields ingest assigns unset; run the dedupe check when the material may already be in the store; and end by handing off to the ingest-orchestration skill. The skill SHALL NOT instruct the agent to decide what the store should know, which note to write, or where it belongs — those are the ingest-orchestration and placement skills' procedures, and capture ends before them.
 
-The skill's steps MAY name tools contexture does not provide, on the same footing as the submit and land skills naming `git` and `gh`. contexture SHALL NOT ship a client, credential handling, or an adapter kind for any capture source.
+The skill's steps MAY name tools contexture does not provide, on the same footing as the submit and land skills naming `git` and `gh`. contexture SHALL NOT ship a client, credential handling, or an adapter kind for any capture source. An opt-in `ctxr-capture-<source>` skill MAY drive a capture source's own command-line tool, which holds that source's credential, when the skill reads and stores no credential itself (per *The Circleback skill routes meetings by tag without handling a credential*).
 
 #### Scenario: The capture skill is delivered and refreshed like every owned skill
 - **WHEN** `init` writes a store, and a later `update` runs after the shipped copy has drifted
@@ -733,6 +698,10 @@ The skill's steps MAY name tools contexture does not provide, on the same footin
 #### Scenario: Capture ends at the handoff, not at a note
 - **WHEN** the rendered capture skill's final step is read
 - **THEN** it hands off to the ingest-orchestration skill, and no step of it instructs creating, expanding, merging, or restructuring a note
+
+#### Scenario: Capture retrieves through a source's skill and keeps the rest of the procedure
+- **WHEN** the rendered capture skill's first step is read
+- **THEN** it directs retrieval through a `ctxr-capture-<source>` skill when the store ships one for the material's source, names no source, and continues from the second step with the record that skill wrote
 
 ### Requirement: The capture skill names no particular source
 The rendered capture skill SHALL express its steps without naming any capture service, server, or source-type value. Where the procedure needs a source type it SHALL direct the agent to the source system's own name, and where it needs a source id it SHALL specify a form composed from that source type and the source system's own stable identifier, so the same procedure holds for any harness and any connected source. The enforcing mechanism is a check over the rendered skill set, on the same footing as the checks that keep a shipped taxonomy profile's layer names out of the rendered skills.
@@ -784,39 +753,40 @@ A contexture-owned skill SHALL be able to ship packaged files beside its `SKILL.
 - **THEN** that harness's copy of the skill directory contains the same supporting files as the canonical one
 
 ### Requirement: The second-opinion skill is an owned skill over external model CLIs
-contexture SHALL ship `ctxr-second-opinion` as a contexture-owned skill delivered by init and update, carrying its runner as a supporting file that is invoked with `node` and depends on nothing outside the Node standard library. The skill SHALL offer two modes: *critique*, in which a written plan is sent to three critic roles — structure and coherence, failure modes and trust boundaries, and simplicity and cost — each backed by a different model family's command-line tool; and *poll*, in which one question is sent to the same model families, optionally asking each to answer through two or three named taste lenses. No `ctxr` command SHALL invoke a model CLI, and no command's behavior SHALL depend on the skill or on those CLIs being present; `ctxr verify` SHALL NOT report them, because the skill is not on the write path.
+contexture SHALL ship `ctxr-second-opinion` as a contexture-owned skill delivered by init and update, carrying no supporting files and driving the `ctxr second-opinion` command group. The command SHALL offer two modes: *critique*, in which a written plan is sent to three critic roles — structure and coherence, failure modes and trust boundaries, and simplicity and cost — each backed by a different model family's command-line tool; and *poll*, in which one question is sent to the same model families, optionally asking each to answer through two or three named taste lenses; and a *preflight* that checks each tool before anything is spent. `ctxr second-opinion` SHALL be the only `ctxr` command that invokes a model CLI. No other command's behavior SHALL depend on it or on those CLIs being present, it SHALL NOT be invoked by any command on the write path, and `ctxr verify` SHALL NOT report the CLIs. The critic contract, persona mandates and lens roster SHALL be shipped as package templates.
 
-The runner is the enforcing mechanism for the following, each covered by a test that runs it against stub CLIs on the executable search path:
+The command is the enforcing mechanism for the following, each covered by a test that runs it against stub CLIs on the executable search path:
 
 - It SHALL run the critics concurrently, each in its own process and each given only the plan and its own role — never another critic's output.
 - It SHALL pass prompt content to each CLI on standard input or as a single argument vector element, never through a shell.
 - It SHALL invoke each CLI with that tool's read-only or no-tools mode where one exists, and in an empty scratch directory as its working directory in every case.
+- It SHALL give each CLI an environment built from a declared allowlist — the executable search path, home, locale and terminal variables, the model CLIs' own variable prefixes, proxy and certificate variables, its own `CTXR_SECOND_OPINION_` variables, and any names an operator lists in a declared pass-through variable, except the forge and contexture prefixes, which the pass-through cannot name — and no other variable of its own environment.
 - It SHALL bound each critic by a timeout and record a critic that times out, exits non-zero, or returns output lacking the required verdict as failed, with the cause.
 - It SHALL write each critique under a letter assigned in an order independent of the critic roster, record the letter-to-role-and-model mapping in a separate manifest, and record in that manifest the model each CLI reports having run where the CLI reports one.
 - It SHALL mark a critique whose findings cite nothing the plan contains — no step it numbers and no text quoted from it — as blind and exclude it from the count of valid critiques, while a critique that approves with no findings SHALL remain valid.
-- It SHALL exit with a distinct status when fewer than two critiques are valid, so a partial result cannot be mistaken for a complete one.
+- It SHALL exit with the failed-check status when fewer than two critiques are valid, so a partial result cannot be mistaken for a complete one, and with the usage status for invalid arguments or fewer than two requested CLIs.
 
-The skill SHALL state when to critique, when to poll, and when to answer directly; SHALL instruct synthesis on the anonymized letters before the manifest is read; SHALL instruct that a dissent backed by cited evidence, and a rejection carrying a critical finding, are surfaced in their own sections rather than outvoted; SHALL disclose that a critic sharing the orchestrating agent's model family is a bias to name; and SHALL end in a hand-off that executes no step of the plan it critiqued. Those instructions are skill-markdown conventions, asserted by a test over the rendered skill, not guarantees the runner can make.
+The skill SHALL state when to critique, when to poll, and when to answer directly; SHALL instruct synthesis on the anonymized letters before the manifest is read; SHALL instruct that a dissent backed by cited evidence, and a rejection carrying a critical finding, are surfaced in their own sections rather than outvoted; SHALL disclose that a critic sharing the orchestrating agent's model family is a bias to name; and SHALL end in a hand-off that executes no step of the plan it critiqued. Those instructions are skill-markdown conventions, asserted by a test over the rendered skill, not guarantees the command can make.
 
 #### Scenario: Update delivers the skill with its runner
-- **WHEN** a store initialized before this change runs `ctxr update`
-- **THEN** the skill is present at the configured skills path with the managed header, its runner and prompt fragments beside it, and a second update reports nothing changed
+- **WHEN** a store whose skill carries the earlier supporting-file runner runs `ctxr update`
+- **THEN** the skill is present at the configured skills path with the managed header and names `ctxr second-opinion`, the earlier runner and prompt fragments beside it are removed, and a second update reports nothing changed
 
 #### Scenario: Critics never see each other
-- **WHEN** the runner executes a critique against stub CLIs that record the input they receive
+- **WHEN** the command executes a critique against stub CLIs that record the input they receive
 - **THEN** each stub received the plan and exactly one role's instructions, and none received text produced by another critic
 
 #### Scenario: No shell stands between the plan and a critic
-- **WHEN** the runner executes a critique of a plan containing shell metacharacters, quotes, and a multi-kilobyte body
+- **WHEN** the command executes a critique of a plan containing shell metacharacters, quotes, and a multi-kilobyte body
 - **THEN** each stub CLI receives the plan byte-identical, and no shell process is spawned
 
 #### Scenario: Results are anonymized
-- **WHEN** the runner completes a critique
-- **THEN** the critique files are named by letter, contain no role or model name placed there by the runner, and the letter-to-role-and-model mapping appears only in the manifest
+- **WHEN** the command completes a critique
+- **THEN** the critique files are named by letter, contain no role or model name placed there by the command, and the letter-to-role-and-model mapping appears only in the manifest
 
 #### Scenario: A failed critic is reported, not hidden
 - **WHEN** one stub CLI exits non-zero and another exceeds the timeout
-- **THEN** each of those critiques is recorded as failed naming its cause, and the runner does not substitute another model for either
+- **THEN** each of those critiques is recorded as failed naming its cause, and the command does not substitute another model for either
 
 #### Scenario: A blind critique does not count
 - **WHEN** a stub CLI returns a well-formed verdict whose findings cite no step and quote no text present in the plan
@@ -824,7 +794,7 @@ The skill SHALL state when to critique, when to poll, and when to answer directl
 
 #### Scenario: Fewer than two valid critiques is a partial result
 - **WHEN** only one of three critiques is valid
-- **THEN** the runner exits with the partial-result status, distinct from both success and a usage error
+- **THEN** the command exits with the failed-check status, distinct from both success and a usage error
 
 #### Scenario: The rendered skill hands off without executing
 - **WHEN** the skill is rendered for a store
@@ -1212,3 +1182,104 @@ test over the rendered skill set.
 - **WHEN** an agent follows the publish skill to produce a send copy
 - **THEN** it is told that a commit adding an undated send copy, or changing one already committed, is
   refused
+
+### Requirement: An opt-in owned skill ships only to a store that declares its configuration block
+contexture SHALL be able to ship an owned skill that a store receives only by opting in. Such a skill SHALL be enabled by an optional top-level block in `contexture.yaml` that has no shipped default, so a store that never declares the block never carries the key and never receives the skill. While the block is present, `ctxr init` and `ctxr update` SHALL write and refresh the skill exactly like every other owned skill. When the block is removed, the skill SHALL no longer be shipped to that store, and the next `ctxr update` SHALL remove its managed directory, as it does for a skill the package stopped shipping. An opt-in skill's supporting files MAY be rendered from the store's configuration, for a runner that cannot read `contexture.yaml` itself.
+
+#### Scenario: A store without the block gets no opt-in skill
+- **WHEN** a store's `contexture.yaml` declares no `circleback` block and `ctxr update` runs
+- **THEN** no `ctxr-capture-circleback` directory is written, and the rendered configuration carries no `circleback` key
+
+#### Scenario: Opting out removes the skill
+- **WHEN** a store that carried `ctxr-capture-circleback` removes its `circleback` block and `ctxr update` runs
+- **THEN** the managed `ctxr-capture-circleback` directory is removed with every file in it, and an immediately repeated update reports nothing changed
+
+### Requirement: The Circleback skill routes meetings by tag without handling a credential
+contexture SHALL ship `ctxr-capture-circleback` as an opt-in owned skill, enabled by a `circleback` block naming this store's tag, optionally the tags that route a meeting to other stores, and optionally the tag that declines a meeting (absent means `no-capture`). It SHALL be the capture skill's retrieval step for Circleback, and SHALL hand back to the capture skill at its second step rather than carry a capture procedure of its own. The skill SHALL carry a runner, invoked with `node` and depending on nothing outside the Node standard library, and a settings file rendered from that block. The runner SHALL drive Circleback's own command-line tool, `git` and `gh`, and SHALL NOT read, write or store any credential.
+
+The runner SHALL read the meetings of a fixed lookback window with their tags, and SHALL treat a meeting as owed by this store when it carries this store's tag, carries neither the decline tag nor another store's tag, is absent from the store's default branch and from every open pull request, and is still readable in full. For owed meetings it SHALL prepare a review-branch worktree at a fixed path, clearing what an earlier run left there, and SHALL write each one's verbatim record into the configured inbox there: the source type and id, metadata, attendees, the source's action items and summary marked as its own derivation, and the transcript verbatim under the store's required capture section for the source type, with trailing whitespace removed and the recording URL never written. It SHALL print a report naming what it retrieved, and separately what is locked, untagged, tagged for more than one store, and recently declined. A failure SHALL be reported as such and never as an empty list.
+
+The skill SHALL direct the agent to continue each retrieved record with the capture skill from its second step: checking the record, including its speakers; confirming the identity already stamped; and the dedupe check. Interactively the capture skill's hand-off follows. In a scheduled run the skill SHALL stop at a review pull request instead, and SHALL state that the agent never merges it.
+
+#### Scenario: Only owed meetings are rendered
+- **WHEN** the runner sees meetings that are tagged for this store and absent, tagged for this store and present, tagged for this store and locked, untagged, tagged for this store and another, declined, and tagged only for another store
+- **THEN** only the first is rendered into the inbox, and each of the others is counted as present or listed under its own report section
+
+#### Scenario: A capture carries the record and no credential
+- **WHEN** an owed meeting is rendered
+- **THEN** the capture carries `source_type: circleback` and its prefixed source id, the transcript under the store's required section, no trailing whitespace, and not the recording URL
+
+#### Scenario: A repeated run does not collide with the last
+- **WHEN** the runner runs twice with the same meetings owed
+- **THEN** the second run reuses the fixed worktree path and renders the same captures without failing
+
+### Requirement: Submit and land are owned skills over the session commands
+contexture SHALL ship `ctxr-submit` and `ctxr-land` as contexture-owned skills delivered by init and update. The submit skill SHALL state the entry condition that admits it — an explicit operator request to wrap up, or the operator's own closing signal — alongside the anti-triggers that do not admit it, naming an agent's own judgment that its assigned task is finished as the chief one. It SHALL run `ctxr session status` as the re-scan, offer a rollup for any entity `ctxr rollup stale` flags, run the capture skill exactly once, hold one coherent unit per pull request, and end in `ctxr session submit` with a branch name, a commit message, a title and a body answering why, what changed, route, verification and follow-ups, without an intervening confirmation, because the request to submit is the consent and the command's store-scope check is the gate. It SHALL NOT instruct writing the Knowledge changes or Pages sections, which the command writes. It SHALL close by reporting the pull request, naming the target a land needs, and, when the store declares change approval, the approval page address. The land skill SHALL be as before: name its target explicitly, read state with `gh pr view` and `ctxr review list` before any side effect, gate on an explicit go unless already approved, land with `ctxr land`, and route a conflict to the lifecycle skill. The lifecycle skill SHALL cover start, including acting on `changes-requested` and `blocked` rows `ctxr session list --review` reports when the store declares change approval, the resting state between turns, re-scan through `ctxr session status`, conflicts through `ctxr session rebase`, sequencing, and removal through `ctxr session discard`, and SHALL reference submit and land without repeating their steps.
+
+#### Scenario: Submit ends in the session command, gated
+- **WHEN** an agent follows the rendered submit skill
+- **THEN** it re-scans with `ctxr session status`, invokes the capture skill exactly once, and ends with `ctxr session submit` and no confirmation step, naming no `git push` or `gh pr create`
+
+#### Scenario: Submit leaves the generated sections to the command
+- **WHEN** the submit skill is rendered for a store
+- **THEN** it does not instruct running `ctxr graph diff` or `ctxr publish urls` to paste their output, and states that the command appends those sections
+
+#### Scenario: Submit still states what admits it
+- **WHEN** the submit skill is rendered for a store
+- **THEN** it carries an entry-condition section ahead of the first step naming the admitting request and the anti-triggers, including that a finished task and the agent's own summary are not closing signals
+
+#### Scenario: The lifecycle skill drives the session commands
+- **WHEN** the session-lifecycle skill is rendered for a store that declares change approval
+- **THEN** it reads requested changes from `ctxr session list --review`, re-scans with `ctxr session status`, resolves conflicts with `ctxr session rebase`, and removes a session with `ctxr session discard`
+
+#### Scenario: Land is unchanged
+- **WHEN** an agent follows the rendered land skill
+- **THEN** it reads the pull request's state and decision state before landing, gates on an explicit go unless already approved, and lands with `ctxr land`
+
+#### Scenario: Update delivers the reworded skills
+- **WHEN** a store initialized before this change runs the update command
+- **THEN** the submit and lifecycle skills are present with the managed header and drive the session commands, and a second update reports nothing changed
+
+### Requirement: No secret in the environment reaches a model CLI
+`ctxr second-opinion` SHALL NOT pass to a model CLI any environment variable outside its declared allowlist, so a forge token, an App credential or its file path present in its own environment is never visible to a critic. A preflight that fails SHALL name the variables it withheld, never their values.
+
+#### Scenario: A forge credential is withheld
+- **WHEN** the command runs with `GH_TOKEN`, `CONTEXTURE_GITHUB_APP_PRIVATE_KEY_FILE` and `ANTHROPIC_API_KEY` set, against stub CLIs that record their environment
+- **THEN** each stub saw `ANTHROPIC_API_KEY` and neither of the other two
+
+#### Scenario: The pass-through cannot name a protected variable
+- **WHEN** `CTXR_SECOND_OPINION_PASS_ENV=GH_TOKEN` is set
+- **THEN** the command exits with the usage code naming `GH_TOKEN`, and no CLI is invoked
+
+#### Scenario: An operator passes a variable through
+- **WHEN** `CTXR_SECOND_OPINION_PASS_ENV=CORP_CONFIG` and `CORP_CONFIG` are set
+- **THEN** each stub saw `CORP_CONFIG`
+
+### Requirement: Owned skills render for the MCP surface from the same source
+The owned skills SHALL render for a second target, the MCP surface, alongside the CLI render, which SHALL be unchanged by it. The MCP render SHALL include a declared subset of the owned skills; every included skill SHALL render from its CLI template, unchanged, with one shared preamble naming how each command and git step maps to the surface's tools. The upgrade, Circleback and second-opinion skills, which run local programs, the land skill and the derived-artifacts skill SHALL NOT be included.
+
+#### Scenario: The CLI render is unchanged
+- **WHEN** the owned skills are rendered for the CLI on a store before and after this rendering exists
+- **THEN** the two renders are byte-identical
+
+#### Scenario: A capture skill reaches the chat app
+- **WHEN** the owned skills are rendered for the MCP surface
+- **THEN** the capture skill is included with the shared preamble, the submit skill's text equals the CLI render's under the preamble, and the upgrade, second-opinion and land skills are absent
+
+### Requirement: An MCP-rendered skill names only what the surface offers
+A test over the MCP render SHALL fail, naming the skill and the term, when an included skill names a tool the surface does not register, a `ctxr` command the surface's command-to-tool mapping does not map, or a `git` or `gh` command the shared preamble does not map. The tool names and allowlists SHALL be read from the same definitions the server uses.
+
+#### Scenario: An unmapped git step fails the check
+- **WHEN** an included skill instructs `git rebase -i`
+- **THEN** the check exits non-zero naming that skill and the command
+
+### Requirement: `ctxr plugin build` writes the store's chat-app plugins
+`ctxr plugin build` SHALL write, under an output directory that defaults to a path under the store's derived cache, a Claude plugin and a ChatGPT plugin, each as a directory and as an archive. Each SHALL carry the MCP render of the owned skills as `skills/<name>/SKILL.md` and an MCP server entry whose address is `serve.base_url` followed by `/mcp`, in that vendor's manifest format; neither SHALL carry a credential, a variable in the address, a hook, a local server or a top-level `bin/` directory. Manifest and readme text SHALL come from shipped templates. The plugin's name SHALL derive from the store's name and its version from the CLI's version and the rendered commit. The command SHALL exit with the configuration error code, writing nothing, when the store declares no `mcp` block.
+
+#### Scenario: Both plugins are built
+- **WHEN** `ctxr plugin build` runs on a store declaring `mcp` and `serve.base_url: https://ctx-a.example.test`
+- **THEN** the output holds a Claude plugin whose `.mcp.json` names `https://ctx-a.example.test/mcp`, a ChatGPT plugin whose `mcp.json` names the same address with OAuth, both carrying the rendered skills, and an archive of each
+
+#### Scenario: A store without the MCP surface has no plugin
+- **WHEN** `ctxr plugin build` runs on a store with no `mcp` block
+- **THEN** it exits with the configuration error code and writes nothing

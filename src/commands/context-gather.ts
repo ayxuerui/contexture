@@ -1,7 +1,7 @@
 import type { CommandOutcome, CommandRequires } from '../core/command.js';
 import { ExitCode } from '../core/exit-codes.js';
 import { readAdmittedGraph } from '../core/graph/persist.js';
-import { listNotes } from '../core/notes/list.js';
+import { listReadView } from '../core/shared-stores.js';
 import { gather, type GatherOptions, type GatherOutcome } from '../core/retrieval/pass.js';
 import type { Store } from '../core/store.js';
 
@@ -25,7 +25,8 @@ export interface ContextGatherFlags {
  * gather`, it finds and orders candidates and never reads or synthesizes them.
  */
 export async function execute(store: Store, flags: ContextGatherFlags = {}): Promise<CommandOutcome<GatherOutcome>> {
-  const notes = await listNotes(store.root, store.config);
+  // mount-shared-stores: the pass covers the read view, the same notes the persisted graph was built from.
+  const { notes } = await listReadView(store.root, store.config);
   const graph = await readAdmittedGraph(store);
 
   const options: GatherOptions = {
