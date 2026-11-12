@@ -445,8 +445,7 @@ export const SKILLS: readonly SkillSeed[] = [
  * both surfaces: each opens with `templates/skills/_surfaces.md`, in a
  * store's copy and the plugin's alike, saying which store, whether to work in
  * a shell or through the store's server, and how a step is done there. Left
- * out: the skills that run local programs (upgrade, second opinion,
- * Circleback), landing (a person lands from the approval page), and the
+ * out: the skills that run local programs (upgrade, Circleback), landing (a person lands from the approval page), and the
  * derived-artifacts, organize-audit and publish procedures, whose steps the
  * surface does not offer.
  */
@@ -461,6 +460,8 @@ export const MCP_SKILL_FILES: readonly string[] = [
   SESSION_LIFECYCLE,
   SUBMIT,
   SESSION_CAPTURE,
+  // serve-the-second-opinion-to-chat-apps: the store's server runs `ctxr second-opinion`, confined.
+  SECOND_OPINION,
   RESEARCH,
 ].map((seed) => seed.file);
 

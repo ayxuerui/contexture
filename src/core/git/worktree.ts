@@ -1,3 +1,4 @@
+import { runRemoteGit, type ForgeCredentials } from '../forge/credentials.js';
 import type { GitResult, GitRunner } from './exec.js';
 
 export async function hasRemote(git: GitRunner, cwd: string, name = 'origin'): Promise<boolean> {
@@ -13,9 +14,20 @@ export async function hasRemote(git: GitRunner, cwd: string, name = 'origin'): P
  * exists but is still empty (nothing pushed yet, the common case for a
  * brand-new project) — so the caller can degrade to the local branch
  * instead of crashing on an honest, expected state.
+ *
+ * reach-each-owner-with-its-own-token D4: through the repository's forge
+ * credential, so a mount whose owner has a token is fetched with it rather
+ * than quietly cut from a stale local branch.
  */
-export async function fetchOrigin(git: GitRunner, cwd: string, branch: string, remote = 'origin'): Promise<boolean> {
-  const result = await git.run(['fetch', remote, branch], { cwd, allowFailure: true });
+export async function fetchOrigin(
+  git: GitRunner,
+  credentials: ForgeCredentials,
+  env: Readonly<Record<string, string | undefined>>,
+  cwd: string,
+  branch: string,
+  remote = 'origin',
+): Promise<boolean> {
+  const result = await runRemoteGit(git, credentials, env, ['fetch', remote, branch], { cwd, allowFailure: true });
   return result.exitCode === 0;
 }
 

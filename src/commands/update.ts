@@ -5,6 +5,7 @@ import type { CommandOutcome, CommandRequires } from '../core/command.js';
 import type { RunEnv } from '../core/env.js';
 import { SessionWorktreeRefusedError } from '../core/errors.js';
 import { ExitCode } from '../core/exit-codes.js';
+import { credentialsFor, runRemoteGit, type ForgeCredentials } from '../core/forge/credentials.js';
 import { writeFileAtomic } from '../core/fs/atomic.js';
 import { addWorktree, fetchOrigin, hasRemote, removeWorktree } from '../core/git/worktree.js';
 import { reconcileStore } from '../core/reconcile.js';
@@ -96,16 +97,16 @@ export function updateBranchName(config: StoreConfig): string {
   return `${config.session.branch_prefix}ctxr-update-${CLI_VERSION}`;
 }
 
-async function branchExists(env: RunEnv, root: string, branch: string, remoteExists: boolean): Promise<boolean> {
+async function branchExists(env: RunEnv, root: string, branch: string, credentials: ForgeCredentials | null): Promise<boolean> {
   const local = await env.git.run(['rev-parse', '--verify', '--quiet', `refs/heads/${branch}`], {
     cwd: root,
     allowFailure: true,
   });
   if (local.exitCode === 0) return true;
-  if (!remoteExists) return false;
+  if (credentials === null) return false;
   // Exit 0 is "found"; 2 is "no such ref". Anything else — an unreachable remote —
   // is not evidence the branch exists, and the fetch below will fail on its own terms.
-  const remote = await env.git.run(['ls-remote', '--exit-code', '--heads', 'origin', branch], {
+  const remote = await runRemoteGit(env.git, credentials, env.env, ['ls-remote', '--exit-code', '--heads', 'origin', branch], {
     cwd: root,
     allowFailure: true,
   });
@@ -130,8 +131,10 @@ export async function executeInWorktree(env: RunEnv, store: MigratingStore): Pro
   const git = env.git;
   const branch = updateBranchName(store.config);
   const remoteExists = await hasRemote(git, store.root);
+  // reach-each-owner-with-its-own-token D4: the remote is reached through the repository's forge credential.
+  const credentials = remoteExists ? await credentialsFor(env, store.root) : null;
 
-  if (await branchExists(env, store.root, branch, remoteExists)) {
+  if (await branchExists(env, store.root, branch, credentials)) {
     return {
       exitCode: ExitCode.Ok,
       data: { changed: [], worktree: null, branch, existing: true },
@@ -143,7 +146,7 @@ export async function executeInWorktree(env: RunEnv, store: MigratingStore): Pro
   }
 
   const defaultBranch = store.config.git.default_branch;
-  const fetched = remoteExists ? await fetchOrigin(git, store.root, defaultBranch) : false;
+  const fetched = credentials !== null ? await fetchOrigin(git, credentials, env.env, store.root, defaultBranch) : false;
   const startPoint = fetched ? `origin/${defaultBranch}` : defaultBranch;
   const worktreeDir = worktreePathFor(store, branch);
 

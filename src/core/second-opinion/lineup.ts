@@ -73,6 +73,22 @@ export const FLAGS_USED: Record<Cli, { helpArgs: string[]; flags: string[] }> = 
   agy: { helpArgs: ['--help'], flags: ['--print', '--sandbox', '--disable-slash-commands', '--model'] },
 };
 
+/**
+ * serve-the-second-opinion-to-chat-apps D1: what a confined run copies into a
+ * CLI's fresh home, and how much of its install it may read. The logins are
+ * the files each CLI keeps its sign-in in, relative to the home (seen
+ * 2026-11-11). The install directory is counted up from the directory holding
+ * the binary's real path: claude's `share/claude/versions/<v>` reads
+ * `share/claude`, codex's `releases/<v>/bin/codex` reads `releases/<v>`, and
+ * agy is one self-contained file.
+ */
+export const LOGIN_FILES: Record<Cli, readonly string[]> = {
+  claude: ['.claude/.credentials.json'],
+  codex: ['.codex/auth.json'],
+  agy: ['.gemini/antigravity-cli/antigravity-oauth-token'],
+};
+export const INSTALL_LEVELS: Record<Cli, number> = { claude: 2, codex: 2, agy: 0 };
+
 export interface Invocation {
   cmd: Cli;
   args: string[];

@@ -54,7 +54,23 @@ export const CTXR_READ_COMMANDS = [
   'publish gather',
   // mount-shared-stores: reads the declared mounts, with no writes and no network.
   'shared-stores status',
+  // serve-the-second-opinion-to-chat-apps: run as in a shell, confined, with the answers printed.
+  'second-opinion preflight',
+  'second-opinion critique',
+  'second-opinion poll',
 ] as const;
+
+/**
+ * serve-the-second-opinion-to-chat-apps D3, D5: the read commands that start
+ * model CLIs. They take `input`, run one at a time per server, under their own
+ * time bound, with a per-CLI timeout inside it, `--require-confinement` always
+ * and `--print` for the two that answer.
+ */
+export const SECOND_OPINION_COMMANDS: readonly string[] = ['second-opinion preflight', 'second-opinion critique', 'second-opinion poll'];
+/** Under the roughly four minutes claude.ai and Claude Desktop wait for a tool; a default-tier critique takes one to two. */
+export const SECOND_OPINION_TIMEOUT_MS = 240_000;
+/** Each model CLI's own limit, leaving the run time to start and print before the bound. */
+export const SECOND_OPINION_CLI_TIMEOUT_SECONDS = 200;
 
 /** D4: writing commands `ctxr_write` runs inside a member's own session. `session capture` is one of them (revision 2). */
 export const CTXR_WRITE_COMMANDS = [

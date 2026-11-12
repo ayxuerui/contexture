@@ -2,13 +2,21 @@ import type { CommandOutcome, CommandRequires } from '../core/command.js';
 import type { RunEnv } from '../core/env.js';
 import { SessionRefusedError } from '../core/errors.js';
 import { ExitCode } from '../core/exit-codes.js';
-import { credentialsFor } from '../core/forge/credentials.js';
+import { credentialsFor, type CredentialKind } from '../core/forge/credentials.js';
 import { createGhForgeClient } from '../core/forge/github.js';
 import { resolveSession } from '../core/session/resolve.js';
 import { readBodyFile, submitSession, type SubmitResult } from '../core/session/submit.js';
 import type { Store } from '../core/store.js';
 
 export const requires: CommandRequires = { store: 'required' };
+
+/** The submit result, with the credential the push and the pull request used (reach-each-owner-with-its-own-token D7). */
+export type SessionSubmitData = SubmitResult & {
+  /** Which kind of forge credential the command used; never the credential. */
+  credential: CredentialKind;
+  /** For `owner-token`, the GitHub owner whose token was used; null otherwise. */
+  credential_owner: string | null;
+};
 
 export interface SessionSubmitOptions {
   session: string;
@@ -27,7 +35,7 @@ export interface SessionSubmitOptions {
  * Exit `0` with the pull request open, `3` when the gate or a later step
  * stopped it, `2` for a refused argument (design.md D3).
  */
-export async function execute(env: RunEnv, store: Store, opts: SessionSubmitOptions): Promise<CommandOutcome<SubmitResult>> {
+export async function execute(env: RunEnv, store: Store, opts: SessionSubmitOptions): Promise<CommandOutcome<SessionSubmitData>> {
   if ((opts.body === undefined) === (opts.bodyFile === undefined)) {
     throw new SessionRefusedError(ExitCode.Usage, 'body_required', 'Give the pull request body with exactly one of --body or --body-file.', { step: 'arguments' });
   }
@@ -47,7 +55,7 @@ export async function execute(env: RunEnv, store: Store, opts: SessionSubmitOpti
   if (result.preview_url !== null) lines.push(`Pages preview at: ${result.preview_url}`);
   return {
     exitCode: ExitCode.Ok,
-    data: result,
+    data: { ...result, credential: credentials.kind, credential_owner: credentials.owner },
     findings: [],
     humanSummary: lines.join('\n'),
     storeRoot: store.root,

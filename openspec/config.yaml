@@ -48,7 +48,9 @@ context: |
   nothing commits to the default branch, every write lands via a session worktree
   and a reviewed PR. One exception (run-the-second-opinion-from-the-cli D1):
   `ctxr second-opinion` is the only command that invokes a model CLI, it is never
-  on the write path, and no other command depends on it.
+  on the write path, and no other command depends on it. The store's server runs
+  it too, through the `ctxr` tool, only where each model CLI runs confined to a
+  fresh home of its own (serve-the-second-opinion-to-chat-apps D1).
 
   Enforcement is a gate, not a cage: contexture cannot prevent an agent from
   editing a file directly, and hooks are bypassable with --no-verify. The only

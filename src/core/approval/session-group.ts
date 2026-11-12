@@ -2,7 +2,7 @@ import { parse as parseYaml } from 'yaml';
 import type { StoreConfig } from '../../config/schema.js';
 import { storePrefix } from '../graph/tree.js';
 import { CONFIG_FILE_NAME } from '../root.js';
-import type { ForgeCredentials } from '../forge/credentials.js';
+import type { CredentialKind, ForgeCredentials } from '../forge/credentials.js';
 import { ContextureError } from '../errors.js';
 import { ForgeRequestError, type ForgeClient, type IssueComment, type PullRequest, type Review } from '../forge/github.js';
 import type { GitRunner } from '../git/exec.js';
@@ -68,6 +68,19 @@ export async function storeReach(git: GitRunner, home: { root: string; canonical
 
 export function allStores(reach: StoreReach): SessionStore[] {
   return [...reach.mounts, reach.home];
+}
+
+/** reach-each-owner-with-its-own-token D7: which credential a store was reached with — never the credential. */
+export interface StoreCredential {
+  store: string;
+  credential: CredentialKind;
+  /** The GitHub owner whose token was used, for `owner-token`; null otherwise. */
+  credential_owner: string | null;
+}
+
+/** The home store's credential, then each mount's, as the envelopes of commands that reach them report it. */
+export function storeCredentials(reach: StoreReach): StoreCredential[] {
+  return [reach.home, ...reach.mounts].map((s) => ({ store: s.slug, credential: s.forge.credential, credential_owner: s.forge.credentialOwner }));
 }
 
 /** A store's open pull requests, or why they could not be read. */
