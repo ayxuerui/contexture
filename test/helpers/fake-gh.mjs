@@ -1,7 +1,8 @@
 // A stand-in for `gh`, answering only the `gh api` calls src/core/forge/github.ts makes.
 // State lives in the JSON file $FAKE_GH_STATE:
 //   { login, pulls: [{ number, title, body, head, base, user, state, merged, merge_commit_sha, mergeable? }],
-//     reviews: { "<n>": [...] }, comments: { "<n>": [...] }, fail?: { "<endpoint substring>": status } }
+//     reviews: { "<n>": [...] }, comments: { "<n>": [...] }, fail?: { "<endpoint substring>": status },
+//     failCreatePull?: <count of pull-request creations to refuse> }
 // Head commits are read live from the bare repository $FAKE_GH_ORIGIN, so a push is seen at once,
 // and a merge really lands on the base branch there.
 import { execFileSync } from 'node:child_process';
@@ -9,8 +10,28 @@ import { appendFileSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFil
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
-const statePath = process.env.FAKE_GH_STATE;
-const origin = process.env.FAKE_GH_ORIGIN;
+// Several repositories: $FAKE_GH_REPOS names a JSON file mapping each bare origin's path to its own state file. The
+// repository a call is about is the one `gh` would fill `{owner}/{repo}` from: the `origin` of the directory it runs in.
+// An entry keyed by a URL rather than a path maps to { state, origin }: the state file and the bare repository behind it.
+function repoFromCwd() {
+  const reposPath = process.env.FAKE_GH_REPOS;
+  if (reposPath === undefined) return { statePath: process.env.FAKE_GH_STATE, origin: process.env.FAKE_GH_ORIGIN };
+  const repos = JSON.parse(readFileSync(reposPath, 'utf8'));
+  let url = '';
+  try {
+    url = execFileSync('git', ['remote', 'get-url', 'origin'], { cwd: process.cwd(), encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+  } catch {
+    url = '';
+  }
+  const found = repos[url] ?? repos[path.resolve(url)];
+  if (found === undefined) {
+    process.stderr.write(`gh: no fake repository for origin "${url}" (HTTP 404)\n`);
+    process.exit(1);
+  }
+  if (typeof found === 'object') return { statePath: found.state, origin: found.origin };
+  return { statePath: found, origin: path.resolve(url) };
+}
+const { statePath, origin } = repoFromCwd();
 const args = process.argv.slice(2);
 if (args[0] !== 'api' || statePath === undefined) {
   process.stderr.write(`fake gh: unsupported invocation ${args.join(' ')}\n`);
@@ -19,13 +40,29 @@ if (args[0] !== 'api' || statePath === undefined) {
 const endpoint = args[1];
 const methodIndex = args.indexOf('--method');
 const method = methodIndex === -1 ? 'GET' : args[methodIndex + 1];
-const state = JSON.parse(readFileSync(statePath, 'utf8'));
-const input = args.includes('--input') ? JSON.parse(readFileSync(0, 'utf8') || 'null') : null;
-
+// Every answer is also appended to $statePath.log, so a test whose CLI swallows a forge error (land reports only
+// `merge-refused`) can still print what the forge said: `forge.log()` in test/helpers/fake-forge.ts.
+function record(outcome) {
+  try {
+    appendFileSync(`${statePath}.log`, `${new Date().toISOString()} pid=${process.pid} ${method} ${endpoint} -> ${outcome}\n`);
+  } catch {
+    // The log is diagnostic only; a test directory already removed must not change the answer.
+  }
+}
 function fail(status, message) {
+  record(`${status} ${message}`);
   process.stderr.write(`gh: ${message} (HTTP ${status})\n`);
   process.exit(1);
 }
+// A crash is an answer too: without this, an exception (say, reading stdin) leaves no line in the log.
+process.on('uncaughtException', (err) => {
+  record(`crashed: ${err.stack ?? err}`);
+  process.stderr.write(`fake gh crashed: ${err.stack ?? err}\n`);
+  process.exit(1);
+});
+const state = JSON.parse(readFileSync(statePath, 'utf8'));
+const input = args.includes('--input') ? JSON.parse(readFileSync(0, 'utf8') || 'null') : null;
+
 // Parallel calls (reviews and comments together) read the file at once, so only a mutation writes, and atomically.
 function save() {
   const temp = `${statePath}.${process.pid}.tmp`;
@@ -34,11 +71,21 @@ function save() {
 }
 function reply(value) {
   if (method !== 'GET') save();
+  record('200');
   process.stdout.write(value === undefined ? '' : JSON.stringify(value));
   process.exit(0);
 }
 function git(gitArgs, cwd) {
   return execFileSync('git', gitArgs, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+}
+// A scratch clone is removed best-effort. git >= 2.47 detaches the auto maintenance a fetch or commit starts, and that
+// background process can write into .git while it is being removed (ENOTEMPTY): retry, and never fail the call on it.
+function removeScratch(dir) {
+  try {
+    rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+  } catch (err) {
+    record(`note: could not remove ${dir}: ${err.message}`);
+  }
 }
 function headSha(ref) {
   if (origin === undefined) return '0'.repeat(40);
@@ -77,17 +124,52 @@ for (const [needle, status] of Object.entries(state.fail ?? {})) {
 
 if (endpoint === 'user') reply({ login: state.login });
 
+// A file on a branch, read live from the bare origin, as GitHub's contents API answers it.
+const contents = /^repos\/\{owner\}\/\{repo\}\/contents\/([^?]+)(?:\?ref=(.+))?$/.exec(endpoint);
+if (contents !== null) {
+  const [, filePath, ref] = contents;
+  try {
+    const text = execFileSync('git', ['--git-dir', origin, 'show', `${decodeURIComponent(ref ?? 'main')}:${decodeURIComponent(filePath)}`], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+    reply({ type: 'file', encoding: 'base64', content: Buffer.from(text, 'utf8').toString('base64') });
+  } catch {
+    fail(404, 'Not Found');
+  }
+}
+
 const match = /^repos\/\{owner\}\/\{repo\}\/(pulls|issues)(?:\/(\d+))?(?:\/(\w+))?(?:\?.*)?$/.exec(endpoint);
 if (match === null) fail(404, `fake gh: no route for ${endpoint}`);
 const [, kind, numberText, sub] = match;
 const number = numberText === undefined ? null : Number(numberText);
 const pull = number === null ? null : (state.pulls ?? []).find((p) => p.number === number);
 
+if (kind === 'pulls' && number === null && method === 'POST') {
+  // `failCreatePull`: how many creations to refuse before one succeeds (failure injection for retry tests).
+  if ((state.failCreatePull ?? 0) > 0) {
+    state.failCreatePull -= 1;
+    save();
+    fail(502, 'forced failure creating a pull request');
+  }
+  const created = { number: Math.max(0, ...(state.pulls ?? []).map((p) => p.number)) + 1, title: input.title, body: input.body, head: input.head, base: input.base, user: state.login, state: 'open' };
+  (state.pulls ??= []).push(created);
+  reply(render(created));
+}
 if (kind === 'pulls' && number === null) {
-  reply((state.pulls ?? []).filter((p) => (p.state ?? 'open') === 'open').map(render));
+  const query = new URLSearchParams(endpoint.split('?')[1] ?? '');
+  const wanted = query.get('state') ?? 'open';
+  const head = query.get('head');
+  reply(
+    (state.pulls ?? [])
+      .filter((p) => wanted === 'all' || (p.state ?? 'open') === wanted)
+      .filter((p) => head === null || p.head === head.slice(head.indexOf(':') + 1))
+      .map(render),
+  );
 }
 if (pull === undefined) fail(404, 'Not Found');
 
+if (kind === 'pulls' && sub === undefined && method === 'PATCH') {
+  for (const key of ['title', 'body', 'state']) if (input[key] !== undefined) pull[key] = input[key];
+  reply(render(pull));
+}
 if (kind === 'pulls' && sub === undefined) reply(render(pull));
 
 if (kind === 'pulls' && sub === 'reviews') {
@@ -122,6 +204,8 @@ if (kind === 'pulls' && sub === 'merge' && method === 'PUT') {
   const head = headSha(pull.head);
   if (input.sha !== head) fail(409, 'Head branch was modified');
   const work = mkdtempSync(path.join(tmpdir(), 'fake-gh-merge-'));
+  // Once the push lands the merge has happened, so nothing after it may fail the call: the forge would report an open
+  // pull request whose commit is already on the base branch, and land would say `merge-refused`.
   try {
     git(['clone', '--quiet', '--branch', pull.base ?? 'main', origin, work]);
     git(['fetch', '--quiet', 'origin', pull.head], work);
@@ -131,13 +215,13 @@ if (kind === 'pulls' && sub === 'merge' && method === 'PUT') {
     } else {
       git(['merge', '--no-ff', '--no-verify', '--quiet', '-m', `Merge #${pull.number}`, 'FETCH_HEAD'], work);
     }
-    git(['push', '--quiet', '--no-verify', 'origin', `HEAD:refs/heads/${pull.base ?? 'main'}`], work);
     pull.merge_commit_sha = git(['rev-parse', 'HEAD'], work);
+    git(['push', '--quiet', '--no-verify', 'origin', `HEAD:refs/heads/${pull.base ?? 'main'}`], work);
   } catch (err) {
+    removeScratch(work);
     fail(405, `merge failed: ${err.message}`);
-  } finally {
-    rmSync(work, { recursive: true, force: true });
   }
+  removeScratch(work);
   pull.merged_head_sha = head;
   pull.state = 'closed';
   pull.merged = true;

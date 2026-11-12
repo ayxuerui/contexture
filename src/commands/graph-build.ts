@@ -1,11 +1,11 @@
 import type { CommandOutcome, CommandRequires } from '../core/command.js';
 import type { Finding } from '../core/envelope.js';
 import { ExitCode } from '../core/exit-codes.js';
-import { buildGraphFromNotes, graphBuildOptions, type GraphBuildResult } from '../core/graph/model.js';
+import type { GraphBuildResult } from '../core/graph/model.js';
 import { renderGraphDocument, type GraphDocumentSummary } from '../core/graph/document.js';
 import { GRAPH_DOCUMENT_RELATIVE_PATH, writeGraph, writeGraphDocument } from '../core/graph/persist.js';
-import { listNotes } from '../core/notes/list.js';
 import { buildPerNoteRecords, type PerNoteRecord } from '../core/records.js';
+import { buildReadViewGraph, unavailableMounts, type UnavailableMount } from '../core/shared-stores.js';
 import type { Store } from '../core/store.js';
 
 export const requires: CommandRequires = { store: 'required' };
@@ -21,6 +21,8 @@ export interface GraphBuildData {
   /** graph-context-document spec: where the human-readable render went, and what each section holds. */
   document: { path: string } & GraphDocumentSummary;
   records?: PerNoteRecord[];
+  /** mount-shared-stores: declared mounts the read view could not include. Absent for a store with no mounts. */
+  unavailableMounts?: UnavailableMount[];
 }
 
 /**
@@ -32,8 +34,8 @@ export interface GraphBuildData {
  * reported as a finding rather than failing the build.
  */
 export async function execute(store: Store, flags: GraphBuildFlags = {}): Promise<CommandOutcome<GraphBuildData>> {
-  const notes = await listNotes(store.root, store.config);
-  const graph = buildGraphFromNotes(notes, graphBuildOptions(store.config));
+  const { graph, view } = await buildReadViewGraph(store.root, store.config);
+  const unavailable = unavailableMounts(view.mounts);
   await writeGraph(store, graph);
   const { text, summary } = renderGraphDocument(graph, store.config.retrieval.graph);
   await writeGraphDocument(store, text);
@@ -47,10 +49,21 @@ export async function execute(store: Store, flags: GraphBuildFlags = {}): Promis
     subject: d.from,
     details: { target: d.target, reason: d.reason },
   }));
+  for (const mount of unavailable) {
+    findings.push({
+      code: 'shared_stores.mount_unavailable',
+      severity: 'warning',
+      message:
+        mount.state === 'absent'
+          ? `Mount "${mount.name}" is not cloned at ${mount.location}, so its notes are not in the graph. Run \`ctxr shared-stores sync\`.`
+          : `Mount "${mount.name}" at ${mount.location} is not a store (${mount.reason}), so its notes are not in the graph.`,
+      subject: mount.location,
+    });
+  }
 
   return {
     exitCode: ExitCode.Ok,
-    data: { nodeCount: graph.nodes.length, edgeCount: graph.edges.length, dangling: graph.dangling, document: { path: GRAPH_DOCUMENT_RELATIVE_PATH, ...summary }, records },
+    data: { nodeCount: graph.nodes.length, edgeCount: graph.edges.length, dangling: graph.dangling, document: { path: GRAPH_DOCUMENT_RELATIVE_PATH, ...summary }, records, ...(view.mounts.length > 0 ? { unavailableMounts: unavailable } : {}) },
     findings,
     humanSummary: `Graph built: ${graph.nodes.length} node(s), ${graph.edges.length} edge(s) (${summary.typedLinks} typed), ${graph.dangling.length} dangling link(s); ${summary.clusters} cluster(s), ${summary.bridges} bridge(s), ${summary.orphans} orphan(s) → ${GRAPH_DOCUMENT_RELATIVE_PATH}.`,
     storeRoot: store.root,

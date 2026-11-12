@@ -25,9 +25,73 @@ export interface Decision {
   carriedFrom: string | null;
   /** The comment of a request for changes; null for an approval. */
   comment: string | null;
+  /**
+   * approve-sessions-across-stores: set on a session decision — one decision id, the session, and every part it
+   * covers. Older readers ignore these fields and read the review as a decision on its own pull request's head.
+   */
+  session?: SessionDecision | null;
 }
 
-export type LandingRecordState = 'blocked' | 'needs-reapproval';
+/** One pull request of a session, as a decision names it: the store's forge slug, the number, the head approved. */
+export interface PartRef {
+  store: string;
+  number: number;
+  head: string;
+}
+
+export interface SessionDecision {
+  id: string;
+  session: { home: string; branch: string };
+  /** Every part, in landing order: parts in mounted stores first, the home store's last. */
+  parts: PartRef[];
+}
+
+export function partKey(part: { store: string; number: number }): string {
+  return `${part.store}#${part.number}`;
+}
+
+/** The record part (design.md revision 1 of the second critique): the home store's part, else the first in landing order. */
+export function recordPartOf(decision: SessionDecision): PartRef {
+  return decision.parts.find((p) => p.store === decision.session.home) ?? decision.parts[0]!;
+}
+
+const PART = /^([^/#@,\s]+\/[^/#@,\s]+)#(\d+)@([0-9a-f]{40})$/;
+const DECISION_ID = /^[A-Za-z0-9-]{1,64}$/;
+
+function sessionFields(session: SessionDecision): Record<string, string> {
+  return {
+    id: session.id,
+    session: `${session.session.home}:${session.session.branch}`,
+    parts: session.parts.map((p) => `${p.store}#${p.number}@${p.head}`).join(','),
+  };
+}
+
+/** The session fields of a marker: absent (null), well-formed, or malformed (undefined), which makes the whole decision unreadable. */
+function parseSessionFields(fields: Record<string, string>): SessionDecision | null | undefined {
+  const { id, session, parts } = fields;
+  if (id === undefined && session === undefined && parts === undefined) return null;
+  if (id === undefined || !DECISION_ID.test(id) || session === undefined || parts === undefined) return undefined;
+  const at = session.lastIndexOf(':');
+  if (at <= 0) return undefined;
+  const home = session.slice(0, at);
+  const branch = session.slice(at + 1);
+  if (!/^[^/\s]+\/[^/\s]+$/.test(home) || branch === '') return undefined;
+  const refs: PartRef[] = [];
+  for (const entry of parts.split(',')) {
+    const m = PART.exec(entry);
+    if (m === null) return undefined;
+    refs.push({ store: m[1]!, number: Number.parseInt(m[2]!, 10), head: m[3]! });
+  }
+  if (refs.length === 0) return undefined;
+  return { id, session: { home, branch }, parts: refs };
+}
+
+/**
+ * `retrying` (approve-sessions-across-stores) is a session's: recorded on its record part when a landing run left
+ * the session unfinished for a reason the next run may not meet. Readers of one pull request's state skip it, and
+ * older readers do not parse it at all.
+ */
+export type LandingRecordState = 'blocked' | 'needs-reapproval' | 'retrying';
 
 export interface LandingMark {
   state: LandingRecordState;
@@ -36,7 +100,7 @@ export interface LandingMark {
   at: string;
 }
 
-function marker(name: string, fields: Record<string, string>): string {
+export function marker(name: string, fields: Record<string, string>): string {
   const tokens = Object.entries(fields).map(([key, value]) => `${key}=${value}`);
   return `<!-- ${name} ${MARKER_VERSION} ${tokens.join(' ')} -->`;
 }
@@ -46,7 +110,7 @@ function marker(name: string, fields: Record<string, string>): string {
  * last, and a comment above it is the decider's own text — which must never be
  * able to carry a marker that reads as a different decision, head or decider.
  */
-function parseMarker(name: string, body: string): Record<string, string> | null {
+export function parseMarker(name: string, body: string): Record<string, string> | null {
   const pattern = new RegExp(`<!-- ${name} ${MARKER_VERSION} ([^>]*?) -->\\s*$`);
   const found = pattern.exec(body);
   if (found === null) return null;
@@ -77,6 +141,7 @@ export function decisionBody(decision: Decision): string {
         : `Changes requested by ${decision.by} on the review page, for commit ${short}.`;
   const fields: Record<string, string> = { decision: decision.decision, head: decision.head, by: decision.by, at: decision.at };
   if (decision.carriedFrom !== null) fields['carried-from'] = decision.carriedFrom;
+  if (decision.session !== undefined && decision.session !== null) Object.assign(fields, sessionFields(decision.session));
   const parts = [sentence];
   // A comment cannot open an HTML comment of its own, so it can neither hide text on the forge nor imitate a marker.
   if (decision.comment !== null) parts.push(neutralizeComment(decision.comment.trim()));
@@ -93,12 +158,15 @@ export function parseDecision(body: string): Decision | null {
   if (by === undefined || !NO_SPACE.test(by) || at === undefined || !NO_SPACE.test(at)) return null;
   const carriedFrom = fields['carried-from'] ?? null;
   if (carriedFrom !== null && !SHA.test(carriedFrom)) return null;
+  const session = parseSessionFields(fields);
+  if (session === undefined) return null;
   let comment: string | null = null;
   if (decision === 'request-changes') {
     const paragraphs = body.slice(0, body.lastIndexOf(`<!-- ${DECISION_MARKER}`)).split('\n\n');
     comment = paragraphs.slice(1).join('\n\n').trim();
   }
-  return { decision, head, by, at, carriedFrom, comment };
+  // A decision on one pull request reads exactly as before: the session field is there only for a session decision.
+  return { decision, head, by, at, carriedFrom, comment, ...(session === null ? {} : { session }) };
 }
 
 /** The comment body for a landing record: a sentence for people, then the marker. */
@@ -110,7 +178,7 @@ export function parseLandingMark(body: string): LandingMark | null {
   const fields = parseMarker(LANDING_MARKER, body);
   if (fields === null) return null;
   const { state, reason, head, at } = fields;
-  if (state !== 'blocked' && state !== 'needs-reapproval') return null;
+  if (state !== 'blocked' && state !== 'needs-reapproval' && state !== 'retrying') return null;
   if (reason === undefined || head === undefined || !SHA.test(head) || at === undefined) return null;
   return { state, reason, head, at };
 }
@@ -172,7 +240,7 @@ export function resolveReviewState(input: {
   for (const comment of input.comments) {
     if (comment.author !== input.recordingLogin) continue;
     const parsed = parseLandingMark(comment.body);
-    if (parsed === null) continue;
+    if (parsed === null || parsed.state === 'retrying') continue;
     const t = timeOf(comment.createdAt);
     if (t >= landingTime) {
       landing = parsed;
@@ -180,7 +248,7 @@ export function resolveReviewState(input: {
     }
   }
 
-  if (landing !== null && landing.head === input.head && landingTime >= decisionTime) {
+  if (landing !== null && landing.state !== 'retrying' && landing.head === input.head && landingTime >= decisionTime) {
     return { state: landing.state, decision, landing, approvalNeedsCarryCheck: false };
   }
   if (decision === null) return { state: 'awaiting', decision, landing: null, approvalNeedsCarryCheck: false };

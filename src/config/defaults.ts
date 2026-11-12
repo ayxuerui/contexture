@@ -85,6 +85,9 @@ export const DEFAULT_SCRATCH_PATH = '/tmp/';
 /** standardize-store-operating-guidance D5: the append-only store log at the store root. */
 export const DEFAULT_LOG_PATH = 'log.md';
 
+/** circleback-sweep: the Circleback tag meaning "no store captures this", when `circleback.decline_tag` is absent. */
+export const DEFAULT_CIRCLEBACK_DECLINE_TAG = 'no-capture';
+
 /** a-dated-mission-core D3: the inlined mission core's size budget, enforced by `ctxr doctor`. */
 export const DEFAULT_MISSION_MAX_BYTES = 2048;
 
@@ -278,6 +281,19 @@ export const DEFAULT_ADAPTERS: readonly AdapterDeclaration[] = [{ id: 'claude-co
  * problem it solves — and off with one key. The interval is a day because the
  * thing being watched is a hand-cut release, not a stream of commits.
  */
+/**
+ * serve-keeps-its-clone-current (D3): the minutes between `ctxr serve`'s
+ * store-update runs when `serve.sync_minutes` is absent — the landing sweep's
+ * interval before the key existed, so a store with change approval sees no
+ * change.
+ */
+export const DEFAULT_SERVE_SYNC_MINUTES = 5;
+
+/** `serve.sync_minutes`, or the shipped interval when the store does not set it. */
+export function serveSyncMinutes(config: { serve?: { sync_minutes?: number | undefined } | undefined }): number {
+  return config.serve?.sync_minutes ?? DEFAULT_SERVE_SYNC_MINUTES;
+}
+
 export const DEFAULT_UPDATE_CHECK_ENABLED = true;
 export const DEFAULT_UPDATE_CHECK_TTL_HOURS = 24;
 

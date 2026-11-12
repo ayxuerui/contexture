@@ -1,6 +1,7 @@
 import { access, constants } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { askNpmForPrefix, type NpmPrefixRunner } from './npm-prefix.js';
 
 /**
  * How this executable got onto the path — a FACT the CLI computes, so the
@@ -17,19 +18,51 @@ export type InstallKind = 'global' | 'linked' | 'undetermined';
 
 const NODE_MODULES = 'node_modules';
 
+/** A global package root, and the directory `npm install -g` writes launchers into beside it. */
+interface GlobalRoot {
+  modules: string;
+  bin: string;
+}
+
 /**
- * Global installs live under the Node prefix's node_modules:
+ * Global installs under the running Node's own prefix:
  * POSIX `<prefix>/lib/node_modules`, where execPath is `<prefix>/bin/node`;
- * Windows `<dir of node.exe>/node_modules`.
+ * Windows `<dir of node.exe>/node_modules`. Launchers go beside node.
  */
-function globalRootsFor(execPath: string): string[] {
+function nodePrefixRoots(execPath: string): GlobalRoot[] {
   const binDir = path.dirname(execPath);
   const prefix = path.dirname(binDir);
   return [
-    path.join(prefix, 'lib', NODE_MODULES),
-    path.join(prefix, NODE_MODULES),
-    path.join(binDir, NODE_MODULES),
+    { modules: path.join(prefix, 'lib', NODE_MODULES), bin: binDir },
+    { modules: path.join(prefix, NODE_MODULES), bin: binDir },
+    { modules: path.join(binDir, NODE_MODULES), bin: binDir },
   ];
+}
+
+/**
+ * Global installs under npm's configured prefix -- where `npm install -g` writes, which is the
+ * question the classification answers (install-tools-in-the-home D4): POSIX
+ * `<prefix>/lib/node_modules` with launchers in `<prefix>/bin`, Windows `<prefix>/node_modules`
+ * with launchers in `<prefix>` itself.
+ */
+function npmPrefixRoots(prefix: string): GlobalRoot[] {
+  return [
+    { modules: path.join(prefix, 'lib', NODE_MODULES), bin: path.join(prefix, 'bin') },
+    { modules: path.join(prefix, NODE_MODULES), bin: prefix },
+  ];
+}
+
+/**
+ * The roots a global install may live under. With npm's prefix known, only those: an install
+ * under Node's own prefix that npm would not write to is not one `npm install -g` replaces. Node's
+ * prefix stands in only when npm could not be asked (`npmPrefix` null).
+ */
+function globalRoots(execPath: string, npmPrefix: string | null): GlobalRoot[] {
+  return npmPrefix === null ? nodePrefixRoots(execPath) : npmPrefixRoots(path.resolve(npmPrefix));
+}
+
+function rootOf(resolved: string, execPath: string, npmPrefix: string | null): GlobalRoot | undefined {
+  return globalRoots(path.resolve(execPath), npmPrefix).find((root) => isUnder(resolved, root.modules));
 }
 
 function isUnder(child: string, parent: string): boolean {
@@ -43,12 +76,27 @@ function isUnder(child: string, parent: string): boolean {
  * a dev checkout both resolve to, because Node resolves the symlink before
  * import.meta.url is derived.
  */
-export function classifyInstallPath(binPath: string, execPath: string): InstallKind {
+export function classifyInstallPath(binPath: string, execPath: string, npmPrefix: string | null = null): InstallKind {
   const resolved = path.resolve(binPath);
   const segments = resolved.split(path.sep);
   if (!segments.includes(NODE_MODULES)) return 'linked';
-  if (globalRootsFor(path.resolve(execPath)).some((root) => isUnder(resolved, root))) return 'global';
+  if (rootOf(resolved, execPath, npmPrefix) !== undefined) return 'global';
   return 'undetermined';
+}
+
+
+/**
+ * Where `npm install -g` writes: NPM_CONFIG_PREFIX / npm_config_prefix when set (npm reads those
+ * before any npmrc, so they are its answer), otherwise npm's own answer. Null when neither can be
+ * had, and the classification falls back to the running Node's prefix.
+ */
+export async function npmGlobalPrefix(
+  env: Readonly<Record<string, string | undefined>>,
+  ask: NpmPrefixRunner = askNpmForPrefix,
+): Promise<string | null> {
+  const configured = (env.NPM_CONFIG_PREFIX ?? env.npm_config_prefix ?? '').trim();
+  if (configured !== '' && path.isAbsolute(configured)) return configured;
+  return ask();
 }
 
 export interface InstallLocation {
@@ -72,9 +120,9 @@ function runningEntrypoint(): string {
   return fileURLToPath(new URL('../bin.js', import.meta.url));
 }
 
-export function resolveInstallLocation(execPath: string): InstallLocation {
+export function resolveInstallLocation(execPath: string, npmPrefix: string | null = null): InstallLocation {
   const binPath = runningEntrypoint();
-  return { path: binPath, kind: classifyInstallPath(binPath, execPath) };
+  return { path: binPath, kind: classifyInstallPath(binPath, execPath, npmPrefix) };
 }
 
 /**
@@ -89,11 +137,10 @@ export function resolveInstallLocation(execPath: string): InstallLocation {
  * could never succeed. Only meaningful for a `global` classification; callers
  * do not ask for the other two.
  */
-export async function isGlobalInstallWritable(binPath: string, execPath: string): Promise<boolean> {
-  const resolved = path.resolve(binPath);
-  const root = globalRootsFor(path.resolve(execPath)).find((candidate) => isUnder(resolved, candidate));
+export async function isGlobalInstallWritable(binPath: string, execPath: string, npmPrefix: string | null = null): Promise<boolean> {
+  const root = rootOf(path.resolve(binPath), execPath, npmPrefix);
   if (root === undefined) return false;
-  const targets = [root, path.dirname(path.resolve(execPath))];
+  const targets = [root.modules, root.bin];
   for (const target of targets) {
     try {
       await access(target, constants.W_OK);

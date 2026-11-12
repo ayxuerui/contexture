@@ -29,9 +29,36 @@ export function publishRoute(filePath: string): string {
   return `${PUBLISH_ROUTE_PREFIX}${encodeURI(filePath)}`;
 }
 
+/**
+ * The browsing surface's route for one note — the address `serve.ts` answers
+ * under its `/notes/` branch. Same `encodeURI` round trip as `publishRoute`.
+ */
+export function noteRoute(notePath: string): string {
+  return `/notes/${encodeURI(notePath)}`;
+}
+
 /** `worktree` is the session worktree's directory name — the key `buildPreviews` inserts. */
 export function previewRoute(worktree: string, filePath: string): string {
   return `${PREVIEW_ROUTE_PREFIX}${encodeURI(`${worktree}/${filePath}`)}`;
+}
+
+/**
+ * serve-keeps-its-clone-current (D6): an open pull request's published pages,
+ * rendered from its head on the forge, addressed by pull request number — the
+ * number the approval pages and `ctxr session submit` already report.
+ */
+export const PULL_PREVIEW_ROUTE_PREFIX = `${PREVIEW_ROUTE_PREFIX}pull/`;
+
+/** `filePath` is under the publish path, as `publishRoute` takes it; empty for the pull request's preview root. */
+export function pullPreviewRoute(number: number, filePath = ''): string {
+  return `${PULL_PREVIEW_ROUTE_PREFIX}${number}/${encodeURI(filePath)}`;
+}
+
+/** The pull request number and the path under the publish path a pull-preview pathname names; null for any other pathname. */
+export function parsePullPreviewPath(pathname: string): { number: number; filePath: string } | null {
+  const match = /^\/preview\/pull\/([1-9][0-9]{0,9})\/(.*)$/s.exec(pathname);
+  if (match === null || !pathname.startsWith(PULL_PREVIEW_ROUTE_PREFIX)) return null;
+  return { number: Number(match[1]), filePath: match[2]! };
 }
 
 export interface ServedAtRoute {
@@ -62,7 +89,7 @@ export interface ServedAt extends ServedAtRoute {
  * wrong URL with no error. Stripping the base's trailing slashes and appending
  * a route that always begins with "/" preserves whatever path the base carries.
  */
-function joinBaseUrl(baseUrl: string | undefined, route: string): string | null {
+export function joinBaseUrl(baseUrl: string | undefined, route: string): string | null {
   if (baseUrl === undefined) return null;
   return `${baseUrl.replace(/\/+$/, '')}${route}`;
 }

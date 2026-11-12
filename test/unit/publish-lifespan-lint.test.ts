@@ -5,7 +5,7 @@ import { execute as executeDoctor } from '../../src/commands/doctor.js';
 import { execute as executeLint } from '../../src/commands/lint.js';
 import { SHIPPED_DEFAULTS } from '../../src/config/defaults.js';
 import type { StoreConfig } from '../../src/config/schema.js';
-import { disposablePageDueCheck, pageRepresentationCheck } from '../../src/core/checks/organize-checks.js';
+import { disposablePageDueCheck, pageRepresentationCheck, sendCopyNameCheck } from '../../src/core/checks/organize-checks.js';
 import { CHECKS } from '../../src/core/checks/manifest.js';
 import { contentHashOfBody } from '../../src/core/content/canonicalize.js';
 import { ExitCode } from '../../src/core/exit-codes.js';
@@ -123,6 +123,50 @@ describe('lint: permanent pages out of step with their note', () => {
         ['publish/projects/stale', 'stale', 'projects/ctx-note.md'],
         ['publish/projects/unstamped', 'not-stamped', 'projects/ctx-note.md'],
       ]);
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+});
+
+/** send-copies-gated-at-commit: lint lists committed send copies whose names are not dated, and never fails. */
+describe('lint: send copies without a dated name', () => {
+  it('is an observation', () => {
+    expect(sendCopyNameCheck.severity).toBe('observation');
+  });
+
+  it('lists an undated send copy on a permanent and a disposable page, and exits 0', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      await page(tmp.root, 'projects/model', '# p\n');
+      await put(tmp.root, 'publish/projects/model/model.xlsx', 'xlsx');
+      await put(tmp.root, 'publish/projects/model/2026-01-15-model.xlsx', 'xlsx');
+      await put(tmp.root, 'publish/projects/model/assets/source-data.xlsx', 'xlsx');
+      await put(tmp.root, 'publish/projects/model/data.csv', 'a,b');
+      await page(tmp.root, 'disposable/2026-10-13-x', '# d\n');
+      await put(tmp.root, 'publish/disposable/2026-10-13-x/brief.pdf', 'pdf');
+
+      const store: Store = { root: tmp.root, config: makeConfig() };
+      const outcome = await executeLint(makeFakeEnv({ cwd: tmp.root }), store);
+      expect(outcome.exitCode).toBe(ExitCode.Ok);
+      const found = outcome.findings.filter((f) => f.code === 'organize.send_copy_name').map((f) => [f.subject, (f.details as { page: string }).page]);
+      expect(found).toEqual([
+        ['publish/disposable/2026-10-13-x/brief.pdf', 'publish/disposable/2026-10-13-x'],
+        ['publish/projects/model/model.xlsx', 'publish/projects/model'],
+      ]);
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('reports nothing when every send copy is dated', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      await page(tmp.root, 'projects/brief', '# p\n');
+      await put(tmp.root, 'publish/projects/brief/2026-01-15-brief.pdf', 'pdf');
+      const store: Store = { root: tmp.root, config: makeConfig() };
+      const outcome = await executeLint(makeFakeEnv({ cwd: tmp.root }), store);
+      expect(outcome.findings.some((f) => f.code === 'organize.send_copy_name')).toBe(false);
     } finally {
       await tmp.cleanup();
     }

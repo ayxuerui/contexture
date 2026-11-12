@@ -1,5 +1,5 @@
 import { existsSync } from 'node:fs';
-import { readdir, readFile } from 'node:fs/promises';
+import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { pageServedAt, type ServedAt, servedAtSentence } from '../core/browse/page-url.js';
 import type { CommandOutcome, CommandRequires } from '../core/command.js';
@@ -11,6 +11,7 @@ import { parseNoteText } from '../core/notes/parse.js';
 import { DISPOSABLE_SEGMENT, lifespanOf, type PageLifespan, parseLeadingDate } from '../core/publish/lifespan.js';
 import { assessRepresentation } from '../core/publish/represents.js';
 import { checkScriptSyntax } from '../core/publish/script-check.js';
+import { sendCopiesAtPageRoot, sendCopyExtension, sendCopyNameProblem } from '../core/publish/send-copies.js';
 import type { Store } from '../core/store.js';
 
 export const requires: CommandRequires = { store: 'required' };
@@ -24,8 +25,8 @@ export interface PublishCheckFailure {
   message: string;
 }
 
-/** file-pdfs-beside-their-page: a PDF at a page folder's root, a rendering of the page. */
-export interface PublishCheckPdf {
+/** send-copies-beside-their-page: a send copy at a page folder's root. */
+export interface PublishCheckSendCopy {
   /** Store-relative. */
   path: string;
   served_at: ServedAt | null;
@@ -47,11 +48,11 @@ export interface PublishCheckData {
    */
   lifespan: PageLifespan | null;
   /**
-   * file-pdfs-beside-their-page D5: every PDF at the page folder's root,
+   * file-pdfs-beside-their-page D5: every send copy at the page folder's root,
    * sorted by file name, with the address it is served at — so the author can
-   * hand on the PDF's link. A PDF in a subfolder is an input and is not listed.
+   * hand on its link. A file in a subfolder is an input and is not listed.
    */
-  pdfs: PublishCheckPdf[];
+  send_copies: PublishCheckSendCopy[];
 }
 
 /** publish spec: the fixed tag list a tag-balance pass counts, matching the source convention's checker. */
@@ -61,10 +62,44 @@ function stripNonStructural(html: string): string {
   return html.replace(/<!--[\s\S]*?-->/g, '').replace(/<script[\s\S]*?<\/script>/gi, '').replace(/<style[\s\S]*?<\/style>/gi, '');
 }
 
+const EXTERNAL_ADDRESS = /^\s*https?:\/\//i;
+
+/** allow-outbound-links-in-published-pages D1: attributes whose value an element loads, on any element. */
+const LOADING_ATTRIBUTES = new Set(['src', 'srcset', 'poster', 'data']);
+
+/** D1: the elements whose `href` is navigation only. Every other `href` loads or re-bases what it names. */
+const NAVIGATING_ELEMENTS = new Set(['a', 'area']);
+
+function loadsExternally(element: string, attribute: string, value: string): boolean {
+  if (attribute === 'srcset') return value.split(',').some((candidate) => EXTERNAL_ADDRESS.test(candidate));
+  if (LOADING_ATTRIBUTES.has(attribute)) return EXTERNAL_ADDRESS.test(value);
+  if (attribute === 'href' || attribute.endsWith(':href')) return !NAVIGATING_ELEMENTS.has(element) && EXTERNAL_ADDRESS.test(value);
+  return false;
+}
+
+/**
+ * publish spec: a page loads nothing from an external address. An outbound
+ * `<a href>` loads nothing until a reader follows it, so it passes (D1); an
+ * external CSS `url()` or `@import` loads as surely as `<link href>`, so it
+ * fails (D2). The first match is named (D3).
+ */
 function checkNoExternalReferences(html: string): PublishCheckFailure[] {
-  const match = /(?:src|href)\s*=\s*["']https?:\/\/[^"']*["']/i.exec(html);
-  if (!match) return [];
-  return [{ check: 'no-external-references', message: `references an external network resource: ${match[0]}` }];
+  const fail = (text: string): PublishCheckFailure[] => [{ check: 'no-external-references', message: `references an external network resource: ${text}` }];
+
+  const tagRe = /<([a-zA-Z][\w:-]*)((?:[^>"']|"[^"]*"|'[^']*')*)>/g;
+  const attrRe = /([^\s"'=<>/]+)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+))/g;
+  let tag: RegExpExecArray | null;
+  while ((tag = tagRe.exec(html))) {
+    const element = tag[1]!.toLowerCase();
+    let attr: RegExpExecArray | null;
+    while ((attr = attrRe.exec(tag[2] ?? ''))) {
+      const value = attr[2] ?? attr[3] ?? attr[4] ?? '';
+      if (loadsExternally(element, attr[1]!.toLowerCase(), value)) return fail(attr[0]);
+    }
+  }
+
+  const css = /(?:url\(\s*(?:&quot;|["'])?|@import\s+["'])\s*https?:\/\/[^"')\s]*/i.exec(html);
+  return css ? fail(css[0]) : [];
 }
 
 function checkViewportMeta(html: string): PublishCheckFailure[] {
@@ -179,26 +214,11 @@ function summaryLabel(failure: PublishCheckFailure): string {
   return `${failure.check} (${failure.message.startsWith('stale') ? 'stale' : 'not stamped'})`;
 }
 
-/**
- * file-pdfs-beside-their-page D2: a PDF at the page folder's root is a
- * rendering of the page, and its name leads with the date it was rendered, so
- * a re-render adds a file beside the one a recipient was sent instead of
- * replacing it. The date reader is the disposable folder's (D4), applied to
- * the name without its extension.
- */
-function checkPdfNames(pdfFileNames: readonly string[]): PublishCheckFailure[] {
-  return pdfFileNames
-    .filter((name) => parseLeadingDate(name.slice(0, -'.pdf'.length)) === null)
-    .map((name) => ({ check: 'pdf-name', message: `"${name}" is not named "<YYYY-MM-DD>-<name>.pdf" with a real date` }));
-}
-
-/** The PDFs directly in a page folder, by file name. Subfolders hold inputs, not renderings (D3). */
-async function pdfsAtPageRoot(pageDir: string): Promise<string[]> {
-  const entries = await readdir(pageDir, { withFileTypes: true });
-  return entries
-    .filter((entry) => entry.isFile() && entry.name.toLowerCase().endsWith('.pdf'))
-    .map((entry) => entry.name)
-    .sort();
+function checkSendCopyNames(sendCopyFileNames: readonly string[]): PublishCheckFailure[] {
+  return sendCopyFileNames.flatMap((name) => {
+    const problem = sendCopyNameProblem(name);
+    return problem === null ? [] : [{ check: 'send-copy-name', message: problem }];
+  });
 }
 
 function checkProvenanceLine(html: string): PublishCheckFailure[] {
@@ -246,8 +266,8 @@ async function checkInlineScriptSyntax(html: string): Promise<PublishCheckFailur
  */
 export async function execute(store: Store, flags: PublishCheckFlags): Promise<CommandOutcome<PublishCheckData>> {
   const namedPath = path.isAbsolute(flags.path) ? flags.path : path.resolve(store.root, flags.path);
-  // D5: naming a page's PDF checks the page it renders.
-  const absolutePath = namedPath.toLowerCase().endsWith('.pdf') ? path.join(path.dirname(namedPath), PUBLISH_INDEX_FILE) : namedPath;
+  // file-pdfs-beside-their-page D5: naming a page's send copy checks the page.
+  const absolutePath = sendCopyExtension(namedPath) !== null ? path.join(path.dirname(namedPath), PUBLISH_INDEX_FILE) : namedPath;
   const relativePath = path.relative(store.root, absolutePath).split(path.sep).join('/');
 
   if (!existsSync(absolutePath)) {
@@ -269,8 +289,8 @@ export async function execute(store: Store, flags: PublishCheckFlags): Promise<C
     ...checkPageLocation(relativePath, store.config.publish.path),
   ];
 
-  const pdfFileNames = await pdfsAtPageRoot(pageDir);
-  failures.push(...checkPdfNames(pdfFileNames));
+  const sendCopyFileNames = await sendCopiesAtPageRoot(pageDir);
+  failures.push(...checkSendCopyNames(sendCopyFileNames));
 
   const lifespan = lifespanOf(relativePath, store.config.publish.path);
   if (lifespan === 'disposable') failures.push(...checkDisposableShape(relativePath, store.config.publish.path));
@@ -298,20 +318,20 @@ export async function execute(store: Store, flags: PublishCheckFlags): Promise<C
   const sentence = servedAtSentence(servedAt);
   const lifespanTag = lifespan === null ? '' : ` (${lifespan})`;
   const pageDirRelative = path.posix.dirname(relativePath);
-  const pdfs = pdfFileNames.map((name) => {
-    const pdfPath = `${pageDirRelative}/${name}`;
-    return { path: pdfPath, served_at: pageServedAt(store, pdfPath) };
+  const sendCopies = sendCopyFileNames.map((name) => {
+    const sendCopyPath = `${pageDirRelative}/${name}`;
+    return { path: sendCopyPath, served_at: pageServedAt(store, sendCopyPath) };
   });
-  const pdfTag = pdfs.length === 0 ? '' : ` ${pdfs.length} PDF rendering(s).`;
+  const sendCopyTag = sendCopies.length === 0 ? '' : ` ${sendCopies.length} send copy(ies).`;
 
   return {
     exitCode: failures.length === 0 ? ExitCode.Ok : ExitCode.CheckFailed,
-    data: { path: relativePath, passed: failures.length === 0, failures, served_at: servedAt, lifespan, pdfs },
+    data: { path: relativePath, passed: failures.length === 0, failures, served_at: servedAt, lifespan, send_copies: sendCopies },
     findings: [],
     humanSummary:
       failures.length === 0
-        ? `${relativePath}${lifespanTag}: all checks passed.${pdfTag}${sentence}`
-        : `${relativePath}${lifespanTag}: ${failures.length} failing check(s): ${failures.map(summaryLabel).join(', ')}.${pdfTag}${sentence}`,
+        ? `${relativePath}${lifespanTag}: all checks passed.${sendCopyTag}${sentence}`
+        : `${relativePath}${lifespanTag}: ${failures.length} failing check(s): ${failures.map(summaryLabel).join(', ')}.${sendCopyTag}${sentence}`,
     storeRoot: store.root,
     schemaVersion: store.config.schema_version,
   };

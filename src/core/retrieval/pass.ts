@@ -1,9 +1,9 @@
-import path from 'node:path';
 import type { StoreConfig } from '../../config/schema.js';
 import { catalogSectionsFor, sectionForNote } from '../catalog/model.js';
 import { contentHashOfBody } from '../content/canonicalize.js';
 import { CatalogSectionNotFoundError, NoteNotFoundError } from '../errors.js';
-import { extractLinkTargets, type GraphBuildResult } from '../graph/model.js';
+import { extractLinkTargets, linkNames, type GraphBuildResult } from '../graph/model.js';
+import { mountScopes } from '../shared-stores-location.js';
 import { backlinkCounts, bridges, hubs } from '../graph/query.js';
 import { isUnderAnyPrefix, type Note } from '../notes/list.js';
 import { readCatalogGlosses } from '../records.js';
@@ -131,9 +131,11 @@ export function resolveEntrySet(
   // The same backlink enumeration `rollup gather` and `publish gather` use.
   for (const entity of options.entities ?? []) {
     entries.push({ selector: 'entity', value: entity });
-    const stem = path.basename(entity, '.md');
+    const scopes = mountScopes(config);
     for (const note of notes) {
-      if (note.path !== entity && extractLinkTargets(note.body).includes(stem)) add(note.path, 'backlink');
+      if (note.path !== entity && extractLinkTargets(note.body).some((target) => linkNames(note.path, target, entity, scopes))) {
+        add(note.path, 'backlink');
+      }
     }
   }
 

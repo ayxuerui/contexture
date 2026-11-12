@@ -9,6 +9,7 @@ import { SOURCE_TYPE_FIELD } from '../ingest/identity.js';
 import { missingRequiredSection } from '../ingest/required-sections.js';
 import { parseNote } from '../notes/parse.js';
 import { PUBLISH_INDEX_FILE } from '../browse/routes.js';
+import { sendCopiesAtPageRoot, sendCopyNameProblem } from '../publish/send-copies.js';
 import { DISPOSABLE_REVIEW_DAYS, daysBetween, lifespanOf, parseLeadingDate } from '../publish/lifespan.js';
 import { assessRepresentation, readReadme } from '../publish/represents.js';
 import { findStaleRollups } from '../rollup.js';
@@ -416,6 +417,38 @@ export const pageRepresentationCheck = defineCheck({
   },
 });
 
+/**
+ * send-copies-gated-at-commit D1: every send copy already committed whose
+ * name is not dated, store-wide — the backlog view beside the commit gate,
+ * which only sees what a commit stages. An observation, so a later change to
+ * the rule never turns existing content into a failing build. Reads send
+ * copies through the one shared reading `publish check` and the gate use.
+ */
+export const sendCopyNameCheck = defineCheck({
+  id: 'organize.send_copy_name',
+  title: 'Send copies without a dated name',
+  severity: 'observation',
+  capability: 'context-organize',
+  scopes: ['store'],
+  async run(ctx) {
+    const findings: Finding[] = [];
+    for (const folder of await publishedPageFolders(ctx.storeRoot, ctx.config.publish.path)) {
+      for (const name of await sendCopiesAtPageRoot(path.join(ctx.storeRoot, ...folder.split('/')))) {
+        const problem = sendCopyNameProblem(name);
+        if (problem === null) continue;
+        findings.push({
+          code: 'organize.send_copy_name',
+          severity: 'info',
+          message: `"${folder}/${name}": ${problem}.`,
+          subject: `${folder}/${name}`,
+          details: { page: folder },
+        });
+      }
+    }
+    return { status: findings.length > 0 ? 'fail' : 'pass', findings };
+  },
+});
+
 export const ORGANIZE_CHECKS = [
   orphanNotesCheck,
   brokenLinksCheck,
@@ -427,4 +460,5 @@ export const ORGANIZE_CHECKS = [
   agentsMdSectionOrderBlockedCheck,
   disposablePageDueCheck,
   pageRepresentationCheck,
+  sendCopyNameCheck,
 ];

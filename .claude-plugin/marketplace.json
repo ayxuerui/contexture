@@ -1,0 +1,16 @@
+{
+  "name": "contexture",
+  "owner": {
+    "name": "contexture"
+  },
+  "metadata": {
+    "description": "contexture's plugin for Claude: the skills for working in any contexture store through its connector."
+  },
+  "plugins": [
+    {
+      "name": "contexture",
+      "source": "./plugins/contexture",
+      "description": "contexture's skills for working in a contexture store from Claude: capture, file into notes, find connections, keep rollups and the mission current, and submit a change for approval. Add your store's connector separately."
+    }
+  ]
+}

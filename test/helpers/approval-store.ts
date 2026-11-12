@@ -31,8 +31,11 @@ export interface ApprovalStore {
   git(args: readonly string[], cwd?: string): Promise<string>;
   /** Starts a session, writes `files` in it, commits, pushes, and opens a pull request numbered `number`. */
   openSession(label: string, number: number, files: Record<string, string>, pull?: Partial<FakePull>): Promise<ApprovalSession>;
-  /** Commits `files` straight onto origin's main, as another landed change would. */
-  advanceMain(files: Record<string, string>, message?: string): Promise<string>;
+  /**
+   * Commits `files` straight onto origin's main, as another landed change would. With `catalogued`, the catalog is
+   * rebuilt in the same commit, so the store still passes `ctxr doctor` — what a gate such as `session submit` runs.
+   */
+  advanceMain(files: Record<string, string>, message?: string, opts?: { catalogued?: boolean }): Promise<string>;
   commitInWorktree(worktree: string, files: Record<string, string>, message: string): Promise<string>;
 }
 
@@ -63,10 +66,16 @@ export async function makeApprovalStore(opts: ApprovalStoreOptions = {}): Promis
     (await execFileAsync('git', [...args], { cwd, env: env as NodeJS.ProcessEnv })).stdout.trim();
 
   await execFileAsync('git', ['init', '-q', '--bare', '-b', 'main', origin], { env: env as NodeJS.ProcessEnv });
+  // Every push into the origin starts `git gc --auto` in the background (receive.autogc). `advanceMain`'s local
+  // clone copies loose object files directly, so a gc packing them mid-copy fails the clone with "failed to copy
+  // file … No such file or directory". The tests never need the origin collected.
+  await git(['config', 'receive.autogc', 'false'], origin);
+  await git(['config', 'gc.auto', '0'], origin);
   await mkdir(root, { recursive: true });
   await git(['init', '-q', '-b', 'main']);
-  const init = await runCli(['init'], { cwd: root, env });
-  if (init.exitCode !== 0) throw new Error(`init failed: ${init.stderr}`);
+  // A generous limit: under load `init` can pass the 10 s default and be killed with no output.
+  const init = await runCli(['init'], { cwd: root, env, timeoutMs: 60_000 });
+  if (init.exitCode !== 0) throw new Error(`init failed (exit ${init.exitCode}): ${init.stderr}${init.stdout}`);
 
   const identity = opts.identity ?? { issuer: 'https://ctx-a.example.test', audience: 'aud-1', jwksUrl: 'https://ctx-a.example.test/certs' };
   const block = opts.noApproval
@@ -103,7 +112,7 @@ export async function makeApprovalStore(opts: ApprovalStoreOptions = {}): Promis
       return git(['rev-parse', 'HEAD'], worktree);
     },
     async openSession(label, number, files, pull = {}) {
-      const started = await runCli(['session', 'start', label, '--json'], { cwd: root, env });
+      const started = await runCli(['session', 'start', label, '--json'], { cwd: root, env, timeoutMs: 60_000 });
       if (started.exitCode !== 0) throw new Error(`session start failed: ${started.stdout}${started.stderr}`);
       const data = JSON.parse(started.stdout).data as { worktree: string; branch: string };
       const head = await store.commitInWorktree(data.worktree, files, `add ${label}`);
@@ -113,11 +122,16 @@ export async function makeApprovalStore(opts: ApprovalStoreOptions = {}): Promis
       });
       return { number, worktree: data.worktree, name: path.basename(data.worktree), branch: data.branch, head };
     },
-    async advanceMain(files, message = 'advance main') {
+    async advanceMain(files, message = 'advance main', opts = {}) {
       const scratch = path.join(tmp.root, `scratch-${Date.now()}-${Math.random().toString(16).slice(2)}`);
       await git(['clone', '-q', origin, scratch], tmp.root);
       await writeFiles(scratch, files);
       await git(['add', ...Object.keys(files)], scratch);
+      if (opts.catalogued === true) {
+        const built = await runCli(['catalog', 'build'], { cwd: scratch, env, timeoutMs: 60_000 });
+        if (built.exitCode !== 0) throw new Error(`catalog build failed: ${built.stderr}${built.stdout}`);
+        await git(['add', '-A'], scratch);
+      }
       await git(['commit', '-q', '--no-verify', '-m', message], scratch);
       await git(['push', '-q', '--no-verify', 'origin', 'HEAD:main'], scratch);
       await git(['fetch', '-q', 'origin']);

@@ -2,7 +2,7 @@ import { readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_CAPTURE_ROOT, DEFAULT_PUBLISH_PATH, DEFAULT_VENDORED_SKILLS, SHIPPED_DEFAULTS } from '../../src/config/defaults.js';
+import { DEFAULT_CAPTURE_ROOT, DEFAULT_PUBLISH_PATH, DEFAULT_SERVE_SYNC_MINUTES, DEFAULT_VENDORED_SKILLS, serveSyncMinutes, SHIPPED_DEFAULTS } from '../../src/config/defaults.js';
 import { readConfig } from '../../src/config/load.js';
 import { SUPPORTED_SCHEMA_VERSION } from '../../src/config/schema.js';
 import { renderStoreConfig } from '../../src/config/render.js';
@@ -346,6 +346,48 @@ describe('readConfig', () => {
     }
   });
 
+  /** serve-keeps-its-clone-current: serve.sync_minutes, absent meaning 5, positive whole minutes only. */
+  it('resolves an absent serve.sync_minutes to 5, with or without a serve block', async () => {
+    expect(DEFAULT_SERVE_SYNC_MINUTES).toBe(5);
+    for (const extra of ['', 'serve: { base_url: "https://ctx-a.example.test" }\n']) {
+      const tmp = await makeTmpDir();
+      try {
+        await writeFile(path.join(tmp.root, CONFIG_FILE_NAME), `${minimalConfig()}${extra}`);
+        const config = await readConfig(tmp.root);
+        expect(config.serve?.sync_minutes).toBeUndefined();
+        expect(serveSyncMinutes(config)).toBe(5);
+      } finally {
+        await tmp.cleanup();
+      }
+    }
+  });
+
+  it('reads a positive whole serve.sync_minutes', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      await writeFile(path.join(tmp.root, CONFIG_FILE_NAME), `${minimalConfig()}serve: { sync_minutes: 2 }\n`);
+      const config = await readConfig(tmp.root);
+      expect(config.serve?.sync_minutes).toBe(2);
+      expect(serveSyncMinutes(config)).toBe(2);
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  for (const value of ['0', '-3', '2.5', '"five"']) {
+    it(`refuses serve.sync_minutes: ${value}, naming the key`, async () => {
+      const tmp = await makeTmpDir();
+      try {
+        await writeFile(path.join(tmp.root, CONFIG_FILE_NAME), `${minimalConfig()}serve: { sync_minutes: ${value} }\n`);
+        const error = await readConfig(tmp.root).catch((err: unknown) => err);
+        expect(error).toBeInstanceOf(InvalidConfigError);
+        expect((error as InvalidConfigError).message).toContain('serve.sync_minutes');
+      } finally {
+        await tmp.cleanup();
+      }
+    });
+  }
+
   /** approve-from-the-review-page: opt-in, no shipped default, and only alongside a base URL. */
   const CHANGE_APPROVAL_BLOCK =
     'change_approval:\n' +
@@ -387,6 +429,78 @@ describe('readConfig', () => {
       expect((error as InvalidConfigError).message).toContain('serve.base_url');
     } finally {
       await tmp.cleanup();
+    }
+  });
+
+  it('reads change_approval.land as auto or manual, absent when undeclared, and refuses anything else', async () => {
+    for (const [value, ok] of [['auto', true], ['manual', true], ['never', false]] as const) {
+      const tmp = await makeTmpDir();
+      try {
+        const text = `${minimalConfig()}serve: { base_url: "https://ctx-a.example.test" }\n${CHANGE_APPROVAL_BLOCK}  land: ${value}\n`;
+        await writeFile(path.join(tmp.root, CONFIG_FILE_NAME), text);
+        if (ok) expect((await readConfig(tmp.root)).change_approval?.land).toBe(value);
+        else await expect(readConfig(tmp.root)).rejects.toThrow(InvalidConfigError);
+      } finally {
+        await tmp.cleanup();
+      }
+    }
+    const tmp = await makeTmpDir();
+    try {
+      await writeFile(path.join(tmp.root, CONFIG_FILE_NAME), `${minimalConfig()}serve: { base_url: "https://ctx-a.example.test" }\n${CHANGE_APPROVAL_BLOCK}`);
+      expect((await readConfig(tmp.root)).change_approval?.land).toBeUndefined();
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  /** serve-the-store-over-mcp: opt-in, no shipped default, and only alongside change_approval. */
+  it('leaves mcp undeclared when the store says nothing, and reads readers and capturers when declared', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      await writeFile(path.join(tmp.root, CONFIG_FILE_NAME), minimalConfig());
+      expect((await readConfig(tmp.root)).mcp).toBeUndefined();
+      const text = `${minimalConfig()}serve: { base_url: "https://ctx-a.example.test" }\n${CHANGE_APPROVAL_BLOCK}mcp: { readers: ["@ctx-a.example"], capturers: ["a@ctx-a.example"], editors: ["e@ctx-a.example"] }\n`;
+      await writeFile(path.join(tmp.root, CONFIG_FILE_NAME), text);
+      expect((await readConfig(tmp.root)).mcp).toEqual({ readers: ['@ctx-a.example'], capturers: ['a@ctx-a.example'], editors: ['e@ctx-a.example'] });
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('refuses mcp without change_approval, naming both keys', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      await writeFile(path.join(tmp.root, CONFIG_FILE_NAME), `${minimalConfig()}serve: { base_url: "https://ctx-a.example.test" }\nmcp: { readers: ["@ctx-a.example"] }\n`);
+      const error = await readConfig(tmp.root).catch((err: unknown) => err);
+      expect(error).toBeInstanceOf(InvalidConfigError);
+      expect((error as InvalidConfigError).message).toContain('mcp');
+      expect((error as InvalidConfigError).message).toContain('change_approval');
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('refuses mcp when serve.base_url carries a path', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      await writeFile(path.join(tmp.root, CONFIG_FILE_NAME), `${minimalConfig()}serve: { base_url: "https://ctx-a.example.test/store" }\n${CHANGE_APPROVAL_BLOCK}mcp: { readers: ["@ctx-a.example"] }\n`);
+      const error = await readConfig(tmp.root).catch((err: unknown) => err);
+      expect(error).toBeInstanceOf(InvalidConfigError);
+      expect((error as InvalidConfigError).message).toContain('origin with no path');
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('refuses an empty mcp block and an entry that is neither an email nor an @domain', async () => {
+    for (const block of ['mcp: {}', 'mcp: { readers: [] }', 'mcp: { readers: ["nobody"] }']) {
+      const tmp = await makeTmpDir();
+      try {
+        await writeFile(path.join(tmp.root, CONFIG_FILE_NAME), `${minimalConfig()}serve: { base_url: "https://ctx-a.example.test" }\n${CHANGE_APPROVAL_BLOCK}${block}\n`);
+        await expect(readConfig(tmp.root)).rejects.toThrow(InvalidConfigError);
+      } finally {
+        await tmp.cleanup();
+      }
     }
   });
 
@@ -549,6 +663,31 @@ describe('renderStoreConfig (config-defaults-as-the-convention)', () => {
     const config = await resolved(`${minimalConfig()}session: { branch_prefix: work/ }\n`);
     expect(await resolved(renderStoreConfig(config))).toEqual(config);
   });
+
+  /**
+   * circleback-sweep: the opt-in block that ships the `ctxr-capture-circleback` skill.
+   * Optional with no shipped default, like `serve`, and its own optional keys
+   * stay absent, so a rewritten config never gains a key the store did not write.
+   */
+  it('writes no circleback block for a store that declares none', async () => {
+    const config = await resolved(minimalConfig());
+    expect(config.circleback).toBeUndefined();
+    expect(renderStoreConfig(config)).not.toContain('circleback');
+  });
+
+  it('writes a declared circleback block as given, adding no key it left out', async () => {
+    const config = await resolved(`${minimalConfig()}circleback: { tag: pkm }\n`);
+    expect(config.circleback).toEqual({ tag: 'pkm' });
+    const rendered = renderStoreConfig(config);
+    expect(rendered).toContain('tag: pkm');
+    expect(rendered).not.toContain('other_tags');
+    expect(rendered).not.toContain('decline_tag');
+    expect(await resolved(rendered)).toEqual(config);
+  });
+
+  it('refuses a circleback block with no tag', async () => {
+    await expect(resolved(`${minimalConfig()}circleback: { other_tags: [readyrun] }\n`)).rejects.toThrow(/circleback/);
+  });
 });
 
 describe('adapters', () => {
@@ -596,4 +735,45 @@ describe('adapters', () => {
     }
   });
 
+});
+
+describe('shared_stores (mount-shared-stores)', () => {
+  async function load(extra: string) {
+    const tmp = await makeTmpDir();
+    try {
+      await writeFile(path.join(tmp.root, CONFIG_FILE_NAME), `${minimalConfig()}${extra}`);
+      return await readConfig(tmp.root);
+    } finally {
+      await tmp.cleanup();
+    }
+  }
+
+  it('is absent when undeclared, and rendering does not add it', async () => {
+    const config = await load('');
+    expect(config.shared_stores).toBeUndefined();
+    expect(renderStoreConfig(config)).not.toContain('shared_stores');
+  });
+
+  it('loads declared mounts and round-trips them', async () => {
+    const config = await load('shared_stores:\n  - { name: ctx-b, url: "https://example.test/ctx-b.git" }\n');
+    expect(config.shared_stores).toEqual([{ name: 'ctx-b', url: 'https://example.test/ctx-b.git' }]);
+    expect(renderStoreConfig(config)).toContain('shared_stores');
+  });
+
+  for (const [what, name] of [
+    ['contains a /', 'ctx/b'],
+    ['changes under slugification', 'Ctx B'],
+  ] as const) {
+    it(`refuses a mount name that ${what}, naming the entry`, async () => {
+      const err = await load(`shared_stores:\n  - { name: "${name}", url: u }\n`).catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(InvalidConfigError);
+      expect(String((err as InvalidConfigError).message)).toContain(name);
+    });
+  }
+
+  it('refuses two mounts with one name', async () => {
+    const err = await load('shared_stores:\n  - { name: ctx-b, url: u1 }\n  - { name: ctx-b, url: u2 }\n').catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(InvalidConfigError);
+    expect(String((err as InvalidConfigError).message)).toContain('more than once');
+  });
 });
