@@ -1,5 +1,6 @@
 import { createHash, randomBytes } from 'node:crypto';
-import { lstat, mkdir, readFile, rm, unlink, writeFile } from 'node:fs/promises';
+import { lstat, mkdir, mkdtemp, readFile, rm, unlink, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { rebaseInProgress } from '../../session/resolve.js';
 import { runServerCli, type CliRunResult } from '../cli-runner.js';
@@ -8,7 +9,15 @@ import { ownedSession, repoPrefixOf, type MemberSession } from '../member-sessio
 import { protectedReason, protectedRefusal, type ProtectedReason } from '../paths.js';
 import type { WriteDeps } from '../sessions.js';
 import type { McpView, SyncDeps } from '../sync.js';
-import { CTXR_READ_COMMANDS, CTXR_WRITE_COMMANDS, INPUT_ARGUMENT, matchCommand } from '../tool-map.js';
+import {
+  CTXR_READ_COMMANDS,
+  CTXR_WRITE_COMMANDS,
+  INPUT_ARGUMENT,
+  matchCommand,
+  SECOND_OPINION_CLI_TIMEOUT_SECONDS,
+  SECOND_OPINION_COMMANDS,
+  SECOND_OPINION_TIMEOUT_MS,
+} from '../tool-map.js';
 
 /**
  * serve-the-session-lifecycle-to-chat-apps D4, D5 (remote-access spec,
@@ -30,6 +39,7 @@ export const CTXR_INPUT_SCHEMA = {
   properties: {
     args: { type: 'array', items: { type: 'string' }, description: `The command and its arguments, as you would type them after "ctxr", one item per argument, e.g. ["lint"] or ["catalog", "show", "--section", "projects"]. Read-only commands only: ${CTXR_READ_COMMANDS.join(', ')}.` },
     session: { type: 'string', description: "Run in this session of yours (its directory name) instead of against the store's current commit." },
+    input: { type: 'string', description: `For second-opinion critique and poll only: the plan or question. Pass "${INPUT_ARGUMENT}" as the --plan-file or --prompt-file value and it is replaced with a file holding this text.` },
   },
   required: ['args'],
 } as const;
@@ -69,7 +79,8 @@ export function parseCliArgs(args: Record<string, unknown>, write: boolean): Cli
     throw new ToolRefusal('mcp.no_session', '"session" is required: ctxr_write runs only inside one of your sessions. Call session_start first.');
   }
   if (args.input !== undefined && args.input !== null) {
-    if (!write) throw invalid('"input" is for ctxr_write only.');
+    // serve-the-second-opinion-to-chat-apps D5: the one read command that takes text is the second opinion.
+    if (!write && out.args[0] !== 'second-opinion') throw invalid('"input" is for ctxr_write, and for ctxr second-opinion critique and poll.');
     if (typeof args.input !== 'string') throw invalid('"input" must be a string.');
     if (Buffer.byteLength(args.input, 'utf8') > MAX_INPUT_BYTES) throw invalid(`"input" is at most ${MAX_INPUT_BYTES} bytes.`);
     out.input = args.input;
@@ -160,6 +171,8 @@ export interface CliToolContext {
   /** The CLI entry the runners spawn with `process.execPath`. */
   entry: string;
   timeoutMs?: number;
+  /** The second opinion's own bound, when a caller (a test) needs a different one. */
+  secondOpinionTimeoutMs?: number;
 }
 
 export interface CliToolResult extends CliRunResult {
@@ -174,7 +187,73 @@ function finalArgv(argv: readonly string[]): string[] {
   return argv.includes('--no-input') ? [...argv] : [...argv, '--no-input'];
 }
 
+/** True while a second opinion runs on this server (D4): three model CLIs at once are most of a small container. */
+let secondOpinionRunning = false;
+
+const optionValue = (argv: readonly string[], name: string): string | undefined => {
+  const at = argv.findIndex((a) => a === name || a.startsWith(`${name}=`));
+  if (at === -1) return undefined;
+  return argv[at]!.startsWith(`${name}=`) ? argv[at]!.slice(name.length + 1) : argv[at + 1];
+};
+
+/**
+ * serve-the-second-opinion-to-chat-apps D2–D5: the second opinion runs as in
+ * a shell, with what the server needs added: the answers printed rather than
+ * written, a per-CLI timeout inside the bound, confinement required, and the
+ * plan or question from `input` in a temp folder outside any checkout. It
+ * reads no store, so it runs outside the view's lock, in that temp folder.
+ */
+async function secondOpinionTool(ctx: CliToolContext, args: CliArgs, command: string, checkedArgv: string[], ranAgainst: CliToolResult['ran_against']): Promise<CliToolResult> {
+  if (checkedArgv.some((a) => a === '--out' || a.startsWith('--out='))) throw invalid('"--out" is not accepted here: the answers come back in the result, and nothing is left on the server.');
+  const timeout = optionValue(checkedArgv, '--timeout');
+  if (timeout !== undefined && !(Number(timeout) > 0 && Number(timeout) <= SECOND_OPINION_CLI_TIMEOUT_SECONDS)) {
+    throw invalid(`"--timeout" is at most ${SECOND_OPINION_CLI_TIMEOUT_SECONDS} seconds here, so the answers come back before the chat app stops waiting.`);
+  }
+  const usesInput = checkedArgv.some((a) => a === INPUT_ARGUMENT || a.endsWith(`=${INPUT_ARGUMENT}`));
+  if (usesInput && args.input === undefined) throw invalid(`An argument is "${INPUT_ARGUMENT}" but no "input" text was given.`);
+  if (secondOpinionRunning) {
+    throw new ToolRefusal('mcp.busy', 'A second opinion is already running on this server, and they run one at a time. Try again in a few minutes.');
+  }
+  secondOpinionRunning = true;
+  const folder = await mkdtemp(path.join(tmpdir(), 'ctxr-mcp-second-opinion-'));
+  try {
+    let argv = [...checkedArgv];
+    if (usesInput) {
+      const inputFile = path.join(folder, 'input.md');
+      await writeFile(inputFile, args.input!, { flag: 'wx', mode: 0o600 });
+      argv = argv.map((a) => (a === INPUT_ARGUMENT ? inputFile : a.endsWith(`=${INPUT_ARGUMENT}`) ? `${a.slice(0, -INPUT_ARGUMENT.length)}${inputFile}` : a));
+    }
+    if (timeout === undefined) argv.push('--timeout', String(SECOND_OPINION_CLI_TIMEOUT_SECONDS));
+    argv.push('--require-confinement');
+    if (command !== 'second-opinion preflight') argv.push('--print');
+    const run = await runServerCli({
+      entry: ctx.entry,
+      argv: finalArgv(argv),
+      cwd: folder,
+      env: childEnv(ctx.write.env, folder, folder),
+      timeoutMs: ctx.secondOpinionTimeoutMs ?? SECOND_OPINION_TIMEOUT_MS,
+    });
+    return { command, args: checkedArgv, ...run, ran_against: ranAgainst };
+  } finally {
+    secondOpinionRunning = false;
+    await rm(folder, { recursive: true, force: true });
+  }
+}
+
 export async function ctxrTool(ctx: CliToolContext, email: string, args: CliArgs): Promise<CliToolResult> {
+  if (args.input !== undefined || args.args[0] === 'second-opinion') {
+    const command = matchCommand(args.args, SECOND_OPINION_COMMANDS);
+    if (command === null && args.input !== undefined) throw invalid('"input" is for ctxr_write, and for ctxr second-opinion critique and poll.');
+    if (command !== null) {
+      if (args.session !== undefined) {
+        const session = await ownedSession(ctx.write, email, args.session);
+        const checked = checkArguments(args.args, CTXR_READ_COMMANDS, 'ctxr', ctx.write.config, session.root);
+        return secondOpinionTool(ctx, args, command, checked.argv, { session: session.name, root: session.root });
+      }
+      const { checked, head } = await ctx.view.read(ctx.syncDeps, async (snapshot) => ({ checked: checkArguments(args.args, CTXR_READ_COMMANDS, 'ctxr', snapshot.store.config, null), head: snapshot.head }));
+      return secondOpinionTool(ctx, args, command, checked.argv, { commit: head });
+    }
+  }
   if (args.session !== undefined) {
     const session = await ownedSession(ctx.write, email, args.session);
     const checked = checkArguments(args.args, CTXR_READ_COMMANDS, 'ctxr', ctx.write.config, session.root);
