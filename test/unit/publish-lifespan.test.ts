@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DISPOSABLE_REVIEW_DAYS, DISPOSABLE_SEGMENT, daysBetween, lifespanOf, parseDisposableDate } from '../../src/core/publish/lifespan.js';
+import { DISPOSABLE_REVIEW_DAYS, DISPOSABLE_SEGMENT, daysBetween, lifespanOf, parseLeadingDate } from '../../src/core/publish/lifespan.js';
 
 /** two-kinds-of-published-page: a page's lifespan is read from where it is filed, and from nothing else. */
 describe('lifespanOf', () => {
@@ -28,20 +28,20 @@ describe('lifespanOf', () => {
   });
 });
 
-describe('parseDisposableDate', () => {
+describe('parseLeadingDate', () => {
   it('reads a valid leading date', () => {
-    expect(parseDisposableDate('2026-10-13-agent-week')).toBe('2026-10-13');
+    expect(parseLeadingDate('2026-10-13-agent-week')).toBe('2026-10-13');
   });
 
   it('rejects an invalid month or day', () => {
-    expect(parseDisposableDate('2026-13-45-agent-week')).toBeNull();
-    expect(parseDisposableDate('2026-02-30-agent-week')).toBeNull();
+    expect(parseLeadingDate('2026-13-45-agent-week')).toBeNull();
+    expect(parseLeadingDate('2026-02-30-agent-week')).toBeNull();
   });
 
   it('rejects a name with no date, or a date with no name after it', () => {
-    expect(parseDisposableDate('agent-week')).toBeNull();
-    expect(parseDisposableDate('2026-10-13')).toBeNull();
-    expect(parseDisposableDate('2026-10-agent-week')).toBeNull();
+    expect(parseLeadingDate('agent-week')).toBeNull();
+    expect(parseLeadingDate('2026-10-13')).toBeNull();
+    expect(parseLeadingDate('2026-10-agent-week')).toBeNull();
   });
 });
 

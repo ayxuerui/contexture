@@ -52,7 +52,7 @@ function reasonFor(err: unknown): string {
 
 /**
  * fetch and AbortSignal.timeout are both platform globals at the declared
- * minimum Node version (engines.node >= 22.13), so this adds no dependency.
+ * minimum Node version (engines.node >= 26), so this adds no dependency.
  */
 export function createFetchRegistryClient(
   baseUrl = REGISTRY_BASE_URL,

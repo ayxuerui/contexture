@@ -3,12 +3,12 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { mkdir, readdir, readFile, rm } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { DEFAULT_HOUSE_CONVENTIONS_FILE_NAME, DEFAULT_LOG_PATH, DEFAULT_MISSION_MAX_BYTES, DEFAULT_SCRATCH_PATH, RELATION_DIRECTEDNESS_NOTE, RELATION_VOCABULARY } from '../config/defaults.js';
+import { DEFAULT_CIRCLEBACK_DECLINE_TAG, RELATION_DIRECTEDNESS_NOTE, RELATION_VOCABULARY } from '../config/defaults.js';
 import type { StoreConfig, TaxonomyLayerConfig } from '../config/schema.js';
 import type { Finding } from './envelope.js';
 import { scanDocsDir, SKILL_FILE_NAME, type ScannedDoc } from './conventions.js';
-import { GRAPH_DOCUMENT_RELATIVE_PATH } from './graph/persist.js';
 import { writeFileAtomic } from './fs/atomic.js';
+import { fillTokens, lazyValues, placeholderValues, storeValueEntries } from './skill-placeholders.js';
 import { packagedTemplate } from './templates.js';
 
 /**
@@ -22,7 +22,9 @@ function skillTemplate(slug: string): string {
 
 /**
  * ship-a-cross-model-second-opinion-skill D1: an owned skill may carry
- * packaged files beside its SKILL.md — a runner script, prompt fragments —
+ * packaged files beside its SKILL.md — a runner script, prompt fragments
+ * (today only `ctxr-capture-circleback`; run-the-second-opinion-from-the-cli
+ * moved the second opinion's into the CLI) —
  * authored under `templates/skills/<slug>/`, next to the body template
  * `templates/skills/<slug>.md`. Read verbatim (they are code and prompt
  * text, not store-rendered prose, so no `__TOKEN__` substitution) and in
@@ -76,14 +78,34 @@ export interface Skill {
   supportingFiles: ReadonlyMap<string, string>;
 }
 
+/**
+ * The text each `__TOKEN__` of a skill template takes: one store's values for
+ * the CLI render, the named placeholders for the MCP render
+ * (publish-one-contexture-plugin D2). A seed's body reads nothing else, which
+ * is what lets the MCP render take no configuration.
+ */
+export type SkillValues = Readonly<Record<string, string>>;
+
 export interface SkillSeed {
   file: string;
   name: string;
   description: string;
-  /** The markdown body below the H1, one entry per line, rendered against the store's config. */
-  body: (config: StoreConfig) => string[];
-  /** Packaged files beside SKILL.md, verbatim. Absent for a skill that is one file. */
-  supportingFiles?: () => ReadonlyMap<string, string>;
+  /** The markdown body below the H1, one entry per line, rendered against the values of one render. */
+  body: (values: SkillValues) => string[];
+  /**
+   * Packaged files beside SKILL.md. Absent for a skill that is one file.
+   * circleback-sweep: given the store's config, so a skill whose runner cannot
+   * read `contexture.yaml` itself (it uses the Node standard library only, which
+   * parses no YAML) can ship the settings it needs as a rendered file.
+   */
+  supportingFiles?: (config: StoreConfig) => ReadonlyMap<string, string>;
+  /**
+   * circleback-sweep: present only on an opt-in skill, which is written when
+   * this returns true for the store's config. When it turns false, the skill
+   * is no longer shipped to that store and `ctxr update` removes its managed
+   * directory like any skill the package stopped shipping.
+   */
+  enabled?: (config: StoreConfig) => boolean;
 }
 
 export const MANAGED_SKILL_HEADER =
@@ -107,7 +129,7 @@ export function retiredLayers(config: StoreConfig): TaxonomyLayerConfig[] {
   return config.taxonomy.layers.filter((layer) => RETIRED_PATTERN.test(layer.description));
 }
 
-function skillDocument(seed: SkillSeed, config: StoreConfig): string {
+function skillDocument(seed: SkillSeed, values: SkillValues): string {
   const lines = [
     '---',
     `name: ${seed.file}`,
@@ -118,9 +140,15 @@ function skillDocument(seed: SkillSeed, config: StoreConfig): string {
     '',
     `# ${seed.name}`,
     '',
-    ...seed.body(config),
+    ...(MCP_SKILL_FILES.includes(seed.file) ? [fillTokens(packagedTemplate('skills', '_surfaces'), values), ''] : []),
+    ...seed.body(values),
   ];
   return `${lines.join('\n')}\n`;
+}
+
+/** A body that is its template with every token filled from the render's values. */
+function templateBody(slug: string): SkillSeed['body'] {
+  return (values) => fillTokens(skillTemplate(slug), values).split('\n');
 }
 
 function joinNames(layers: TaxonomyLayerConfig[]): string {
@@ -171,12 +199,7 @@ const PLACEMENT: SkillSeed = {
   file: 'ctxr-placement',
   name: 'Placement',
   description: 'Choose the right taxonomy layer and location for a new or relocated note in this contexture store, with the reasoning.',
-  body: (config) =>
-    skillTemplate('ctxr-placement')
-      .replace('__LAYER_STEP__', placementLayerStep(config).join('\n'))
-      .replaceAll('__TEMPLATES_PATH__', config.templates.path)
-      .replaceAll('__CLUSTER_DEPTH__', String(config.retrieval.graph.cluster_depth))
-      .split('\n'),
+  body: templateBody('ctxr-placement'),
 };
 
 /**
@@ -192,30 +215,21 @@ const CAPTURE: SkillSeed = {
   name: 'Capture',
   description:
     'Bring material from outside the store into the inbox as a faithful record carrying its source identity, then hand off to ingest.',
-  body: (config) =>
-    skillTemplate('ctxr-capture')
-      .replaceAll('__INBOX_PATH__', config.ingest.inbox_path)
-      .replaceAll('__CAPTURE_ROOT__', config.ingest.capture_root)
-      .split('\n'),
+  body: templateBody('ctxr-capture'),
 };
 
 const INGEST_ORCHESTRATION: SkillSeed = {
   file: 'ctxr-ingest-orchestration',
   name: 'Ingest orchestration',
   description: 'Capture raw material into the inbox, run the dedupe check, read the existing cluster, decide new/update/merge/restructure, and ingest with source identity via the contexture CLI.',
-  body: (config) =>
-    skillTemplate('ctxr-ingest-orchestration')
-      .replaceAll('__GRAPH_DOCUMENT_PATH__', GRAPH_DOCUMENT_RELATIVE_PATH)
-      .replaceAll('__TEMPLATES_PATH__', config.templates.path)
-      .replaceAll('__LOG_PATH__', config.organize.log_path ?? DEFAULT_LOG_PATH)
-      .split('\n'),
+  body: templateBody('ctxr-ingest-orchestration'),
 };
 
 const CONNECTION_FINDING: SkillSeed = {
   file: 'ctxr-connection-finding',
   name: 'Connection finding',
   description: 'Traverse the wikilink graph of the store (neighbors, paths, hubs, orphans) to find what a note already connects to.',
-  body: () => skillTemplate('ctxr-connection-finding').replaceAll('__GRAPH_DOCUMENT_PATH__', GRAPH_DOCUMENT_RELATIVE_PATH).split('\n'),
+  body: templateBody('ctxr-connection-finding'),
 };
 
 /**
@@ -245,14 +259,14 @@ const CONNECTION_PROPOSAL: SkillSeed = {
   file: 'ctxr-connection-proposal',
   name: 'Connection proposal',
   description: 'Discover the links a note should have, read each candidate before proposing, group by the store relation vocabulary, and write only approved links.',
-  body: (config) => skillTemplate('ctxr-connection-proposal').replace('__RELATION_GROUPING_STEP__', relationGroupingStep().join('\n')).split('\n'),
+  body: templateBody('ctxr-connection-proposal'),
 };
 
 const ROLLUP: SkillSeed = {
   file: 'ctxr-rollup',
   name: 'Rollup',
   description: 'Regenerate the synthesized current-state region of an entity note from every source that references it, with provenance for every fact.',
-  body: () => skillTemplate('ctxr-rollup').split('\n'),
+  body: templateBody('ctxr-rollup'),
 };
 
 const MISSION: SkillSeed = {
@@ -260,48 +274,36 @@ const MISSION: SkillSeed = {
   name: 'Mission',
   description:
     "Keep the store's mission core current — the primary mission, the top priorities in rank order with status/purpose/next action, and what is not now — with the back burner, sunset candidates, and open debt in a linked register; propose changes and write only on the operator's confirmation.",
-  body: (config) =>
-    skillTemplate('ctxr-mission')
-      .replaceAll('__LOG_PATH__', config.organize.log_path ?? DEFAULT_LOG_PATH)
-      .replaceAll('__MISSION_MAX_BYTES__', String(config.organize.mission_max_bytes ?? DEFAULT_MISSION_MAX_BYTES))
-      .split('\n'),
+  body: templateBody('ctxr-mission'),
 };
 
 const SUBMIT: SkillSeed = {
   file: 'ctxr-submit',
   name: 'Submit',
-  description: 'End a working session — re-scan, capture once, stage surgically, validate, gate the external side effect, and open the reviewed pull request with git and gh.',
-  body: (config) => skillTemplate('ctxr-submit').replaceAll('__DEFAULT_BRANCH__', config.git.default_branch).split('\n'),
+  description: 'End a working session — re-scan, capture once, hold one unit, validate, and open the reviewed pull request with ctxr session submit, which gates, commits, pushes and writes the generated sections.',
+  body: templateBody('ctxr-submit'),
 };
 
 const LAND: SkillSeed = {
   file: 'ctxr-land',
   name: 'Land',
   description: 'Complete a reviewed session — read pull-request state, merge it with gh, sync the default branch, and reclaim the worktree — every step gated and named explicitly.',
-  body: (config) => skillTemplate('ctxr-land').replaceAll('__DEFAULT_BRANCH__', config.git.default_branch).split('\n'),
+  body: templateBody('ctxr-land'),
 };
 
 const SESSION_LIFECYCLE: SkillSeed = {
   file: 'ctxr-session-lifecycle',
   name: 'Session lifecycle',
-  description: 'Start a session worktree, re-scan before any plan, resolve conflicts, sequence multiple pull requests, and reclaim worktrees with git — the frame ctxr-submit and ctxr-land sit inside.',
-  body: (config) => skillTemplate('ctxr-session-lifecycle').replaceAll('__DEFAULT_BRANCH__', config.git.default_branch).split('\n'),
+  description: 'Start a session worktree, re-scan before any plan, resolve conflicts, sequence multiple pull requests, and reclaim worktrees with the ctxr session commands — the frame ctxr-submit and ctxr-land sit inside.',
+  body: templateBody('ctxr-session-lifecycle'),
 };
-
-/** Where this store's operator-authored conventions live, for a skill to name by path. */
-function houseConventionsPath(config: StoreConfig): string {
-  return path
-    .join(config.harness.guidance_path, DEFAULT_HOUSE_CONVENTIONS_FILE_NAME)
-    .split(path.sep)
-    .join('/');
-}
 
 const UPGRADE: SkillSeed = {
   file: 'ctxr-upgrade',
   name: 'Upgrade',
   description:
     'Upgrade the installed ctxr to the latest published release and re-render this store with it — reading the live version check, refusing a non-global install, gating on the operator, and ordering the package upgrade before the store update.',
-  body: () => skillTemplate('ctxr-upgrade').split('\n'),
+  body: templateBody('ctxr-upgrade'),
 };
 
 const SESSION_CAPTURE: SkillSeed = {
@@ -309,52 +311,46 @@ const SESSION_CAPTURE: SkillSeed = {
   name: 'Session capture',
   description:
     'At the end of a session, propose in one message both the durable notes it produced and any house convention it earned, with per-item approval, then write only what was approved.',
-  body: (config) =>
-    skillTemplate('ctxr-session-capture')
-      .replaceAll('__HOUSE_CONVENTIONS_PATH__', houseConventionsPath(config))
-      .replaceAll('__TEMPLATES_PATH__', config.templates.path)
-      .split('\n'),
+  body: templateBody('ctxr-session-capture'),
 };
 
 const DERIVED_ARTIFACTS: SkillSeed = {
   file: 'ctxr-derived-artifacts',
   name: 'Derived artifacts',
   description: 'Refresh a generated artifact safely — check before build, read the counts back, never hand-edit inside a fence, keep derived files out of content commits.',
-  body: (config) => skillTemplate('ctxr-derived-artifacts').replaceAll('__DEFAULT_BRANCH__', config.git.default_branch).split('\n'),
+  body: templateBody('ctxr-derived-artifacts'),
 };
 
 const ORGANIZE_AUDIT: SkillSeed = {
   file: 'ctxr-organize-audit',
   name: 'Organize audit',
   description: 'Audit store health with ctxr lint (observations) and ctxr doctor (blocking invariants), retire by moving, and classify broken links before fixing them.',
-  body: (config) =>
-    skillTemplate('ctxr-organize-audit')
-      .replaceAll('__LOG_PATH__', config.organize.log_path ?? DEFAULT_LOG_PATH)
-      .replaceAll('__ARCHIVE_DESTINATION__', config.organize.archive_destination)
-      .split('\n'),
+  body: templateBody('ctxr-organize-audit'),
 };
 
 const PUBLISH: SkillSeed = {
   file: 'ctxr-publish',
   name: 'Publish',
   description: 'Turn store content into a shareable HTML page for a subtree, note, or entity, resolving its source notes before any content is copied out.',
-  body: () => skillTemplate('ctxr-publish').split('\n'),
+  body: templateBody('ctxr-publish'),
 };
 
 /**
- * ship-a-cross-model-second-opinion-skill: the first owned skill that ships
- * more than its SKILL.md. The runner and its prompt fragments live under
- * `templates/skills/ctxr-second-opinion/`, and the body names where the
- * store's skills path put them. Named for the judgment, not a command: there
- * is no `ctxr second-opinion`, and the skill drives no ctxr command at all.
+ * ship-a-cross-model-second-opinion-skill, revised by
+ * run-the-second-opinion-from-the-cli D1 and D4: the skill is one file again.
+ * Its runner became `ctxr second-opinion` and its prompts package templates
+ * under `templates/second-opinion/`, so it carries no supporting files, and
+ * `ctxr update` prunes the `run.mjs`, `critic-contract.md`, `lenses.md` and
+ * `personas/` an earlier release left in a store. Named for the command
+ * group it drives, `ctxr second-opinion`; the judgment (when to critique,
+ * how to synthesize, what never to execute) stays in the skill.
  */
 const SECOND_OPINION: SkillSeed = {
   file: 'ctxr-second-opinion',
   name: 'Second opinion',
   description:
     'Get an independent critique of a plan, or a poll on a taste call, from three different model families run in parallel, and synthesize their answers without running the plan.',
-  body: (config) => skillTemplate('ctxr-second-opinion').replaceAll('__SKILLS_PATH__', config.harness.skills_path.replace(/\/+$/, '')).split('\n'),
-  supportingFiles: () => skillSupportingFiles('ctxr-second-opinion'),
+  body: templateBody('ctxr-second-opinion'),
 };
 
 /**
@@ -368,12 +364,59 @@ const RESEARCH: SkillSeed = {
   name: 'Research',
   description:
     'Research a question against real sources and land the findings in the store, with a brief and a findings ledger, several perspectives, source tiers, a contradiction map, and every claim verified against a source you opened before anyone acts on it, using whatever web access the harness provides.',
-  body: (config) =>
-    skillTemplate('ctxr-research')
-      .replaceAll('__SCRATCH_PATH__', config.harness.scratch_path ?? DEFAULT_SCRATCH_PATH)
-      .replaceAll('__LOG_PATH__', config.organize.log_path ?? DEFAULT_LOG_PATH)
-      .split('\n'),
+  body: templateBody('ctxr-research'),
 };
+
+/**
+ * circleback-sweep, revised by capture-circleback-is-retrieval: the first
+ * opt-in owned skill, and the first that names a capture source. It is the
+ * capture skill's retrieval step for Circleback — it decides which meetings
+ * this store owes and writes each as the verbatim record — and hands back to
+ * `ctxr-capture` at step 2, so there is one capture procedure. Named into the
+ * capture family (`ctxr-capture-<source>`), which `ctxr-capture` step 1
+ * delegates to without naming any source. There is no `ctxr capture` command,
+ * so the name claims none. It exists only in a store that declares a
+ * `circleback` block. Its runner drives Circleback's own CLI, which holds its
+ * own credential; nothing here reads or stores one. `settings.json` is
+ * rendered because the runner, being stdlib-only, cannot parse
+ * `contexture.yaml`.
+ */
+const CAPTURE_CIRCLEBACK: SkillSeed = {
+  file: 'ctxr-capture-circleback',
+  name: 'Capture from Circleback',
+  description:
+    "Retrieve the Circleback meetings this store's tag says it owes, written into the inbox as verbatim records with their identity, then continue with ctxr-capture from step 2.",
+  body: templateBody('ctxr-capture-circleback'),
+  supportingFiles: (config) => {
+    const files = new Map(skillSupportingFiles('ctxr-capture-circleback'));
+    files.set('settings.json', circlebackSettings(config));
+    return files;
+  },
+  enabled: (config) => config.circleback !== undefined,
+};
+
+/** The store's Circleback routing, as the runner reads it. Only called for a store that declares the block. */
+function circlebackSettings(config: StoreConfig): string {
+  const circleback = config.circleback;
+  if (circleback === undefined) throw new Error('circleback settings rendered for a store without a circleback block');
+  const settings = {
+    tag: circleback.tag,
+    other_tags: circleback.other_tags ?? [],
+    decline_tag: circleback.decline_tag ?? DEFAULT_CIRCLEBACK_DECLINE_TAG,
+    inbox_path: config.ingest.inbox_path,
+    default_branch: config.git.default_branch,
+    required_section: config.ingest.required_capture_sections?.circleback ?? null,
+  };
+  return `${JSON.stringify(settings, null, 2)}\n`;
+}
+
+/** Owned skills a store gets only by opting in; each carries `enabled`. */
+export const OPTIONAL_SKILLS: readonly SkillSeed[] = [CAPTURE_CIRCLEBACK];
+
+/** Every owned skill this store is shipped: the full set plus the opt-in ones its config enables. */
+export function activeSkillSeeds(config: StoreConfig): SkillSeed[] {
+  return [...SKILLS, ...OPTIONAL_SKILLS.filter((seed) => seed.enabled?.(config) === true)];
+}
 
 export const SKILLS: readonly SkillSeed[] = [
   CAPTURE,
@@ -395,18 +438,94 @@ export const SKILLS: readonly SkillSeed[] = [
   RESEARCH,
 ];
 
-/** The owned skills, rendered against one store's configuration — what `syncShippedSkills` writes. */
+/**
+ * serve-the-session-lifecycle-to-chat-apps D6: the owned skills a chat app's
+ * plugin carries, rendered from the same templates as the CLI copies.
+ * publish-one-contexture-plugin D7: these are the shared skills, one text on
+ * both surfaces: each opens with `templates/skills/_surfaces.md`, in a
+ * store's copy and the plugin's alike, saying which store, whether to work in
+ * a shell or through the store's server, and how a step is done there. Left
+ * out: the skills that run local programs (upgrade, Circleback), landing (a person lands from the approval page), and the
+ * derived-artifacts, organize-audit and publish procedures, whose steps the
+ * surface does not offer.
+ */
+export const MCP_SKILL_FILES: readonly string[] = [
+  CAPTURE,
+  INGEST_ORCHESTRATION,
+  PLACEMENT,
+  CONNECTION_FINDING,
+  CONNECTION_PROPOSAL,
+  ROLLUP,
+  MISSION,
+  SESSION_LIFECYCLE,
+  SUBMIT,
+  SESSION_CAPTURE,
+  // serve-the-second-opinion-to-chat-apps: the store's server runs `ctxr second-opinion`, confined.
+  SECOND_OPINION,
+  RESEARCH,
+].map((seed) => seed.file);
+
+/**
+ * The values the CLI render fills each template with: this store's value for
+ * every placeholder, the placement step computed from its taxonomy, the
+ * relation-grouping step, and the skills path the Circleback skill's runner
+ * is invoked from.
+ */
+export function cliSkillValues(config: StoreConfig): SkillValues {
+  return lazyValues([
+    ...storeValueEntries(config),
+    ['LAYER_STEP', () => placementLayerStep(config).join('\n')],
+    ['RELATION_GROUPING_STEP', () => relationGroupingStep().join('\n')],
+    ['SKILLS_PATH', () => config.harness.skills_path.replace(/\/+$/, '')],
+  ]);
+}
+
+/**
+ * publish-one-contexture-plugin D2, revision 3: the values the MCP render fills
+ * each template with, which no store configuration enters. Each store value is
+ * its named placeholder, and the two computed steps are generic text pointing
+ * at the layers and the relation vocabulary the connector's instructions list
+ * under *This store*. Skills the MCP render leaves out (Circleback's runner
+ * path) have no entry, so a token they use cannot reach the plugin.
+ */
+export function mcpSkillValues(): SkillValues {
+  return {
+    ...placeholderValues(),
+    LAYER_STEP: packagedTemplate('skills/mcp', '_layer-step'),
+    RELATION_GROUPING_STEP: packagedTemplate('skills/mcp', '_relation-grouping-step'),
+  };
+}
+
+/** The owned skills, rendered against one store's configuration: what `syncShippedSkills` writes. */
 export function renderSkills(config: StoreConfig): Skill[] {
-  return renderSkillSeeds(SKILLS, config);
+  return renderSkillSeeds(activeSkillSeeds(config), config);
+}
+
+/**
+ * The owned skills a chat app's plugin carries: the shared subset, each the
+ * same text a store's copy is (publish-one-contexture-plugin D7), with every
+ * store value as its placeholder. It takes no configuration, so every store
+ * gets the same text, and the connector's instructions give the values (D2).
+ */
+export function renderMcpSkills(): Skill[] {
+  const values = mcpSkillValues();
+  return SKILLS.filter((seed) => MCP_SKILL_FILES.includes(seed.file)).map((seed) => ({
+    file: seed.file,
+    name: seed.name,
+    description: seed.description,
+    content: skillDocument(seed, values),
+    supportingFiles: new Map<string, string>(),
+  }));
 }
 
 function renderSkillSeeds(seeds: readonly SkillSeed[], config: StoreConfig): Skill[] {
+  const values = cliSkillValues(config);
   return seeds.map((seed) => ({
     file: seed.file,
     name: seed.name,
     description: seed.description,
-    content: skillDocument(seed, config),
-    supportingFiles: seed.supportingFiles?.() ?? new Map<string, string>(),
+    content: skillDocument(seed, values),
+    supportingFiles: seed.supportingFiles?.(config) ?? new Map<string, string>(),
   }));
 }
 
@@ -445,7 +564,7 @@ export function skillPaths(config: StoreConfig): string[] {
  * pruned. Returns every path it wrote or removed.
  */
 export async function syncShippedSkills(root: string, config: StoreConfig): Promise<string[]> {
-  return syncSkillSeeds(root, config, SKILLS);
+  return syncSkillSeeds(root, config, activeSkillSeeds(config));
 }
 
 export async function syncSkillSeeds(root: string, config: StoreConfig, seeds: readonly SkillSeed[]): Promise<string[]> {
@@ -515,7 +634,7 @@ export async function syncSkillSeeds(root: string, config: StoreConfig, seeds: r
  * not carry is left out here; reporting it is `syncVendoredSkills`' job.
  * Paths are store-relative and posix, the spelling `skillPaths` and git use.
  */
-export async function shippedSkillFiles(config: StoreConfig, seeds: readonly SkillSeed[] = SKILLS): Promise<Map<string, string>> {
+export async function shippedSkillFiles(config: StoreConfig, seeds: readonly SkillSeed[] = activeSkillSeeds(config)): Promise<Map<string, string>> {
   const shipped = new Map<string, string>();
   const at = (...parts: string[]): string => path.join(config.harness.skills_path, ...parts).split(path.sep).join('/');
 

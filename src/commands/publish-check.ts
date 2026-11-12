@@ -3,13 +3,15 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { pageServedAt, type ServedAt, servedAtSentence } from '../core/browse/page-url.js';
 import type { CommandOutcome, CommandRequires } from '../core/command.js';
+import { PUBLISH_INDEX_FILE } from '../core/browse/routes.js';
 import { PublishPageNotFoundError } from '../core/errors.js';
 import { ExitCode } from '../core/exit-codes.js';
 import { listNotes, type Note } from '../core/notes/list.js';
 import { parseNoteText } from '../core/notes/parse.js';
-import { DISPOSABLE_SEGMENT, lifespanOf, type PageLifespan, parseDisposableDate } from '../core/publish/lifespan.js';
+import { DISPOSABLE_SEGMENT, lifespanOf, type PageLifespan, parseLeadingDate } from '../core/publish/lifespan.js';
 import { assessRepresentation } from '../core/publish/represents.js';
 import { checkScriptSyntax } from '../core/publish/script-check.js';
+import { sendCopiesAtPageRoot, sendCopyExtension, sendCopyNameProblem } from '../core/publish/send-copies.js';
 import type { Store } from '../core/store.js';
 
 export const requires: CommandRequires = { store: 'required' };
@@ -21,6 +23,13 @@ export interface PublishCheckFlags {
 export interface PublishCheckFailure {
   check: string;
   message: string;
+}
+
+/** send-copies-beside-their-page: a send copy at a page folder's root. */
+export interface PublishCheckSendCopy {
+  /** Store-relative. */
+  path: string;
+  served_at: ServedAt | null;
 }
 
 export interface PublishCheckData {
@@ -38,6 +47,12 @@ export interface PublishCheckData {
    * file outside the configured publish path, which is not a page.
    */
   lifespan: PageLifespan | null;
+  /**
+   * file-pdfs-beside-their-page D5: every send copy at the page folder's root,
+   * sorted by file name, with the address it is served at — so the author can
+   * hand on its link. A file in a subfolder is an input and is not listed.
+   */
+  send_copies: PublishCheckSendCopy[];
 }
 
 /** publish spec: the fixed tag list a tag-balance pass counts, matching the source convention's checker. */
@@ -47,10 +62,44 @@ function stripNonStructural(html: string): string {
   return html.replace(/<!--[\s\S]*?-->/g, '').replace(/<script[\s\S]*?<\/script>/gi, '').replace(/<style[\s\S]*?<\/style>/gi, '');
 }
 
+const EXTERNAL_ADDRESS = /^\s*https?:\/\//i;
+
+/** allow-outbound-links-in-published-pages D1: attributes whose value an element loads, on any element. */
+const LOADING_ATTRIBUTES = new Set(['src', 'srcset', 'poster', 'data']);
+
+/** D1: the elements whose `href` is navigation only. Every other `href` loads or re-bases what it names. */
+const NAVIGATING_ELEMENTS = new Set(['a', 'area']);
+
+function loadsExternally(element: string, attribute: string, value: string): boolean {
+  if (attribute === 'srcset') return value.split(',').some((candidate) => EXTERNAL_ADDRESS.test(candidate));
+  if (LOADING_ATTRIBUTES.has(attribute)) return EXTERNAL_ADDRESS.test(value);
+  if (attribute === 'href' || attribute.endsWith(':href')) return !NAVIGATING_ELEMENTS.has(element) && EXTERNAL_ADDRESS.test(value);
+  return false;
+}
+
+/**
+ * publish spec: a page loads nothing from an external address. An outbound
+ * `<a href>` loads nothing until a reader follows it, so it passes (D1); an
+ * external CSS `url()` or `@import` loads as surely as `<link href>`, so it
+ * fails (D2). The first match is named (D3).
+ */
 function checkNoExternalReferences(html: string): PublishCheckFailure[] {
-  const match = /(?:src|href)\s*=\s*["']https?:\/\/[^"']*["']/i.exec(html);
-  if (!match) return [];
-  return [{ check: 'no-external-references', message: `references an external network resource: ${match[0]}` }];
+  const fail = (text: string): PublishCheckFailure[] => [{ check: 'no-external-references', message: `references an external network resource: ${text}` }];
+
+  const tagRe = /<([a-zA-Z][\w:-]*)((?:[^>"']|"[^"]*"|'[^']*')*)>/g;
+  const attrRe = /([^\s"'=<>/]+)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+))/g;
+  let tag: RegExpExecArray | null;
+  while ((tag = tagRe.exec(html))) {
+    const element = tag[1]!.toLowerCase();
+    let attr: RegExpExecArray | null;
+    while ((attr = attrRe.exec(tag[2] ?? ''))) {
+      const value = attr[2] ?? attr[3] ?? attr[4] ?? '';
+      if (loadsExternally(element, attr[1]!.toLowerCase(), value)) return fail(attr[0]);
+    }
+  }
+
+  const css = /(?:url\(\s*(?:&quot;|["'])?|@import\s+["'])\s*https?:\/\/[^"')\s]*/i.exec(html);
+  return css ? fail(css[0]) : [];
 }
 
 function checkViewportMeta(html: string): PublishCheckFailure[] {
@@ -112,7 +161,7 @@ function checkDisposableShape(relativePath: string, publishPath: string): Publis
   const publishPrefix = publishPath.split(path.sep).join('/').replace(/\/+$/, '');
   const pageFolder = path.posix.dirname(relativePath.slice(publishPrefix.length + 1));
   const segments = pageFolder.split('/');
-  if (segments.length === 2 && segments[0] === DISPOSABLE_SEGMENT && parseDisposableDate(segments[1]!) !== null) return [];
+  if (segments.length === 2 && segments[0] === DISPOSABLE_SEGMENT && parseLeadingDate(segments[1]!) !== null) return [];
   return [
     {
       check: 'disposable-shape',
@@ -165,6 +214,13 @@ function summaryLabel(failure: PublishCheckFailure): string {
   return `${failure.check} (${failure.message.startsWith('stale') ? 'stale' : 'not stamped'})`;
 }
 
+function checkSendCopyNames(sendCopyFileNames: readonly string[]): PublishCheckFailure[] {
+  return sendCopyFileNames.flatMap((name) => {
+    const problem = sendCopyNameProblem(name);
+    return problem === null ? [] : [{ check: 'send-copy-name', message: problem }];
+  });
+}
+
 function checkProvenanceLine(html: string): PublishCheckFailure[] {
   const hasDate = /\d{4}-\d{2}-\d{2}/.test(html);
   const hasReadmeLink = /href\s*=\s*["'][^"']*readme[^"']*["']/i.test(html);
@@ -209,7 +265,9 @@ async function checkInlineScriptSyntax(html: string): Promise<PublishCheckFailur
  * is deliberately not carried forward; see design.md).
  */
 export async function execute(store: Store, flags: PublishCheckFlags): Promise<CommandOutcome<PublishCheckData>> {
-  const absolutePath = path.isAbsolute(flags.path) ? flags.path : path.resolve(store.root, flags.path);
+  const namedPath = path.isAbsolute(flags.path) ? flags.path : path.resolve(store.root, flags.path);
+  // file-pdfs-beside-their-page D5: naming a page's send copy checks the page.
+  const absolutePath = sendCopyExtension(namedPath) !== null ? path.join(path.dirname(namedPath), PUBLISH_INDEX_FILE) : namedPath;
   const relativePath = path.relative(store.root, absolutePath).split(path.sep).join('/');
 
   if (!existsSync(absolutePath)) {
@@ -230,6 +288,9 @@ export async function execute(store: Store, flags: PublishCheckFlags): Promise<C
     ...checkTagBalance(html),
     ...checkPageLocation(relativePath, store.config.publish.path),
   ];
+
+  const sendCopyFileNames = await sendCopiesAtPageRoot(pageDir);
+  failures.push(...checkSendCopyNames(sendCopyFileNames));
 
   const lifespan = lifespanOf(relativePath, store.config.publish.path);
   if (lifespan === 'disposable') failures.push(...checkDisposableShape(relativePath, store.config.publish.path));
@@ -256,15 +317,21 @@ export async function execute(store: Store, flags: PublishCheckFlags): Promise<C
   const servedAt = pageServedAt(store, relativePath);
   const sentence = servedAtSentence(servedAt);
   const lifespanTag = lifespan === null ? '' : ` (${lifespan})`;
+  const pageDirRelative = path.posix.dirname(relativePath);
+  const sendCopies = sendCopyFileNames.map((name) => {
+    const sendCopyPath = `${pageDirRelative}/${name}`;
+    return { path: sendCopyPath, served_at: pageServedAt(store, sendCopyPath) };
+  });
+  const sendCopyTag = sendCopies.length === 0 ? '' : ` ${sendCopies.length} send copy(ies).`;
 
   return {
     exitCode: failures.length === 0 ? ExitCode.Ok : ExitCode.CheckFailed,
-    data: { path: relativePath, passed: failures.length === 0, failures, served_at: servedAt, lifespan },
+    data: { path: relativePath, passed: failures.length === 0, failures, served_at: servedAt, lifespan, send_copies: sendCopies },
     findings: [],
     humanSummary:
       failures.length === 0
-        ? `${relativePath}${lifespanTag}: all checks passed.${sentence}`
-        : `${relativePath}${lifespanTag}: ${failures.length} failing check(s): ${failures.map(summaryLabel).join(', ')}.${sentence}`,
+        ? `${relativePath}${lifespanTag}: all checks passed.${sendCopyTag}${sentence}`
+        : `${relativePath}${lifespanTag}: ${failures.length} failing check(s): ${failures.map(summaryLabel).join(', ')}.${sendCopyTag}${sentence}`,
     storeRoot: store.root,
     schemaVersion: store.config.schema_version,
   };

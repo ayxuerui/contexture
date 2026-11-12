@@ -128,6 +128,41 @@ describe('installed hooks (real dist/bin.js, real git)', () => {
     }
   });
 
+  it('pre-commit refuses an undated or changed send copy, and lets a dated one and a pure move through (send-copies-gated-at-commit)', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const env = hermeticGitEnv();
+      await runCli(['init'], { cwd: tmp.root, env });
+      const page = path.join(tmp.root, '.contexture/publish/ctx-a/brief');
+      const other = path.join(tmp.root, '.contexture/publish/ctx-a/other');
+      await mkdir(page, { recursive: true });
+      await mkdir(other, { recursive: true });
+      await writeFile(path.join(page, 'index.html'), '<!doctype html><title>Brief</title>');
+      await writeFile(path.join(other, 'index.html'), '<!doctype html><title>Other</title>');
+      await writeFile(path.join(page, 'brief.pdf'), '%PDF-1.4 first\n');
+      await execFileAsync('git', ['add', '-A'], { cwd: tmp.root, env });
+
+      const undated = await gitCommit(tmp.root, env, 'undated send copy');
+      expect(undated.code).not.toBe(0);
+      expect(`${undated.stdout}${undated.stderr}`).toContain('staged.send_copies.undated');
+
+      await execFileAsync('git', ['mv', '-f', '.contexture/publish/ctx-a/brief/brief.pdf', '.contexture/publish/ctx-a/brief/2026-01-15-brief.pdf'], { cwd: tmp.root, env });
+      await execFileAsync('git', ['commit', '-m', 'dated send copy'], { cwd: tmp.root, env }); // throws on failure
+
+      await writeFile(path.join(page, '2026-01-15-brief.pdf'), '%PDF-1.4 second\n');
+      await execFileAsync('git', ['add', '-A'], { cwd: tmp.root, env });
+      const changed = await gitCommit(tmp.root, env, 'overwrite the send copy');
+      expect(changed.code).not.toBe(0);
+      expect(`${changed.stdout}${changed.stderr}`).toContain('staged.send_copies.modified');
+
+      await execFileAsync('git', ['checkout', 'HEAD', '--', '.contexture/publish/ctx-a/brief/2026-01-15-brief.pdf'], { cwd: tmp.root, env });
+      await execFileAsync('git', ['mv', '.contexture/publish/ctx-a/brief/2026-01-15-brief.pdf', '.contexture/publish/ctx-a/other/2026-01-15-brief.pdf'], { cwd: tmp.root, env });
+      await execFileAsync('git', ['commit', '-m', 'move the send copy'], { cwd: tmp.root, env }); // throws on failure
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
   it('pre-commit allows a clean commit through', async () => {
     const tmp = await makeTmpDir();
     try {

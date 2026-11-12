@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { isStrictlyUnderPrefix } from '../core/fs/prefix.js';
+import { slugifySegment } from '../core/slug.js';
 import { SHIPPED_DEFAULTS } from './defaults.js';
 
 /**
@@ -160,6 +161,97 @@ const ServeSchema = z.object({
    * deployment, unknowable to the tool. Absent means `local`.
    */
   previews: z.enum(['local', 'none']).optional(),
+  /**
+   * serve-keeps-its-clone-current (D3): how often, in whole minutes, `ctxr
+   * serve` runs a store-update run. Optional with no SHIPPED_DEFAULTS entry,
+   * because the block it sits in is optional; absent resolves to
+   * `DEFAULT_SERVE_SYNC_MINUTES` through `serveSyncMinutes`.
+   */
+  sync_minutes: z.number().int({ message: 'must be a positive whole number of minutes' }).positive({ message: 'must be a positive whole number of minutes' }).optional(),
+});
+
+/** An exact email address or an `@domain` suffix — the one form every list of people in this file takes. */
+const PersonEntrySchema = z
+  .string()
+  .min(2)
+  .refine((entry) => /^@[^@\s]+$/.test(entry) || /^[^@\s]+@[^@\s]+$/.test(entry), {
+    message: 'must be an email address or an @domain entry',
+  });
+
+/**
+ * approve-from-the-review-page (change-approval spec): the opt-in block that
+ * turns on the approval page and the landing path. No shipped default and
+ * `.optional()`, like `serve`, so a store that never opts in never carries
+ * the key. Tokens never live here — serve and `ctxr land` read their forge
+ * credential from their own environments (design.md D10).
+ */
+const ChangeApprovalSchema = z.object({
+  /** design.md D2: the signed assertion the access proxy in front forwards on every request. */
+  identity: z.object({
+    header: z.string().min(1),
+    issuer: z.string().min(1),
+    audience: z.string().min(1),
+    jwks_url: z.string().min(1).refine(isAbsoluteHttpBase, { message: 'must be an absolute http(s) URL' }),
+  }),
+  /** Each entry is an exact email address or an `@domain` suffix. */
+  deciders: z.array(PersonEntrySchema).min(1),
+  /** design.md D4: the forge login whose reviews count as decisions; never the login that opens pull requests. */
+  recording_login: z.string().min(1),
+  /** design.md D6: the argument vector `ctxr land` runs on a conflict; absent means a conflict blocks. */
+  resolver: z.array(z.string().min(1)).min(1).optional(),
+  merge_method: z.enum(['squash', 'merge', 'rebase']).optional(),
+  /**
+   * serve-lands-approved-changes: whether `ctxr serve` lands approved changes
+   * itself. No shipped default; absent means `auto`, because an Approve button
+   * that lands nothing is the failure this exists to prevent. `manual` is for a
+   * deployment that runs `ctxr land` some other way.
+   */
+  land: z.enum(['auto', 'manual']).optional(),
+});
+
+/**
+ * circleback-sweep (harness-portability spec): the opt-in block that turns on
+ * the `ctxr-capture-circleback` owned skill. One Circleback account can feed several
+ * stores, and a Circleback tag decides which store a meeting belongs to:
+ * `tag` is this store's, `other_tags` are the tags that send a meeting
+ * somewhere else, and `decline_tag` marks a meeting no store captures.
+ * `.optional()` with no shipped default, like `serve` — a store that never
+ * opts in never carries the key and never gets the skill. Absent
+ * `other_tags` means none, and absent `decline_tag` means `no-capture`: both
+ * stay optional so a rewritten config never gains a key the store did not write.
+ */
+const CirclebackSchema = z.object({
+  tag: z.string().min(1),
+  other_tags: z.array(z.string().min(1)).optional(),
+  decline_tag: z.string().min(1).optional(),
+});
+
+/**
+ * serve-the-store-over-mcp (remote-access spec): who may use the MCP surface
+ * `ctxr serve` adds — `readers` reach `find`, `gather`, `Read`, `Grep` and
+ * `Glob`, `capturers` reach `capture`, `editors` reach `Edit` and `Write`. Optional with no shipped default, like `change_approval`, whose
+ * identity settings and forge credential it reuses (design.md D4).
+ */
+const McpSchema = z
+  .object({
+    readers: z.array(PersonEntrySchema).optional(),
+    capturers: z.array(PersonEntrySchema).optional(),
+    editors: z.array(PersonEntrySchema).optional(),
+  })
+  .refine((value) => (value.readers?.length ?? 0) + (value.capturers?.length ?? 0) + (value.editors?.length ?? 0) > 0, {
+    message: 'name at least one entry in readers, capturers or editors',
+  });
+
+/**
+ * mount-shared-stores (shared-stores spec): the stores this store mounts, each
+ * cloned at the fixed `shared/<name>` (D3, and the critique's first revision —
+ * path links carry the location into note content, so it cannot vary by store).
+ * `.optional()` with no shipped default, like `serve`: a store that never
+ * declares mounts never carries the key, and nothing writes it for them.
+ */
+const SharedStoreSchema = z.object({
+  name: z.string().min(1),
+  url: z.string().min(1),
 });
 
 /**
@@ -409,6 +501,10 @@ export const StoreConfigSchema = z
     // records only the store's own decisions. Absent, it stays absent through
     // parse, render and reparse.
     serve: ServeSchema.optional(),
+    change_approval: ChangeApprovalSchema.optional(),
+    circleback: CirclebackSchema.optional(),
+    mcp: McpSchema.optional(),
+    shared_stores: z.array(SharedStoreSchema).optional(),
     templates: TemplatesSchema.prefault({}),
     skills: SkillsSchema.prefault({}),
     update_check: UpdateCheckSchema.prefault({}),
@@ -419,6 +515,30 @@ export const StoreConfigSchema = z
   })
   .passthrough()
   .superRefine((value, ctx) => {
+    // change-approval spec: the decision route checks a request's Origin against the base URL (design.md D9).
+    if (value.change_approval !== undefined && value.serve?.base_url === undefined) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['change_approval'],
+        message: 'change_approval requires serve.base_url, which the decision route checks each request\'s Origin against',
+      });
+    }
+    // remote-access spec: the MCP surface signs members in with change approval's identity and opens pull requests with its credential.
+    if (value.mcp !== undefined && value.change_approval === undefined) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['mcp'],
+        message: 'mcp requires change_approval, whose identity settings and forge credential the MCP surface uses',
+      });
+    }
+    // remote-access spec: the MCP surface's issuer and resource are serve.base_url's origin, so a path there would be lost.
+    if (value.mcp !== undefined && value.serve?.base_url !== undefined && new URL(value.serve.base_url).pathname.replace(/\/+$/, '') !== '') {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['mcp'],
+        message: 'mcp needs serve.base_url to be an origin with no path (e.g. https://ctx.example.com), because sign-in is served at the root of that origin',
+      });
+    }
     /**
      * retain-captures-as-provenance (D7): one prefix has to serve both the
      * retrieval exclusion and the write-path gate, which only holds while the
@@ -428,6 +548,25 @@ export const StoreConfigSchema = z
      * tested for. It existed only while migrations had to write configs at
      * earlier versions back to disk.
      */
+    // shared-stores spec: a mount name is one slug-stable segment, and names are unique.
+    const seenMountNames = new Set<string>();
+    for (const [index, mount] of (value.shared_stores ?? []).entries()) {
+      if (mount.name.includes('/') || slugifySegment(mount.name) !== mount.name) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['shared_stores', index, 'name'],
+          message: `"${mount.name}" must be a single path segment that slugification leaves unchanged (lowercase letters, digits and "-")`,
+        });
+      }
+      if (seenMountNames.has(mount.name)) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['shared_stores', index, 'name'],
+          message: `"${mount.name}" is declared more than once; each mount needs its own name`,
+        });
+      }
+      seenMountNames.add(mount.name);
+    }
     if (!isStrictlyUnderPrefix(value.ingest.inbox_path, value.ingest.capture_root)) {
       ctx.addIssue({
         code: 'custom',
@@ -441,3 +580,7 @@ export type StoreConfig = z.infer<typeof StoreConfigSchema>;
 export type TaxonomyLayerConfig = z.infer<typeof TaxonomyLayerSchema>;
 export type GraphSettingsConfig = z.infer<typeof GraphSettingsSchema>;
 export type AdapterDeclaration = z.infer<typeof AdapterDeclarationSchema>;
+export type ChangeApprovalConfig = z.infer<typeof ChangeApprovalSchema>;
+export type CirclebackConfig = z.infer<typeof CirclebackSchema>;
+export type McpConfig = z.infer<typeof McpSchema>;
+export type SharedStoreConfig = z.infer<typeof SharedStoreSchema>;

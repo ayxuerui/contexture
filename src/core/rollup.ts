@@ -1,6 +1,6 @@
 import path from 'node:path';
 import type { GitRunner } from './git/exec.js';
-import { extractLinkTargets } from './graph/model.js';
+import { extractLinkTargets, linkNames } from './graph/model.js';
 import { htmlCommentFence } from './markers.js';
 import type { Note } from './notes/list.js';
 import { parseNote } from './notes/parse.js';
@@ -14,8 +14,7 @@ export function hasRollupSection(note: Note): boolean {
 }
 
 function backlinksFor(notes: readonly Note[], entityPath: string): Note[] {
-  const stem = path.basename(entityPath, '.md');
-  return notes.filter((n) => n.path !== entityPath && extractLinkTargets(n.body).includes(stem));
+  return notes.filter((n) => n.path !== entityPath && extractLinkTargets(n.body).some((target) => linkNames(n.path, target, entityPath)));
 }
 
 async function lastModified(git: GitRunner, root: string, relativePath: string): Promise<string | null> {

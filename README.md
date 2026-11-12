@@ -16,7 +16,7 @@ A **store** is an ordinary git repository: markdown notes joined by `[[wikilinks
 npm install -g ctxr-cli
 ```
 
-Requires Node 22.13 or newer.
+Requires Node 26 or newer.
 
 The package is `ctxr-cli`, the command it installs is `ctxr`, and the project is Contexture — which is why a store’s own files keep the full name (`contexture.yaml`, `.contexture/`, `CONTEXTURE_*`). A `contexture` alias executable is installed too; docs and generated files always say `ctxr`.
 
@@ -105,7 +105,7 @@ Two distinctions make the rest of this readable:
 
 Every harness loads this file on every turn, so it is kept short. contexture's own share is held under a ceiling by a test, and procedure a skill already carries lives in that skill.
 
-**The skills**, installed as full copies at `.agents/skills/ctxr-<name>/SKILL.md`. That path is the cross-harness canonical location; a harness that reads its own branded directory instead gets that directory bridged to it (`.claude/skills/` is a symlink), so skill auto-discovery works with no wrapper and no second copy. A harness without auto-discovery reaches the same file by path from `AGENTS.md`. They're contexture-owned — refreshed by `ctxr update`, never hand-edited — and they're written against *your* store's configured taxonomy, so no shipped profile's layer names leak into them. Your own skills live alongside, untouched by sync. An owned skill may carry files beside its `SKILL.md` — `ctxr-second-opinion` ships the script that runs its reviewers — and update keeps that whole directory matching the package.
+**The skills**, installed as full copies at `.agents/skills/ctxr-<name>/SKILL.md`. That path is the cross-harness canonical location; a harness that reads its own branded directory instead gets that directory bridged to it (`.claude/skills/` is a symlink), so skill auto-discovery works with no wrapper and no second copy. A harness without auto-discovery reaches the same file by path from `AGENTS.md`. They're contexture-owned — refreshed by `ctxr update`, never hand-edited — and they're written against *your* store's configured taxonomy, so no shipped profile's layer names leak into them. Your own skills live alongside, untouched by sync. An owned skill may carry files beside its `SKILL.md` — `ctxr-capture-circleback` ships the script that retrieves its meetings — and update keeps that whole directory matching the package. `ctxr-second-opinion` drives `ctxr second-opinion preflight | critique | poll`, the one command that invokes a model CLI (`claude`, `codex`, `agy`, each with an allowlisted environment); it is never on the write path and no other command depends on it. Each CLI runs in a new folder that is its home and holds a copy of its own login and nothing else; where `setpriv` can apply Landlock (Linux with util-linux 2.40 or later), the kernel lets it read only the system directories, its own install directory and that folder, so it cannot read your notes, your keys or the rest of your home. A login the CLI refreshes during the run is copied back. Elsewhere, macOS included, it runs in a scratch directory with your real home, and `ctxr second-opinion preflight` reports `confined: no` with the reason.
 
 | Skill | What it decides |
 | --- | --- |
@@ -126,6 +126,21 @@ Every harness loads this file on every turn, so it is kept short. contexture's o
 | `ctxr-upgrade` | Whether to upgrade the installed CLI now, and asking before it does |
 | `ctxr-second-opinion` | Whether a plan or a taste call needs three different model families, and how to weigh what they say |
 | `ctxr-research` | How to research a question against real sources — a brief and findings ledger, perspectives, source tiers, contradictions, and every claim verified against a source it opened — with whatever web access the harness has |
+
+One more skill is opt-in. A store gets `ctxr-capture-circleback` only when its `contexture.yaml` declares a `circleback` block, and loses it at the next `ctxr update` once the block is gone:
+
+| Skill | What it decides |
+| --- | --- |
+| `ctxr-capture-circleback` | `ctxr-capture`'s retrieval step for Circleback: which meetings this store owes, by tag, when one Circleback account feeds several stores. It writes each into the inbox as the verbatim record and hands back to `ctxr-capture` at step 2 |
+
+```yaml
+circleback:
+  tag: pkm               # meetings tagged this belong to this store
+  other_tags: [readyrun] # meetings tagged any of these belong to another store
+  # decline_tag: no-capture   (the default) marks a meeting no store captures
+```
+
+`ctxr-capture` reaches it by its family name: when a store ships a `ctxr-capture-<source>` skill for the material's source, capture retrieves through it and continues from its own step 2. The runner, `sweep.mjs`, drives Circleback's own CLI (`cb`, signed in separately), plus `git` and `gh`, and never handles a credential. Run it from the store root with `node .agents/skills/ctxr-capture-circleback/sweep.mjs`, or point a scheduled job at it; the skill says what to do with its report.
 
 Your house rules go in `.contexture/guidance/`.
 
@@ -220,13 +235,15 @@ Each item is validated and applied independently, so one bad path refuses that i
 
 **5. Submit.** `ctxr-submit`: re-scan git state (never replay a plan from an earlier snapshot), run the capture pass, stage surgically with `git add <paths>` — never `-A`, and derived cache paths never stage — then `ctxr doctor` over the whole store, not `--staged`: a session's job is to leave the *store* healthy, not merely to pass one commit's gate. Then commit, rename the generated branch to something meaningful before it reaches the forge, `git push -u origin <branch>`, and `gh pr create`. If `gh` has no reachable GitHub remote, the push still succeeds on its own and you get manual pull-request instructions instead of a retry loop.
 
-**6. Land.** `ctxr-land`, after review: name the pull request explicitly rather than inferring it from whichever checkout you're standing in, read its state and mergeability with `gh pr view`, then wait for an explicit go — plan consent is not fire consent. `gh pr merge --squash`, then re-read state to confirm the forge reports `MERGED`; a transport error can arrive after a merge already succeeded, so the exit code alone is never enough. Finally fast-forward the canonical clone (`git fetch origin && git merge --ff-only`) and reclaim the worktree (`git worktree remove`, `git branch -d`) — nothing sweeps up afterward, so a worktree left here is left indefinitely.
+**6. Land.** `ctxr-land`, after review: name the pull request explicitly rather than inferring it from whichever checkout you're standing in, read its state with `gh pr view` (and its decision with `ctxr review list`, when the store [approves changes from a page](#approving-changes-from-a-page)), then wait for an explicit go — plan consent is not fire consent — unless a decider already approved it on the page. Then `ctxr land <pr>` (with `--confirm` when the consent is your go): it catches the branch up with the default branch, merges, re-reads the forge to confirm the merge rather than trusting an exit code, fast-forwards the canonical clone, and removes the worktree and its branch — nothing sweeps up afterward, so a worktree left here is left indefinitely.
 
 `ctxr-session-lifecycle` covers what surrounds both halves: when to re-scan, the conflict playbook, and sequencing several pull requests.
 
-### Why steps 5 and 6 aren't CLI commands
+### Why step 5 isn't a CLI command, and step 6 is
 
-They're ordinary `git` and `gh`. The CLI owns only what git cannot do — creating the worktree, applying validated note writes, running the health gates — and the sequencing, the confirmation gates, and the judgment live in the skills, where you can read and change them. That's why `ctxr session` has exactly three subcommands: `start`, `capture`, and `list`.
+Submitting is ordinary `git` and `gh`. The CLI owns only what git cannot do — creating the worktree, applying validated note writes, running the health gates — and the sequencing, the confirmation gates, and the judgment live in the skills, where you can read and change them. That's why `ctxr session` has exactly three subcommands: `start`, `capture`, and `list`.
+
+Landing was the same until a person could approve a change from a page. Then the thing that acts on an approval has no agent in it, and its one job — merge only a head someone approved — is a check that has to be enforced, not an instruction an agent follows. So `ctxr land` is code: it never resolves content, and the decision of *when* to land stays in `ctxr-land` and on the approval page.
 
 Two mechanical backstops hold the line underneath all of it: the **pre-commit** hook runs `doctor --staged`, and the **pre-push** hook refuses a push to the default branch (`CONTEXTURE_ALLOW_DEFAULT_BRANCH_PUSH=1` is the emergency override, for emergencies). Both are version-controlled git hooks, so they hold whichever harness, or human, does the writing.
 
@@ -327,11 +344,162 @@ A page has one of two lifespans, read from where it is filed. A **permanent** pa
 ctxr serve
 ```
 
-Renders notes, catalog sections, the graph document, and published pages as cross-linked HTML. It binds loopback (`127.0.0.1`) by default. `--host` widens that, but note what it does not change: `serve` applies **no per-requester filtering at any bind address**. Widening it exposes the whole store to whatever can reach that address, so only do it behind a front end you've arranged yourself.
+Renders notes, catalog sections, the graph document, and published pages as cross-linked HTML. It binds loopback (`127.0.0.1`) by default. `--host` widens that, but note what it does not change: `serve` applies **no per-requester filtering at any bind address**. Widening it exposes the whole store to whatever can reach that address, so only do it behind a front end you've arranged yourself. The one exception is the approval page below, which verifies who is asking before it shows or records anything.
 
 A published page's navigation label follows its own declared `<title>`, falling back to its folder name when it declares none. A folder group is labelled with the declared name of the taxonomy layer whose path it matches — so a store's own words for its top-level folders reach the sidebar — and with the bare directory name otherwise; either way a group sits where its directory name sorts, not where its label does. The header's light/dark/system links choose a display theme, and the ☰ control shows and hides the navigation — both persist across pages via cookies, and neither requires client-side script. A published page itself is still served byte-verbatim, so neither the theme nor the navigation reaches into it; `ctxr publish new`'s scaffold instead follows the viewer's own system preference on its own.
 
 The **Preview** area, directly below the published pages, holds the pages your open session worktrees are carrying. A page is previewable from the moment its files exist on disk — before any commit, before any push, before a PR is opened or merged — because `serve` reads the worktree rather than asking git or a forge anything. Pages group by the worktree holding them at `/preview/<worktree>/<page>/index.html`, and a preview is byte-identical to what `/publish/<page>/index.html` will serve once the page lands, so what you read is what ships. Both routes address files rather than directories, so a page's address always names its index file — which is the address `ctxr publish new` and `ctxr publish check` report, so you never have to work out which of the two applies. For a whole change set, `ctxr publish urls --staged` (or `--since <ref>`) reports every page added, modified, moved or removed with both addresses, which is what `ctxr-submit` puts in a pull request's **Pages** section; set `serve.previews: none` in `contexture.yaml` if previews never resolve for your reviewers. A session worktree carrying no page appears nowhere, and nothing else inside one — notes, catalog, graph, config — becomes reachable.
+
+**Keeping the served clone current.** `serve` follows the store's default branch on its own, whether or not the store approves changes through it. Ten seconds after it starts, and then every `serve.sync_minutes` minutes (five when the key is absent), it runs one store-update run as a child process: `ctxr land --pending` when the store [lands approved changes](#approving-changes-from-a-page) through `serve`, and `ctxr sync` otherwise. Runs never overlap, a run's output goes to `serve`'s stderr prefixed `land:` or `sync:`, and no run, failed or not, changes how a request is answered. `ctxr sync` fetches the default branch as landing does (as the GitHub App, when its credentials are in the environment) and fast-forwards the clone only when it is on that branch, clean and not diverged; otherwise it leaves the clone alone and says why. A failed fetch is reported as a failure, never as an up-to-date clone. Git run for landing and syncing ignores the repository's own hooks, fsmonitor and filter, diff and merge drivers, because `serve` may share its clone with an agent.
+
+```yaml
+serve:
+  base_url: "https://ctx.example.com"
+  sync_minutes: 2        # optional; positive whole minutes, 5 when absent
+```
+
+An agents container keeps its own clone and mounts current the same way, as the agent's own user: `ctxr sync --every 5` runs until stopped, and each round syncs the clone and then refreshes the mounts as `ctxr shared-stores sync` does. A failed round is reported on stderr and the next round still runs.
+
+**Pull request previews.** A worktree preview needs the session's worktree on the same machine as `serve`. A page written anywhere else, such as in another container or inside another store's mount, previews from its pushed branch instead, at the address of the store that will publish it: `/preview/pull/<number>/<page>/index.html`. When one is opened, `serve` asks the forge for the pull request's head, reusing what it read for at most 15 seconds, and fetches a commit it lacks into a ref namespace of its own (`refs/ctxr-preview/pull/<number>`), which leaves the clone's branches and working tree alone. Only files under the publish path are addressable, byte-identical to what `/publish/` serves after the change lands. Once the pull request merges, its preview addresses redirect to the published page, so a shared link keeps working; one closed without merging, or unknown, answers `404`. For a store with `serve.base_url`, `ctxr session submit` reports the preview address (`preview_url`), and the approval page links each page's pull request preview.
+
+**The GitHub webhook.** The timer is a fallback. For merged pages within seconds, and previews fetched before anyone opens them, give `serve` a webhook secret in its environment, as `CONTEXTURE_WEBHOOK_SECRET` or as a file named by `CONTEXTURE_WEBHOOK_SECRET_FILE` (never in `contexture.yaml`, which is committed). `serve` then accepts `POST /hooks/github`, verifies `X-Hub-Signature-256` against the secret, and answers `401` to anything else. A verified push to the default branch starts a store-update run at once; a push to another branch fetches it for its pull request's preview. Only the branch name is read from a delivery; every change is read from the forge. Without a secret, the route does not exist and the `POST` gets `405`. GitHub does not retry a failed delivery, so the timer and on-demand fetching stay.
+
+In the store repository's **Settings → Webhooks → Add webhook**: payload URL `https://ctx.example.com/hooks/github`, content type `application/json`, the same secret, and the **Pushes** and **Pull requests** events. GitHub cannot pass an access proxy, so the hostname needs a bypass for exactly `/hooks/github` and nothing else; with Cloudflare Access, a self-hosted application for that one path with a **Bypass** policy, beside the application covering the rest. The signature check is that route's control. Check it from outside:
+
+```sh
+curl -i -X POST https://ctx.example.com/hooks/github   # 401: the bypass works, and an unsigned delivery is refused
+curl -i https://ctx.example.com/                       # still a redirect to the access login
+curl -i https://ctx.example.com/notes/                 # still a redirect to the access login
+```
+
+## Stores for more than one person
+
+A store has one audience: everyone who can clone it reads all of it. Privacy between people is a store boundary, never a field on a note, because a git clone holds every file it has ever had. So each person keeps their own store, and the stores they read with others — a family's, a company's, a project group's — are mounted into it:
+
+```yaml
+shared_stores:
+  - { name: family, url: "git@github.com:example/family-store.git" }
+```
+
+`ctxr shared-stores sync` clones each one under `shared/<name>/` and fast-forwards it when that is safe, leaving a mount with local work alone. The clones are ignored through the repository's local exclude file, and `doctor` refuses a commit that stages anything under `shared/`. A mounted store stays a store: its own `contexture.yaml`, exclusions, review and approval govern its notes, and `ctxr session start` run inside `shared/<name>/` opens a session there, whose pull request lands in that store. The graph and `ctxr context gather` read every mount alongside the store's own notes, and `ctxr catalog show` adds the same section from each mount.
+
+Links resolve within the store that holds the note. A filename link (`[[note]]`) finds notes in that store only, and a path link (`[[dir/note]]`) resolves against its root, so a note reaches into a mount with `[[shared/<name>/<path>]]` and a mounted note can never link back. `ctxr lint` reports a mounted note whose link names one of this store's notes. Who can clone which store is the forge's repository access and the credentials each person's agent holds; give each person's agent only their own stores.
+
+## Approving changes from a page
+
+People who own a store's content often have no forge account. With change approval declared, `ctxr serve` gives them a page instead: `/approve/` lists every session with an open pull request, and each one's page shows the author's account of the change (its title, description and commit messages, labelled as the author's), the knowledge changes computed from the commits, the preview of every changed page, and every changed line. Two buttons — **Approve** and **Request changes** — record the decision on the pull request, as a review by the store's own forge identity naming the person who decided and the commit they saw. Nobody needs a GitHub account to leave an entry in the audit trail.
+
+```yaml
+serve:
+  base_url: https://ctx.example.com
+change_approval:
+  identity:                       # the signed assertion your access proxy forwards
+    header: Cf-Access-Jwt-Assertion
+    issuer: https://<team>.cloudflareaccess.com
+    audience: <application aud tag>
+    jwks_url: https://<team>.cloudflareaccess.com/cdn-cgi/access/certs
+  deciders: ["@example.com"]      # exact emails or @domain entries
+  recording_login: ctx-approvals  # the forge identity decisions are recorded as
+  resolver: ["claude", "-p"]      # optional: who resolves a conflict
+```
+
+Identity comes from the proxy in front of `serve` (Cloudflare Access, Google IAP, oauth2-proxy): every `/approve/` request must carry its signed assertion, verified against the key set, issuer, audience and expiry, or it gets `401`. A request that reaches the port around the proxy carries none.
+
+Then the system does the rest, inside `ctxr serve` itself — no scheduler. Right after an Approve, and as its store-update run every `serve.sync_minutes` minutes (five by default; once ten seconds after startup, for approvals made while it was down), `serve` runs `ctxr land --pending` as a child process. That lands every pull request whose current head carries an approval — rebasing it onto the default branch when it is behind, merging, syncing the canonical clone, and removing the worktree. A clean rebase keeps the approval only when every commit's patch is unchanged, and the carry-over is recorded on the pull request. A rebase that conflicts goes to the configured resolver; its result is checked (clean, rebased, `ctxr doctor` passes), pushed, and handed back to the page for a new decision, because nobody has read an agent's merge of two sides. With no resolver, the change is marked blocked. Requested changes and blocked landings reach the next agent session through `ctxr review list`.
+
+Runs never overlap, and only one landing runs per repository at a time: `ctxr land` holds a lock in the repository's git directory, so `serve`, a second `serve` and a person running `ctxr land` by hand never race. A run's output goes to `serve`'s stderr, prefixed `land:`, and a failed run never affects a page. On a host with no git identity, the catch-up rebase commits as the recording login. Every run also brings the store's canonical clone up to date: it fast-forwards to the default branch when the clone is on that branch, has no uncommitted changes to tracked files, and has not diverged, so anything merged on the forge (a configuration change, notes, pages) is served within one interval. Otherwise the clone is left exactly as it was, and the run reports why as a warning (`canonical_sync` in `ctxr land --pending --json`). `serve` needs write access to the store for this. Set `change_approval.land: manual` to turn it off, for a deployment that runs `ctxr land --pending` some other way; `serve`'s store-update runs are then `ctxr sync` runs, and `ctxr land` stays available for landing by hand.
+
+Outside the store, set up the recording identity (below) and, where your plan allows it, a branch protection rule requiring one approving review.
+
+### Recording identity
+
+Decisions and landings are recorded on the pull request by one forge identity, the `recording_login`. It must not be the identity your agents open pull requests with: the forge refuses an approval from a pull request's own author. There are two ways to provide it.
+
+**A GitHub App (recommended).** No account to look after, no seat, and no token to rotate: the App's private key does not expire, and contexture mints a one-hour installation token from it whenever it needs one.
+
+1. Create the App at <https://github.com/settings/apps/new> (or the organization's equivalent). Leave the webhook inactive and the callback URL empty, and request no user authorization. Under **Repository permissions** set **Contents**, **Issues** and **Pull requests** to *Read and write*; **Metadata** is read-only by default. Nothing else. [`templates/approve/github-app-manifest.json`](templates/approve/github-app-manifest.json) holds the same settings for GitHub's manifest flow.
+2. Generate a private key on the App's page, and keep the `.pem` outside every repository, readable only by the user that runs `serve` (`chmod 600`).
+3. Install the App on the store's repository, selecting only that repository.
+4. Set `recording_login` to the App's slug followed by `[bot]`, e.g. `ctx-a-approvals[bot]`.
+5. Give `ctxr serve` these, and nothing else needs a forge credential:
+
+```sh
+CONTEXTURE_GITHUB_APP_ID=<the App ID>             # or its client ID
+CONTEXTURE_GITHUB_APP_PRIVATE_KEY_FILE=/run/secrets/ctx-approvals.pem   # or CONTEXTURE_GITHUB_APP_PRIVATE_KEY=<the PEM text>
+```
+
+contexture finds the installation from the store's github.com `origin` (or from `CONTEXTURE_GITHUB_REPOSITORY=owner/repo` when `origin` is not a github.com URL), and landing fetches and pushes as the App too, handing git the token for that one command only. Every envelope reports `credential: github-app` and never the credential itself.
+
+**One App per key holder.** Whoever holds the key can act on every repository the App is installed on, so share an App only across stores *you* run. To serve several of your stores under different owners, make the App installable on any account and install it on each owner with only that store's repository selected. A store someone else runs uses their own App.
+
+**Where the key may live.** Only in the environment of `ctxr serve`, which lands too — never anywhere an agent runs commands, such as a harness gateway; keep `serve` in a process or container of its own. An agent that can read the key can act on every store the App is installed on. The model CLIs a second opinion starts in `serve` are the one exception, and only because each runs confined to a folder of its own that cannot reach the key: `serve` refuses a second opinion where that confinement is unavailable. If a key leaks, delete it on the App's page; that revokes it at once.
+
+**A token for an account.** Without the App variables, `serve`, `land` and `review list` use `gh`'s own credential (`GH_TOKEN` or its credential file), so a dedicated machine account with a fine-grained token (Contents, Issues and Pull requests read and write on the store's repository) also works. It needs a rotation whenever the token expires.
+
+**A token for each owner a store mounts.** A store owned by one GitHub account can mount a store owned by another, such as an organization. A fine-grained token covers one owner, so the token `gh` holds for the first gets HTTP 403 from the second's repository. Give the agent a second fine-grained token, scoped to that owner, instead of a classic token that reaches everything you can reach:
+
+```sh
+CONTEXTURE_GITHUB_OWNER_TOKENS_DIR=/home/agent/.config/contexture/owner-tokens   # mode 0700
+# one file per GitHub owner, named after the owner, holding its token (mode 0600):
+#   /home/agent/.config/contexture/owner-tokens/acme-org
+```
+
+For a repository whose owner has a file there (`origin`'s owner, or a mount's declared URL before it is cloned; names compared without regard to case), `ctxr` hands that token to `gh` and to git for that one command: `shared-stores sync`, `session start`, `session submit`, `review list`, `land` and `update` alike. It is never written to a remote URL, a git configuration file, the store, or any output. A repository whose owner has no file keeps `gh`'s own credential, and with the variable unset nothing changes. An unreadable directory, an empty or unreadable file, or two files whose names differ only by case stop the command before any forge call. The organization's token needs **Contents** and **Pull requests** read and write and **Metadata** read on the mounted repositories, and nothing else. In App mode the directory is not read. Envelopes report `credential: owner-token` with `credential_owner`, `ctxr shared-stores status` names each mount's credential without a network call, and a clone or fetch the forge refuses names the owner. Only commands `ctxr` runs use the token: a bare `git fetch` in a mount still uses git's own credential.
+
+GitHub Free cannot protect a private repository on a personal account, so such a store has no required-review rule; `ctxr land`'s consent check is what gates the merge either way. Where branch protection is available, require one approving review and leave **"Require approval of the most recent reviewable push"** off: the runner pushes a rebase and then approves the carry-over as the same identity.
+
+## Connecting chat apps (MCP)
+
+People who never open a terminal can still use a store, from the Claude or ChatGPT apps on the web, desktop or phone. With an `mcp` block declared, `ctxr serve` is also a remote MCP server at `/mcp`, on the same port and hostname as the approval page. It needs `change_approval`, because it signs people in with the same identity and opens pull requests with the same forge credential.
+
+```yaml
+mcp:
+  readers: ["@example.com"]       # find, gather, Read, Grep, Glob, ctxr
+  capturers: ["a@example.com"]    # capture
+  editors: ["a@example.com"]      # sessions, Edit, Write, Move, Delete, ctxr_write
+```
+
+What a connected app gets. The only models the server runs are a second opinion's, when asked for one:
+
+- **`find`** matches a phrase literally across the notes and returns each match's gloss, matching lines and a link, in path order with no score. Material not yet filed into a note comes back separately as `unfiled`. With no phrase, `find` returns the catalog as a map of the store. **`gather`** runs the retrieval pass from those notes and returns their full text along with the notes linked to and from them.
+- **`Read`, `Grep` and `Glob`** carry the names and parameters of Claude Code's own tools. Paths are store-relative. `Grep` and `Glob` run ripgrep (`rg` must be on the `PATH` of `serve`). Notes, captures, `AGENTS.md`, the note templates, the house conventions, the log and the skills are readable; configuration, derived files and the paths `retrieval.exclude_paths` hides are not.
+- **`capture`** saves one item of outside material into the inbox as its own session pull request, in one call.
+- **Sessions**, for editors, work as they do for a local agent. `session_start` starts a session worktree on the server and returns its root, such as `.worktrees/session-20261023-101500-kestrel/`. `Edit`, `Write`, `Move` and `Delete` change files under that root and commit nothing; `Read`, `Grep` and `Glob` under the root read the session's uncommitted copy. `session_status` re-scans it, and `session_submit` runs `ctxr doctor` as the gate, commits as the signed-in person, pushes the named branch and opens the pull request with the title and body the agent wrote. `session_list` shows each of the person's sessions with its pull request and the decider's decision and comment, so requested changes reach them; `session_rebase` and `session_discard` do what the `ctxr session` commands of the same name do. Each tool calls the same code as its `ctxr session` command. A person sees only the sessions they started over MCP, and holds at most 20 open at once.
+- **`ctxr`** runs a read-only command such as `lint`, `doctor`, `catalog show` or `graph query` against the served commit or one of the person's sessions; **`ctxr_write`** runs a writing one such as `ingest`, `entry append` or `catalog build` inside a session. Both spawn the server's own CLI as an argument list, with no shell, a 30-second limit and the forge credentials removed from its environment, and refuse `--root` and any path outside the checkout.
+- **A second opinion** runs through `ctxr` as `second-opinion preflight`, `critique` or `poll`, with the plan or question as `input` and `@input` as the `--plan-file` or `--prompt-file` value. The server adds `--print`, so the answers come back in the result and nothing is written, and `--require-confinement`, so it runs only where each model CLI is confined to its own folder. A second opinion gets four minutes rather than 30 seconds, under the time claude.ai waits for a tool, and each model CLI 200 seconds of it, so a slow one comes back as a partial result; one runs at a time per server. The model CLIs must be installed and signed in on the server: in the stock images, `docker compose exec serve claude` (then `/login`), `codex login` and one interactive `agy` run.
+- **Never writable** over MCP, by any tool: `contexture.yaml`, the `.githooks/` directory and every other `.git*` path (a commit in a session worktree runs that worktree's hooks on the server), derived paths, the worktrees path and the managed skills path. A `ctxr_write` command that changes one anyway has the change undone and the call refused.
+
+Every session's pull request appears on the approval page like any other, and nothing lands until a decider approves it. A per-person draft from an earlier version is adopted as that person's session; its pull request stays open and landable. Each tool declares MCP annotations (read-only, destructive, idempotent), so the apps ask before `Delete` and `session_discard`.
+
+**Sign-in.** Someone connecting an app goes through the access proxy's login and then a consent page naming the app, where it will be sent back to, their email and what it may do. They are admitted only if `readers`, `capturers` or `editors` lists them. Nothing is stored on the server: client registrations, codes and 30-day tokens are all signed, and every call re-checks the configuration, so removing someone from the lists refuses their next call. With a GitHub App as the recording identity, the signing key is derived from the App's key, so rotating the App key signs everyone out. With `gh`'s own credential, people sign in again after every restart.
+
+**The access proxy.** Keep `/authorize` behind it, because that is where the identity comes from. Exempt exactly these, because the apps' servers call them directly and cannot pass a proxy login: `/mcp`, `/token`, `/register`, `/.well-known/oauth-protected-resource`, `/.well-known/oauth-protected-resource/mcp`, `/.well-known/oauth-authorization-server` and `/.well-known/openid-configuration`. With Cloudflare Access, that means a self-hosted application for those paths with a **Bypass** policy, alongside the application covering the rest of the hostname. Check it from outside:
+
+```sh
+curl -i https://ctx.example.com/.well-known/oauth-authorization-server   # 200, JSON naming your base URL
+curl -i -X POST https://ctx.example.com/mcp                              # 401 with WWW-Authenticate: Bearer resource_metadata=…
+```
+
+**Installing the skills and the connector.** Two things connect an app to a store, and each person sets each up once:
+
+- **contexture's plugin** gives the app the skills, so an agent in Claude follows the same session practice as a local one. It is the same plugin for every store and lives in this repository, at [`plugins/contexture/`](plugins/contexture/), listed by the `contexture` marketplace in [`.claude-plugin/marketplace.json`](.claude-plugin/marketplace.json). In Claude: Customize → Plugins → *Add* → *Add marketplace*, enter `ayxuerui/contexture`, turn on **Sync automatically**, and install `contexture` (`contexture@contexture`). It needs no GitHub account, and with Sync on Claude installs each release by itself: the plugin's version is the CLI's, so a new copy arrives when a release merges and not between releases. It also carries typed commands that open its entry-point skills: `/contexture:capture`, `/contexture:ingest`, `/contexture:research`, `/contexture:rollup`, `/contexture:mission`, `/contexture:session`, `/contexture:submit` and `/contexture:second-opinion`. A plugin added on claude.ai also syncs into Claude Code, where it says what the store's own copies say.
+- **The store's connector** reaches one store. In Claude: Customize → Connectors → *Add custom connector*, with the URL `https://ctx.example.com/mcp`. In ChatGPT, turn on developer mode and add a connector with the same URL and OAuth. Someone in two stores adds two connectors; the skills work with whichever is attached and ask which store is meant when it is unclear.
+
+The plugin carries no connector, because one plugin serves every store. Its skills name each store setting by a placeholder such as `<inbox path>` or `<default branch>`, and the connector's instructions answer them: the instructions `serve` returns when an app connects end with a *This store* section giving the store's value for each placeholder, its layers with their descriptions, the relation vocabulary and the server's ctxr version. Each shared skill is one text on both surfaces, the same as the store's own copy apart from those values. It opens with one short section, in the store's copies too: which store the person means, whether to work in a shell (a checkout of that store) or through its connector, and how a `ctxr` step, a path and a commit are done through the server. The few shell-only steps say at the step what to do through the server instead. A store's server can run an older ctxr than the plugin; when a skill names a tool the connector does not offer, the agent says so and skips that step rather than improvising a write.
+
+**The connect page.** `serve` answers `https://ctx.example.com/plugin/` with a page giving a member both steps: the marketplace and plugin for Claude, and this store's connector address with how to add it in each app. It also links the store's ChatGPT plugin, `contexture-<store>-chatgpt.zip`: ChatGPT has no marketplace on personal plans, so its plugin stays the store's own download, bundling the same skills and the store's connector. A workspace admin uploads it for the whole workspace; without an admin, turn on developer mode and upload it there. ChatGPT does not update an uploaded plugin, so download it again after a release. The page and the download need the same verified identity as the approval page, and only people the `mcp` block admits get them, so keep `/plugin/` behind the access proxy, outside the Bypass list above. Someone who uploaded an earlier `contexture-<store>` plugin to Claude removes it once they install `contexture`, and keeps their connector.
+
+To build the plugins yourself:
+
+```sh
+ctxr plugin build                # outside a store: contexture's Claude plugin, under ./contexture-plugin/
+ctxr plugin build                # inside a store with mcp: also its ChatGPT plugin, under .contexture/cache/plugin/
+ctxr plugin build --out dist/    # somewhere else
+```
+
+Each plugin is written as a directory (`contexture/`, `chatgpt/`) and a zip beside it. A store without an `mcp` block gets the Claude plugin alone, with a notice. If the marketplace ever has to be withdrawn, members can upload `contexture-claude.zip` from a build instead, and keep their store connector; an uploaded plugin does not update itself. In this repository, `npm run plugin` regenerates `plugins/contexture/`, and a test fails any change whose committed plugin differs from a fresh build.
+
+**Where reads come from.** Reads come from a checkout `serve` keeps for itself under `.contexture/cache/mcp/view`, brought up to date from `origin` at most once a minute. It never touches the checkout your agents work in. Each MCP request writes one line to `serve`'s stderr, naming the person, the method and the tool, but never the arguments or the results.
 
 ## Keeping a store current
 
@@ -390,8 +558,13 @@ To pin a value against a future default change, declare it. Nothing rewrites wha
 | `rollup gather \| write \| stale` | Entity synthesis: enumerate, write, find what's out of date |
 | `publish gather \| new \| check` | Resolve a subject, scaffold a page, run the structural gates |
 | `session start \| capture \| list` | Session worktrees, and applying an approved capture proposal |
+| `land <pr> [--confirm] \| --pending` | Land a session pull request that carries consent: catch up, merge, confirm, sync, reclaim |
+| `review list` | Each open session pull request's decision from the approval page |
+| `sync [--every <minutes>]` | Fast-forward the canonical clone to the forge's default branch when that is safe; `--every` keeps doing so, mounts included |
+| `shared-stores sync \| status` | Clone and fast-forward the stores this store mounts under `shared/`, or report their state |
 | `adapters generate` | Regenerate harness outputs (`ctxr update` does this too) |
 | `serve` | Read the store in a browser |
+| `plugin build [--out <dir>]` | Build contexture's Claude plugin (no store needed) and, in a store with `mcp`, its ChatGPT plugin with its connector |
 | `update` | Bring contexture-owned files up to the installed version |
 | `version [--check]` | Report the installed version; `--check` compares it against the latest published release |
 | `verify [--portable]` | Exercise core store operations end to end |

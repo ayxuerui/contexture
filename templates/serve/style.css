@@ -330,3 +330,66 @@ ul.ctxr-tree ul.ctxr-tree {
   font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
   white-space: pre-wrap;
 }
+
+/*
+ * approve-from-the-review-page: the approval page. Added and removed lines
+ * carry a leading mark as well as a colour, so the change reads the same
+ * with no colour at all; the author's account is set apart with a border so
+ * it is never mistaken for the facts computed from the commits.
+ */
+.ctxr-author-account {
+  border-left: 4px solid var(--ctxr-border);
+  padding-left: 1rem;
+}
+
+.ctxr-approve-notice,
+.ctxr-review-moved {
+  border: 1px solid var(--ctxr-broken);
+  padding: 0.5rem 0.75rem;
+}
+
+pre.ctxr-diff span {
+  display: block;
+}
+
+.ctxr-diff-add {
+  background: color-mix(in srgb, #2e7d32 18%, transparent);
+}
+
+.ctxr-diff-del {
+  background: color-mix(in srgb, var(--ctxr-broken) 18%, transparent);
+}
+
+.ctxr-diff-hunk,
+.ctxr-diff-status {
+  color: var(--ctxr-muted);
+}
+
+.ctxr-commit-message {
+  white-space: pre-wrap;
+}
+
+.ctxr-decision form {
+  margin: 1rem 0;
+}
+
+.ctxr-decision textarea {
+  display: block;
+  width: 100%;
+  max-width: 40rem;
+  margin: 0.25rem 0 0.5rem;
+  font: inherit;
+}
+
+.ctxr-decision button {
+  font: inherit;
+  padding: 0.4rem 1rem;
+}
+
+.ctxr-approve-index td,
+.ctxr-approve-index th,
+.ctxr-pages td,
+.ctxr-pages th {
+  padding: 0.25rem 0.75rem 0.25rem 0;
+  text-align: left;
+}

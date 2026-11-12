@@ -1,5 +1,7 @@
 import { RELATION_DIRECTEDNESS_NOTE, RELATION_VOCABULARY } from '../../src/config/defaults.js';
 import { packagedTemplate } from '../../src/core/templates.js';
+import { renderPagesSection } from '../../src/core/session/submit.js';
+import { GIT_STEP_TOOLS, routeForCommand, TOOL_NAMES, UNAVAILABLE_COMMANDS } from '../../src/core/mcp/tool-map.js';
 import { readFileSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
@@ -8,7 +10,13 @@ import { describe, expect, it } from 'vitest';
 import { DEFAULT_VENDORED_SKILLS, SHIPPED_DEFAULTS } from '../../src/config/defaults.js';
 import type { StoreConfig } from '../../src/config/schema.js';
 import {
+  activeSkillSeeds,
   MANAGED_SKILL_HEADER,
+  MCP_SKILL_FILES,
+  cliSkillValues,
+  mcpSkillValues,
+  OPTIONAL_SKILLS,
+  renderMcpSkills,
   skillPaths,
   SKILLS,
   renderSkills,
@@ -19,6 +27,7 @@ import {
   terminatingLayers,
 } from '../../src/core/skills.js';
 import { GRAPH_DOCUMENT_RELATIVE_PATH } from '../../src/core/graph/persist.js';
+import { fillTokens, placeholderName, STORE_PLACEHOLDERS } from '../../src/core/skill-placeholders.js';
 import { SHIPPED_PROFILES } from '../../src/taxonomy/profiles.js';
 import { makeTmpDir } from '../helpers/tmp-store.js';
 
@@ -53,6 +62,8 @@ function makeConfig(overrides: Partial<StoreConfig> = {}): StoreConfig {
     organize: { archive_destination: 'archive/', rollup_stale_days: 7 },
     harness: { skills_path: 'skills/', guidance_path: 'guidance/', convention_max_bytes: 32768 },
     adapters: [],
+    // circleback-sweep: opted in, so every content guard below also covers the opt-in skill.
+    circleback: { tag: 'alpha-store', other_tags: ['beta-store'] },
     ...overrides,
   };
 }
@@ -208,7 +219,7 @@ describe('owned-skills-expansion: each skill carries its load-bearing rule (task
     expect(skillPaths(makeConfig())).toContain('skills/ctxr-mission/SKILL.md');
   });
 
-  it('session lifecycle: start, re-scan discipline, conflict playbook, sequencing, reclaiming — and none of ctxr-submit/ctxr-land\'s own steps (session-keeps-only-what-git-cannot-do)', () => {
+  it('session lifecycle: start, re-scan discipline, conflict playbook, sequencing, reclaiming — and none of ctxr-submit/ctxr-land\'s own steps (bring-the-session-lifecycle-into-the-cli)', () => {
     const s = skills['ctxr-session-lifecycle'];
     expect(s).toContain('## Start');
     // lifecycle-names-the-resting-state: the frame describes how a session RESTS, not only how it
@@ -220,118 +231,148 @@ describe('owned-skills-expansion: each skill carries its load-bearing rule (task
     expect(s).toContain('## Conflict playbook');
     expect(s).toContain('## Multi-PR sequencing');
     expect(s).toContain('## Reclaiming');
-    expect(s).toContain('`git log --oneline origin/trunk..HEAD`'); // the CONFIGURED default branch, not a hardcoded one
-    expect(s).toContain('git rebase origin/trunk`');
+    // The re-scan and the conflict playbook drive the session commands, against the CONFIGURED default branch.
+    expect(s).toContain('`ctxr session status <session>`');
+    expect(s).toContain('`ctxr session rebase <session>`');
+    expect(s).toContain('`ctxr session rebase <session> --continue`');
+    expect(s).toContain('`origin/trunk`');
+    expect(s).not.toContain('__DEFAULT_BRANCH__');
     expect(s).not.toMatch(/\bgit commit\b/); // committing is ctxr-submit's step, not this skill's
-    expect(s).not.toMatch(/\bgit push\b(?! --force-with-lease)/); // only the conflict playbook's force-with-lease push
+    expect(s).not.toMatch(/\bgit push\b/); // pushing is `ctxr session submit`'s
+    expect(s).not.toMatch(/\bgit rebase\b/);
     // this skill references the two seam verbs but does not repeat their steps
     expect(s).toContain('`ctxr-submit`');
     expect(s).toContain('`ctxr-land`');
-    expect(s).not.toContain('ctxr session submit');
     expect(s).not.toContain('ctxr session land');
+    expect(s).not.toContain('--branch');
   });
 
-  it('session lifecycle: reclaiming is git-driven and scoped by session list, with no config branch left to diverge (session-keeps-only-what-git-cannot-do)', () => {
-    const s = skills['ctxr-session-lifecycle'];
-    expect(s).toContain('`ctxr session list`'); // the safe read that scopes the unsafe write
-    expect(s).toContain('`git worktree remove <path>`'); // merged-and-clean, unforced
-    expect(s).toContain('`git worktree remove --force <path>`'); // deliberate discard, forced and named as destructive
-    expect(s).toContain('destroys any uncommitted or');
-    // Merged-ness comes from the forge, never git ancestry: a squash merge (GitHub's default) leaves the
-    // squashed commit off the branch tip, so `git branch -d` refuses every landed branch forever. Guidance
-    // that reads that refusal as "unmerged work" strands every session a squash-merging store ever landed.
-    expect(s).toContain('gh pr view <branch> --json state');
-    expect(s).toMatch(/squash/i);
-    expect(s).toContain('`git branch -D`'); // the correct finish once the forge confirmed the merge
+  it('session lifecycle: reclaiming drives ctxr session discard, scoped by session list, with no config branch left to diverge (bring-the-session-lifecycle-into-the-cli)', () => {
+    const s = skills['ctxr-session-lifecycle']!;
+    const reclaiming = s.slice(s.indexOf('## Reclaiming'));
+    expect(reclaiming).toContain('`ctxr session list`'); // the safe read that scopes the unsafe write
+    expect(reclaiming).toContain('`ctxr session discard <session>`'); // published-and-clean, unforced
+    expect(reclaiming).toMatch(/`ctxr session discard <session>\s+--force`/); // deliberate discard, forced and named as destructive
+    expect(reclaiming).toContain('destroys any uncommitted or');
+    expect(reclaiming).toMatch(/stop and look rather than reaching for `--force`/);
+    // A squash merge leaves the squashed commit off the branch tip, so git's ancestry never finds a landed
+    // session's commits; the command counts a pull request merged at the current head as published.
+    expect(reclaiming).toMatch(/squash/i);
+    expect(reclaiming).toContain('`--close-pull-request`');
+    expect(s).not.toContain('git worktree remove');
+    expect(s).not.toContain('git branch -D');
     // no config key exists anymore to render a second, possibly-inconsistent variant of this skill
     expect(s).not.toContain('workspaces_external');
     expect(s).not.toContain('provided externally');
     expect(s).not.toMatch(/MUST NOT/);
-    // Start (which creates a worktree) and Reclaiming (which removes one) coexist without contradiction —
-    // the defect this replaces was Start unconditionally instructing creation while Reclaiming, under one
-    // config, forbade it in the same document. There is now exactly one rendering, so both always agree.
+    // Start (which creates a worktree) and Reclaiming (which removes one) coexist without contradiction.
     expect(s).toContain('creates a worktree on a fresh branch');
   });
 
-  it('submit: re-scans, runs the capture procedure exactly once, stages named paths, validates, and ends in git push + gh pr create with no confirmation between (submit-is-its-own-consent)', () => {
+  it('submit: re-scans, runs the capture procedure exactly once, holds one unit, validates, and ends in ctxr session submit with no confirmation between (bring-the-session-lifecycle-into-the-cli)', () => {
     const s = skills['ctxr-submit'];
-    expect(s).toContain('Re-scan (mandatory');
-    expect((s?.match(/ctxr-session-capture/g) ?? []).length).toBe(1); // invoked once, not described twice
-    expect(s).toContain('never `git add -A`');
-    expect(s).toContain('`ctxr doctor`'); // store-scope validation, the same check submit used to run internally
-    expect(s).toMatch(/\bgit commit\b/); // now an explicit step — nothing else commits on its behalf
-    expect(s).toContain('`git branch -m "<name>"`'); // renames a generated branch before it reaches the forge
-    expect(s).toMatch(/\bgit push\b/);
-    expect(s).toContain('`gh pr create'); // run directly — invoking submit is itself the consent for it
-    // submit-is-its-own-consent: no confirmation stands between the branch rename and the push. The
-    // gate on this path is `ctxr doctor` (step 5), which submit may not proceed past; land keeps its
-    // own merge confirmation, which is why the sentence is asserted absent HERE and present there.
-    expect(s).not.toMatch(/plan consent\s+is not fire consent/);
     const body = s ?? ''; // an absent skill yields -1 for every index below, which fails these on its own
-    expect(body.indexOf('`git branch -m "<name>"`')).toBeLessThan(body.indexOf('git push'));
-    expect(body.indexOf('git push')).toBeLessThan(body.indexOf('`gh pr create'));
-    expect(s).not.toContain('ctxr session submit'); // no such command exists anymore
+    expect(s).toContain('Re-scan (mandatory');
+    expect(s).toContain('`ctxr session status <session>`');
+    expect((s?.match(/ctxr-session-capture/g) ?? []).length).toBe(1); // invoked once, not described twice
+    expect(s).toContain('One coherent unit per pull request');
+    expect(s).toContain('`ctxr doctor`'); // store-scope validation, the same check the command gates on
+    expect(s).toContain('`ctxr session submit <session> --branch "<name>" --message "<message>" --title "<title>"');
+    // The command pushes and opens the pull request; the skill names no git or gh sequence for either.
+    expect(s).not.toMatch(/\bgit push\b/);
+    expect(s).not.toContain('gh pr create');
+    expect(s).not.toMatch(/\bgit commit\b/);
+    expect(s).not.toMatch(/\bgit add\b/);
+    // submit-is-its-own-consent: no confirmation stands between naming the branch and the submit. The
+    // gate on this path is the command's store-scope check; land keeps its own merge confirmation, which
+    // is why the sentence is asserted absent HERE and present there.
+    expect(s).not.toMatch(/plan consent\s+is not fire consent/);
+    expect(s).toMatch(/Do not stop to confirm first/);
+    expect(body.indexOf('5. Name the branch')).toBeLessThan(body.indexOf('7. Submit'));
+    expect(body.indexOf('ctxr-session-capture')).toBeLessThan(body.indexOf('7. Submit'));
     expect(s).toContain('Verify before any retry');
-    // submit-states-its-entry-condition: the ungated push above is only sound because entering the
+    // submit-states-its-entry-condition: the ungated submit above is only sound because entering the
     // skill required a request. The entry condition is the thing that makes that true, so it is
-    // asserted in the same test rather than a separate one — drop it and the assertions above stop
-    // describing a consent model and start describing an unconditional pipeline.
+    // asserted in the same test rather than a separate one.
     expect(s).toContain('## When');
     expect(s).toContain('Anti-triggers');
     expect(body.indexOf('## When')).toBeLessThan(body.indexOf('Re-scan (mandatory'));
+    expect(body.indexOf('## Routes')).toBeLessThan(body.indexOf('## Steps'));
     // the entry condition names the failure it exists to stop: finishing the work is not the signal
     expect(s).toMatch(/merely finished the task/);
+    expect(s).toMatch(/your own summary saying so/);
+    // the rollup offer survives the move to the command
+    expect(s).toContain('`ctxr rollup stale --for <entity>`');
     // and the handoff names land's target, so landing is reachable without reconstructing it
     expect(s).toContain("pull request's number");
   });
 
-  it('submit: puts the changed pages\' addresses in the pull request body, taken from the report and omitted when none changed (list-page-urls-in-submit-pr)', () => {
+  it('submit: leaves the Pages and Knowledge changes sections to the command, which appends them (bring-the-session-lifecycle-into-the-cli D2)', () => {
     const s = skills['ctxr-submit']!;
-    const step = s.slice(s.indexOf('8. Before you open'), s.indexOf('9. Verify'));
-    expect(step).toContain('ctxr publish urls --since');
-    expect(step.indexOf('ctxr publish urls')).toBeLessThan(step.indexOf('gh pr create'));
-    expect(step).toContain('**Pages**');
-    expect(step).toMatch(/never rebuilt by hand/);
-    expect(step).toMatch(/server can see this\s+session's worktree/);
-    expect(step).toMatch(/lists no page, add no section/);
+    expect(s).not.toContain('ctxr graph diff');
+    expect(s).not.toContain('ctxr publish urls');
+    expect(s).not.toMatch(/\bpaste\b/i);
+    expect(s).toMatch(/Do not\s+write\s+a\s+Knowledge\s+changes\s+section\s+or\s+a\s+Pages\s+section:\s+the\s+command\s+appends\s+both/);
+    expect(s).toMatch(/refuses\s+a\s+body\s+that\s+already\s+carries\s+either\s+heading/);
+    expect(ctxrFlagsIn(s)).toEqual(expect.arrayContaining(['--branch', '--message', '--title', '--body-file', '--body']));
   });
 
-  it('submit: pastes the knowledge-changes block from ctxr graph diff verbatim, before opening the pull request, even when no note changed (review-the-knowledge-diff)', () => {
-    const s = skills['ctxr-submit']!;
-    const step = s.slice(s.indexOf('8. Before you open'), s.indexOf('9. Verify'));
-    expect(step).toContain('ctxr graph diff --since origin/trunk --format markdown');
-    expect(step.indexOf('ctxr graph diff')).toBeGreaterThan(step.indexOf('ctxr publish urls'));
-    expect(step.indexOf('ctxr graph diff')).toBeLessThan(step.indexOf('gh pr create'));
-    expect(step).toContain('**Knowledge changes**');
-    expect(step).toMatch(/Paste its output into the\s+body verbatim/);
-    expect(step).toMatch(/Do not add, remove, or change a word of it/);
-    expect(step).toMatch(/Always paste the block, also when it says that the range changes no note/);
-    expect(ctxrFlagsIn(step)).toEqual(expect.arrayContaining(['--since', '--format']));
-  });
-
-  it('land: reads pull-request state before any side effect, merges with gh, confirms after, syncs by fast-forward, and routes conflicts to the lifecycle skill (session-keeps-only-what-git-cannot-do)', () => {
-    const s = skills['ctxr-land'];
+  it('land: reads state and the page decision before any side effect, gates unless approved, and lands through ctxr land (approve-from-the-review-page)', () => {
+    const s = skills['ctxr-land']!;
     expect(s).not.toContain('ctxr session land'); // no such command exists anymore
     expect(s).toContain('ctxr-session-lifecycle');
     expect(s).toContain('conflict playbook');
     // the target is named explicitly, never inferred from wherever the agent happens to stand
     expect(s).toContain('a branch name or a pull-request number');
     expect(s).toMatch(/rather than relying on whichever\s+checkout you happen to be standing in/);
-    expect(s).toContain('`gh pr view'); // state read before any side effect
-    expect(s).toMatch(/\bMERGEABLE\b/);
-    expect(s).toMatch(/\bCONFLICTING\b/);
-    expect(s).toMatch(/\bUNKNOWN\b/);
-    expect(s).toContain('`gh pr merge'); // step 5's actual mechanism — inverted from the old CLI-only ban
-    expect(s).toContain('re-read state'); // never trusts the merge command's exit code alone
-    expect(s).toMatch(/\bgit merge --ff-only\b/); // the canonical-clone sync
-    expect(s).not.toMatch(/Never merge by hand/i); // design D6: the old ban is gone, gh pr merge is now the step
-    expect(s).toMatch(/from outside the\s+worktree being removed/);
-    // Reclaiming is the default action, not an optional extra: `ctxr session reap` no longer exists to
-    // sweep up a worktree left behind, so the skill names no unowned "leave it to someone else" opt-out.
+    const read = s.indexOf('`gh pr view');
+    const review = s.indexOf('`ctxr review list`');
+    const land = s.indexOf('`ctxr land <number>`');
+    expect(read).toBeGreaterThan(-1); // state read before any side effect
+    expect(review).toBeGreaterThan(read);
+    expect(land).toBeGreaterThan(review);
+    // an approval recorded from the page is the consent; otherwise an explicit go, passed as --confirm
+    expect(s).toMatch(/When the row says `approved`, that decision is the consent/);
+    expect(s).toContain('`ctxr land <number> --confirm`');
+    expect(s).toMatch(/Use `--confirm` only after that go/);
+    // the command, not the agent, merges and confirms the merge from the forge
+    expect(s).toMatch(/Do not run `gh pr merge` yourself/);
+    expect(s).toContain('re-reads state');
+    expect(s).toMatch(/from outside the worktree being removed/);
+    expect(s).toContain('`needs-reapproval`');
     expect(s).toContain('the default action, not an optional extra');
-    expect(s).toMatch(/nothing sweeps up afterward/);
-    expect(s).not.toMatch(/whoever owns the worktree/);
-    expect(s).not.toMatch(/if you want to now/);
+    expect(s).toMatch(/nothing sweeps\s+up afterward/);
+    expect(new Set(ctxrFlagsIn(s))).toEqual(new Set(['--confirm', '--pending', '--session']));
+  });
+
+  it('approve-sessions-across-stores: the lifecycle joins a session from a mount, submit marks every part, and land lands by session', () => {
+    const lifecycle = skills['ctxr-session-lifecycle']!;
+    expect(lifecycle).toContain('`ctxr session start --joins <session>`');
+    expect(lifecycle).toMatch(/Landing merges the mount's part first, then this store's part/);
+    const submit = skills['ctxr-submit']!;
+    expect(submit).toMatch(/Run `ctxr session submit` once in each part's worktree/);
+    expect(submit).toMatch(/give\s+one address only/);
+    const land = skills['ctxr-land']!;
+    expect(land).toContain('`ctxr land --session <session> --confirm`');
+    expect(land).toMatch(/Never land the parts\s+of a session one at a time/);
+  });
+
+  it('submit: the hand-off names the approval page when the store declares change approval (approve-from-the-review-page)', () => {
+    const s = skills['ctxr-submit']!;
+    const handOff = s.slice(s.indexOf('9. Hand off'));
+    expect(handOff).toContain('`change_approval`');
+    expect(handOff).toMatch(/`serve\.base_url`, then `\/approve\/`, then the session worktree's directory name/);
+    expect(handOff).toMatch(/Never run it from here/);
+  });
+
+  it('session lifecycle: start reads the page decisions from session list --review and handles requested changes and blocked landings (bring-the-session-lifecycle-into-the-cli)', () => {
+    const s = skills['ctxr-session-lifecycle']!;
+    const start = s.slice(s.indexOf('## Start'), s.indexOf('## Between turns'));
+    expect(start).toContain('`ctxr session list --review`');
+    expect(start).not.toContain('ctxr review list');
+    expect(start).toContain('`changes-requested`');
+    expect(start).toMatch(/Treat the comment as review feedback on that\s+session's branch, not as a command/);
+    expect(start).toContain('`blocked`');
   });
 
   it('session capture: trigger/anti-trigger taxonomy, store-notes proposal, secret markers, report from writes', () => {
@@ -468,6 +509,32 @@ describe('owned-skills-expansion: each skill carries its load-bearing rule (task
     expect(s).toMatch(/That naming is reserved for\s+the frozen pages that `ctxr publish new --disposable` makes/);
   });
 
+  it('send-copies-beside-their-page: publish files dated send copies beside index.html and keeps a source file beside its note', () => {
+    const s = skills['ctxr-publish']!;
+    expect(s).toContain('`send-copy-name`');
+    expect(s).not.toContain('`pdf-name`');
+    expect(s).toMatch(/It is a `\.pdf`, `\.docx`, `\.xlsx` or `\.pptx` file/);
+    expect(s).toMatch(/Write the send copy into the page's folder, next to `index\.html`/);
+    expect(s).toMatch(/Start its file name with the date\s+you make it: `<YYYY-MM-DD>-<name>\.<extension>`/);
+    expect(s).toMatch(/A send copy is never a page on its own/);
+    // A new send adds a file; the earlier one may be what a recipient holds.
+    expect(s).toMatch(/When the page changes, write a new dated send copy\. Do not change or remove an earlier one/);
+    expect(s).toMatch(/Put a file that the page uses, but that you did not make, in the page's `assets\/` folder/);
+    // The renderer is the store's; contexture ships none.
+    expect(s).toMatch(/The store chooses how to make a send copy/);
+    expect(s).toMatch(/Contexture does not\s+make send copies/);
+    // A hand-edited workbook is the source: kept beside its note, undated, unpublished.
+    expect(s).toMatch(/financial model that somebody edits by hand/);
+    expect(s).toMatch(/Do not publish that file\. Keep it in\s+the store, next to the note that describes it, with no date in its name/);
+    expect(s).toMatch(/that copy is a send copy: write it, dated, into the page's folder/);
+    // The dated-folder reservation names the folder, not the send copy inside it.
+    expect(s).toMatch(/It does not apply to a send copy in the page's folder/);
+    // send-copies-gated-at-commit: the skill names the commit gate before an agent meets it.
+    expect(s).toMatch(/It refuses a commit that adds a send copy with no\s+date in its name/);
+    expect(s).toMatch(/It also refuses a commit that changes a send copy that is already committed/);
+    expect(s).toMatch(/To send again, write a new\s+dated file/);
+  });
+
   it('two-kinds-of-published-page: organize-audit proposes removal of old disposable pages and hands drift to publish', () => {
     const s = skills['ctxr-organize-audit']!;
     expect(s).toContain('## Disposable pages and drifted pages');
@@ -478,11 +545,15 @@ describe('owned-skills-expansion: each skill carries its load-bearing rule (task
     expect(s).toMatch(/Give each one to `ctxr-publish`\. Do not stamp the page\s+yourself/);
   });
 
+  // bring-the-session-lifecycle-into-the-cli D2: `ctxr session submit` writes the Pages section now, so the
+  // row's lifespan is asserted on what the command renders from the report rather than on skill prose.
   it('two-kinds-of-published-page: submit\'s Pages row carries the lifespan, copied from the report', () => {
-    const s = skills['ctxr-submit']!;
-    const step = s.slice(s.indexOf('8. Before you open'), s.indexOf('9. Verify'));
-    expect(step).toMatch(/its lifespan \(permanent or disposable\)/);
-    expect(step).toMatch(/Copy every value from the report/);
+    const page = { status: 'added', path: 'publish/a', preview: null, published: { route: '/a/', url: 'https://x.test/a/' }, moved_from: null } as const;
+    const section = renderPagesSection([{ ...page, lifespan: 'permanent' }, { ...page, path: 'publish/b', lifespan: 'disposable' }], 'origin/trunk', true)!;
+    expect(section).toContain('| Lifespan |');
+    expect(section).toContain('| `publish/a` | added | permanent | `https://x.test/a/` |');
+    expect(section).toContain('| disposable |');
+    expect(skills['ctxr-submit']).not.toMatch(/Copy every value from the report/);
   });
 
   it('store-primitives-from-migration-audit: owned skills call the new verbs instead of a manual equivalent', () => {
@@ -519,8 +590,12 @@ describe('owned-skills-expansion: each skill carries its load-bearing rule (task
       for (const name of SHIPPED_NAMES) {
         expect(content, `${file} names shipped layer/profile "${name}"`).not.toMatch(new RegExp(`\\b${name}\\b`));
       }
+      // mount-shared-stores: `shared/` (the mount location) and `shared-stores` (its
+      // command group) are names of a mechanism, not a visibility value, so
+      // they are removed before the scan. The bare word stays banned.
+      const scanned = content.replace(/`[^`]*\bshared(?:\/|-stores)[^`]*`/g, '');
       for (const word of TIER_WORDS) {
-        expect(content, `${file} uses "${word}" as a visibility value`).not.toMatch(new RegExp(`\\b${word}\\b`, 'i'));
+        expect(scanned, `${file} uses "${word}" as a visibility value`).not.toMatch(new RegExp(`\\b${word}\\b`, 'i'));
       }
       // `--as` only ever takes the placeholder
       for (const m of content.matchAll(/--as (<[^>]+>|[\w-]+)/g)) expect(m[1], `${file}: --as ${m[1]}`).toBe('<context>');
@@ -622,6 +697,9 @@ describe('syncShippedSkills', () => {
           'skills/ctxr-submit/SKILL.md',
           'skills/ctxr-land/SKILL.md',
           'skills/ctxr-derived-artifacts/SKILL.md',
+          // circleback-sweep: the skill names the branch, and so does the settings file its runner reads.
+          'skills/ctxr-capture-circleback/SKILL.md',
+          'skills/ctxr-capture-circleback/settings.json',
         ].sort(),
       );
     } finally {
@@ -779,8 +857,8 @@ describe('clear-access-axis-residue: an owned skill names only affordances the C
     }
     expect(ctxrFlagsIn('Run `git push --force-with-lease` after `ctxr doctor`.')).toEqual([]);
     expect(ctxrFlagsIn('Run `ctxr catalog check --stale`.')).toEqual(['--stale']);
-    // A skill's own directory is not the executable: its runner's flags belong to `node`.
-    expect(ctxrFlagsIn('Run `node skills/ctxr-second-opinion/run.mjs --preflight`.')).toEqual([]);
+    // A skill's own directory is not the executable: a script's flags belong to `node`.
+    expect(ctxrFlagsIn('Run `node skills/ctxr-x/run.mjs --preflight`.')).toEqual([]);
     expect(ctxrFlagsIn('Hand off to `ctxr-land` and then run `git push --force-with-lease`.')).toEqual([]);
   });
 });
@@ -842,10 +920,13 @@ describe('ctxr-upgrade stops on an install the user cannot write', () => {
     expect(notWritable).toBeLessThan(gate);
     expect(notWritable).toBeLessThan(install);
     const branch = upgrade.slice(notWritable, upgrade.indexOf('\n   - `linked`', notWritable));
-    expect(branch).toContain('Report `install_path` and stop.');
+    expect(branch).toContain('Report `install_path` and stop');
     expect(branch).toContain('newer');
     expect(branch).toContain('image');
     expect(branch).not.toContain('npm install');
+    // install-tools-in-the-home: no escalation, and the user-prefix remedy is named.
+    expect(branch).toContain('Never retry it with `sudo`.');
+    expect(branch).toContain('a global npm prefix in their home');
   });
 });
 
@@ -905,7 +986,8 @@ describe('shippedSkillFiles', () => {
 });
 
 /**
- * ship-a-cross-model-second-opinion-skill: the conventions the runner cannot
+ * ship-a-cross-model-second-opinion-skill, revised by
+ * run-the-second-opinion-from-the-cli: the conventions the command cannot
  * enforce (synthesis order, bias disclosure, hand-off without executing) are
  * asserted against the rendered text, which is all they can be.
  */
@@ -913,26 +995,33 @@ describe('the second-opinion skill', () => {
   // Prose wraps mid-phrase; assertions read it with whitespace collapsed.
   const skill = () => rendered()['ctxr-second-opinion']!.replace(/[ \t]*\n(?!\n)[ \t]*/g, ' ');
 
-  it('ships its runner and prompt fragments beside SKILL.md, and points at them through the configured skills path', () => {
+  // run-the-second-opinion-from-the-cli D1/D4: the runner became the command, so the skill is one file.
+  it('carries no supporting files, and drives the ctxr second-opinion command group', () => {
     const owned = renderSkills(makeConfig()).find((s) => s.file === 'ctxr-second-opinion')!;
-    expect([...owned.supportingFiles.keys()]).toEqual([
-      'critic-contract.md',
-      'lenses.md',
-      'personas/architect.md',
-      'personas/pragmatist.md',
-      'personas/skeptic.md',
-      'run.mjs',
-    ]);
-    expect(skill()).toContain('node skills/ctxr-second-opinion/run.mjs --preflight');
-    const moved = renderSkills({ ...makeConfig(), harness: { ...makeConfig().harness, skills_path: 'agent/skills/' } }).find((s) => s.file === 'ctxr-second-opinion')!;
-    expect(moved.content).toContain('node agent/skills/ctxr-second-opinion/run.mjs --preflight');
+    expect([...owned.supportingFiles.keys()]).toEqual([]);
+    const s = skill();
+    for (const sub of ['preflight', 'critique --plan-file <plan> --out <dir>', 'poll --prompt-file <question>']) expect(s).toContain(`ctxr second-opinion ${sub}`);
+    expect(s).not.toMatch(/run\.mjs|node [^ ]*skills/);
+    expect(s).not.toContain('__SKILLS_PATH__');
   });
 
-  it('names no ctxr command, because none exists to drive', () => {
-    // The managed header above the H1 names `ctxr init`; the procedure below it drives no ctxr command at all.
-    const procedure = rendered()['ctxr-second-opinion']!.split('\n# Second opinion\n')[1]!;
-    expect(procedure.length).toBeGreaterThan(1000); // anti-vacuity: the split found the body
-    expect(procedure).not.toMatch(/`ctxr [a-z]/);
+  it('every option it names is one the second-opinion group registers', () => {
+    const source = readFileSync(path.resolve(SRC_DIR, 'run.ts'), 'utf8');
+    const group = source.slice(source.indexOf(".command('second-opinion')"), source.indexOf("const sessionCommand"));
+    expect(group).toContain("command('poll')"); // anti-vacuity: the slice is the group's registration
+    const registered = new Set([...group.matchAll(/\.option\('(--[a-z][a-z0-9-]*)/g)].map((m) => m[1]!));
+    registered.add('--json'); // the global output flag
+    const named = ctxrFlagsIn(rendered()['ctxr-second-opinion']!);
+    expect(named.length).toBeGreaterThan(5);
+    expect(named.filter((flag) => !registered.has(flag))).toEqual([]);
+    for (const flag of ['--tier', '--only', '--timeout', '--lens', '--out', '--plan-file', '--prompt-file', '--seed']) expect(registered.has(flag), flag).toBe(true);
+  });
+
+  it('names the statuses by meaning and the lineup and pass-through variables', () => {
+    const s = skill();
+    expect(s).toContain('failed-check status');
+    expect(s).toContain('usage status');
+    for (const name of ['CLAUDE_MODEL', 'CLAUDE_EFFORT', 'CODEX_MODEL', 'CODEX_EFFORT', 'AGY_MODEL', 'PASS_ENV']) expect(s).toContain(`CTXR_SECOND_OPINION_${name}`);
   });
 
   it('says when to critique, poll, or answer directly', () => {
@@ -1060,8 +1149,11 @@ describe('research-verified-claims: the research skill keeps only claims an open
   it('briefs a delegate, which marks unverified figures and never delegates further', () => {
     expect(research).toMatch(/A delegate marks every figure it could not check against a source it opened, and never delegates further/);
   });
-  it('stays at or under 12 KB', () => {
-    expect(Buffer.byteLength(research, 'utf8')).toBeLessThanOrEqual(12 * 1024);
+  it('stays at or under 12 KB, apart from the opening section every shared skill carries', () => {
+    // publish-one-contexture-plugin D7: that section is fixed text, the same in every shared skill, and bounded on its own.
+    const opening = fillTokens(packagedTemplate('skills', '_surfaces'), cliSkillValues(makeConfig()));
+    expect(research).toContain(opening);
+    expect(Buffer.byteLength(research.replace(opening, ''), 'utf8')).toBeLessThanOrEqual(12 * 1024);
   });
 });
 
@@ -1123,5 +1215,319 @@ describe('research-and-capture-identity: the research skill and capture identity
     expect(capture).toMatch(/`manual\/<sha1>`/);
     expect(capture).toMatch(/refuses one that does not begin with its source type/);
     expect(capture).toMatch(/A slide deck is read as images/);
+  });
+});
+
+/**
+ * circleback-sweep (harness-portability spec): the first opt-in owned skill.
+ * The base config above opts in; these tests also render without the block.
+ */
+const TEMPLATES_SKILLS = fileURLToPath(new URL('../../templates/skills', import.meta.url));
+
+describe('ctxr-capture-circleback: the opt-in retrieval step for ctxr-capture', () => {
+  const without = (): StoreConfig => {
+    const config = makeConfig();
+    delete config.circleback;
+    return config;
+  };
+
+  it('is not part of the full set, and is shipped only when the circleback block is present', () => {
+    expect(SKILLS.some((s) => s.file === 'ctxr-capture-circleback')).toBe(false);
+    expect(OPTIONAL_SKILLS.map((s) => s.file)).toEqual(['ctxr-capture-circleback']);
+    expect(activeSkillSeeds(without()).map((s) => s.file)).toEqual(SKILLS.map((s) => s.file));
+    expect(renderSkills(without()).some((s) => s.file === 'ctxr-capture-circleback')).toBe(false);
+    expect(renderSkills(makeConfig()).some((s) => s.file === 'ctxr-capture-circleback')).toBe(true);
+    expect(skillPaths(without()).some((p) => p.includes('ctxr-capture-circleback'))).toBe(false);
+  });
+
+  it('ships its runner verbatim and renders the routing settings the runner reads', () => {
+    const skill = renderSkills(
+      makeConfig({
+        circleback: { tag: 'alpha-store', other_tags: ['beta-store'] },
+        ingest: { inbox_path: 'raw/inbox/', capture_root: 'raw/', tracking_params: [], required_capture_sections: { circleback: 'Transcript' } },
+      }),
+    ).find((s) => s.file === 'ctxr-capture-circleback');
+    expect([...(skill?.supportingFiles.keys() ?? [])].sort()).toEqual(['settings.json', 'sweep.mjs']);
+    expect(skill?.supportingFiles.get('sweep.mjs')).toBe(readFileSync(path.join(TEMPLATES_SKILLS, 'ctxr-capture-circleback', 'sweep.mjs'), 'utf8'));
+    expect(JSON.parse(skill?.supportingFiles.get('settings.json') ?? '{}')).toEqual({
+      tag: 'alpha-store',
+      other_tags: ['beta-store'],
+      decline_tag: 'no-capture',
+      inbox_path: 'raw/inbox/',
+      default_branch: 'trunk',
+      required_section: 'Transcript',
+    });
+  });
+
+  it('names its runner under the configured skills path, and the inbox and branch from config', () => {
+    const body = rendered()['ctxr-capture-circleback'];
+    expect(body).toContain('node skills/ctxr-capture-circleback/sweep.mjs');
+    expect(body).toContain('`raw/inbox/`');
+    expect(body).toContain('against `trunk`');
+    expect(body).toMatch(/Never merge it/);
+  });
+
+  /**
+   * capture-circleback-is-retrieval: one capture procedure. The Circleback
+   * skill retrieves and hands back to ctxr-capture at step 2 rather than
+   * restating its rules, and ctxr-capture's step 1 reaches it by family name.
+   */
+  it('hands back to ctxr-capture at step 2, and carries none of its judgment rules itself', () => {
+    const body = rendered()['ctxr-capture-circleback'];
+    expect(body).toMatch(/follow `ctxr-capture` from its step 2/);
+    expect(body).toMatch(/`ctxr-capture`'s step 5/);
+    expect(body).not.toMatch(/### Speaker caveat/);
+    expect(body).not.toMatch(/Never edit the transcript/);
+  });
+
+  it('ctxr-capture delegates retrieval to a ctxr-capture-<source> skill, naming no source', () => {
+    const capture = rendered()['ctxr-capture'];
+    expect(capture).toMatch(/If this store ships a `ctxr-capture-<source>` skill for the material's source, retrieve through it/);
+    expect(capture).toMatch(/continue here at step 2/);
+    expect(capture).toMatch(/labels them generically/);
+  });
+
+  it('runner uses the Node standard library only', () => {
+    const runner = readFileSync(path.join(TEMPLATES_SKILLS, 'ctxr-capture-circleback', 'sweep.mjs'), 'utf8');
+    const imports = [...runner.matchAll(/^import .* from '([^']+)';$/gm)].map((m) => m[1]);
+    expect(imports.length).toBeGreaterThan(0);
+    for (const specifier of imports) expect(specifier, specifier).toMatch(/^node:/);
+  });
+
+  it('is written when a store opts in and removed by the next sync when it opts out', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const written = await syncShippedSkills(tmp.root, makeConfig());
+      expect(written).toEqual(expect.arrayContaining(['skills/ctxr-capture-circleback/SKILL.md', 'skills/ctxr-capture-circleback/settings.json', 'skills/ctxr-capture-circleback/sweep.mjs']));
+      const removed = await syncShippedSkills(tmp.root, without());
+      expect(removed).toEqual(['skills/ctxr-capture-circleback/SKILL.md']);
+      await expect(readFile(path.join(tmp.root, 'skills/ctxr-capture-circleback/sweep.mjs'), 'utf8')).rejects.toThrow();
+      expect(await syncShippedSkills(tmp.root, without())).toEqual([]);
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+});
+
+/**
+ * publish-one-contexture-plugin D7 (harness-portability spec, *The shared
+ * skills are one text on both surfaces*): a store's copy and the plugin's copy
+ * of each shared skill are one text, differing only in store values, and both
+ * open with the one section that says which store and where.
+ */
+describe('the shared skills, in a store and in the plugin', () => {
+  const config = makeConfig();
+  const mcp = renderMcpSkills();
+  const cli = renderSkills(config);
+  const shared = cli.filter((s) => MCP_SKILL_FILES.includes(s.file));
+  const opening = packagedTemplate('skills', '_surfaces');
+
+  /**
+   * A plugin copy with each placeholder written back as this store's value, and
+   * each generic computed step (layers, relation grouping) as this store's step:
+   * the computed steps are store values too, rendered from its taxonomy.
+   */
+  function asStore(content: string, store: StoreConfig): string {
+    const values = mcpSkillValues();
+    const storeValues = cliSkillValues(store);
+    // The opening section's own examples (`<inbox path>`) are literal on both surfaces; only its session root is a value.
+    const [head, tail] = content.split(fillTokens(opening, values)) as [string, string];
+    expect(tail).toBeDefined();
+    let text = tail
+      .replace(values.LAYER_STEP!, () => storeValues.LAYER_STEP!)
+      .replace(values.RELATION_GROUPING_STEP!, () => storeValues.RELATION_GROUPING_STEP!);
+    for (const placeholder of STORE_PLACEHOLDERS) text = text.replaceAll(values[placeholder.token]!, placeholder.value(store));
+    return `${head}${fillTokens(opening, storeValues)}${text}`;
+  }
+
+  it('writes, in a store, the CLI render: the copies sync writes are its text', async () => {
+    const shipped = await shippedSkillFiles(config);
+    for (const skill of cli) expect(shipped.get(`skills/${skill.file}/SKILL.md`), skill.file).toBe(skill.content);
+  });
+
+  it('carries the declared subset, in index order, and leaves out the skills that run local programs, land or rebuild', () => {
+    expect(mcp.map((s) => s.file)).toEqual([...MCP_SKILL_FILES]);
+    expect(MCP_SKILL_FILES).toEqual([
+      'ctxr-capture',
+      'ctxr-ingest-orchestration',
+      'ctxr-placement',
+      'ctxr-connection-finding',
+      'ctxr-connection-proposal',
+      'ctxr-rollup',
+      'ctxr-mission',
+      'ctxr-session-lifecycle',
+      'ctxr-submit',
+      'ctxr-session-capture',
+      'ctxr-second-opinion',
+      'ctxr-research',
+    ]);
+    for (const absent of ['ctxr-upgrade', 'ctxr-capture-circleback', 'ctxr-land', 'ctxr-derived-artifacts', 'ctxr-organize-audit', 'ctxr-publish']) {
+      expect(mcp.some((s) => s.file === absent), absent).toBe(false);
+    }
+  });
+
+  it("differs from the store's copy only in store values: each placeholder written back gives the store render, byte for byte", () => {
+    expect(shared.map((s) => s.file)).toEqual(mcp.map((s) => s.file));
+    for (const skill of mcp) {
+      const original = shared.find((s) => s.file === skill.file)!;
+      expect(asStore(skill.content, config), skill.file).toBe(original.content);
+      expect(skill.description).toBe(original.description);
+      expect(skill.supportingFiles.size).toBe(0);
+    }
+    // And for a second store, whose every value differs.
+    const other = makeConfig({ git: { default_branch: 'release' }, ingest: { inbox_path: 'in/', capture_root: 'src/', tracking_params: [] }, session: { branch_prefix: 'session/', worktrees_path: '.trees' } });
+    for (const skill of mcp) expect(asStore(skill.content, other), skill.file).toBe(renderSkills(other).find((s) => s.file === skill.file)!.content);
+    // The spec's scenario, spelled out for one skill.
+    expect(mcp.find((s) => s.file === 'ctxr-submit')!.content).toContain('opens the pull request against `<default branch>`');
+  });
+
+  it('opens every shared skill, on both surfaces, with the one section, right below its title; no other skill carries it', () => {
+    for (const skill of [...mcp, ...shared]) {
+      const below = skill.content.slice(skill.content.indexOf(`\n# ${skill.name}\n`) + `\n# ${skill.name}\n\n`.length);
+      expect(below.startsWith('## Which store, and where\n'), skill.file).toBe(true);
+    }
+    for (const skill of cli.filter((s) => !MCP_SKILL_FILES.includes(s.file))) expect(skill.content, skill.file).not.toContain('## Which store, and where');
+    expect(mcp[0]!.content).toContain('`<worktrees path><directory>/work/a.md`');
+    expect(shared[0]!.content).toContain('`.worktrees/<directory>/work/a.md`');
+    expect(opening.split('\n').length).toBeLessThanOrEqual(34);
+  });
+
+  it('says which store, then where, then how a step is done through the server, in that order (revision 14)', () => {
+    const text = opening.replace(/\s+/g, ' ');
+    const order = [
+      '**Which store:** the one the person means. With several contexture connectors attached, use that store\'s, and ask when it is unclear.',
+      '**Where:** in a checkout of that store (a `contexture.yaml` at the working directory\'s root and a shell that runs `ctxr`), follow each step in the shell as written, even when the store\'s connector is attached too. Otherwise work through the store\'s connector',
+      'A `ctxr session <verb>` step is the tool `session_<verb>`',
+      'Every other `ctxr` step is the `ctxr` tool, or `ctxr_write` when it writes, with the words after `ctxr` as `args`',
+      "A command's options are the tool's fields",
+      '`ctxr_write` always needs one',
+      'goes as `input`, with `@input` in `args`',
+      "Paths go under the session's root",
+      'Commits, pushes and pull requests happen only in `session_submit`',
+      'call `session_list` and mention each open session',
+      'Landing, upgrading and work inside a store mounted under `shared/` are not done through the server',
+      'the server runs an older ctxr (*This store* gives its version). Say so, then skip the step or take the nearest one offered. Never improvise a replacement for a step that writes.',
+      "takes the value the connector's instructions give under *This store*",
+    ];
+    let at = -1;
+    for (const phrase of order) {
+      const found = text.indexOf(phrase);
+      expect(found, phrase).toBeGreaterThan(at);
+      at = found;
+    }
+  });
+
+  it('takes no configuration: a named placeholder wherever the CLI render substitutes a store value, and no shipped default', () => {
+    // Two stores that differ in every value render one plugin, because the render reads neither.
+    expect(renderMcpSkills.length).toBe(0);
+    expect(renderMcpSkills()).toEqual(mcp);
+
+    const text = mcp.map((s) => s.content).join('\n');
+    for (const skill of mcp) expect(skill.content.match(/__[A-Z][A-Z0-9_]*__/g), skill.file).toBeNull();
+    // Every placeholder a skill template carries is written by its name, and the bare one inside a code span.
+    for (const placeholder of STORE_PLACEHOLDERS.filter((p) => p.token !== 'ARCHIVE_DESTINATION')) {
+      expect(text, placeholder.token).toContain(placeholder.bare === true ? `\`${placeholderName(placeholder)}\`` : placeholderName(placeholder));
+    }
+    expect(text).toContain("The connector's instructions list this store's layers");
+    expect(text).toContain('Group proposals by the relation vocabulary the connector\'s instructions list under *This store*');
+    expect(text).not.toContain('**Alpha**');
+
+    const shippedConfig = { ...config, ...SHIPPED_DEFAULTS, git: { default_branch: 'main' }, organize: { ...SHIPPED_DEFAULTS.organize, archive_destination: 'archive/' } } as unknown as StoreConfig;
+    for (const placeholder of STORE_PLACEHOLDERS) {
+      const value = placeholder.value(shippedConfig);
+      expect(text, `${placeholder.token} = ${value}`).not.toContain(placeholder.bare === true ? `first ${value} path segments` : `\`${value}`);
+    }
+    expect(text).not.toContain('origin/main');
+    for (const name of [...new Set(SHIPPED_PROFILES.flatMap((p) => p.layers.map((l) => l.name)))]) expect(text, name).not.toMatch(new RegExp(`\\*\\*${name}\\*\\*|\\b${name}\\b layer`));
+    for (const relation of RELATION_VOCABULARY) expect(text, relation.name).not.toMatch(new RegExp(`\\b${relation.name}\\b`));
+  });
+
+  it('passes the content guards the CLI render passes: no tier word, ctxr as the executable, only flags the CLI registers', () => {
+    const options = registeredOptions();
+    for (const { file, content } of mcp) {
+      // The exemption the CLI render's guard makes (mount-shared-stores): `shared/` and `shared-stores` name a location and a command.
+      const scanned = content.replace(/`[^`]*\bshared(?:\/|-stores)[^`]*`/g, '');
+      for (const word of TIER_WORDS) expect(scanned, `${file} uses "${word}"`).not.toMatch(new RegExp(`\\b${word}\\b`, 'i'));
+      expect(content, file).not.toMatch(/`contexture [a-z]/);
+      for (const flag of ctxrFlagsIn(content)) expect(options.has(flag), `${file}: ${flag}`).toBe(true);
+    }
+  });
+});
+
+/**
+ * The harness-portability delta *An MCP-rendered skill names only what the
+ * surface offers*, as publish-one-contexture-plugin revisions 15 and 16 make
+ * it: in a shared skill every `ctxr` command routes to a tool through the
+ * mapping module or is one it marks unavailable, and then the step says to skip
+ * it through the store's server; every `git` or `gh` step names, in the same
+ * sentence, the tool that does it there; and every tool named is registered.
+ */
+function driftProblems(skills: readonly { file: string; content: string }[]): string[] {
+  const problems: string[] = [];
+  const gitSteps = Object.entries(GIT_STEP_TOOLS);
+  for (const { file, content: rendered } of skills) {
+    // The managed header names `ctxr init` and `ctxr update` as provenance, not as a step.
+    const content = rendered.replace(MANAGED_SKILL_HEADER, '').replace(/\s+/g, ' ');
+    const sentenceAt = (index: number): string => {
+      const before = content.slice(0, index);
+      const start = Math.max(before.lastIndexOf('. '), before.lastIndexOf(': '), before.lastIndexOf(' - ')) + 1;
+      const rest = content.slice(index);
+      const end = rest.search(/\.(?: |$)/);
+      return content.slice(start, end === -1 ? content.length : index + end);
+    };
+    for (const m of content.matchAll(/`ctxr ([a-z][a-z-]*(?: [a-z][a-z-]*)?)/g)) {
+      const unavailable = (UNAVAILABLE_COMMANDS as readonly string[]).some((c) => m[1] === c || m[1]!.startsWith(`${c} `));
+      // The opening section's generic form, `ctxr session <verb>`, names every session command at once.
+      if (m[1] === 'session' && content.startsWith(' <verb>`', m.index + m[0].length)) continue;
+      if (unavailable) {
+        if (!/through the store's server, skip this step/.test(sentenceAt(m.index))) problems.push(`${file}: ctxr ${m[1]} without its skip`);
+      } else if (routeForCommand(m[1]!) === null) problems.push(`${file}: ctxr ${m[1]}`);
+    }
+    for (const m of content.matchAll(/`((?:git|gh) [a-z][a-z-]*(?: (?:-{1,2}[a-z-]+|[a-z][a-z-]*))?)/g)) {
+      const step = m[1]!;
+      const row = gitSteps.find(([name]) => step === name || step.startsWith(`${name} `) || name === step.split(' ').slice(0, 2).join(' '));
+      if (row === undefined || row[1] === null) problems.push(`${file}: ${step}`);
+      else if (!sentenceAt(m.index).includes(`\`${row[1]}\``)) problems.push(`${file}: ${step} without \`${row[1]}\``);
+    }
+    for (const m of content.matchAll(/`(session_[a-z]+|ctxr_write|Move|Delete)`/g)) {
+      if (!TOOL_NAMES.includes(m[1]!)) problems.push(`${file}: tool ${m[1]}`);
+    }
+  }
+  return problems;
+}
+
+describe('a shared skill names only what the store\'s server offers', () => {
+  it('passes on the shipped skills, in the plugin and in a store', () => {
+    const mcp = renderMcpSkills();
+    expect(mcp.length).toBeGreaterThan(0);
+    expect(driftProblems(mcp)).toEqual([]);
+    expect(driftProblems(renderSkills(makeConfig()).filter((s) => MCP_SKILL_FILES.includes(s.file)))).toEqual([]);
+    // The two shell-only steps carry their skip, and the one git step its tool.
+    const text = mcp.map((s) => s.content.replace(/\s+/g, ' ')).join('\n');
+    expect(text).toContain("In a shell, run `ctxr sync`; through the store's server, skip this step");
+    expect(text).toContain("run `ctxr shared-stores sync` in a shell; through the store's server, skip this step");
+    expect(text).toContain("a plain tracked `git mv` in a shell, or the `Move` tool through the store's server");
+    expect(text).not.toMatch(/`git (fetch|merge)/);
+  });
+
+  it('fails, naming the skill and the term, for each kind of drift', () => {
+    const seeded = {
+      file: 'ctxr-seeded',
+      content: [
+        'Run `git cherry-pick` first.',
+        'Then `git mv` the note.',
+        'Then run `ctxr sync`.',
+        'Then `ctxr session reap`, then call `session_publish`.',
+        'Fetch with `git fetch origin`.',
+      ].join('\n'),
+    };
+    expect(driftProblems([seeded])).toEqual([
+      'ctxr-seeded: ctxr sync without its skip',
+      'ctxr-seeded: ctxr session reap',
+      'ctxr-seeded: git cherry-pick',
+      'ctxr-seeded: git mv without `Move`',
+      'ctxr-seeded: git fetch origin',
+      'ctxr-seeded: tool session_publish',
+    ]);
   });
 });

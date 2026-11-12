@@ -3,14 +3,16 @@ import type { ExitCode } from './exit-codes.js';
 
 /**
  * Declarative, per-command metadata read uniformly by run.ts's dispatcher —
- * `init` is the one command that declares `store: 'absent'`; every other
- * command requires an already-opened store. This is what keeps `init`'s
+ * `init` is the one command that declares `store: 'absent'`, and `plugin
+ * build` the one that declares `store: 'optional'` (contexture's own plugin
+ * needs no store, publish-one-contexture-plugin D1); every other command
+ * requires an already-opened store. This is what keeps `init`'s
  * exception to the usual git-check/schema-gate an enumerated, testable fact
  * rather than an `if (commandName === 'init')` special case in the
  * dispatcher.
  */
 export interface CommandRequires {
-  store: 'required' | 'absent';
+  store: 'required' | 'absent' | 'optional';
 }
 
 export interface CommandOutcome<TData> {

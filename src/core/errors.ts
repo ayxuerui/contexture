@@ -742,3 +742,141 @@ export class GraphDiffFormatError extends ContextureError {
     });
   }
 }
+
+/** change-approval spec: the review and landing commands read decisions only a store that declares change approval has. */
+export class ChangeApprovalNotDeclaredError extends ContextureError {
+  constructor(command: string) {
+    super(ExitCode.Usage, {
+      code: 'change_approval.not_declared',
+      severity: 'error',
+      message: `"${command}" reads page decisions, and this store declares no change_approval block in contexture.yaml.`,
+    });
+  }
+}
+
+/** change-approval spec: an unreachable forge is reported as such, never as every pull request awaiting a decision. */
+export class ForgeUnreachableError extends ContextureError {
+  constructor(detail: string) {
+    super(ExitCode.Usage, {
+      code: 'forge.unreachable',
+      severity: 'error',
+      message: `The forge could not be reached through "gh": ${detail}`,
+      details: { detail },
+    });
+  }
+}
+
+/** change-approval spec (design.md D4): serve records decisions only as the identity the store names. */
+export class RecordingLoginMismatchError extends ContextureError {
+  constructor(expected: string, actual: string) {
+    super(ExitCode.Usage, {
+      code: 'change_approval.recording_login_mismatch',
+      severity: 'error',
+      message: `change_approval.recording_login is "${expected}", but the forge credential this process holds authenticates as "${actual}".`,
+      details: { expected, actual },
+    });
+  }
+}
+
+/** write-lifecycle spec: a refusal before any side effect — the default branch as head, a pull request that is not open, an unknown target. */
+export class LandRefusedError extends ContextureError {
+  constructor(reason: string, message: string, details: Record<string, unknown> = {}) {
+    super(ExitCode.Usage, { code: `land.${reason}`, severity: 'error', message, details });
+  }
+}
+
+/** write-lifecycle spec ("One landing runs per repository at a time"): a named pull request is not landed while another landing runs. */
+export class LandBusyError extends ContextureError {
+  constructor(pid: number, host: string) {
+    super(ExitCode.CheckFailed, {
+      code: 'land.busy',
+      severity: 'error',
+      message: `Another landing is running against this repository (process ${pid} on ${host}); nothing was done. Try again when it finishes.`,
+      details: { pid, host },
+    });
+  }
+}
+
+/** write-lifecycle spec: `--pending` lands only recorded approvals, so `--confirm` cannot ride along. */
+export class LandFlagsError extends ContextureError {
+  constructor(message: string) {
+    super(ExitCode.Usage, { code: 'land.flags', severity: 'error', message });
+  }
+}
+
+/** change-approval spec (github-app-recording-identity): a GitHub App credential that is incomplete, ambiguous, unreadable, or refused. */
+export class ForgeCredentialsError extends ContextureError {
+  constructor(message: string, variables: readonly string[]) {
+    super(ExitCode.Usage, {
+      code: 'forge.credentials',
+      severity: 'error',
+      message,
+      details: { variables: [...variables] },
+    });
+  }
+}
+
+/**
+ * run-the-second-opinion-from-the-cli D2: invalid arguments, unreadable input, fewer than two requested
+ * model CLIs, or a pass-through list naming a protected variable — always before any CLI launches.
+ */
+export class SecondOpinionUsageError extends ContextureError {
+  constructor(message: string, details?: Record<string, unknown>) {
+    super(ExitCode.Usage, { code: 'second_opinion.usage', severity: 'error', message, ...(details ? { details } : {}) });
+  }
+}
+
+/**
+ * serve-the-second-opinion-to-chat-apps D1: `--require-confinement` on a
+ * machine that cannot confine the run — the failed-check code, since the
+ * arguments were valid and the machine is what fell short. Raised before any
+ * model CLI starts.
+ */
+export class SecondOpinionUnconfinedError extends ContextureError {
+  constructor(reason: string) {
+    super(ExitCode.CheckFailed, { code: 'second_opinion.unconfined', severity: 'error', message: `cannot confine the model CLIs here: ${reason}`, details: { reason } });
+  }
+}
+
+/**
+ * bring-the-session-lifecycle-into-the-cli D3: a session command's refusal —
+ * the usage code for what the caller named (a session that is not one, a
+ * branch another session carries, a body with a generated section's heading),
+ * the failed-check code for what the session holds (uncommitted work discard
+ * would destroy, a derived path in the index, a rebase in progress).
+ */
+export class SessionRefusedError extends ContextureError {
+  constructor(exitCode: ExitCode, reason: string, message: string, details: Record<string, unknown> = {}, subject?: string) {
+    super(exitCode, { code: `session.${reason}`, severity: 'error', message, details, ...(subject === undefined ? {} : { subject }) });
+  }
+}
+
+/** context-browsing spec (serve-keeps-its-clone-current D9): a webhook secret that is ambiguous, unreadable or empty. */
+export class WebhookSecretError extends ContextureError {
+  constructor(message: string, variables: readonly string[]) {
+    super(ExitCode.Usage, { code: 'serve.webhook_secret', severity: 'error', message, details: { variables: [...variables] } });
+  }
+}
+
+/** write-lifecycle spec (serve-keeps-its-clone-current): `ctxr sync --every` takes a positive whole number of minutes. */
+export class SyncFlagsError extends ContextureError {
+  constructor(message: string) {
+    super(ExitCode.Usage, { code: 'sync.flags', severity: 'error', message });
+  }
+}
+
+/**
+ * write-lifecycle spec ("The canonical-clone sync fetches as landing does and
+ * changes nothing else"): the fetch failed, so the forge is unreachable and
+ * the clone was left as it was.
+ */
+export class SyncForgeUnreachableError extends ContextureError {
+  constructor(branch: string, detail: string) {
+    super(ExitCode.Usage, {
+      code: 'sync.forge_unreachable',
+      severity: 'error',
+      message: `The forge is unreachable: fetching ${branch} from origin failed (${detail}). The canonical clone was left as it was.`,
+      details: { branch, detail },
+    });
+  }
+}

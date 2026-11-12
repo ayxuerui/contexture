@@ -6,7 +6,7 @@ import type { RunEnv } from '../core/env.js';
 import { AlreadyArchivedError, ArchiveDestinationExistsError, NoteNotFoundError, NoteNotTrackedError } from '../core/errors.js';
 import { ExitCode } from '../core/exit-codes.js';
 import { isTracked, movePath } from '../core/git/repo.js';
-import { extractLinkTargets } from '../core/graph/model.js';
+import { extractLinkTargets, linkNames } from '../core/graph/model.js';
 import { listNotes } from '../core/notes/list.js';
 import type { Store } from '../core/store.js';
 
@@ -39,10 +39,11 @@ function toStoreRelativePath(env: RunEnv, store: Store, givenPath: string): stri
  * shipped profile may seed that value at init
  * (archive-destination-from-taxonomy), but nothing here reads the taxonomy.
  *
- * Wikilinks resolve by filename stem (context-retrieval spec), and archive
- * never changes a note's filename — only its directory — so no other
- * note's link actually breaks. `linkingNotes` is reported purely so the
- * operator is aware those notes now point at the archived location.
+ * A filename link resolves by stem (context-retrieval spec), and archive
+ * never changes a note's filename — only its directory — so no filename
+ * link breaks. A path link (mount-shared-stores) names the directory and
+ * does break. `linkingNotes` reports both kinds, so the operator knows
+ * which notes now point at the archived location and which need relinking.
  */
 export async function execute(env: RunEnv, store: Store, flags: ArchiveFlags): Promise<CommandOutcome<ArchiveData>> {
   const relativePath = toStoreRelativePath(env, store, flags.path).replace(/\/+$/, '');
@@ -68,10 +69,9 @@ export async function execute(env: RunEnv, store: Store, flags: ArchiveFlags): P
   const notes = await listNotes(store.root, store.config);
   const moving = isFolder ? notes.filter((note) => note.path.startsWith(`${relativePath}/`)) : notes.filter((note) => note.path === relativePath);
   const movingPaths = new Set(moving.map((note) => note.path));
-  const stems = new Set(isFolder ? moving.map((note) => path.basename(note.path, '.md')) : [path.basename(relativePath, '.md')]);
   const linkingNotes = notes
     .filter((note) => !movingPaths.has(note.path))
-    .filter((note) => extractLinkTargets(note.body).some((target) => stems.has(target)))
+    .filter((note) => extractLinkTargets(note.body).some((target) => [...movingPaths].some((moved) => linkNames(note.path, target, moved))))
     .map((note) => note.path)
     .sort();
 

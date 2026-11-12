@@ -69,7 +69,7 @@ The store SHALL install a version-controlled pre-push hook, at `init` time, that
 - **THEN** it reports the finding as a failing check and offers to reinstall the canonical hook
 
 ### Requirement: Commits are validated before they are accepted
-The store SHALL install a version-controlled pre-commit hook that runs a staged-changes validation (schema conformance, fence integrity, a secret-pattern scan, a path allowlist, and a diff-size ceiling) and refuses the commit if any check fails, naming the specific violation.
+The store SHALL install a version-controlled pre-commit hook that runs a staged-changes validation (schema conformance, fence integrity, a secret-pattern scan, a path allowlist, a diff-size ceiling, and the send-copy rule) and refuses the commit if any check fails, naming the specific violation.
 
 The diff-size ceiling SHALL count the changed lines of every staged file except a file under the configured skills path whose staged content is byte-identical to the content the installed version ships for that path — an owned skill's `SKILL.md`, an owned skill's supporting file, or a packaged file of a vendored skill the store declares. The exemption SHALL be decided by comparing the staged content with the shipped content, never by location alone: a file under the skills path that differs from what the installed version ships, a file the installed version does not ship, an operator-authored skill, and a deletion SHALL all be counted as before. When the exemption applies to any staged file, the ceiling's finding SHALL state how many changed lines were left out of the count.
 
@@ -154,3 +154,495 @@ A markdown path being staged or captured SHALL be refused when its canonical loc
 #### Scenario: Append preserves prior content
 - **WHEN** an item appends to an existing note
 - **THEN** the note's prior bytes are unchanged and the new content follows them
+
+### Requirement: Landing merges only a head that carries consent
+`ctxr land <pr>` SHALL land one open session pull request, and `ctxr land --pending` SHALL land, one after
+another, every open session pull request whose decision state is `approved` (as change-approval defines it).
+Before any side effect, the command SHALL read the pull request's state, head branch, head commit and
+mergeability from the forge. It SHALL refuse a pull request whose head branch is the configured default
+branch, and a pull request that is not open. The command SHALL merge only when it holds consent for the exact
+head it is about to merge. Consent is either:
+- a decision by the configured recording login that approves that head, or approves a head that this head
+  carries over from; or
+- the `--confirm` flag, which a caller passes only after obtaining an explicit go for that pull request.
+
+`--pending` SHALL NOT accept `--confirm`. With neither form of consent, the command SHALL exit with the
+failed-check code, naming the pull request and its decision state, and SHALL NOT push, merge or write
+anything.
+
+After the merge call, the command SHALL re-read the pull request from the forge and SHALL report it merged
+only when the forge says so. It SHALL then fast-forward the canonical clone's default branch to the forge's,
+and SHALL report, without forcing, a canonical clone that is on another branch or has diverged. It SHALL then
+remove the session's worktree and branch when the worktree has no uncommitted work, and report why when it
+does not. It SHALL record the landing (pull request number, merged commit, worktree name) in a derived cache
+path that the approval page reads. Every step's outcome SHALL be reported through the standard envelope. A
+record that this capability has the command make on the pull request (a carry-over, a block, a needs-re-approval
+note) SHALL be posted only when the command's forge credential is the recording login; otherwise the command
+SHALL report it in its envelope alone. A retry SHALL re-read state and perform only what remains.
+
+#### Scenario: An approved head lands
+- **WHEN** pull request 7's latest decision approves its current head, and the pull request is mergeable
+- **THEN** `ctxr land 7` merges it, confirms from the forge that it is merged, fast-forwards the canonical
+  clone, removes the session worktree and branch, and exits `0`
+
+#### Scenario: No consent, no side effect
+- **WHEN** `ctxr land 7` runs on a pull request with no decision and without `--confirm`
+- **THEN** it exits with the failed-check code naming the state `awaiting`, and the forge, the branch and the
+  canonical clone are unchanged
+
+#### Scenario: The default branch is never landed
+- **WHEN** `ctxr land` targets a pull request whose head branch is the configured default branch
+- **THEN** it refuses with the setup/usage code and performs no side effect
+
+#### Scenario: A merge is not claimed from the merge call alone
+- **WHEN** the forge's merge call returns an error, and re-reading the pull request shows it merged
+- **THEN** the command reports it merged and continues with the remaining steps
+
+#### Scenario: --pending lands only approved pull requests
+- **WHEN** three session pull requests are open, one `approved`, one `awaiting`, one `changes-requested`
+- **THEN** `ctxr land --pending` lands the approved one and leaves the other two untouched
+
+### Requirement: An approval carries across a catch-up rebase only when the patches are unchanged
+When the pull request's branch is behind the default branch, `ctxr land` SHALL rebase it onto the forge's
+default branch in the session's worktree, or in a temporary worktree when the session's worktree is absent.
+When the rebase completes without conflict, the command SHALL compare the patch identity of every commit on
+the rebased branch with that of the approved range. Only when they are equal, commit for commit, SHALL the
+rebased head carry over the approval. The command SHALL then push with a lease on the approved head, and record
+the carry-over on the pull request as an approving review by the recording identity, naming both heads and the
+original decider. A rebase whose patches
+differ, or that conflicts, SHALL NOT carry the approval over. A push refused by its lease SHALL stop the
+command with the failed-check code, because the branch moved under it.
+
+#### Scenario: A clean catch-up keeps the approval
+- **WHEN** a decider approved head `h1`, the default branch moved on without touching the same lines, and
+  `ctxr land` rebases `h1` to `h2`
+- **THEN** the patch identities match, the pull request carries a review by the recording login naming `h1`
+  and `h2`, and the command proceeds to merge `h2`
+
+#### Scenario: A rebase that changes a patch does not keep the approval
+- **WHEN** the rebased commits' patch identities differ from the approved range's
+- **THEN** the command does not merge, and `ctxr review list` reports `needs-reapproval`
+
+#### Scenario: A moved branch stops the push
+- **WHEN** someone pushes to the branch after the approval and before `ctxr land`'s push
+- **THEN** the leased push is refused, nothing is merged, and the command exits with the failed-check code
+
+### Requirement: A conflict is resolved by the configured resolver and returns for re-approval
+When the catch-up rebase conflicts, `ctxr land` SHALL abort the rebase, leaving the branch as it was. When the
+store declares no conflict resolver, the command SHALL record the pull request as `blocked` with reason
+`conflict`, and exit with the failed-check code. When the store declares one (an argument vector in
+`change_approval`, with no shipped default), the command SHALL run it in the session's worktree. The command
+SHALL give the resolver the pull request number, the default branch, and the conflict playbook the shipped
+lifecycle skill carries, and SHALL wait for it to exit. The command SHALL accept the resolver's result only when
+all of these hold: the worktree has no rebase in progress and no uncommitted work, the branch contains the
+forge's default branch, and `ctxr doctor` passes in the worktree. It SHALL then push with a lease, and record
+on the pull request, with the recording identity, that the conflict was resolved and the change needs
+re-approval. It SHALL NOT merge a resolved conflict on the earlier approval. A resolver that exits non-zero, or
+a result that fails acceptance, SHALL leave the branch as the forge had it and record `blocked` with the
+reason.
+
+#### Scenario: A resolved conflict waits for a new decision
+- **WHEN** an approved pull request's rebase conflicts, the configured resolver resolves it, and the result
+  passes acceptance
+- **THEN** the branch is pushed, the pull request is not merged, it carries a note that it needs re-approval,
+  and `ctxr review list` reports `needs-reapproval`
+
+#### Scenario: No resolver, the conflict blocks
+- **WHEN** an approved pull request's rebase conflicts and no resolver is declared
+- **THEN** the branch is unchanged on the forge, `ctxr review list` reports `blocked` with reason `conflict`,
+  and the command exits with the failed-check code
+
+#### Scenario: A resolver result that fails doctor is not pushed
+- **WHEN** the resolver exits `0` but `ctxr doctor` fails in the worktree
+- **THEN** nothing is pushed, and the pull request is recorded `blocked` naming the doctor failure
+
+### Requirement: In App mode, landing's git transport authenticates as the App
+When `ctxr land` runs with a GitHub App credential (as change-approval defines it), every `git fetch` and
+`git push` it performs against the store's `origin` SHALL authenticate with the App's current installation
+token, so the command needs no other git credential. The token SHALL reach git only through the environment
+of that one git process, read by a credential helper that the command passes on the command line. It SHALL NOT
+be written into a remote URL, into any git configuration file, or into the command's output. Without an App
+credential, `ctxr land` SHALL use whatever credential git already has, as before.
+
+#### Scenario: A runner with only the App credential lands
+- **WHEN** `ctxr land --pending` runs with the App variables set, no `GH_TOKEN`, and no git credential
+  configured for `origin`
+- **THEN** it fetches, pushes a carried-over rebase, and merges an approved pull request
+
+#### Scenario: The token is never stored
+- **WHEN** `ctxr land` has pushed as the App
+- **THEN** `git remote get-url origin`, the repository's git configuration files and the command's output
+  contain no part of the installation token
+
+### Requirement: One landing runs per repository at a time
+`ctxr land` SHALL hold an exclusive lock in the repository's common git directory for the whole of a run, and
+SHALL release it when the run ends, however it ends. A lock left by a process that no longer exists SHALL be
+taken over. When another live process holds the lock, `ctxr land --pending` SHALL do nothing and exit `0`,
+reporting a notice that names the holder. `ctxr land <pr>` SHALL exit with the failed-check code with a finding
+naming the holder, and SHALL perform no side effect.
+
+#### Scenario: A concurrent sweep steps aside
+- **WHEN** `ctxr land --pending` starts while another `ctxr land` is running against the same repository
+- **THEN** it exits `0` without reading the forge, and reports that a landing is already running, with that
+  process's id
+
+#### Scenario: A stale lock is taken over
+- **WHEN** the lock names a process id that no longer exists
+- **THEN** `ctxr land` takes the lock and runs
+
+### Requirement: Landing commits on a host with no git identity
+When git has no committer name or email configured for the checkout `ctxr land` rebases in, the command SHALL
+commit the rebase with the recording login as the committer's name, and an address in the forge's no-reply
+domain as the committer's email. It SHALL pass that identity in the git process's environment only, and SHALL
+NOT write it to any git configuration. A configured identity SHALL be used as it is.
+
+#### Scenario: A bare host rebases
+- **WHEN** `ctxr land` catches up an approved branch on a host where `git config user.email` returns nothing
+- **THEN** the rebase succeeds, its commits name the recording login as committer, and the repository's git
+  configuration is unchanged
+
+### Requirement: Every landing run brings the canonical clone up to date when it is safe to
+At the end of every `ctxr land --pending` run, whether or not it landed anything, and after `ctxr land <pr>` has
+merged, the command SHALL fetch the configured default branch from `origin` and fast-forward the canonical clone to
+it. It SHALL do so only when all of these hold: the canonical clone has the default branch checked out, it has no
+uncommitted changes to tracked files, and its branch is an ancestor of the fetched one. When any of them does not
+hold, the command SHALL leave the clone exactly as it was (no reset, stash, checkout or forced merge), and SHALL
+report which condition failed.
+
+The command SHALL report the outcome as `canonical_sync` in its envelope. For a fast-forward, the outcome SHALL
+give the commit before and after. When the clone was already current, the outcome SHALL say so. When the command
+did not sync, the outcome SHALL give the reason. A sync that does not happen SHALL be reported as a warning finding,
+and SHALL NOT change the command's exit code.
+
+#### Scenario: A change merged elsewhere reaches the canonical clone on the next sweep
+- **WHEN** a pull request is merged on the forge by something other than `ctxr land`, and `ctxr land --pending` then
+  runs with no approved pull request
+- **THEN** the canonical clone's default branch is at the merged commit, and `canonical_sync` names the commits
+  before and after
+
+#### Scenario: Uncommitted work in the canonical clone is left alone
+- **WHEN** the canonical clone has an uncommitted change to a tracked file and the forge's default branch has moved
+  on
+- **THEN** the clone's branch, index and working tree are unchanged, `canonical_sync` reports uncommitted changes,
+  and the exit code is what it would be without the sync
+
+#### Scenario: A clone on another branch is left alone
+- **WHEN** the canonical clone has a branch other than the default branch checked out
+- **THEN** nothing is checked out or merged, and `canonical_sync` names the branch that is checked out
+
+#### Scenario: A diverged clone is left alone
+- **WHEN** the canonical clone's default branch has a commit the forge's does not
+- **THEN** the clone is unchanged, and `canonical_sync` reports that it has diverged
+
+#### Scenario: A merged configuration change reaches a running server within a sweep
+- **WHEN** a pull request changing `contexture.yaml` is merged on the forge while `ctxr serve` runs and lands
+  automatically
+- **THEN** within one sweep the canonical clone holds the change, and the server answers with the new
+  configuration with no restart
+
+### Requirement: A commit cannot add an undated send copy or change one already committed
+A send copy is a file whose name ends in `.pdf`, `.docx`, `.xlsx` or `.pptx`, compared without regard to
+case, directly inside a page folder under the store's configured publish path — a folder holding the page's
+`index.html` in the commit's resulting tree — as the publish capability defines it. The pre-commit validation
+SHALL include a send-copy check that fails, naming each file:
+
+- as `staged.send_copies.undated`, for each staged send copy that is added — or renamed into a page folder —
+  whose name is not `<YYYY-MM-DD>-<name>.<extension>` led by a real calendar date and a non-empty name;
+- as `staged.send_copies.modified`, for each staged send copy whose content differs from the content it
+  had in the commit's parent, whether changed in place or changed as part of a rename.
+
+It SHALL NOT fail for the deletion of a send copy, for a rename that leaves a send copy's bytes unchanged
+and keeps a dated name, or for any file in a subfolder of a page folder. Its finding SHALL state that a new
+send is written as a new dated file. The enforcing mechanism is the pre-commit hook, which refuses the commit
+when this check fails.
+
+#### Scenario: An undated send copy is refused
+- **WHEN** a commit stages `brief.pdf` added beside a page's `index.html`
+- **THEN** the pre-commit hook refuses the commit, naming `staged.send_copies.undated` and the file
+
+#### Scenario: A dated send copy is accepted
+- **WHEN** a commit stages `2026-01-15-brief.pdf` added beside a page's `index.html`
+- **THEN** the send-copy check passes
+
+#### Scenario: A changed send copy is refused
+- **WHEN** a commit stages new content for `2026-01-15-brief.pdf`, already committed in a page folder
+- **THEN** the pre-commit hook refuses the commit, naming `staged.send_copies.modified` and the file, and
+  says to write a new dated file instead
+
+#### Scenario: A send copy moved unchanged is accepted
+- **WHEN** a commit renames `2026-01-15-brief.pdf` from one page folder to another, or into a page folder
+  from elsewhere in the store, without changing its bytes
+- **THEN** the send-copy check passes
+
+#### Scenario: A send copy renamed and changed is refused
+- **WHEN** a commit renames a committed send copy and also changes its bytes
+- **THEN** the pre-commit hook refuses the commit, naming `staged.send_copies.modified`
+
+#### Scenario: A deleted send copy is accepted
+- **WHEN** a commit removes a page folder, its send copies with it
+- **THEN** the send-copy check passes
+
+#### Scenario: A file in a page's assets is not a send copy
+- **WHEN** a commit stages a changed `assets/kickoff.pdf` in a page folder
+- **THEN** the send-copy check passes
+
+### Requirement: `ctxr session status` re-scans a session
+`ctxr session status` SHALL report, for one session worktree, its short status, the diff stat of its committed and uncommitted work, and the commits it carries ahead of the remote default branch, and with `--diff` the unified diff of uncommitted work. Run with no session named outside a session worktree, it SHALL exit with the usage code.
+
+#### Scenario: A session's uncommitted work is reported
+- **WHEN** `ctxr session status ctx-a-intro --json` runs on a session with one edited and one new file and no commit
+- **THEN** it exits `0` and reports both paths as uncommitted and zero commits ahead
+
+### Requirement: `ctxr session submit` gates, commits, pushes and opens the pull request
+`ctxr session submit` SHALL take a session, a branch name, a commit message, a title and a body. It SHALL stage every change in the session worktree outside derived paths, and SHALL exit with the failed-check code, committing nothing and leaving the index as it was, when the index holds any derived path, whoever staged it. It SHALL then run the store-scope check pass `ctxr doctor` runs and exit with the failed-check code, committing nothing, when it fails. It SHALL then commit, rename the branch when the given name differs (refusing with the usage code a name the default branch or another live branch carries), push the branch (with lease when its history was rewritten), and open a pull request against the default branch with the title and a body formed from the given body followed by a Knowledge changes section that is the output of `ctxr graph diff --since` the remote default branch `--format markdown`, and, when `ctxr publish urls` lists a page for the range, a Pages section built from that report; when a pull request is already open for the branch it SHALL update its title and body instead. A given body that already carries either section's heading SHALL be refused with the usage code. Before re-pushing or re-opening, it SHALL read the remote branch and the forge's pull requests for it, so a retried call publishes an existing commit or pull request once. It SHALL report the pull request's number and address and, when the store declares `change_approval`, the approval page's address for the session. It SHALL NOT push or commit to the default branch, and SHALL NOT merge.
+
+#### Scenario: A session is submitted
+- **WHEN** `ctxr session submit ctx-a-intro --branch notes/intro --message "Rewrite the intro" --title "Rewrite the intro" --body "Why: ..."` runs on a session with uncommitted work and a passing store
+- **THEN** one commit holds the work, `notes/intro` exists on the remote, an open pull request carries the title and a body that ends with the `graph diff` block verbatim, and the command exits `0` naming the pull request
+
+#### Scenario: A failing store stops submit before the commit
+- **WHEN** the store-scope check fails in the session
+- **THEN** the command exits with the failed-check code and no commit, push or pull request is made
+
+#### Scenario: A derived file staged earlier is not committed
+- **WHEN** a derived file was staged in the session before `ctxr session submit` runs, alongside an ordinary edit
+- **THEN** the command exits with the failed-check code naming the derived path, and no commit, push or pull request is made
+
+#### Scenario: A hand-written knowledge section is refused
+- **WHEN** the given body contains the Knowledge changes heading
+- **THEN** the command exits with the usage code and nothing is committed
+
+#### Scenario: A retry after a lost response publishes once
+- **WHEN** a submit pushed and opened its pull request but its caller saw a transport error, and the same submit is run again
+- **THEN** no second commit or pull request is made and the existing pull request is reported
+
+#### Scenario: Requested changes are answered on the same pull request
+- **WHEN** a submitted session gains further uncommitted work and is submitted again
+- **THEN** a second commit is pushed to the same branch and the open pull request is updated, not duplicated
+
+### Requirement: `ctxr session rebase` brings a session onto the default branch
+`ctxr session rebase` SHALL fetch the default branch and rebase the session onto it. On conflict it SHALL exit with the failed-check code, report each conflicting path with both sides' content, and leave the rebase in progress; `--continue` SHALL stage the resolved paths and continue, and `--abort` SHALL restore the session as it was. While a rebase is in progress, `ctxr session submit` SHALL be refused naming `ctxr session rebase`.
+
+#### Scenario: A conflict is reported for resolution
+- **WHEN** the default branch and the session changed the same line and `ctxr session rebase ctx-a-intro` runs
+- **THEN** it exits with the failed-check code naming the path with both sides, and `ctxr session submit` on that session is refused until `--continue` or `--abort`
+
+### Requirement: `ctxr session discard` removes only a session, and only clean unless forced
+`ctxr session discard` SHALL remove a session worktree and its local branch. It SHALL refuse with the usage code a path that is not a worktree under the configured worktrees path on a session branch, and SHALL refuse with the failed-check code a session carrying uncommitted changes or commits its remote branch lacks, unless `--force` is given. It SHALL close the session's open pull request only with `--close-pull-request`.
+
+#### Scenario: Unpublished work is not discarded by accident
+- **WHEN** `ctxr session discard ctx-a-intro` runs on a session with uncommitted changes
+- **THEN** it exits with the failed-check code naming them, and the worktree and branch remain
+
+#### Scenario: The canonical clone cannot be discarded
+- **WHEN** `ctxr session discard` names the canonical clone or a worktree outside the configured worktrees path
+- **THEN** it exits with the usage code and removes nothing
+
+### Requirement: `ctxr session list` reports each session's state
+`ctxr session list` SHALL report, for each session, its branch, worktree, head, whether it carries uncommitted changes, and its commits ahead of the remote default branch, without contacting the forge. With `--review` it SHALL also report each session's open pull request's number and state and, when the store declares `change_approval`, the decision state and comment `ctxr review list` reports for that pull request; when the forge cannot be reached, those fields SHALL read unknown and the command SHALL still exit `0`.
+
+#### Scenario: Requested changes show on the session
+- **WHEN** a session's pull request was marked changes-requested with a comment on the approval page
+- **THEN** `ctxr session list --review --json` carries that state and comment on the session's row
+
+### Requirement: A session can join a session in the store that mounts this one
+`ctxr session start --joins <session>` SHALL, when run in a mounted store, start a session that belongs to the
+session `<session>` of the store that mounts it. `<session>` SHALL name a live session of the mounting store by its
+worktree name or branch. The joined session's branch SHALL be this store's session branch prefix, then the home
+store's forge repository slug (`owner/repo`), then the home session's branch without its prefix, so that sessions
+homed in different stores never collide in a store many people mount. The command SHALL refuse,
+naming the reason and creating nothing, when the store it runs in is not a mount the session's store declares, or
+when no live session of that store matches `<session>`.
+
+A session's identity SHALL be the home store's forge repository slug and the home session's branch as the session
+started it. It SHALL be derivable from the session's own worktree, branch and repository alone, with no identity
+file, and SHALL survive `ctxr session submit --branch` renaming the branch. A joined session's worktree directory
+SHALL be named this store's branch prefix as a directory name, then the home owner, `--`, the home repository,
+`--`, and the home branch without its prefix (`session-<owner>--<repo>--<tail>`); a joined branch carries the same
+home. Any other session is its own home, and its worktree directory name spells the branch it started on. The
+command SHALL report the identity. Branch names SHALL NOT be used to group a session's pull requests; the session
+marker does that.
+
+#### Scenario: A joined session's branch names its home
+- **WHEN** store `ctx-a` has the session `session/20261023-0700-ctx-move` and mounts `ctx-b`, and `ctxr session
+  start --joins session/20261023-0700-ctx-move` runs inside `shared/ctx-b`
+- **THEN** a session worktree is created in `ctx-b` on the branch `session/example/ctx-a/20261023-0700-ctx-move`,
+  where `example/ctx-a` is `ctx-a`'s forge slug, and the command reports the session as `example/ctx-a` with the
+  branch `session/20261023-0700-ctx-move`
+
+#### Scenario: A renamed joined branch keeps its session
+- **WHEN** the joined session of `ctx-b` above is submitted with `--branch notes/move`, renaming its branch
+- **THEN** its worktree is still named `session-example--ctx-a--20261023-0700-ctx-move`, and its identity is still
+  `example/ctx-a` with the branch `session/20261023-0700-ctx-move`
+
+#### Scenario: Joining from a store that is not a mount is refused
+- **WHEN** `ctxr session start --joins <session>` runs in a store that the session's store does not declare as a mount
+- **THEN** the command exits non-zero, names the reason, and creates no worktree or branch
+
+### Requirement: Every pull request of a session carries the session
+A pull request opened from a session SHALL carry a session marker in its body naming the session's identity, in
+the same form the joined branch uses (the home forge slug and the home branch). `ctxr session submit` SHALL append
+the marker to the body it composes, after the sections it generates, with the session's identity as above, read
+before the command renames the branch. It SHALL refuse an agent-written body that already contains a session
+marker, naming it, so that only the command writes one.
+
+A pull request whose body carries no well-formed marker SHALL be treated as a session of its own, made of that
+pull request alone, homed in the store it is on. To list a session, its open parts SHALL be found on the forge:
+every open pull request on the home store or on a store it mounts whose marker names the session. Once a session is
+decided, the parts its decision names SHALL be authoritative for landing (per change-approval), whatever the
+forge's open pull requests say later.
+
+A store that declares no `shared_stores` SHALL treat its own pull requests exactly as it did before this change,
+whether or not they carry a marker: each is listed, decided and landed on its own. Only a pull request whose marker
+names a home in another store is read as a session part there, and it is left to its home.
+
+#### Scenario: Submit marks the pull request with its session
+- **WHEN** `ctxr session submit` runs in the joined session `session/example/ctx-a/20261023-0700-ctx-move` of `ctx-b`
+- **THEN** the pull request's body ends with a session marker naming `example/ctx-a` and
+  `session/20261023-0700-ctx-move`
+
+#### Scenario: A body carrying its own marker is refused
+- **WHEN** the body given to `ctxr session submit` already contains a session marker
+- **THEN** the command refuses, naming the marker, and opens or updates no pull request
+
+#### Scenario: A store with no mounts behaves as before
+- **WHEN** `ctx-a` declares no `shared_stores`, and its open pull request carries a marker naming `ctx-a`'s own session
+- **THEN** it is listed, decided and landed exactly as a pull request without a marker is
+
+#### Scenario: A pull request without a marker is its own session
+- **WHEN** an open session pull request on `ctx-b` carries no session marker
+- **THEN** it is listed, decided and landed as a session containing only itself, on `ctx-b`'s own page; a store
+  that mounts `ctx-b` lists it among sessions homed elsewhere, naming `ctx-b`, and offers no decision
+
+#### Scenario: The parts of a session are found across stores
+- **WHEN** `ctx-a`'s pull request and `ctx-b`'s pull request both carry the marker for `ctx-a`'s session
+  `session/20261023-0700-ctx-move`
+- **THEN** both are reported as the two parts of that session
+
+### Requirement: A session is landed by its home store, mounted parts first
+`ctxr land --pending` in a store SHALL land each approved session whose home is that store: first every part the
+decision names in a mounted store, each landed in that mount's clone under that mount's own configuration
+(resolver, consent check, landing commits), then the home store's part. A part found already merged SHALL count as
+landed. Before landing a mounted part, the run SHALL bring that mount's clone up to date by the canonical-sync
+rule, so the mount's configuration is its current one; a mount it cannot bring up to date SHALL leave the part for
+the next run. The home part SHALL NOT be attempted until every mounted part the decision names has merged.
+
+When the decision names a part that is closed without merging, the run SHALL report the session as `blocked`,
+naming that part, and SHALL leave every unlanded part open until a person acts. Any other reason a part cannot land
+this run (a push the forge rejected, an unreachable forge, a mount clone it could not bring up to date) SHALL leave
+the later parts open and report the session as `retrying`, naming the part and why; the next run SHALL try again.
+The run SHALL record `retrying` on the record part as a landing record by the recording login, as a block is
+recorded, naming the part and why, so that `ctxr review list` reports it between runs. The record SHALL stop
+counting once that part has merged.
+A conflict SHALL go to the mount's or the home's configured resolver and back for re-approval, as for a single pull
+request. Each run SHALL compute the state afresh.
+
+`ctxr land --pending` in a store SHALL NOT land a pull request whose session marker names a home in another store.
+That pull request is landed by its home.
+
+#### Scenario: One sweep lands the mounted part, then the home part
+- **WHEN** a session homed in `ctx-a` is approved with an open part on `ctx-b`, which `ctx-a` mounts, and one on
+  `ctx-a`, and `ctxr land --pending` runs in `ctx-a`
+- **THEN** `ctx-b`'s part is merged first, then `ctx-a`'s, in that run
+
+#### Scenario: A mounted store leaves a session homed elsewhere to its home
+- **WHEN** `ctxr land --pending` runs in `ctx-b` and an approved pull request there carries the marker of a session
+  homed in `ctx-a`
+- **THEN** the run does not land it
+
+#### Scenario: A closed mounted part blocks the home part
+- **WHEN** the decision names a part on `ctx-b` that was then closed without merging
+- **THEN** `ctx-a`'s part is not landed, and the session is reported `blocked`, naming the closed part
+
+#### Scenario: A rejected push is retried, not blocked
+- **WHEN** the forge rejects the push of `ctx-b`'s part during a run
+- **THEN** `ctx-a`'s part is not landed, the session is reported `retrying` naming `ctx-b`'s part, and the next run
+  tries again
+
+#### Scenario: A rejected push is reported between runs
+- **WHEN** the forge rejected the push of `ctx-b`'s part and no part has merged yet
+- **THEN** `ctxr review list` in `ctx-a` reports both parts as `retrying`, naming `ctx-b`'s part and the rejected push
+
+#### Scenario: A part merged by another lander counts as landed
+- **WHEN** a session's part on `ctx-b` was merged before the run reached it
+- **THEN** the run counts it as landed and goes on to the home part
+
+### Requirement: A whole session lands in order on one explicit go
+`ctxr land --session <session> --confirm`, run in the session's home store, SHALL land every part of the session in
+the order and under the rules of the home store's landing above, with each part landed as `ctxr land <pr>
+--confirm` lands a pull request in its own store. A part found already merged SHALL count as landed. The command
+SHALL stop at the first part it cannot land, leave every later part open, and report which parts landed, which one
+stopped it and why, and which were not attempted. `--session` SHALL require `--confirm`: without it the command
+SHALL refuse with a usage error and land nothing. A session approved on the approval page SHALL be landed by
+`ctxr land --pending`, which reads the session's decision itself.
+
+#### Scenario: A session without an explicit go is refused
+- **WHEN** `ctxr land --session session/20261023-0700-ctx-move` runs in `ctx-a` without `--confirm`
+- **THEN** the command exits with a usage error and lands nothing
+
+#### Scenario: A session lands mounted part first
+- **WHEN** `ctxr land --session session/20261023-0700-ctx-move --confirm` runs in `ctx-a` for a session with an
+  open part on `ctx-b` and one on `ctx-a`
+- **THEN** `ctx-b`'s part is merged before `ctx-a`'s, and both are reported as landed
+
+#### Scenario: A conflict in the mounted part stops the session
+- **WHEN** `ctx-b`'s part of the session cannot be landed because of a conflict
+- **THEN** `ctx-a`'s part is not attempted and stays open, and the command reports `ctx-b`'s part as the one that
+  stopped it, with the conflict
+
+### Requirement: A command brings the canonical clone up to date
+`ctxr sync` SHALL fetch the forge's default branch into the store's canonical clone and fast-forward the clone to it
+by the rule every landing run applies: only when the clone is on the default branch, has no uncommitted changes to
+tracked files, and has not diverged. Otherwise it SHALL leave the clone exactly as it was and report which condition
+failed, as a warning that keeps the success exit code.
+
+#### Scenario: A clone behind the forge is fast-forwarded
+- **WHEN** the canonical clone is clean, on the default branch, and behind the forge, and `ctxr sync` runs
+- **THEN** the clone is fast-forwarded and the command reports the commit it moved from and the commit it moved to
+
+#### Scenario: A clone with local work is left alone
+- **WHEN** the canonical clone has uncommitted changes to a tracked file, and `ctxr sync` runs
+- **THEN** the clone is unchanged, the command exits with the success code, and it reports the uncommitted changes as the reason
+
+### Requirement: The canonical-clone sync fetches as landing does and changes nothing else
+`ctxr sync` SHALL authenticate its fetch as landing does, so in App mode it fetches as the App. It SHALL report its
+outcome as landing reports `canonical_sync`. A fetch that fails SHALL exit with the setup/usage code, naming the forge
+as unreachable. It SHALL push nothing, and SHALL touch no path under `shared/`.
+
+#### Scenario: An unreachable forge is reported
+- **WHEN** the fetch fails because the forge cannot be reached
+- **THEN** the command exits with the setup/usage code, naming the forge as unreachable, and the clone is unchanged
+
+### Requirement: The canonical-clone sync can keep running, mounts included
+`ctxr sync --every <minutes>` SHALL run until stopped, and each round SHALL bring the canonical clone up to date by
+the rule above, then refresh the store's mounts as `ctxr shared-stores sync` does. A round that fails SHALL be
+reported on stderr and SHALL NOT stop later rounds. `<minutes>` SHALL be a positive whole number. It SHALL use only
+the credential of the user running it, so an agents container runs it as the agent's own user.
+
+#### Scenario: Rounds keep the clone and its mounts current
+- **WHEN** `ctxr sync --every 5` runs in a store that mounts `ctx-b`, and changes are merged to the store and to `ctx-b`
+- **THEN** within five minutes both the canonical clone and `shared/ctx-b` are fast-forwarded
+
+#### Scenario: A failed round does not end the loop
+- **WHEN** one round's fetch fails because the forge cannot be reached
+- **THEN** the failure is reported on stderr and the next round runs on schedule
+
+### Requirement: A canonical sync never reports a clone current after a failed fetch
+Every canonical sync, the one each landing run ends with and the one `ctxr sync` runs, SHALL check that its fetch
+succeeded before comparing the clone with the forge's default branch. When the fetch fails, it SHALL report the clone
+as not synced, naming the failed fetch and git's first error line, and SHALL NOT report it as current or
+fast-forward it.
+
+#### Scenario: A failed fetch is not mistaken for an up-to-date clone
+- **WHEN** a landing run's fetch fails and the clone's last-fetched default branch equals its HEAD
+- **THEN** the run reports the clone as not synced because the fetch failed, not as already current
+
+### Requirement: Git run for landing and syncing ignores the repository's own hooks and drivers
+Every git command `ctxr land`, `ctxr sync` and the store-update runner run SHALL override the repository's hook path
+with an empty directory, turn `core.fsmonitor` off, and disable any filter, diff or merge driver the repository's
+configuration declares, so that code a repository writer placed in `.git/hooks` or `.git/config` does not run in the
+process that holds the forge credential.
+
+#### Scenario: A planted hook does not run during landing
+- **WHEN** the canonical clone's `.git/hooks/post-merge` is an executable script and a landing run fast-forwards the clone
+- **THEN** the script does not run

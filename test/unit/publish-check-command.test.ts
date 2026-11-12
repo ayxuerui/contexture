@@ -76,6 +76,7 @@ describe('publish check', () => {
         passed: true,
         failures: [],
         lifespan: 'permanent',
+        send_copies: [],
         served_at: {
           area: 'publish',
           route: '/publish/ctx-a/good/index.html',
@@ -128,6 +129,44 @@ describe('publish check', () => {
     } finally {
       await tmp.cleanup();
     }
+  });
+
+  describe('no-external-references reads what a page loads', () => {
+    async function externalChecks(html: string): Promise<string[]> {
+      const tmp = await makeTmpDir();
+      try {
+        const store: Store = { root: tmp.root, config: makeConfig() };
+        const htmlPath = await writePage(tmp.root, 'ctx-a/links', html, await stampedReadme(tmp.root));
+        const outcome = await executeCheck(store, { path: htmlPath });
+        return outcome.data!.failures.filter((f) => f.check === 'no-external-references').map((f) => f.message);
+      } finally {
+        await tmp.cleanup();
+      }
+    }
+    const inBody = (fragment: string) => GOOD_HTML.replace('</body>', `${fragment}</body>`);
+    const inStyle = (rule: string) => GOOD_HTML.replace('<style>', `<style>${rule}`);
+
+    it('passes a page whose only external addresses are outbound links', async () => {
+      const html = inBody('<a href="https://example.com/">one</a><a class=x href=\'http://example.org/\'>two</a><map><area href="https://example.net/"></map>');
+      expect(await externalChecks(html)).toEqual([]);
+    });
+
+    it.each([
+      ['an external stylesheet link', inBody('<link rel="stylesheet" href="https://cdn.example.com/x.css">')],
+      ['an external image', inBody('<img src="https://cdn.example.com/x.png" alt="">')],
+      ['an unquoted external src', inBody('<img src=https://cdn.example.com/x.png alt="">')],
+      ['an external srcset candidate', inBody('<img src="x.png" srcset="x2.png 2x, https://cdn.example.com/x3.png 3x" alt="">')],
+      ['an external base', GOOD_HTML.replace('<title>', '<base href="https://example.com/"><title>')],
+      ['an external SVG use', inBody('<svg><use xlink:href="https://cdn.example.com/s.svg#i"></use></svg>')],
+      ['an external video poster', inBody('<video poster="https://cdn.example.com/p.jpg"></video>')],
+      ['an external CSS @import', inStyle('@import "https://fonts.example.com/f.css";')],
+      ['an external CSS url()', inStyle('body{background:url(https://cdn.example.com/bg.png)}')],
+      ['an external url() in a style attribute', inBody('<div style="background:url(&quot;https://cdn.example.com/bg.png&quot;)"></div>')],
+    ])('fails %s', async (_label, html) => {
+      const messages = await externalChecks(html);
+      expect(messages).toHaveLength(1);
+      expect(messages[0]).toContain('example.com');
+    });
   });
 
   it('fails, names the check, and identifies the block for a syntactically invalid inline script', async () => {
@@ -515,6 +554,212 @@ describe('publish check — two-kinds-of-published-page lifespans', () => {
       expect(outcome.exitCode).toBe(ExitCode.CheckFailed);
       expect(outcome.data?.failures.map((f) => f.check)).toEqual(['represented-note-hash']);
       expect(outcome.data?.failures[0]?.message).toContain('stale');
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+});
+
+describe('publish check — send copies (file-pdfs-beside-their-page, send-copies-beside-their-page)', () => {
+  const PDF_BYTES = '%PDF-1.4\n%%EOF\n';
+
+  async function pageWithFiles(files: readonly string[], slug = 'ctx-a/brief', readme: (root: string) => Promise<string> = stampedReadme) {
+    const tmp = await makeTmpDir();
+    const store: Store = { root: tmp.root, config: makeConfig() };
+    const htmlPath = await writePage(tmp.root, slug, GOOD_HTML, await readme(tmp.root));
+    for (const file of files) {
+      const filePath = path.join(path.dirname(htmlPath), file);
+      await mkdir(path.dirname(filePath), { recursive: true });
+      await writeFile(filePath, PDF_BYTES);
+    }
+    return { tmp, store, htmlPath };
+  }
+
+  it('passes a dated PDF beside the index page and lists it with its address', async () => {
+    const { tmp, store, htmlPath } = await pageWithFiles(['2026-01-15-brief.pdf']);
+    try {
+      const outcome = await executeCheck(store, { path: htmlPath });
+      expect(outcome.exitCode).toBe(ExitCode.Ok);
+      expect(outcome.data?.failures).toEqual([]);
+      expect(outcome.data?.send_copies).toEqual([
+        {
+          path: 'publish/ctx-a/brief/2026-01-15-brief.pdf',
+          served_at: { area: 'publish', route: '/publish/ctx-a/brief/2026-01-15-brief.pdf', url: null, worktree: null, after_landing: null },
+        },
+      ]);
+      expect(outcome.humanSummary).toContain('1 send copy(ies).');
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('fails send-copy-name for an undated PDF at the folder root, naming it, alongside every other check', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const store: Store = { root: tmp.root, config: makeConfig() };
+      const htmlPath = await writePage(tmp.root, 'ctx-a/brief', GOOD_HTML.replace('<title>Good Page</title>', ''), await stampedReadme(tmp.root));
+      await writeFile(path.join(path.dirname(htmlPath), 'brief.pdf'), PDF_BYTES);
+      const outcome = await executeCheck(store, { path: htmlPath });
+      expect(outcome.exitCode).toBe(ExitCode.CheckFailed);
+      expect(outcome.data?.failures.map((f) => f.check).sort()).toEqual(['send-copy-name', 'title']);
+      expect(outcome.data?.failures.find((f) => f.check === 'send-copy-name')?.message).toContain('"brief.pdf"');
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  for (const name of ['2026-02-30-brief.pdf', '2026-01-15-.pdf', '2026-01-15.pdf']) {
+    it(`fails send-copy-name for ${name}`, async () => {
+      const { tmp, store, htmlPath } = await pageWithFiles([name]);
+      try {
+        const outcome = await executeCheck(store, { path: htmlPath });
+        expect(outcome.data?.failures.map((f) => f.check)).toEqual(['send-copy-name']);
+      } finally {
+        await tmp.cleanup();
+      }
+    });
+  }
+
+  it('treats a PDF under assets/ as an input: no send-copy-name result and not listed', async () => {
+    const { tmp, store, htmlPath } = await pageWithFiles(['assets/kickoff.pdf']);
+    try {
+      const outcome = await executeCheck(store, { path: htmlPath });
+      expect(outcome.exitCode).toBe(ExitCode.Ok);
+      expect(outcome.data?.send_copies).toEqual([]);
+      expect(outcome.humanSummary).not.toContain('send cop');
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('lists each earlier rendering beside the newest, in date order', async () => {
+    const { tmp, store, htmlPath } = await pageWithFiles(['2026-03-02-brief.pdf', '2026-01-15-brief.pdf']);
+    try {
+      const outcome = await executeCheck(store, { path: htmlPath });
+      expect(outcome.data?.send_copies.map((copy) => copy.path)).toEqual(['publish/ctx-a/brief/2026-01-15-brief.pdf', 'publish/ctx-a/brief/2026-03-02-brief.pdf']);
+      expect(outcome.data?.send_copies[1]?.served_at?.route).toBe('/publish/ctx-a/brief/2026-03-02-brief.pdf');
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('checks the page when the path names one of its PDFs', async () => {
+    const { tmp, store, htmlPath } = await pageWithFiles(['2026-01-15-brief.pdf']);
+    try {
+      const outcome = await executeCheck(store, { path: path.join(path.dirname(htmlPath), '2026-01-15-brief.pdf') });
+      expect(outcome).toEqual(await executeCheck(store, { path: htmlPath }));
+      expect(outcome.data?.path).toBe('publish/ctx-a/brief/index.html');
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('throws PublishPageNotFoundError for the index page when a named PDF has none beside it', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const store: Store = { root: tmp.root, config: makeConfig() };
+      const dir = path.join(tmp.root, 'publish', 'ctx-a', 'loose');
+      await mkdir(dir, { recursive: true });
+      await writeFile(path.join(dir, '2026-01-15-brief.pdf'), PDF_BYTES);
+      await expect(executeCheck(store, { path: path.join(dir, '2026-01-15-brief.pdf') })).rejects.toThrow(PublishPageNotFoundError);
+      await expect(executeCheck(store, { path: path.join(dir, '2026-01-15-brief.pdf') })).rejects.toThrow('publish/ctx-a/loose/index.html');
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('keeps a stale page stale when a newer PDF is added without restamping', async () => {
+    const { tmp, store, htmlPath } = await pageWithFiles(['2026-01-15-brief.pdf']);
+    try {
+      await writeFile(path.join(tmp.root, 'notes', 'ctx-note.md'), `${NOTE_BODY}\nA new fact.\n`);
+      await writeFile(path.join(path.dirname(htmlPath), '2026-03-02-brief.pdf'), PDF_BYTES);
+      const outcome = await executeCheck(store, { path: htmlPath });
+      expect(outcome.exitCode).toBe(ExitCode.CheckFailed);
+      expect(outcome.data?.failures.map((f) => f.check)).toEqual(['represented-note-hash']);
+      expect(outcome.data?.failures[0]?.message).toContain('stale');
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('fails send-copy-name on a disposable page too', async () => {
+    const { tmp, store, htmlPath } = await pageWithFiles(['brief.pdf'], 'disposable/2026-10-13-agent-week', async () => '# page\n');
+    try {
+      const outcome = await executeCheck(store, { path: htmlPath });
+      expect(outcome.data?.lifespan).toBe('disposable');
+      expect(outcome.data?.failures.map((f) => f.check)).toEqual(['send-copy-name']);
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('passes a dated send copy in each of the four formats and lists them all', async () => {
+    const names = ['2026-01-15-brief.docx', '2026-01-15-brief.pdf', '2026-01-15-deck.pptx', '2026-01-15-model.xlsx'];
+    const { tmp, store, htmlPath } = await pageWithFiles(names);
+    try {
+      const outcome = await executeCheck(store, { path: htmlPath });
+      expect(outcome.exitCode).toBe(ExitCode.Ok);
+      expect(outcome.data?.failures).toEqual([]);
+      expect(outcome.data?.send_copies.map((copy) => copy.path)).toEqual(names.map((name) => `publish/ctx-a/brief/${name}`));
+      expect(outcome.data?.send_copies.every((copy) => copy.served_at?.route === `/${copy.path}`)).toBe(true);
+      expect(outcome.humanSummary).toContain('4 send copy(ies).');
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  for (const name of ['model.xlsx', '2026-02-30-brief.docx', 'deck.pptx', 'Brief.PDF']) {
+    it(`fails send-copy-name for ${name}, naming it`, async () => {
+      const { tmp, store, htmlPath } = await pageWithFiles([name]);
+      try {
+        const outcome = await executeCheck(store, { path: htmlPath });
+        expect(outcome.exitCode).toBe(ExitCode.CheckFailed);
+        expect(outcome.data?.failures.map((f) => f.check)).toEqual(['send-copy-name']);
+        expect(outcome.data?.failures[0]?.message).toContain(`"${name}"`);
+      } finally {
+        await tmp.cleanup();
+      }
+    });
+  }
+
+  it('passes an upper-case extension when the name is dated', async () => {
+    const { tmp, store, htmlPath } = await pageWithFiles(['2026-01-15-Brief.PDF']);
+    try {
+      const outcome = await executeCheck(store, { path: htmlPath });
+      expect(outcome.data?.failures).toEqual([]);
+      expect(outcome.data?.send_copies.map((copy) => copy.path)).toEqual(['publish/ctx-a/brief/2026-01-15-Brief.PDF']);
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('treats an office file under assets/ as an input', async () => {
+    const { tmp, store, htmlPath } = await pageWithFiles(['assets/source-data.xlsx', 'assets/kickoff.pdf']);
+    try {
+      const outcome = await executeCheck(store, { path: htmlPath });
+      expect(outcome.exitCode).toBe(ExitCode.Ok);
+      expect(outcome.data?.send_copies).toEqual([]);
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('leaves a format outside the four alone', async () => {
+    const { tmp, store, htmlPath } = await pageWithFiles(['data.csv']);
+    try {
+      const outcome = await executeCheck(store, { path: htmlPath });
+      expect(outcome.exitCode).toBe(ExitCode.Ok);
+      expect(outcome.data?.send_copies).toEqual([]);
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
+  it('checks the page when the path names a spreadsheet send copy', async () => {
+    const { tmp, store, htmlPath } = await pageWithFiles(['2026-01-15-model.xlsx']);
+    try {
+      const outcome = await executeCheck(store, { path: path.join(path.dirname(htmlPath), '2026-01-15-model.xlsx') });
+      expect(outcome).toEqual(await executeCheck(store, { path: htmlPath }));
     } finally {
       await tmp.cleanup();
     }

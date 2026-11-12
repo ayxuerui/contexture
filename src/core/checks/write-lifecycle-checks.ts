@@ -6,6 +6,10 @@ import { scanForSecrets } from '../security/secrets.js';
 import { validateFenceIntegrity } from '../fs/fenced-region.js';
 import { sanctionedPath } from '../write-lifecycle/path-gate.js';
 import { shippedSkillFiles } from '../skills.js';
+import { PUBLISH_INDEX_FILE } from '../browse/routes.js';
+import { sendCopyExtension, sendCopyNameProblem } from '../publish/send-copies.js';
+import { existsSync } from 'node:fs';
+import path from 'node:path';
 import { defineCheck } from './types.js';
 import type { Finding } from '../envelope.js';
 
@@ -236,11 +240,66 @@ export const hooksHealthCheck = defineCheck({
   },
 });
 
+/**
+ * send-copies-gated-at-commit: the send-copy rule, refused at commit in every
+ * store — the one gate contexture installs in all of them (D1). A send copy is
+ * a send-copy-format file directly in a page folder, judged in the tree this
+ * commit produces (D3). Adding one needs a dated name; changing one already
+ * committed — in place, or as a rename that changed its bytes (D2) — is
+ * refused, because the earlier file may be what a recipient holds. A pure
+ * move and a deletion pass: a store reorganising or removing pages takes its
+ * send copies with it.
+ */
+export const stagedSendCopiesCheck = defineCheck({
+  id: 'staged.send_copies',
+  title: 'No staged send copy is undated, and no committed send copy is changed',
+  severity: 'invariant',
+  capability: 'write-lifecycle',
+  scopes: ['staged'],
+  async run(ctx) {
+    const staged = ctx.staged ?? [];
+    const prefix = `${ctx.config.publish.path.replace(/\\/g, '/').replace(/\/+$/, '')}/`;
+    const stagedStatus = new Map(staged.map((file) => [file.path, file.status]));
+    const isPageFolder = (folder: string): boolean => {
+      const index = `${folder}/${PUBLISH_INDEX_FILE}`;
+      const status = stagedStatus.get(index);
+      if (status !== undefined) return status !== 'D';
+      return existsSync(path.join(ctx.storeRoot, ...index.split('/')));
+    };
+    const findings: Finding[] = [];
+    for (const file of staged) {
+      if (file.status === 'D' || !file.path.startsWith(prefix) || sendCopyExtension(file.path) === null) continue;
+      if (!isPageFolder(path.posix.dirname(file.path))) continue;
+      const changed = file.status === 'M' || (file.status === 'R' && (file.renameScore ?? 0) < 100);
+      if (changed) {
+        findings.push({
+          code: 'staged.send_copies.modified',
+          severity: 'error',
+          message: `"${file.path}" is a send copy already committed, and this commit changes it. Write the new send as a new dated file and leave this one as it was sent.`,
+          subject: file.path,
+        });
+        continue;
+      }
+      const problem = sendCopyNameProblem(path.posix.basename(file.path));
+      if (problem !== null) {
+        findings.push({
+          code: 'staged.send_copies.undated',
+          severity: 'error',
+          message: `"${file.path}" is a send copy: ${problem}. Name it "<YYYY-MM-DD>-<name>.<extension>", led by the date it was made.`,
+          subject: file.path,
+        });
+      }
+    }
+    return { status: findings.length > 0 ? 'fail' : 'pass', findings };
+  },
+});
+
 export const WRITE_LIFECYCLE_CHECKS = [
   stagedSchemaConformanceCheck,
   stagedFenceIntegrityCheck,
   stagedSecretScanCheck,
   stagedPathAllowlistCheck,
   stagedDiffSizeCeilingCheck,
+  stagedSendCopiesCheck,
   hooksHealthCheck,
 ];

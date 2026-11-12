@@ -30,7 +30,11 @@ export interface DoctorData {
   summary: { pass: number; fail: number; skip: number };
 }
 
-export async function execute(env: RunEnv, store: Store, flags: DoctorFlags = {}): Promise<CommandOutcome<DoctorData>> {
+/**
+ * Only `git` is read from the environment, so the store-scope pass can also run
+ * as `ctxr session submit`'s gate (bring-the-session-lifecycle-into-the-cli D1).
+ */
+export async function execute(env: Pick<RunEnv, 'git'>, store: Store, flags: DoctorFlags = {}): Promise<CommandOutcome<DoctorData>> {
   const scope: CheckScope = flags.staged ? 'staged' : 'store';
   const staged = scope === 'staged' ? await getStagedFiles(env.git, store.root) : undefined;
 

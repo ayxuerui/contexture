@@ -6,6 +6,7 @@ import { CONFIG_FILE_NAME } from './root.js';
 import { parseNoteText } from './notes/parse.js';
 import { ROLLED_UP_FIELD } from './rollup.js';
 import { excludedPrefixesFor } from './notes/list.js';
+import { declaresSharedStores, mountLocation, SHARED_STORES_DIR } from './shared-stores-location.js';
 import { extractDocMetadata, inlineDocBody, scanConventions, type ScannedDoc } from './conventions.js';
 import { renderBaselineConventions } from './convention-doc.js';
 import { readFencedRegionFromFile, removeFencedRegionFromFile, upsertFencedRegionInFile } from './fs/fenced-region.js';
@@ -69,7 +70,11 @@ function collapseNestedPrefixes(prefixes: readonly string[]): string[] {
 }
 
 export function renderLegRoutingSection(config: StoreConfig): string[] {
-  const exclusions = collapseNestedPrefixes(excludedPrefixesFor(config));
+  // mount-shared-stores: `shared/` is excluded from the store's own notes, but
+  // its mounts are notes of their own stores. The shared-stores section says
+  // how to search them, so the routing list does not tell agents to skip them.
+  const ownExclusions = excludedPrefixesFor(config).filter((prefix) => !(declaresSharedStores(config) && prefix === SHARED_STORES_DIR));
+  const exclusions = collapseNestedPrefixes(ownExclusions);
   return agentsTemplate('retrieval-leg-routing')
     .replaceAll('__GRAPH_DOCUMENT_PATH__', GRAPH_DOCUMENT_RELATIVE_PATH)
     .replaceAll('__CAPTURE_ROOT__', config.ingest.capture_root)
@@ -313,6 +318,26 @@ export async function buildAgentsGuidanceIndexSection(root: string, config: Stor
 }
 
 /**
+ * mount-shared-stores (harness-portability: the fixed order gains the
+ * shared-stores section): present only while the store declares mounts, the
+ * same absent-not-empty rule the mission and guidance-index sections follow.
+ */
+export const AGENTS_MD_SHARED_STORES_FENCE = htmlCommentFence('shared-stores');
+
+export function renderSharedStoresSection(config: StoreConfig): string[] {
+  const mounts = config.shared_stores ?? [];
+  if (mounts.length === 0) return [];
+  const rows = mounts.map((mount) => `- \`${mountLocation(mount.name)}/\`: ${mount.url}`);
+  return substituteBlock(agentsTemplate('shared-stores'), '__MOUNT_LIST__', rows).split('\n');
+}
+
+export async function buildAgentsSharedStoresSection(root: string, config: StoreConfig): Promise<{ changed: boolean }> {
+  const body = renderSharedStoresSection(config);
+  if (body.length === 0) return removeFencedRegionFromFile(agentsMdPath(root), AGENTS_MD_SHARED_STORES_FENCE);
+  return upsertFencedRegionInFile(agentsMdPath(root), AGENTS_MD_SHARED_STORES_FENCE, body);
+}
+
+/**
  * harness-portability spec: "Generated sections render in a fixed order" —
  * hard rules and current state first, operating mechanics next, the long
  * operator reference last. `reconcileStore` passes this straight to
@@ -326,6 +351,7 @@ export const AGENTS_MD_SECTION_ORDER = [
   AGENTS_MD_LEG_ROUTING_FENCE,
   AGENTS_MD_CAPTURE_FENCE,
   AGENTS_MD_PLACEMENT_FENCE,
+  AGENTS_MD_SHARED_STORES_FENCE,
   AGENTS_MD_CONVENTIONS_FENCE,
   AGENTS_MD_GUIDANCE_INDEX_FENCE,
 ];

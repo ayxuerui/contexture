@@ -1,8 +1,10 @@
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import type { RunEnv } from './env.js';
 import { NoStoreRootError, SupersededStoreRootEnvVarError } from './errors.js';
-import { isWorktreeOf } from './git/repo.js';
+import { parse as parseYaml } from 'yaml';
+import { isWorktreeOf, mainWorkingTreeRoot } from './git/repo.js';
+import { mountLocation } from './shared-stores-location.js';
 
 /** The one config filename every root-resolution function looks for. */
 export const CONFIG_FILE_NAME = 'contexture.yaml';
@@ -45,6 +47,9 @@ export function resolveExistingRoot(env: RunEnv, flags: RootFlags): string {
     const named = path.resolve(env.cwd, fromEnv);
     const here = findRootFromCwd(env.cwd);
     if (here !== null && here !== named && isWorktreeOf(here, named)) {
+      return here;
+    }
+    if (here !== null && here !== named && isDeclaredMountOf(here, named)) {
       return here;
     }
     return named;
@@ -94,4 +99,29 @@ export function resolveRootForInit(env: RunEnv, flags: RootFlags): string {
     throw new SupersededStoreRootEnvVarError();
   }
   return path.resolve(env.cwd);
+}
+
+/**
+ * harness-portability spec, root resolution's mount step (mount-shared-stores
+ * D5): whether `candidate` is a mount the store at `named` declares, or a
+ * linked worktree of one. Synchronous and filesystem-only, like the worktree
+ * step: it reads the named store's `contexture.yaml` for mount names alone,
+ * and answers false — so the variable resolves unchanged — whenever that
+ * cannot be read. Mounts sit in the named store's main working tree.
+ */
+function isDeclaredMountOf(candidate: string, named: string): boolean {
+  let names: string[];
+  try {
+    const raw = parseYaml(readFileSync(path.join(named, CONFIG_FILE_NAME), 'utf8')) as { shared_stores?: unknown } | null;
+    const declared = raw?.shared_stores;
+    if (!Array.isArray(declared)) return false;
+    names = declared.flatMap((entry) => (entry !== null && typeof entry === 'object' && typeof (entry as { name?: unknown }).name === 'string' ? [(entry as { name: string }).name] : []));
+  } catch {
+    return false;
+  }
+  const mainRoot = mainWorkingTreeRoot(named);
+  return names.some((name) => {
+    const mountRoot = path.join(mainRoot, ...mountLocation(name).split('/'));
+    return path.resolve(candidate) === path.resolve(mountRoot) || isWorktreeOf(candidate, mountRoot);
+  });
 }
