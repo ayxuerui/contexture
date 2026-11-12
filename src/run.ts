@@ -789,11 +789,12 @@ export function buildProgram(env: RunEnv): { program: Command; state: { result: 
     sub
       .option('--tier <tier>', 'strong (each family\'s frontier model, the default) or fast (each family\'s workhorse)')
       .option('--only <clis>', 'comma-separated model CLIs to use (claude, codex, agy); a critique or poll needs at least two')
-      .option('--timeout <seconds>', 'per-CLI time limit in seconds (default 600)');
+      .option('--timeout <seconds>', 'per-CLI time limit in seconds (default 600)')
+      .option('--require-confinement', 'stop before any model CLI starts unless each can run confined to a fresh home of its own');
 
   commonSecondOpinionOptions(
     secondOpinionGroup.command('preflight').description('check each model CLI answers, at the tier the run will use, and still accepts the flags this command passes'),
-  ).action(async (cmdOpts: { tier?: string; only?: string; timeout?: string }, cmd: Command) => {
+  ).action(async (cmdOpts: { tier?: string; only?: string; timeout?: string; requireConfinement?: boolean }, cmd: Command) => {
     const { runEnv, jsonMode } = deriveRunEnv(env, cmd);
     state.result = await runCommand('second-opinion.preflight', runEnv, jsonMode, () => secondOpinionCommand.executePreflight(runEnv, cmdOpts));
   });
@@ -804,7 +805,8 @@ export function buildProgram(env: RunEnv): { program: Command; state: { result: 
     .option('--plan-file <path>', 'the plan to critique (default: read from stdin)')
     .option('--out <dir>', 'where to write the critiques and the manifest (default: a new temporary directory)')
     .option('--seed <n>', 'seed the letter assignment, for a reproducible mapping')
-    .action(async (cmdOpts: { tier?: string; only?: string; timeout?: string; planFile?: string; out?: string; seed?: string }, cmd: Command) => {
+    .option('--print', 'print each critique, then the letter table, on stdout and write no files')
+    .action(async (cmdOpts: { tier?: string; only?: string; timeout?: string; requireConfinement?: boolean; planFile?: string; out?: string; seed?: string; print?: boolean }, cmd: Command) => {
       const { runEnv, jsonMode } = deriveRunEnv(env, cmd);
       state.result = await runCommand('second-opinion.critique', runEnv, jsonMode, () => secondOpinionCommand.executeCritique(runEnv, cmdOpts));
     });
@@ -816,7 +818,8 @@ export function buildProgram(env: RunEnv): { program: Command; state: { result: 
     .option('--out <dir>', 'where to write the answers and the manifest (default: a new temporary directory)')
     .option('--lens <lenses>', 'two or three comma-separated taste lenses: built-in names or Name:description')
     .option('--no-wrap', 'send the question as written, without the answer scaffold')
-    .action(async (cmdOpts: { tier?: string; only?: string; timeout?: string; promptFile?: string; out?: string; lens?: string; wrap: boolean }, cmd: Command) => {
+    .option('--print', 'print each answer on stdout and write no files')
+    .action(async (cmdOpts: { tier?: string; only?: string; timeout?: string; requireConfinement?: boolean; promptFile?: string; out?: string; lens?: string; wrap: boolean; print?: boolean }, cmd: Command) => {
       const { runEnv, jsonMode } = deriveRunEnv(env, cmd);
       state.result = await runCommand('second-opinion.poll', runEnv, jsonMode, () => secondOpinionCommand.executePoll(runEnv, cmdOpts));
     });

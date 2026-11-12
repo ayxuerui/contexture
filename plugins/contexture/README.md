@@ -26,6 +26,7 @@ Each command opens one skill, for when you would rather type it than ask in word
 - `/contexture:mission` opens `ctxr-mission`
 - `/contexture:session` opens `ctxr-session-lifecycle`
 - `/contexture:submit` opens `ctxr-submit`
+- `/contexture:second-opinion` opens `ctxr-second-opinion`
 
 Text after a command is what the skill starts from, as in `/contexture:capture` followed by the material.
 

@@ -1358,9 +1358,10 @@ describe('the shared skills, in a store and in the plugin', () => {
       'ctxr-session-lifecycle',
       'ctxr-submit',
       'ctxr-session-capture',
+      'ctxr-second-opinion',
       'ctxr-research',
     ]);
-    for (const absent of ['ctxr-upgrade', 'ctxr-second-opinion', 'ctxr-capture-circleback', 'ctxr-land', 'ctxr-derived-artifacts', 'ctxr-organize-audit', 'ctxr-publish']) {
+    for (const absent of ['ctxr-upgrade', 'ctxr-capture-circleback', 'ctxr-land', 'ctxr-derived-artifacts', 'ctxr-organize-audit', 'ctxr-publish']) {
       expect(mcp.some((s) => s.file === absent), absent).toBe(false);
     }
   });

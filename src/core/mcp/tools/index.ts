@@ -97,6 +97,8 @@ export interface ToolContext {
   cliEntry?: string;
   /** The runners' time bound, when a caller (a test) needs a different one. */
   cliTimeoutMs?: number;
+  /** The second opinion's own bound, likewise (serve-the-second-opinion-to-chat-apps D3). */
+  secondOpinionTimeoutMs?: number;
 }
 
 /** D8: changes nothing; asking twice answers the same. */
@@ -121,7 +123,7 @@ export function buildTools(ctx: ToolContext): ToolDefinition<Principal>[] {
   const read = <T extends object>(fn: (snapshot: Parameters<Parameters<McpView['read']>[1]>[0]) => Promise<T>) => ctx.view.read(ctx.syncDeps, fn);
   const writing = <T>(fn: () => Promise<T>): Promise<T> => refusing(() => ctx.mutex.run(fn));
   const files = { view: ctx.view, syncDeps: ctx.syncDeps, write: ctx.write };
-  const cli = { ...files, entry: ctx.cliEntry ?? packagedCliEntry(), timeoutMs: ctx.cliTimeoutMs };
+  const cli = { ...files, entry: ctx.cliEntry ?? packagedCliEntry(), timeoutMs: ctx.cliTimeoutMs, secondOpinionTimeoutMs: ctx.secondOpinionTimeoutMs };
   const prose = (name: string) => packagedTemplate('mcp', name);
 
   const implementations: Record<string, Implementation> = {

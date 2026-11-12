@@ -59,6 +59,8 @@ function outcome<TData>(failed: boolean, data: TData, lines: string[]): CommandO
 export interface PreflightData {
   tier: string;
   ok: boolean;
+  confined: boolean;
+  confinement_reason: string | null;
   clis: PreflightEntry[];
   withheld?: string[];
 }
@@ -69,8 +71,9 @@ export async function executePreflight(env: RunEnv, flags: CommonOptions): Promi
 }
 
 export interface CritiqueData {
-  out: string;
+  out: string | null;
   manifest: CritiqueManifest;
+  texts?: Record<string, string>;
 }
 
 export async function executeCritique(env: RunEnv, flags: CritiqueOptions): Promise<CommandOutcome<CritiqueData>> {
@@ -79,8 +82,9 @@ export async function executeCritique(env: RunEnv, flags: CritiqueOptions): Prom
 }
 
 export interface PollData {
-  out: string;
+  out: string | null;
   manifest: PollManifest;
+  texts?: Record<string, string>;
 }
 
 export async function executePoll(env: RunEnv, flags: PollOptions): Promise<CommandOutcome<PollData>> {

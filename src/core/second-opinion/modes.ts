@@ -1,11 +1,12 @@
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { SecondOpinionUsageError } from '../errors.js';
+import { SecondOpinionUnconfinedError, SecondOpinionUsageError } from '../errors.js';
+import { onPath, type Confinement, type ConfinedRun } from './confine.js';
 import { childEnvironment, PASS_ENV_VARIABLE, protectedPassThroughNames, type SourceEnv } from './environment.js';
 import { judgeCritique } from './judge.js';
 import { firstLines, runCli, type CliResult } from './launch.js';
-import { ALL_CLIS, buildInvocation, FLAGS_USED, MAX_ARGV_BYTES, normalize, QUORUM, ROLE_CLI, ROLES, TIERS, tiers, type Cli, type Role, type Tier } from './lineup.js';
+import { ALL_CLIS, buildInvocation, FLAGS_USED, INSTALL_LEVELS, LOGIN_FILES, MAX_ARGV_BYTES, normalize, QUORUM, ROLE_CLI, ROLES, TIERS, tiers, type Cli, type Role, type Tier } from './lineup.js';
 import { critiquePrompt, pollPrompt } from './prompts.js';
 
 /**
@@ -30,6 +31,8 @@ export interface CommonOptions {
   tier?: string;
   timeout?: string;
   only?: string;
+  /** End before any model CLI starts when the run cannot be confined (serve-the-second-opinion-to-chat-apps). */
+  requireConfinement?: boolean;
 }
 
 interface Resolved {
@@ -38,10 +41,46 @@ interface Resolved {
   clis: Cli[];
   env: Record<string, string>;
   withheld: string[];
+  confinement: Confinement;
 }
 
+/**
+ * serve-the-second-opinion-to-chat-apps D1: whether this machine can wrap a
+ * CLI in Landlock rules. `setpriv` must offer them (util-linux 2.40 and
+ * later) and the kernel must accept them, which a probe run of `setpriv`
+ * itself under a read-only rule shows.
+ */
+async function detectConfinement(env: Record<string, string>): Promise<Confinement> {
+  if (process.platform !== 'linux') return { confined: false, reason: 'Landlock is Linux-only' };
+  const setpriv = onPath('setpriv', env.PATH);
+  if (setpriv === null) return { confined: false, reason: 'setpriv is not installed (util-linux 2.40 or later applies Landlock)' };
+  const help = await runCli(setpriv, ['--help'], '', 10, env);
+  if (!`${help.stdout}${help.stderr}`.includes('--landlock-access')) {
+    return { confined: false, reason: 'this setpriv cannot apply Landlock (util-linux 2.40 or later can)' };
+  }
+  const probe = await runCli(setpriv, ['--landlock-access', 'fs', '--landlock-rule', 'path-beneath:execute,read-file,read-dir:/', '--', setpriv, '--version'], '', 10, env);
+  if (!probe.ok) return { confined: false, reason: `the kernel refused Landlock: ${probe.cause ?? 'failed'}` };
+  return { confined: true, setpriv };
+}
+
+/** One CLI's confined run, or undefined when this machine cannot confine. */
+function confinedRun(ctx: SecondOpinionContext, r: Resolved, cli: Cli): ConfinedRun | undefined {
+  if (!r.confinement.confined) return undefined;
+  return { setpriv: r.confinement.setpriv, sourceHome: ctx.home, logins: LOGIN_FILES[cli], installLevels: INSTALL_LEVELS[cli] };
+}
+
+const confinementLine = (c: Confinement): string =>
+  c.confined ? 'confined: yes (each CLI in a fresh home of its own, under Landlock)' : `confined: no (${c.reason})`;
+
 /** Every refusal happens here, before any CLI launches. */
-function resolve(ctx: SecondOpinionContext, opts: CommonOptions, needQuorum: boolean): Resolved {
+async function resolve(ctx: SecondOpinionContext, opts: CommonOptions, needQuorum: boolean): Promise<Resolved> {
+  const r = resolveOptions(ctx, opts, needQuorum);
+  const confinement = await detectConfinement(r.env);
+  if (opts.requireConfinement && !confinement.confined) throw new SecondOpinionUnconfinedError(confinement.reason);
+  return { ...r, confinement };
+}
+
+function resolveOptions(ctx: SecondOpinionContext, opts: CommonOptions, needQuorum: boolean): Omit<Resolved, 'confinement'> {
   const tier = (opts.tier ?? 'strong') as Tier;
   if (!TIERS.includes(tier)) throw new SecondOpinionUsageError('--tier is strong or fast');
   const timeout = opts.timeout === undefined ? 600 : Number(opts.timeout);
@@ -83,6 +122,9 @@ export interface PreflightEntry {
 export interface PreflightResult {
   tier: Tier;
   ok: boolean;
+  /** Whether each CLI ran confined; not confined alone does not fail the preflight. */
+  confined: boolean;
+  confinement_reason: string | null;
   clis: PreflightEntry[];
   /** On a failing preflight only: the variables withheld from the CLIs, by name. Never values. */
   withheld?: string[];
@@ -90,18 +132,19 @@ export interface PreflightResult {
 }
 
 export async function preflight(ctx: SecondOpinionContext, opts: CommonOptions): Promise<PreflightResult> {
-  const r = resolve(ctx, opts, false);
+  const r = await resolve(ctx, opts, false);
   const results = await Promise.all(
     r.clis.map(async (cli): Promise<PreflightEntry> => {
       const spec = FLAGS_USED[cli];
-      const help = await runCli(cli, spec.helpArgs, '', 30, r.env);
+      const confine = confinedRun(ctx, r, cli);
+      const help = await runCli(cli, spec.helpArgs, '', 30, r.env, confine);
       if (!help.ok) return { cli, ok: false, detail: help.cause ?? 'failed' };
       const helpText = help.stdout + help.stderr;
       const missing = spec.flags.filter((f) => !helpText.includes(f));
       // The ping runs at the tier the run will use. A fixed tier left the other tier's model untested, so a
       // model name agy no longer accepted passed preflight and failed the critique (2026-10-13).
       const inv = buildInvocation(cli, 'say PONG only', r.tier, ctx.source);
-      const ping = await runCli(inv.cmd, inv.args, inv.stdin, Math.min(r.timeout, 60), r.env);
+      const ping = await runCli(inv.cmd, inv.args, inv.stdin, Math.min(r.timeout, 60), r.env, confine);
       if (!ping.ok) return { cli, ok: false, detail: ping.cause ?? 'failed' };
       const { text } = normalize(cli, ping);
       if (!/pong/i.test(text)) return { cli, ok: false, detail: `unexpected reply: ${firstLines(text, 2)}` };
@@ -111,7 +154,7 @@ export async function preflight(ctx: SecondOpinionContext, opts: CommonOptions):
     }),
   );
   const ok = results.every((x) => x.ok);
-  const lines = results.map((x) => `[${x.ok ? 'OK  ' : 'DOWN'}] ${x.cli.padEnd(7)} ${x.detail}`);
+  const lines = [...results.map((x) => `[${x.ok ? 'OK  ' : 'DOWN'}] ${x.cli.padEnd(7)} ${x.detail}`), confinementLine(r.confinement)];
   if (!ok) {
     lines.push('', 'At least one CLI is down. Re-authenticate it, or run with --only on the ones that are up.');
     // D3: a variable the allowlist dropped may be what a CLI needed. Names only, never values.
@@ -119,7 +162,8 @@ export async function preflight(ctx: SecondOpinionContext, opts: CommonOptions):
       lines.push(`Withheld from the CLIs: ${r.withheld.join(', ')}. To pass one through, name it in ${PASS_ENV_VARIABLE}.`);
     }
   }
-  return { tier: r.tier, ok, clis: results, ...(ok ? {} : { withheld: r.withheld }), lines };
+  const confinement = { confined: r.confinement.confined, confinement_reason: r.confinement.confined ? null : r.confinement.reason };
+  return { tier: r.tier, ok, ...confinement, clis: results, ...(ok ? {} : { withheld: r.withheld }), lines };
 }
 
 // ---------------------------------------------------------------------------
@@ -140,7 +184,15 @@ async function readInput(ctx: SecondOpinionContext, file: string | undefined, fl
   throw new SecondOpinionUsageError(`no input: pass ${flag} PATH or pipe it on stdin`);
 }
 
-function outDir(ctx: SecondOpinionContext, out: string | undefined): string {
+/**
+ * serve-the-second-opinion-to-chat-apps D2: with `--print` the answers go to
+ * stdout and nothing is written, so no plan or answer is left on the machine.
+ */
+function outDir(ctx: SecondOpinionContext, out: string | undefined, print: boolean | undefined): string | null {
+  if (print) {
+    if (out !== undefined) throw new SecondOpinionUsageError('--print writes no files; leave out --out');
+    return null;
+  }
   const dir = out !== undefined ? path.resolve(ctx.cwd, out) : mkdtempSync(path.join(tmpdir(), 'ctxr-second-opinion-out-'));
   mkdirSync(path.join(dir, 'raw'), { recursive: true });
   return dir;
@@ -178,6 +230,7 @@ export interface CritiqueOptions extends CommonOptions {
   planFile?: string;
   out?: string;
   seed?: string;
+  print?: boolean;
 }
 
 export interface CritiqueEntry {
@@ -200,20 +253,25 @@ export interface CritiqueManifest {
   critiques: CritiqueEntry[];
   valid: number;
   partial: boolean;
+  confined: boolean;
+  confinement_reason: string | null;
 }
 
 export interface CritiqueResult {
-  out: string;
+  /** The output directory, or null with `--print`. */
+  out: string | null;
   manifest: CritiqueManifest;
+  /** With `--print`: each critique's text by letter. */
+  texts?: Record<string, string>;
   lines: string[];
 }
 
 export async function critique(ctx: SecondOpinionContext, opts: CritiqueOptions): Promise<CritiqueResult> {
-  const r = resolve(ctx, opts, true);
-  const seed = opts.seed === undefined ? null : Number(opts.seed);
   const plan = await readInput(ctx, opts.planFile, '--plan-file');
+  const dir = outDir(ctx, opts.out, opts.print);
+  const r = await resolve(ctx, opts, true);
+  const seed = opts.seed === undefined ? null : Number(opts.seed);
   const roles = ROLES.filter((role) => r.clis.includes(ROLE_CLI[role]));
-  const dir = outDir(ctx, opts.out);
   ctx.progress(`plan: ${plan.length} characters (about ${Math.ceil(plan.length / 4)} tokens) · tier: ${r.tier} · critics: ${roles.length} · each may take 1-3 minutes`);
 
   const runs = await Promise.all(
@@ -226,9 +284,9 @@ export async function critique(ctx: SecondOpinionContext, opts: CritiqueOptions)
       if (refused) raw = refused;
       else {
         const inv = buildInvocation(cli, prompt, r.tier, ctx.source);
-        raw = await runCli(inv.cmd, inv.args, inv.stdin, r.timeout, r.env);
+        raw = await runCli(inv.cmd, inv.args, inv.stdin, r.timeout, r.env, confinedRun(ctx, r, cli));
       }
-      writeFileSync(path.join(dir, 'raw', `${role}-${cli}.txt`), `${raw.stdout}\n--- stderr ---\n${raw.stderr}\n`);
+      if (dir !== null) writeFileSync(path.join(dir, 'raw', `${role}-${cli}.txt`), `${raw.stdout}\n--- stderr ---\n${raw.stderr}\n`);
       const base = { role, cli, duration_ms: Date.now() - started };
       if (!raw.ok) return { ...base, status: 'failed' as const, cause: raw.cause ?? null, model: null, text: '', verdict: null, findings: 0, veto: false };
       const { text, model } = normalize(cli, raw);
@@ -240,7 +298,7 @@ export async function critique(ctx: SecondOpinionContext, opts: CritiqueOptions)
   // Letters go to every critique that produced text (valid or blind), in an order that does not follow the roster.
   const answered = runs.filter((x) => x.status !== 'failed');
   const letters = shuffled(answered, rng(seed)).map((x, i) => ({ ...x, letter: String.fromCharCode(65 + i) }));
-  for (const x of letters) writeFileSync(path.join(dir, `critique-${x.letter}.md`), `${x.text}\n`);
+  if (dir !== null) for (const x of letters) writeFileSync(path.join(dir, `critique-${x.letter}.md`), `${x.text}\n`);
 
   const valid = runs.filter((x) => x.status === 'valid').length;
   const manifest: CritiqueManifest = {
@@ -261,18 +319,29 @@ export async function critique(ctx: SecondOpinionContext, opts: CritiqueOptions)
     })),
     valid,
     partial: valid < QUORUM,
+    confined: r.confinement.confined,
+    confinement_reason: r.confinement.confined ? null : r.confinement.reason,
   };
-  writeFileSync(path.join(dir, 'manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`);
+  if (dir !== null) writeFileSync(path.join(dir, 'manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`);
 
   // stdout names letters, never roles or models; a failed critic has no letter and is named by CLI, since that is what to fix.
-  const lines = [`out: ${dir}`, `valid: ${valid}  blind: ${runs.filter((x) => x.status === 'blind').length}  failed: ${runs.filter((x) => x.status === 'failed').length}`];
+  const lines = [...(dir !== null ? [`out: ${dir}`] : []), `valid: ${valid}  blind: ${runs.filter((x) => x.status === 'blind').length}  failed: ${runs.filter((x) => x.status === 'failed').length}`];
   for (const x of [...letters].sort((a, b) => a.letter.localeCompare(b.letter))) {
     lines.push(`  ${x.letter}  ${x.status}  ${x.verdict ?? '-'}  findings=${x.findings}${x.veto ? '  veto' : ''}`);
   }
   for (const x of runs.filter((y) => y.status === 'failed')) lines.push(`  failed  ${x.cli}  ${x.cause}`);
   if (manifest.partial) lines.push(`PARTIAL: fewer than ${QUORUM} valid critiques. Report this as a partial result, not a consensus.`);
-  lines.push(`Read the critique files first; open ${path.join(dir, 'manifest.json')} last.`);
-  return { out: dir, manifest, lines };
+  lines.push(confinementLine(r.confinement));
+  if (dir !== null) {
+    lines.push(`Read the critique files first; open ${path.join(dir, 'manifest.json')} last.`);
+    return { out: dir, manifest, lines };
+  }
+  // D2: the letters first and the table that names them last, so a reader can synthesize before they look.
+  const sorted = [...letters].sort((a, b) => a.letter.localeCompare(b.letter));
+  for (const x of sorted) lines.push('', `===== critique-${x.letter} =====`, x.text);
+  lines.push('', '===== letters (write the synthesis before reading on) =====');
+  for (const x of sorted) lines.push(`  ${x.letter}  ${x.role}  ${x.cli}  model=${x.model ?? 'not reported'}`);
+  return { out: null, manifest, texts: Object.fromEntries(sorted.map((x) => [x.letter, x.text])), lines };
 }
 
 // ---------------------------------------------------------------------------
@@ -285,6 +354,7 @@ export interface PollOptions extends CommonOptions {
   lens?: string;
   /** False with `--no-wrap`: the question goes out without the answer scaffold. */
   wrap?: boolean;
+  print?: boolean;
 }
 
 export interface PollAnswer {
@@ -302,19 +372,24 @@ export interface PollManifest {
   valid: number;
   partial: boolean;
   answers: PollAnswer[];
+  confined: boolean;
+  confinement_reason: string | null;
 }
 
 export interface PollResult {
-  out: string;
+  /** The output directory, or null with `--print`. */
+  out: string | null;
   manifest: PollManifest;
+  /** With `--print`: each answer's text by model CLI. */
+  texts?: Record<string, string>;
   lines: string[];
 }
 
 export async function poll(ctx: SecondOpinionContext, opts: PollOptions): Promise<PollResult> {
-  const r = resolve(ctx, opts, true);
   const question = await readInput(ctx, opts.promptFile, '--prompt-file');
+  const dir = outDir(ctx, opts.out, opts.print);
+  const r = await resolve(ctx, opts, true);
   const prompt = pollPrompt(question, { lens: opts.lens, wrap: opts.wrap !== false });
-  const dir = outDir(ctx, opts.out);
   ctx.progress(`question: ${question.length} characters · tier: ${r.tier} · models: ${r.clis.length}${opts.lens ? ` · lenses: ${opts.lens}` : ''}`);
 
   const runs = await Promise.all(
@@ -324,9 +399,9 @@ export async function poll(ctx: SecondOpinionContext, opts: PollOptions): Promis
       if (refused) raw = refused;
       else {
         const inv = buildInvocation(cli, prompt, r.tier, ctx.source);
-        raw = await runCli(inv.cmd, inv.args, inv.stdin, r.timeout, r.env);
+        raw = await runCli(inv.cmd, inv.args, inv.stdin, r.timeout, r.env, confinedRun(ctx, r, cli));
       }
-      writeFileSync(path.join(dir, 'raw', `poll-${cli}.txt`), `${raw.stdout}\n--- stderr ---\n${raw.stderr}\n`);
+      if (dir !== null) writeFileSync(path.join(dir, 'raw', `poll-${cli}.txt`), `${raw.stdout}\n--- stderr ---\n${raw.stderr}\n`);
       if (!raw.ok) return { cli, status: 'failed' as const, cause: raw.cause ?? null, model: null, text: '' };
       const { text, model } = normalize(cli, raw);
       if (!text) return { cli, status: 'failed' as const, cause: 'empty output', model, text };
@@ -335,7 +410,7 @@ export async function poll(ctx: SecondOpinionContext, opts: PollOptions): Promis
   );
 
   // A poll is read model against model (the lens grid's columns are models), so files are named by model here.
-  for (const x of runs.filter((y) => y.status === 'valid')) writeFileSync(path.join(dir, `poll-${x.cli}.md`), `${x.text}\n`);
+  if (dir !== null) for (const x of runs.filter((y) => y.status === 'valid')) writeFileSync(path.join(dir, `poll-${x.cli}.md`), `${x.text}\n`);
   const valid = runs.filter((x) => x.status === 'valid').length;
   const manifest: PollManifest = {
     mode: 'poll',
@@ -345,10 +420,16 @@ export async function poll(ctx: SecondOpinionContext, opts: PollOptions): Promis
     valid,
     partial: valid < QUORUM,
     answers: runs.map(({ text: _text, ...rest }) => rest),
+    confined: r.confinement.confined,
+    confinement_reason: r.confinement.confined ? null : r.confinement.reason,
   };
-  writeFileSync(path.join(dir, 'manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`);
-  const lines = [`out: ${dir}`, `valid: ${valid}  failed: ${runs.length - valid}`];
+  if (dir !== null) writeFileSync(path.join(dir, 'manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`);
+  const lines = [...(dir !== null ? [`out: ${dir}`] : []), `valid: ${valid}  failed: ${runs.length - valid}`];
   for (const x of runs) lines.push(`  ${x.cli}  ${x.status}${x.cause ? `  ${x.cause}` : ''}${x.model ? `  model=${x.model}` : ''}`);
   if (manifest.partial) lines.push(`PARTIAL: fewer than ${QUORUM} answers. Report it as a partial result.`);
-  return { out: dir, manifest, lines };
+  lines.push(confinementLine(r.confinement));
+  if (dir !== null) return { out: dir, manifest, lines };
+  const answered = runs.filter((x) => x.status === 'valid');
+  for (const x of answered) lines.push('', `===== poll-${x.cli} =====`, x.text);
+  return { out: null, manifest, texts: Object.fromEntries(answered.map((x) => [x.cli, x.text])), lines };
 }

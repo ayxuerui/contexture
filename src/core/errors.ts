@@ -827,6 +827,18 @@ export class SecondOpinionUsageError extends ContextureError {
 }
 
 /**
+ * serve-the-second-opinion-to-chat-apps D1: `--require-confinement` on a
+ * machine that cannot confine the run — the failed-check code, since the
+ * arguments were valid and the machine is what fell short. Raised before any
+ * model CLI starts.
+ */
+export class SecondOpinionUnconfinedError extends ContextureError {
+  constructor(reason: string) {
+    super(ExitCode.CheckFailed, { code: 'second_opinion.unconfined', severity: 'error', message: `cannot confine the model CLIs here: ${reason}`, details: { reason } });
+  }
+}
+
+/**
  * bring-the-session-lifecycle-into-the-cli D3: a session command's refusal —
  * the usage code for what the caller named (a session that is not one, a
  * branch another session carries, a body with a generated section's heading),
