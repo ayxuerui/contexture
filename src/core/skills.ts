@@ -446,8 +446,9 @@ export const SKILLS: readonly SkillSeed[] = [
  * store's copy and the plugin's alike, saying which store, whether to work in
  * a shell or through the store's server, and how a step is done there. Left
  * out: the skills that run local programs (upgrade, Circleback), landing (a person lands from the approval page), and the
- * derived-artifacts, organize-audit and publish procedures, whose steps the
- * surface does not offer.
+ * derived-artifacts and organize-audit procedures, whose steps the surface
+ * does not offer. publish-through-the-plugin: publish is in, since the server
+ * runs the `publish` commands and its file tools reach the published pages.
  */
 export const MCP_SKILL_FILES: readonly string[] = [
   CAPTURE,
@@ -460,6 +461,8 @@ export const MCP_SKILL_FILES: readonly string[] = [
   SESSION_LIFECYCLE,
   SUBMIT,
   SESSION_CAPTURE,
+  // publish-through-the-plugin: the store's server runs the `publish` commands and reads the pages.
+  PUBLISH,
   // serve-the-second-opinion-to-chat-apps: the store's server runs `ctxr second-opinion`, confined.
   SECOND_OPINION,
   RESEARCH,

@@ -3,7 +3,7 @@
 contexture's skills for working in a contexture store from Claude. A contexture store is a git repository
 of markdown notes that a group of people keep together. The skills say how to capture material into the
 store's inbox, file it into notes, find and propose connections between notes, keep rollups and the mission
-current, and submit a change for someone to approve.
+current, make a page from the store, and submit a change for someone to approve.
 
 ## What you need
 
@@ -33,3 +33,7 @@ server runs an older ctxr; the skill says so and skips that step.
 ## License
 
 __LICENSE__. See `LICENSE`.
+
+The plugin also carries __THIRD_PARTY__, the third-party skills that page-making uses for design and
+explanation, unchanged and under their own licenses. Each skill's `LICENSE.txt` sits beside it, and
+`THIRD_PARTY_NOTICES.md` names where each one came from.

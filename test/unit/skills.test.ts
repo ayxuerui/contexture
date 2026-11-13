@@ -469,11 +469,18 @@ describe('owned-skills-expansion: each skill carries its load-bearing rule (task
     // publish-names-where-the-page-is-served: the commands now name an address,
     // and the step that verifies the page has to send somebody to open it --
     // that is the half no mechanical check can answer. Wrap-tolerant.
-    expect(s).toMatch(/each end by naming the address `ctxr serve` answers for\s+this page/);
+    expect(s).toMatch(/each end by naming the page's address on the store's\s+server/);
     expect(s).toMatch(/Look at the page before you hand it on/);
     // #120: the address may be unreachable from where the agent runs, so the
     // skill names the local way to look, and the honest hand-off when it can't.
-    expect(s).toMatch(/start `ctxr serve` in the background, open the address it\s+prints followed by the page's route/);
+    expect(s).toMatch(/start `ctxr serve` in the background; through the store's server, skip this step and give the\s+person the address that `ctxr publish new` or `ctxr publish check` reported/);
+    expect(s).toMatch(/open the\s+address it prints followed by the page's route in your browser tool/);
+    // publish-through-the-plugin D4: the reviewer sees the preview whoever wrote the page.
+    expect(s).toMatch(/The approval page shows the page's preview before\s+anything lands/);
+    expect(s).toMatch(/Through the store's server, do not make a send copy\. Why: its file tools write text only/);
+    // D3: the plugin's craft skills through the server, the store's declared one first.
+    expect(s).toMatch(/Through the store's server, load the copy the contexture plugin carries/);
+    expect(s).toMatch(/When the store declares a different skill for the same job, `Read` that skill's\s+files from the store's skills path instead/);
     expect(s).toMatch(/has not been checked\s+visually/);
     expect(s).toMatch(/Never report a page as ready on the\s+strength of `ctxr publish check` alone/);
     // The address is time-bounded, and the successor travels with it.
@@ -486,7 +493,14 @@ describe('owned-skills-expansion: each skill carries its load-bearing rule (task
     const lifespanStep = s.indexOf('## 1. Permanent or disposable? Decide first');
     expect(lifespanStep).toBeGreaterThanOrEqual(0);
     expect(lifespanStep).toBeLessThan(s.indexOf('`ctxr publish gather`'));
-    expect(s.slice(0, lifespanStep).trim()).not.toMatch(/^## /m); // nothing is a step before it
+    // publish-through-the-plugin D6: the shared opening section comes first and is not a step;
+    // nothing between its end and the lifespan step is one.
+    const opening = s.indexOf('## Which store, and where');
+    expect(opening).toBeGreaterThanOrEqual(0);
+    expect(opening).toBeLessThan(lifespanStep);
+    const afterOpening = s.slice(opening + 1, lifespanStep);
+    const nextHeading = afterOpening.search(/^## /m);
+    expect(nextHeading).toBe(-1); // the opening runs straight into step 1
     expect(s).toContain('`ctxr publish new --disposable <name>`');
     expect(s).toMatch(/Choose disposable when you cannot name the one note that the page represents/);
     expect(s).toMatch(/Never revise a disposable page after it lands/);
@@ -1359,10 +1373,11 @@ describe('the shared skills, in a store and in the plugin', () => {
       'ctxr-session-lifecycle',
       'ctxr-submit',
       'ctxr-session-capture',
+      'ctxr-publish',
       'ctxr-second-opinion',
       'ctxr-research',
     ]);
-    for (const absent of ['ctxr-upgrade', 'ctxr-capture-circleback', 'ctxr-land', 'ctxr-derived-artifacts', 'ctxr-organize-audit', 'ctxr-publish']) {
+    for (const absent of ['ctxr-upgrade', 'ctxr-capture-circleback', 'ctxr-land', 'ctxr-derived-artifacts', 'ctxr-organize-audit']) {
       expect(mcp.some((s) => s.file === absent), absent).toBe(false);
     }
   });

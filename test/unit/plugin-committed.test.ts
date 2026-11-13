@@ -79,6 +79,16 @@ describe('the freshness comparison', () => {
     expect(await firstDifference(buildClaudePlugin(CLI_VERSION), copy)).toBe('LICENSE: in the build, but missing on disk');
   });
 
+  it('fails naming the vendored file when a packaged craft skill changes and the plugin is not regenerated (publish-through-the-plugin D3)', async () => {
+    await fresh();
+    const skill = path.join(copy, 'skills/frontend-design/SKILL.md');
+    await writeFile(skill, `${await readFile(skill, 'utf8')}\nA re-vendor the plugin never saw.\n`);
+    expect(await firstDifference(buildClaudePlugin(CLI_VERSION), copy)).toBe('skills/frontend-design/SKILL.md: differs from the build');
+    await fresh();
+    await rm(path.join(copy, 'skills/eli5/LICENSE.txt'));
+    expect(await firstDifference(buildClaudePlugin(CLI_VERSION), copy)).toBe('skills/eli5/LICENSE.txt: in the build, but missing on disk');
+  });
+
   it('fails on the manifest when only the version moves', async () => {
     await fresh();
     expect(await firstDifference(buildClaudePlugin('99.0.0'), copy)).toBe('.claude-plugin/plugin.json: differs from the build');
@@ -94,7 +104,7 @@ describe("the plugin's commands", () => {
   const plugin = buildClaudePlugin(CLI_VERSION);
   const skills = renderMcpSkills();
 
-  it('are the eight the map declares, each opening a skill the plugin carries', () => {
+  it('are the nine the map declares, each opening a skill the plugin carries', () => {
     expect(PLUGIN_COMMANDS).toEqual({
       capture: 'ctxr-capture',
       ingest: 'ctxr-ingest-orchestration',
@@ -104,6 +114,7 @@ describe("the plugin's commands", () => {
       session: 'ctxr-session-lifecycle',
       submit: 'ctxr-submit',
       'second-opinion': 'ctxr-second-opinion',
+      publish: 'ctxr-publish',
     });
     expect(commandMapProblems(PLUGIN_COMMANDS, [...MCP_SKILL_FILES])).toEqual([]);
     expect([...plugin.files.keys()].filter((f) => f.startsWith('commands/')).sort()).toEqual(Object.keys(PLUGIN_COMMANDS).map((c) => `commands/${c}.md`).sort());
