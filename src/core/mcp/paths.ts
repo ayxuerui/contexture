@@ -86,6 +86,11 @@ export function nameablePath(rel: string, config: StoreConfig): boolean {
   if (rel === '') return true;
   if (isUnderAnyPrefix(rel, neverReadablePrefixes(config))) return false;
   if (isUnderAnyPrefix(rel, widenedReadablePrefixes(config))) return true;
+  // The entry document stays readable by name when a store keeps it out of
+  // retrieval (`retrieval.exclude_paths: [AGENTS.md]`): excluding it from
+  // search is not hiding it, and every skill starts by reading it. It is still
+  // left out of Grep and Glob there, because ripgrep is given the exclusion.
+  if (rel === ENTRY_DOCUMENT) return true;
   return !isUnderAnyPrefix(rel, hiddenPrefixes(config));
 }
 
