@@ -15,6 +15,8 @@ export const PLUGIN_COMMANDS: Readonly<Record<string, string>> = {
   submit: 'ctxr-submit',
   // serve-the-second-opinion-to-chat-apps: the skill drives `ctxr second-opinion`, so the command takes its name.
   'second-opinion': 'ctxr-second-opinion',
+  // publish-through-the-plugin D5: a page is something a member asks for by name.
+  publish: 'ctxr-publish',
 };
 
 /** Each command whose skill the plugin does not carry, named with the skill it asks for. */

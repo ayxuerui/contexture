@@ -3,7 +3,7 @@
 contexture's skills for working in a contexture store from Claude. A contexture store is a git repository
 of markdown notes that a group of people keep together. The skills say how to capture material into the
 store's inbox, file it into notes, find and propose connections between notes, keep rollups and the mission
-current, and submit a change for someone to approve.
+current, make a page from the store, and submit a change for someone to approve.
 
 ## What you need
 
@@ -27,6 +27,7 @@ Each command opens one skill, for when you would rather type it than ask in word
 - `/contexture:session` opens `ctxr-session-lifecycle`
 - `/contexture:submit` opens `ctxr-submit`
 - `/contexture:second-opinion` opens `ctxr-second-opinion`
+- `/contexture:publish` opens `ctxr-publish`
 
 Text after a command is what the skill starts from, as in `/contexture:capture` followed by the material.
 
@@ -40,3 +41,7 @@ server runs an older ctxr; the skill says so and skips that step.
 ## License
 
 MIT. See `LICENSE`.
+
+The plugin also carries `frontend-design` and `eli5`, the third-party skills that page-making uses for design and
+explanation, unchanged and under their own licenses. Each skill's `LICENSE.txt` sits beside it, and
+`THIRD_PARTY_NOTICES.md` names where each one came from.

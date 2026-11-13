@@ -103,25 +103,30 @@ overwrite breaks a link that somebody already has.
 
 ## 5. Choose the form, then delegate the craft
 
-Pick the shape the content actually needs — a status board, a timeline, a side-by-side comparison, an
-explainer with a live demo — not a rendering of the source notes in reading order. Contexture ships no
-renderer of its own and no house voice: both halves of the craft are delegated to a skill.
+Pick the shape the content needs: a status board, a timeline, a side-by-side comparison, or an
+explainer with a live demo. Do not render the source notes in reading order. Contexture ships no
+renderer of its own and no house voice: a skill does each half of the craft.
 
-**The form and its visual language.** Load the `frontend-design` skill this store carries by default
-(or whichever design-focused skill it's configured or installed instead) and follow it for the HTML,
-CSS, type, and palette — and for the interface's own words: labels, buttons, empty and error states.
-If a sibling page already exists, read its stylesheet and inherit its palette and type scale before
-inventing a new one.
+Load each skill from where you work. In a checkout of the store, load the copy the store carries.
+Through the store's server, load the copy the contexture plugin carries (`contexture:frontend-design`,
+`contexture:eli5`). When the store declares a different skill for the same job, `Read` that skill's
+files from the store's skills path instead. Why: the store's choice wins, whichever way you reach it.
 
-**The prose that explains the subject.** A page is read by someone who wasn't in the sessions the
-notes came from, so the notes' shorthand does not survive the copy out. Load the `eli5` skill this
-store carries by default (or whichever explanation-focused skill it's configured instead), settle who
-the reader is before writing, and pitch every definition, analogy, and level of detail at them.
+**The form and its visual language.** Load the `frontend-design` skill this store carries by default,
+or the design-focused skill the store declares instead. Follow it for the HTML, CSS, type and palette.
+Follow it also for the interface's own words: labels, buttons, empty states and error states. When a
+sibling page exists, read its stylesheet first, and keep its palette and type scale. Why: the pages of
+one subject then read as one set.
 
-Both skills say "audience", and here it means one thing only: how much the reader already knows,
-which is a question about register. It is never a reason to put more on the page. Step 3 settled what
-the page may carry, and writing that content more plainly never widens it — an explanation pitched
-lower is the same material in shorter words.
+**The prose that explains the subject.** Load the `eli5` skill this store carries by default, or the
+explanation-focused skill the store declares instead. Decide who the reader is before you write. Pitch
+every definition, analogy and level of detail at that reader. Why: the reader was not in the sessions
+the notes came from, so the notes' shorthand does not survive the copy out.
+
+Both skills say "audience", and here it means one thing only: how much the reader already knows.
+That is a question about register. It is never a reason to put more on the page. Step 3 settled what
+the page may carry. Writing that content more plainly never widens it: an explanation pitched lower is
+the same material in shorter words.
 
 ## 6. Verify the output invariants
 
@@ -143,17 +148,20 @@ them before you report the page as ready. The command answers only what the file
 lifespan choice and the DO-test in step 1, the form and reader choices in step 5, and factual accuracy
 are judgment calls, not checker output.
 
-`ctxr publish new` and `ctxr publish check` each end by naming the address `ctxr serve` answers for
-this page. Look at the page before you hand it on. Whether the form works, whether the prose reads,
-whether it renders at all is exactly what the checks above cannot answer, and it is cheapest to fix
-while the page is still yours.
+`ctxr publish new` and `ctxr publish check` each end by naming the page's address on the store's
+server. Look at the page before you hand it on. Why: the checks above cannot tell whether the form
+works, whether the prose reads, or whether the page renders at all. A fix costs least while the page is
+still yours.
 
-That address may be served from another host, or behind an access proxy, where you cannot reach it.
-You do not need it: from this machine, start `ctxr serve` in the background, open the address it
-prints followed by the page's route in your browser tool, and stop the server when you are done. A
-page still in a session worktree is served there under its previewable route, the same as anywhere
-else. If you have no way to see a rendered page, say in your hand-off that it has not been checked
-visually, so whoever reviews it knows they are the first to look. Never report a page as ready on the
+That address can be on another host, or behind an access proxy, where you cannot reach it. In a
+shell, start `ctxr serve` in the background; through the store's server, skip this step and give the
+person the address that `ctxr publish new` or `ctxr publish check` reported. From the shell, open the
+address it prints followed by the page's route in your browser tool. Stop the server when you are done.
+Through the store's server, open the reported address yourself only when you can reach it. A page still
+in a session worktree is served under its previewable route, the same as anywhere else. If you could
+not see the rendered page, say in your hand-off that it has not been checked visually. Why: whoever
+reviews it then knows they are the first to look. The approval page shows the page's preview before
+anything lands. Never report a page as ready on the
 strength of `ctxr publish check` alone.
 
 A page written in a session worktree is previewable rather than published, because the
@@ -193,6 +201,9 @@ the stale report stays until somebody removes the marker.
 **Send copies of the page.** A send copy is a file that you make from the note and send to somebody.
 It is a `.pdf`, `.docx`, `.xlsx` or `.pptx` file. Make a send copy only when you send one. Why: every
 send copy is kept, so a send copy for each edit fills the folder.
+
+Through the store's server, do not make a send copy. Why: its file tools write text only. Make the
+send copy in a checkout of the store.
 
 Write the send copy into the page's folder, next to `index.html`. Start its file name with the date
 you make it: `<YYYY-MM-DD>-<name>.<extension>`. `ctxr publish check` fails a send copy at the folder

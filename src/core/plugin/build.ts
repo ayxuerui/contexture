@@ -1,7 +1,8 @@
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { readdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { DEFAULT_VENDORED_SKILLS } from '../../config/defaults.js';
 import type { StoreConfig } from '../../config/schema.js';
 import { escapeHtml } from '../browse/render.js';
 import { SKILL_FILE_NAME } from '../conventions.js';
@@ -188,6 +189,49 @@ function skillFiles(): { skills: string[]; files: Map<string, string> } {
   return { skills: skills.map((skill) => skill.file), files };
 }
 
+/** The packaged provenance record of a vendored skill: the install's ownership mark, which a plugin does not carry. */
+const VENDORED_PROVENANCE_TEMPLATE = 'provenance.json';
+
+/** Every file under `templates/vendor/<name>/`, as sorted posix paths relative to it. */
+function vendoredTemplateFiles(dir: string, sub = ''): string[] {
+  const out: string[] = [];
+  for (const entry of readdirSync(path.join(dir, sub), { withFileTypes: true }).sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))) {
+    const rel = sub === '' ? entry.name : `${sub}/${entry.name}`;
+    if (entry.isDirectory()) out.push(...vendoredTemplateFiles(dir, rel));
+    else out.push(rel);
+  }
+  return out;
+}
+
+/**
+ * publish-through-the-plugin D3 (harness-portability spec, *The plugin carries
+ * the default craft skills with their licenses*): the vendored skills every
+ * store gets by default, which `ctxr-publish` step 5 delegates to, as the same
+ * packaged copies `ctxr init` writes into a store: unchanged, each beside its
+ * license, without the provenance record. `THIRD_PARTY_NOTICES.md` travels at
+ * the plugin's root, as it does in the package.
+ */
+function vendoredSkillFiles(): { skills: string[]; files: Map<string, string> } {
+  const files = new Map<string, string>();
+  for (const name of DEFAULT_VENDORED_SKILLS) {
+    const dir = fileURLToPath(new URL(`../../../templates/vendor/${name}`, import.meta.url));
+    const carried = vendoredTemplateFiles(dir).filter((rel) => rel !== VENDORED_PROVENANCE_TEMPLATE);
+    if (!carried.includes(SKILL_FILE_NAME)) throw new Error(`vendored skill ${name} has no ${SKILL_FILE_NAME}`);
+    for (const rel of carried) files.set(`skills/${name}/${rel}`, readFileSync(path.join(dir, ...rel.split('/')), 'utf8'));
+  }
+  files.set(THIRD_PARTY_NOTICES_FILE, packageFile(THIRD_PARTY_NOTICES_FILE));
+  return { skills: [...DEFAULT_VENDORED_SKILLS], files };
+}
+
+/** The package's record of what it vendors, under what terms; shipped with the package and with each plugin. */
+export const THIRD_PARTY_NOTICES_FILE = 'THIRD_PARTY_NOTICES.md';
+
+/** How a plugin README names the third-party skills it carries. */
+function thirdPartyNames(): string {
+  const names = DEFAULT_VENDORED_SKILLS.map((name) => `\`${name}\``);
+  return names.length <= 1 ? names.join('') : `${names.slice(0, -1).join(', ')} and ${names.at(-1)!}`;
+}
+
 function finish(target: PluginTarget, name: string, version: string, skills: string[], files: Map<string, string>, archiveName: string): BuiltPlugin {
   for (const file of files.keys()) {
     // A Claude plugin with a top-level bin/ is refused at upload, and neither app runs a hook from a plugin we ship.
@@ -214,15 +258,17 @@ export function buildClaudePlugin(cliVersion: string): BuiltPlugin {
   const license = (JSON.parse(packageFile('package.json')) as { license: string }).license;
   const values = { NAME: CLAUDE_PLUGIN_NAME, DISPLAY_NAME: CLAUDE_PLUGIN_DISPLAY_NAME, VERSION: cliVersion, LICENSE: license, MARKETPLACE: PLUGIN_MARKETPLACE };
   const { skills, files } = skillFiles();
+  const vendored = vendoredSkillFiles();
   const commands = Object.entries(PLUGIN_COMMANDS).map(([command, skill]) => `- \`/${CLAUDE_PLUGIN_NAME}:${command}\` opens \`${skill}\``);
   const tree = new Map([
     ['.claude-plugin/plugin.json', jsonDocument('claude-plugin.json', values)],
-    ['README.md', fillPluginTemplate('README.md', { ...values, COMMANDS: commands.join('\n') })],
+    ['README.md', fillPluginTemplate('README.md', { ...values, COMMANDS: commands.join('\n'), THIRD_PARTY: thirdPartyNames() })],
     ['LICENSE', packageFile('LICENSE')],
     ...files,
+    ...vendored.files,
     ...commandFiles(renderMcpSkills()),
   ]);
-  return finish('claude', CLAUDE_PLUGIN_NAME, cliVersion, skills, tree, `${CLAUDE_PLUGIN_NAME}-claude.zip`);
+  return finish('claude', CLAUDE_PLUGIN_NAME, cliVersion, [...skills, ...vendored.skills], tree, `${CLAUDE_PLUGIN_NAME}-claude.zip`);
 }
 
 /** The store's ChatGPT plugin, with its connector: refused for a store that declares no `mcp` block. */
@@ -238,13 +284,15 @@ export function buildChatgptPlugin(input: StorePluginInput): StorePlugin {
   const displayName = `${input.storeName} (contexture)`;
   const values = { NAME: name, DISPLAY_NAME: displayName, VERSION: version, STORE_NAME: input.storeName, MCP_URL: mcpUrl, BASE_URL: origin };
   const { skills, files } = skillFiles();
+  const vendored = vendoredSkillFiles();
   const tree = new Map([
     ['plugin.json', jsonDocument('chatgpt-plugin.json', values)],
     ['mcp.json', jsonDocument('chatgpt-mcp.json', values)],
-    ['README.md', fillPluginTemplate('chatgpt-README.md', values)],
+    ['README.md', fillPluginTemplate('chatgpt-README.md', { ...values, THIRD_PARTY: thirdPartyNames() })],
     ...files,
+    ...vendored.files,
   ]);
-  return { ...finish('chatgpt', name, version, skills, tree, `${name}-chatgpt.zip`), storeName: input.storeName, displayName, mcpUrl };
+  return { ...finish('chatgpt', name, version, [...skills, ...vendored.skills], tree, `${name}-chatgpt.zip`), storeName: input.storeName, displayName, mcpUrl };
 }
 
 /**

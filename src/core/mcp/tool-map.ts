@@ -83,6 +83,10 @@ export const CTXR_WRITE_COMMANDS = [
   'session capture',
   'catalog build',
   'graph build',
+  // publish-through-the-plugin D2: both write only under the published-pages
+  // location, which the file tools may already change in a session.
+  'publish new',
+  'publish stamp',
   // ctxr-session-capture regenerates AGENTS.md after a guidance edit. Only the
   // entry document may change: the after-run check restores and refuses any
   // change update makes to the skills, the hooks or the configuration, which
@@ -96,9 +100,12 @@ export const CTXR_WRITE_COMMANDS = [
  * drift check requires that (publish-one-contexture-plugin revision 15).
  * `sync` refreshes the canonical clone, which the server keeps current
  * itself; `shared-stores sync` refreshes the canonical clone's mounts, and the
- * server keeps no mounts (mount-shared-stores).
+ * server keeps no mounts (mount-shared-stores). `serve` starts a local
+ * server to look at a page; through the store's server the page is looked at
+ * at the preview address `publish new` and `publish check` report
+ * (publish-through-the-plugin D4).
  */
-export const UNAVAILABLE_COMMANDS = ['sync', 'shared-stores sync'] as const;
+export const UNAVAILABLE_COMMANDS = ['sync', 'shared-stores sync', 'serve'] as const;
 
 /** D3: the session commands with a typed tool of their own. */
 export const SESSION_COMMAND_TOOLS = {

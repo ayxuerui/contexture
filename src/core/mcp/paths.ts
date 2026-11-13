@@ -53,7 +53,9 @@ export function protectedRefusal(rel: string, reason: ProtectedReason): ToolRefu
  * D5: the paths the owned skills read that are not notes: templates, house
  * conventions, the mission, the log and the skills — and the catalog's section
  * files (read-the-catalog-over-mcp), whose glosses are authored by editing
- * them: a session may `Edit` one, so it has to be able to `Read` it first.
+ * them: a session may `Edit` one, so it has to be able to `Read` it first. The
+ * published-pages location joins for the same reason (publish-through-the-plugin
+ * D3): a page is edited in place. Retrieval still leaves pages out.
  */
 export function widenedReadablePrefixes(config: StoreConfig): string[] {
   return [
@@ -61,6 +63,7 @@ export function widenedReadablePrefixes(config: StoreConfig): string[] {
     config.catalog.path,
     config.harness.guidance_path,
     config.harness.skills_path,
+    config.publish.path,
     config.organize.log_path ?? DEFAULT_LOG_PATH,
     ...(config.organize.mission_path !== undefined ? [config.organize.mission_path] : []),
   ];

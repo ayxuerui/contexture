@@ -4,11 +4,16 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { DEFAULT_VENDORED_SKILLS } from '../../src/config/defaults.js';
 import { readConfig } from '../../src/config/load.js';
 import { ExitCode } from '../../src/core/exit-codes.js';
 import { buildChatgptPlugin, buildClaudePlugin, MAX_DESCRIPTION_LENGTH, MAX_NAME_LENGTH, pluginName, pluginVersion } from '../../src/core/plugin/build.js';
 import { PLUGIN_COMMANDS } from '../../src/core/plugin/commands.js';
 import { renderMcpSkills } from '../../src/core/skills.js';
+
+/** publish-through-the-plugin D3: the default craft skills each plugin carries, unchanged, beside their licenses, and the notices. */
+const VENDORED_FILES = [...DEFAULT_VENDORED_SKILLS.flatMap((name) => [`skills/${name}/LICENSE.txt`, `skills/${name}/SKILL.md`]), 'THIRD_PARTY_NOTICES.md'];
+const CARRIED_SKILLS = (skills: readonly { file: string }[]): string[] => [...skills.map((s) => s.file), ...DEFAULT_VENDORED_SKILLS];
 import { CLI_VERSION } from '../../src/version.js';
 import { makeApprovalStore, type ApprovalStore } from '../helpers/approval-store.js';
 import { hermeticGitEnv } from '../helpers/git-env.js';
@@ -79,12 +84,18 @@ describe('ctxr plugin build outside any store', () => {
     const envelope = JSON.parse(result.stdout) as { data: BuildData; store_root: string | null };
     const out = path.join(tmp.root, 'contexture-plugin');
     const skills = renderMcpSkills();
-    expect(envelope.data).toMatchObject({ out, mcp_url: null, skills: skills.map((s) => s.file) });
+    expect(envelope.data).toMatchObject({ out, mcp_url: null, skills: CARRIED_SKILLS(skills) });
     expect(envelope.data.plugins.map((p) => [p.target, p.name, p.version])).toEqual([['claude', 'contexture', CLI_VERSION]]);
     expect((await readdir(out)).sort()).toEqual(['contexture', 'contexture-claude.zip']);
 
     const dir = path.join(out, 'contexture');
-    expect(await filesUnder(dir)).toEqual(['.claude-plugin/plugin.json', 'LICENSE', 'README.md', ...Object.keys(PLUGIN_COMMANDS).map((c) => `commands/${c}.md`), ...skills.map((s) => `skills/${s.file}/SKILL.md`)].sort());
+    expect(await filesUnder(dir)).toEqual(['.claude-plugin/plugin.json', 'LICENSE', 'README.md', ...Object.keys(PLUGIN_COMMANDS).map((c) => `commands/${c}.md`), ...skills.map((s) => `skills/${s.file}/SKILL.md`), ...VENDORED_FILES].sort());
+    for (const name of DEFAULT_VENDORED_SKILLS) {
+      for (const file of ['SKILL.md', 'LICENSE.txt']) {
+        expect(await readFile(path.join(dir, 'skills', name, file), 'utf8'), `${name}/${file}`).toBe(await readFile(path.join(REPO, 'templates/vendor', name, file), 'utf8'));
+      }
+    }
+    expect(await readFile(path.join(dir, 'THIRD_PARTY_NOTICES.md'), 'utf8')).toBe(await readFile(path.join(REPO, 'THIRD_PARTY_NOTICES.md'), 'utf8'));
     const manifest = await json(path.join(dir, '.claude-plugin/plugin.json'));
     expect(Object.keys(manifest).sort()).toEqual(['author', 'description', 'displayName', 'homepage', 'keywords', 'license', 'name', 'repository', 'version']);
     const pkg = JSON.parse(await readFile(path.join(REPO, 'package.json'), 'utf8')) as { version: string; license: string };
@@ -95,7 +106,9 @@ describe('ctxr plugin build outside any store', () => {
     expect(readme).toContain('ayxuerui/contexture');
     expect(readme).toContain('**Sync automatically**');
     expect(readme).toContain('- `/contexture:submit` opens `ctxr-submit`');
-    expect(readme).not.toMatch(/__[A-Z]+__/);
+    expect(readme).toContain('- `/contexture:publish` opens `ctxr-publish`');
+    expect(readme).toContain('carries `frontend-design` and `eli5`');
+    expect(readme).not.toMatch(/__[A-Z_]+__/);
 
     for (const skill of skills) {
       const text = await readFile(path.join(dir, 'skills', skill.file, 'SKILL.md'), 'utf8');
@@ -145,7 +158,7 @@ describe('ctxr plugin build in a store', () => {
     const head = await store.git(['rev-parse', 'HEAD']);
     const skills = renderMcpSkills();
 
-    expect(data).toMatchObject({ out, mcp_url: `${BASE}/mcp`, skills: skills.map((s) => s.file) });
+    expect(data).toMatchObject({ out, mcp_url: `${BASE}/mcp`, skills: CARRIED_SKILLS(skills) });
     expect(data.plugins.map((p) => [p.target, p.name, p.version])).toEqual([
       ['claude', 'contexture', CLI_VERSION],
       ['chatgpt', 'contexture-store', `${CLI_VERSION}+${head.slice(0, 12)}`],
@@ -160,7 +173,7 @@ describe('ctxr plugin build in a store', () => {
     // ChatGPT: a root plugin.json in the Agent Plugins schema, and mcp.json with OAuth through dynamic registration.
     const chatgpt = path.join(out, 'chatgpt');
     const skillPaths = skills.map((s) => `skills/${s.file}/SKILL.md`);
-    expect(await filesUnder(chatgpt)).toEqual(['README.md', 'mcp.json', 'plugin.json', ...skillPaths].sort());
+    expect(await filesUnder(chatgpt)).toEqual(['README.md', 'mcp.json', 'plugin.json', ...skillPaths, ...VENDORED_FILES].sort());
     const chatgptManifest = await json(path.join(chatgpt, 'plugin.json'));
     expect(Object.keys(chatgptManifest).sort()).toEqual(['$schema', 'description', 'extensions', 'name', 'version']);
     expect(chatgptManifest).toMatchObject({

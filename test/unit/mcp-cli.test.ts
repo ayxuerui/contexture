@@ -126,6 +126,33 @@ describe('mcp ctxr and ctxr_write', () => {
     await expect(ctxrWrite({ args: ['session', 'capture', '--proposal', '@input'], session })).rejects.toMatchObject({ code: 'mcp.invalid_arguments' });
   });
 
+  it('scaffolds and stamps a page in the session, as ctxr-publish asks, and refuses both without one (publish-through-the-plugin D2)', async () => {
+    const disposable = await ctxrWrite({ args: ['publish', 'new', '--disposable', 'weekly-review'], session });
+    expect(disposable.exit_code, disposable.stderr).toBe(0);
+    const dated = (await readdir(path.join(worktree, '.contexture/publish/disposable'))).filter((n) => n.endsWith('-weekly-review'));
+    expect(dated).toHaveLength(1);
+    expect(dated[0]).toMatch(/^\d{4}-\d{2}-\d{2}-weekly-review$/);
+    expect(existsSync(path.join(worktree, '.contexture/publish/disposable', dated[0]!, 'README.md'))).toBe(true);
+    expect(disposable.stdout).toContain(`/preview/${session}/`);
+    // Nothing reaches the canonical checkout.
+    expect(existsSync(path.join(f.store.root, '.contexture/publish/disposable'))).toBe(false);
+
+    const permanent = await ctxrWrite({ args: ['publish', 'new', 'projects/board'], session });
+    expect(permanent.exit_code, permanent.stderr).toBe(0);
+    const page = `${root}.contexture/publish/projects/board`;
+    await f.call('Read', { file_path: `${page}/README.md` });
+    await f.call('Edit', { file_path: `${page}/README.md`, old_string: 'Wikilinks back into the store.', new_string: '- [[a]]\n\nWikilinks back into the store.' });
+    const stamped = await ctxrWrite({ args: ['publish', 'stamp', page], session });
+    expect(stamped.exit_code, stamped.stdout + stamped.stderr).toBe(0);
+    expect(await readFile(path.join(worktree, '.contexture/publish/projects/board/README.md'), 'utf8')).toMatch(/\[\[a\]\].*<!-- hash:/);
+    const checked = await ctxr({ args: ['publish', 'check', page, '--json'], session });
+    expect(checked.stdout).not.toContain('represented-note-hash');
+
+    await expect(ctxrWrite({ args: ['publish', 'new', 'projects/other'] })).rejects.toMatchObject({ code: 'mcp.no_session' });
+    await expect(ctxrWrite({ args: ['publish', 'stamp', '.contexture/publish/projects/board'] })).rejects.toMatchObject({ code: 'mcp.no_session' });
+    await expect(ctxr({ args: ['publish', 'new', 'projects/other'], session })).rejects.toMatchObject({ code: 'mcp.command_not_allowed' });
+  });
+
   it('stops a run at the time bound', async () => {
     f.ctx.cliTimeoutMs = 1;
     const result = await ctxr({ args: ['doctor'], session });

@@ -128,6 +128,29 @@ describe('mcp Read, Grep and Glob', () => {
     await expect(read({ file_path: `${root}.contexture/cache/graph.json` })).rejects.toMatchObject({ code: 'mcp.path_not_readable' });
   });
 
+  it('reads a published page though its location is excluded from retrieval, while find still returns no page (publish-through-the-plugin D3)', async () => {
+    await f.store.advanceMain({
+      '.contexture/publish/projects/board/README.md': '[[projects/a]]\n',
+      '.contexture/publish/projects/board/index.html': '<!doctype html><title>Board</title><p>kestrel board</p>\n',
+      '.contexture/publish/projects/board/style.css': 'body { color: black; }\n',
+    }, 'publish a page', { catalogued: true });
+    f.tick(61);
+    expect((await read({ file_path: '.contexture/publish/projects/board/index.html' })).content).toContain('kestrel board');
+    const listed = (await f.call('Glob', { pattern: '**/*', path: '.contexture/publish' })) as { files: string[] };
+    expect(listed.files).toEqual(['.contexture/publish/projects/board/README.md', '.contexture/publish/projects/board/index.html', '.contexture/publish/projects/board/style.css']);
+    // ripgrep skips dot-folders unless named, as for the templates and catalog under `.contexture/`.
+    expect((await grep({ pattern: 'kestrel board', path: '.contexture/publish' })).lines).toEqual(['.contexture/publish/projects/board/index.html']);
+    // Retrieval is a separate path: the page never becomes a source.
+    expect(JSON.stringify(await f.call('find', { text: 'kestrel board' }))).not.toContain('.contexture/publish');
+    expect(JSON.stringify(await f.call('find', { text: 'kestrel' }))).not.toContain('.contexture/publish');
+    // A page is edited in place in a session.
+    const { root } = await f.start('page-a');
+    const file_path = `${root}.contexture/publish/projects/board/index.html`;
+    await read({ file_path });
+    await f.call('Edit', { file_path, old_string: 'kestrel board', new_string: 'kestrel status board' });
+    expect((await read({ file_path })).content).toContain('kestrel status board');
+  });
+
   it('never follows a symbolic link, and Grep and Glob return only what Read would read (review findings)', async () => {
     await f.store.advanceMain({ 'scripts/deploy.sh': 'echo kestrel secret\n' });
     const scratch = `${f.store.tmp.root}/link-scratch`;
