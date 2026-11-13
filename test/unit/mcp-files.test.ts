@@ -114,6 +114,20 @@ describe('mcp Read, Grep and Glob', () => {
     await expect(read({ file_path: '.contexture/cache/graph.json' })).rejects.toMatchObject({ code: 'mcp.path_not_readable' });
   });
 
+  it("reads a catalog section file, in the served commit and in a session, so a gloss can be read before it is edited", async () => {
+    const served = await read({ file_path: '.contexture/catalog/projects.md' });
+    expect(served.content).toContain('(`projects/a.md`)');
+    const { root } = await f.start('gloss-a');
+    const file_path = `${root}.contexture/catalog/projects.md`;
+    const before = await read({ file_path });
+    const line = before.content.split('\n').map((l) => l.slice(l.indexOf('\t') + 1)).find((l) => l.includes('(`projects/a.md`)'))!;
+    await f.call('Edit', { file_path, old_string: line, new_string: `${line.replace(/ —.*$/, ' —')} The A project.` });
+    expect((await read({ file_path })).content).toContain('The A project.');
+    expect((await grep({ pattern: 'The A project', path: `${root}.contexture/catalog` })).lines).toEqual([file_path]);
+    // The rest of the tool-owned folder stays hidden.
+    await expect(read({ file_path: `${root}.contexture/cache/graph.json` })).rejects.toMatchObject({ code: 'mcp.path_not_readable' });
+  });
+
   it('never follows a symbolic link, and Grep and Glob return only what Read would read (review findings)', async () => {
     await f.store.advanceMain({ 'scripts/deploy.sh': 'echo kestrel secret\n' });
     const scratch = `${f.store.tmp.root}/link-scratch`;
