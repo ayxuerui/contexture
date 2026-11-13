@@ -23,7 +23,7 @@ import type { McpView, Snapshot, SyncDeps } from '../sync.js';
  * *`Read`, `Grep` and `Glob` read the served commit or a member's own
  * session*): a path under the root of one of the caller's sessions reads that
  * session's working tree, uncommitted work included; any other path reads the
- * served commit. The readable set widens to the templates, house conventions,
+ * served commit. The readable set widens to the templates, catalog sections, house conventions,
  * log and skills the owned skills read (`paths.ts`).
  */
 
@@ -121,7 +121,7 @@ function numbered(text: string, offset: number | undefined, limit: number | unde
 /** One file under `root`, numbered; refused unless it is readable, a regular file, and inside `root` once resolved. */
 async function readUnder(root: string, rel: string, config: StoreConfig, shown: string, args: ReadArgs): Promise<{ text: string; n: ReturnType<typeof numbered> }> {
   if (!readablePath(rel, config)) {
-    throw new ToolRefusal('mcp.path_not_readable', `"${shown}" is not a note, a capture, the entry document, a template, a house convention, the log or a skill, so it cannot be read here.`);
+    throw new ToolRefusal('mcp.path_not_readable', `"${shown}" is not a note, a capture, the entry document, a template, a catalog section, a house convention, the log or a skill, so it cannot be read here.`);
   }
   const absolute = path.join(root, rel);
   const info = await lstat(absolute).catch(() => null);

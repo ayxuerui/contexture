@@ -49,10 +49,16 @@ export function protectedRefusal(rel: string, reason: ProtectedReason): ToolRefu
   return new ToolRefusal('mcp.path_protected', `"${rel}" is ${PROTECTED_WORDS[reason]}, which cannot be changed from here; change it in a local session.`, { path: rel, reason });
 }
 
-/** D5: the paths the owned skills read that are not notes: templates, house conventions, the mission, the log and the skills. */
+/**
+ * D5: the paths the owned skills read that are not notes: templates, house
+ * conventions, the mission, the log and the skills — and the catalog's section
+ * files (read-the-catalog-over-mcp), whose glosses are authored by editing
+ * them: a session may `Edit` one, so it has to be able to `Read` it first.
+ */
 export function widenedReadablePrefixes(config: StoreConfig): string[] {
   return [
     config.templates.path,
+    config.catalog.path,
     config.harness.guidance_path,
     config.harness.skills_path,
     config.organize.log_path ?? DEFAULT_LOG_PATH,
