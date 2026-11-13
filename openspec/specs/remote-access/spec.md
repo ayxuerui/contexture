@@ -263,7 +263,7 @@ When the MCP surface is configured, `ctxr serve` SHALL answer `GET /plugin/` wit
 - **THEN** it is refused, and no archive is built for that request
 
 ### Requirement: `Read`, `Grep` and `Glob` read the served commit or a member's own session
-The surface SHALL offer `Read`, `Grep` and `Glob` with the names and parameters of Claude Code's own tools. Paths SHALL be store-relative, a leading `/` naming the store root. A path under the root of a session the calling member owns SHALL read that session's working tree; any other path SHALL read the commit being served. A path that leaves the store root, or lies under the store's retrieval exclusions, its configuration file, its derived paths or `.git`, SHALL be refused or never returned; the store's templates, house conventions, log and skills SHALL be readable. `Read` SHALL return file text numbered from 1 with an optional offset and limit and at most 2,000 lines per call, marking a capture as one. `Grep` SHALL match a regular expression with Claude Code's Grep parameters, ordered by path, with no score, within a fixed time and output bound, and when reading the served commit SHALL also list matching inbox files of session branches with an open pull request, marked as awaiting approval. `Glob` SHALL list matching files ordered by path.
+The surface SHALL offer `Read`, `Grep` and `Glob` with the names and parameters of Claude Code's own tools. Paths SHALL be store-relative, a leading `/` naming the store root. A path under the root of a session the calling member owns SHALL read that session's working tree; any other path SHALL read the commit being served. A path that leaves the store root, or lies under the store's retrieval exclusions, its configuration file, its derived paths or `.git`, SHALL be refused or never returned; the store's templates, catalog section files, house conventions, log and skills SHALL be readable. `Read` SHALL return file text numbered from 1 with an optional offset and limit and at most 2,000 lines per call, marking a capture as one. `Grep` SHALL match a regular expression with Claude Code's Grep parameters, ordered by path, with no score, within a fixed time and output bound, and when reading the served commit SHALL also list matching inbox files of session branches with an open pull request, marked as awaiting approval. `Glob` SHALL list matching files ordered by path.
 
 #### Scenario: A note is read with line numbers and a range
 - **WHEN** `Read` is called for `work/a.md` with offset 3 and limit 2
@@ -284,6 +284,10 @@ The surface SHALL offer `Read`, `Grep` and `Glob` with the names and parameters 
 #### Scenario: A template is readable
 - **WHEN** `Read` is called for a file under the store's template path
 - **THEN** its content is returned
+
+#### Scenario: A catalog section file is readable in a session
+- **WHEN** a member calls `Read` for a section file under the catalog path inside their session
+- **THEN** its content is returned, so the gloss on a note's line can be edited there, while a derived file under the same tool-owned folder is still refused
 
 ### Requirement: Every tool is a file tool, a `ctxr` command, or a named exception
 Every tool the surface offers SHALL be one of Claude Code's file tools (`Read`, `Grep`, `Glob`, `Edit`, `Write`), `Move` or `Delete`; a tool for a `ctxr` command, named for its command path with `_` between words and taking that command's options as fields; the command runners `ctxr` and `ctxr_write`; or one of the named exceptions `find`, `gather` and `capture`. A command-named tool MAY add a `session` field to its command's options and no other. One mapping from command paths to tools SHALL be the only source the tool registry, the rendered skills' preamble and the checks read. A test over the tool registry and the CLI's command registry SHALL fail, naming the tool, when a tool is none of these or a command-named tool's fields other than `session` are not options that command registers.
