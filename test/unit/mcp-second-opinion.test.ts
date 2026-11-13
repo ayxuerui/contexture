@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readdirSync, readFileSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -41,7 +41,7 @@ describe('mcp ctxr second-opinion', () => {
     for (const cli of ['claude', 'codex', 'agy']) env[`CTXR_SECOND_OPINION_STUB_${cli.toUpperCase()}`] = JSON.stringify(behaviors[cli] ?? { kind: 'ok', text: critique(ROLE_OF[cli]!) });
     (f.write as { env: Record<string, string | undefined> }).env = env;
   };
-  const calls = (cli: string): { stdin: string; env: Record<string, string> }[] => {
+  const calls = (cli: string): { args: string[]; stdin: string; env: Record<string, string> }[] => {
     const file = path.join(logDir, `${cli}.json`);
     return existsSync(file) ? JSON.parse(readFileSync(file, 'utf8')) : [];
   };
@@ -108,5 +108,48 @@ describe('mcp ctxr second-opinion', () => {
     expect(result.exit_code).toBe(ExitCode.CheckFailed);
     expect(result.stdout + result.stderr).toMatch(/cannot confine the model CLIs here/);
     for (const cli of ['claude', 'codex', 'agy']) expect(calls(cli), cli).toEqual([]);
+  });
+  /**
+   * second-opinion-lineup-in-store-config task 4.2 (remote-access requirement
+   * "A second opinion through the server uses the served store's lineup").
+   */
+  describe('the lineup is the served commit\'s', () => {
+    const modelAsked = (cli: string): string | undefined => {
+      const args = calls(cli).filter((c) => c.args.includes('--model')).at(-1)?.args;
+      return args?.[args.indexOf('--model') + 1];
+    };
+    const serveLineup = async (lineup: string) => {
+      const config = readFileSync(path.join(f.store.root, 'contexture.yaml'), 'utf8');
+      await f.store.advanceMain({ 'contexture.yaml': `${config}${lineup}\n` });
+      f.tick(61);
+    };
+    const critiqueCall = (extra: Record<string, unknown> = {}) => ctxr({ args: ['second-opinion', 'critique', '--plan-file', '@input'], input: PLAN, ...extra });
+
+    it('reaches a chat member', async () => {
+      await serveLineup('second_opinion: { strong: { agy: { model: m-served } } }');
+      const result = await critiqueCall();
+      expect(result.exit_code, result.stdout + result.stderr).toBe(ExitCode.Ok);
+      expect(modelAsked('agy')).toBe('m-served');
+      expect(modelAsked('claude')).toBe('fable');
+    });
+
+    it('is not a session\'s unreviewed working copy', async () => {
+      await serveLineup('second_opinion: { strong: { agy: { model: m-served } } }');
+      const { session } = await f.start('lineup');
+      appendFileSync(path.join(f.store.root, '.worktrees', session, 'contexture.yaml'), 'second_opinion: { strong: { codex: { model: m-session } } }\n');
+      const result = await critiqueCall({ session });
+      expect(result.exit_code, result.stdout + result.stderr).toBe(ExitCode.Ok);
+      expect(result.ran_against).toMatchObject({ session });
+      expect(modelAsked('agy')).toBe('m-served');
+      expect(modelAsked('codex')).not.toBe('m-session');
+    });
+
+    it('gives way to the server\'s own environment', async () => {
+      await serveLineup('second_opinion: { strong: { agy: { model: m-served } } }');
+      serverEnv({ CTXR_SECOND_OPINION_AGY_MODEL: 'm-operator' });
+      const result = await critiqueCall();
+      expect(result.exit_code, result.stdout + result.stderr).toBe(ExitCode.Ok);
+      expect(modelAsked('agy')).toBe('m-operator');
+    });
   });
 });

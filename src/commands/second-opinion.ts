@@ -1,7 +1,9 @@
 import { homedir } from 'node:os';
+import { SecondOpinionSchema } from '../config/schema.js';
 import type { CommandOutcome, CommandRequires } from '../core/command.js';
 import type { RunEnv } from '../core/env.js';
 import { ExitCode } from '../core/exit-codes.js';
+import type { Store } from '../core/store.js';
 import {
   critique,
   poll,
@@ -19,18 +21,25 @@ import {
  * run-the-second-opinion-from-the-cli D1: `ctxr second-opinion preflight |
  * critique | poll`, the runner the `ctxr-second-opinion` skill used to carry
  * as `run.mjs`. It is the one command that invokes a model CLI; it is never
- * on the write path and no other command depends on it. It reads no store:
- * a plan or a question is all it needs, so it answers from any directory.
+ * on the write path and no other command depends on it. A plan or a question
+ * is all it needs, so it answers from any directory.
+ *
+ * second-opinion-lineup-in-store-config D4: the store is optional. Inside one,
+ * the lineup is the store's `second_opinion` block; outside, the schema's own
+ * defaults. A store that cannot be loaded refuses the command as it refuses
+ * every other, since running on the shipped lineup there would quietly ignore
+ * what the store said.
  *
  * D2: the exit codes are the shared table's. A partial result and a preflight
  * with a CLI down are the failed-check code; bad arguments and fewer than two
  * requested CLIs are the usage code (raised as SecondOpinionUsageError).
  */
-export const requires: CommandRequires = { store: 'absent' };
+export const requires: CommandRequires = { store: 'optional' };
 
-function context(env: RunEnv): SecondOpinionContext {
+function context(env: RunEnv, store: Store | null): SecondOpinionContext {
   return {
     source: env.env,
+    lineup: store?.config.second_opinion ?? SecondOpinionSchema.parse({}),
     cwd: env.cwd,
     home: env.env.HOME || homedir(),
     progress: (line) => {
@@ -45,14 +54,14 @@ function context(env: RunEnv): SecondOpinionContext {
   };
 }
 
-function outcome<TData>(failed: boolean, data: TData, lines: string[]): CommandOutcome<TData> {
+function outcome<TData>(store: Store | null, failed: boolean, data: TData, lines: string[]): CommandOutcome<TData> {
   return {
     exitCode: failed ? ExitCode.CheckFailed : ExitCode.Ok,
     data,
     findings: [],
     humanSummary: lines.join('\n'),
-    storeRoot: null,
-    schemaVersion: null,
+    storeRoot: store?.root ?? null,
+    schemaVersion: store?.config.schema_version ?? null,
   };
 }
 
@@ -65,9 +74,9 @@ export interface PreflightData {
   withheld?: string[];
 }
 
-export async function executePreflight(env: RunEnv, flags: CommonOptions): Promise<CommandOutcome<PreflightData>> {
-  const { lines, ...data } = await preflight(context(env), flags);
-  return outcome(!data.ok, data, lines);
+export async function executePreflight(env: RunEnv, store: Store | null, flags: CommonOptions): Promise<CommandOutcome<PreflightData>> {
+  const { lines, ...data } = await preflight(context(env, store), flags);
+  return outcome(store, !data.ok, data, lines);
 }
 
 export interface CritiqueData {
@@ -76,9 +85,9 @@ export interface CritiqueData {
   texts?: Record<string, string>;
 }
 
-export async function executeCritique(env: RunEnv, flags: CritiqueOptions): Promise<CommandOutcome<CritiqueData>> {
-  const { lines, ...data } = await critique(context(env), flags);
-  return outcome(data.manifest.partial, data, lines);
+export async function executeCritique(env: RunEnv, store: Store | null, flags: CritiqueOptions): Promise<CommandOutcome<CritiqueData>> {
+  const { lines, ...data } = await critique(context(env, store), flags);
+  return outcome(store, data.manifest.partial, data, lines);
 }
 
 export interface PollData {
@@ -87,7 +96,7 @@ export interface PollData {
   texts?: Record<string, string>;
 }
 
-export async function executePoll(env: RunEnv, flags: PollOptions): Promise<CommandOutcome<PollData>> {
-  const { lines, ...data } = await poll(context(env), flags);
-  return outcome(data.manifest.partial, data, lines);
+export async function executePoll(env: RunEnv, store: Store | null, flags: PollOptions): Promise<CommandOutcome<PollData>> {
+  const { lines, ...data } = await poll(context(env, store), flags);
+  return outcome(store, data.manifest.partial, data, lines);
 }

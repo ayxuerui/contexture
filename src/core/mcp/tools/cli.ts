@@ -201,9 +201,17 @@ const optionValue = (argv: readonly string[], name: string): string | undefined 
  * a shell, with what the server needs added: the answers printed rather than
  * written, a per-CLI timeout inside the bound, confinement required, and the
  * plan or question from `input` in a temp folder outside any checkout. It
- * reads no store, so it runs outside the view's lock, in that temp folder.
+ * runs outside the view's lock, in that temp folder.
+ *
+ * second-opinion-lineup-in-store-config D5: the command's store root is the
+ * view, so the lineup is the served commit's, whether or not the call names a
+ * session: a session's working copy is unreviewed, and its configuration
+ * would otherwise choose a model for the server to ask. The command reads the
+ * view's `contexture.yaml` once, at start. A sync that moves the view in that
+ * instant fails the read, which ends the command with a configuration error
+ * before any model CLI starts.
  */
-async function secondOpinionTool(ctx: CliToolContext, args: CliArgs, command: string, checkedArgv: string[], ranAgainst: CliToolResult['ran_against']): Promise<CliToolResult> {
+async function secondOpinionTool(ctx: CliToolContext, args: CliArgs, command: string, checkedArgv: string[], servedRoot: string, ranAgainst: CliToolResult['ran_against']): Promise<CliToolResult> {
   if (checkedArgv.some((a) => a === '--out' || a.startsWith('--out='))) throw invalid('"--out" is not accepted here: the answers come back in the result, and nothing is left on the server.');
   const timeout = optionValue(checkedArgv, '--timeout');
   if (timeout !== undefined && !(Number(timeout) > 0 && Number(timeout) <= SECOND_OPINION_CLI_TIMEOUT_SECONDS)) {
@@ -230,7 +238,7 @@ async function secondOpinionTool(ctx: CliToolContext, args: CliArgs, command: st
       entry: ctx.entry,
       argv: finalArgv(argv),
       cwd: folder,
-      env: childEnv(ctx.write.env, folder, folder),
+      env: childEnv(ctx.write.env, servedRoot, folder),
       timeoutMs: ctx.secondOpinionTimeoutMs ?? SECOND_OPINION_TIMEOUT_MS,
     });
     return { command, args: checkedArgv, ...run, ran_against: ranAgainst };
@@ -248,10 +256,15 @@ export async function ctxrTool(ctx: CliToolContext, email: string, args: CliArgs
       if (args.session !== undefined) {
         const session = await ownedSession(ctx.write, email, args.session);
         const checked = checkArguments(args.args, CTXR_READ_COMMANDS, 'ctxr', ctx.write.config, session.root);
-        return secondOpinionTool(ctx, args, command, checked.argv, { session: session.name, root: session.root });
+        const { servedRoot } = await ctx.view.read(ctx.syncDeps, async (snapshot) => ({ servedRoot: snapshot.store.root }));
+        return secondOpinionTool(ctx, args, command, checked.argv, servedRoot, { session: session.name, root: session.root });
       }
-      const { checked, head } = await ctx.view.read(ctx.syncDeps, async (snapshot) => ({ checked: checkArguments(args.args, CTXR_READ_COMMANDS, 'ctxr', snapshot.store.config, null), head: snapshot.head }));
-      return secondOpinionTool(ctx, args, command, checked.argv, { commit: head });
+      const { checked, head, servedRoot } = await ctx.view.read(ctx.syncDeps, async (snapshot) => ({
+        checked: checkArguments(args.args, CTXR_READ_COMMANDS, 'ctxr', snapshot.store.config, null),
+        head: snapshot.head,
+        servedRoot: snapshot.store.root,
+      }));
+      return secondOpinionTool(ctx, args, command, checked.argv, servedRoot, { commit: head });
     }
   }
   if (args.session !== undefined) {

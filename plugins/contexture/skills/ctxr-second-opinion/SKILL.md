@@ -77,8 +77,9 @@ ctxr second-opinion preflight
 Each of the three should report `OK` within about twenty seconds. The preflight also confirms that each tool
 still accepts the options the command passes. Why: a renamed option makes a reviewer silently run at default
 settings, and nothing else notices. Give `ctxr second-opinion preflight` the same `--tier` you will run with.
-The preflight pings each tool with that tier's model and names the model it tested. Why: a model the tool no
-longer offers fails only at the tier that uses it.
+The preflight pings each tool with that tier's model, names the model it tested, and says where that model
+came from: the environment of this run, the store's configuration, or the shipped default. Why: a model the
+tool no longer offers fails only at the tier that uses it.
 
 If one is down, stop and give the operator the two real choices: sign that tool in and re-run, or continue
 with the others by rerunning `ctxr second-opinion critique` with `--only` and naming them. Do not quietly run with one
@@ -87,6 +88,11 @@ model. A single model is not a second opinion, and the command refuses to start 
 Failure signatures: `Not logged in` means Claude needs `/login`; a `401` or an invalid refresh token from
 Codex means `codex login`; an agy call that hangs usually means its sign-in expired and it needs one
 interactive run.
+
+A tool that answers `invalid model selection`, or says in its own words that it does not know the model, is
+signed in. Its account is not offered the model it was asked for, so signing in again changes nothing. The
+preflight line ends with the model asked for and where it came from. The fix is to the lineup (section 7),
+and until then that tier runs with the other two.
 
 Through the store's server, the operator signs the tools in on the server. Tell the person which tool is
 down. Ask them to pass that on to the operator.
@@ -163,7 +169,7 @@ effort setting, so Claude Code applies its default for the model. Codex gets the
 declares, which the command passes explicitly. Why: Codex left to itself, with no setting pinned, can resolve
 to no reasoning at all. Gemini's effort is part of its model name, and the command names each model at its
 default level. Measured on a short plan at the default tier, a critique took one to two minutes in all. Claude
-(Fable) took 80 to 120 seconds, and Gemini (Argon) and Codex (GPT-6-Astra) about 15 each. The fast tier is
+(Fable) took 80 to 120 seconds, and Codex (GPT-6-Astra) about 15. The fast tier is
 quicker and costs less. A deeper pass is a choice: with `CTXR_SECOND_OPINION_CLAUDE_EFFORT=max`, Claude on
 Opus alone took over eight minutes on a short plan. That is close to the command's ten-minute limit per tool,
 and Fable is slower than Opus; raise it with `ctxr second-opinion critique --timeout <seconds>` for such a
@@ -262,8 +268,25 @@ include your own family, say so.
   variable named a forge or contexture variable.
 - Do not poll from inside a critique to settle a quick doubt. If you want a gut check mid-critique, answer it
   yourself.
-- Model names change faster than releases. When a default is stale, set
-  `CTXR_SECOND_OPINION_CLAUDE_MODEL`, `CTXR_SECOND_OPINION_CLAUDE_EFFORT`, `CTXR_SECOND_OPINION_CODEX_MODEL`,
-  `CTXR_SECOND_OPINION_CODEX_EFFORT` or `CTXR_SECOND_OPINION_AGY_MODEL` in the environment for the run. Nothing about the lineup lives in the store's configuration. Through the store's server, the operator sets them on the server.
+- The lineup is the store's configuration. Each tier's model for each tool, and the effort where the tool
+  takes one, has a shipped default, and a store that names none follows the shipped lineup from release to
+  release. A store whose account is not offered a default names its own, once, in `contexture.yaml`:
+
+  ```yaml
+  second_opinion:
+    strong:
+      agy:
+        model: <a model the tool lists>
+  ```
+
+  The tiers are `strong` and `fast`, and the tools `claude`, `codex` and `agy`; `claude` and `codex` also take
+  `effort`. That file changes like any other part of the store: in a session, by a reviewed pull request,
+  which is the operator's to open. Outside a store the command runs on the shipped lineup.
+- For one run, the environment wins over the store: `CTXR_SECOND_OPINION_CLAUDE_MODEL`,
+  `CTXR_SECOND_OPINION_CLAUDE_EFFORT`, `CTXR_SECOND_OPINION_CODEX_MODEL`, `CTXR_SECOND_OPINION_CODEX_EFFORT` or
+  `CTXR_SECOND_OPINION_AGY_MODEL`, each covering both tiers. Use it for a deliberate deeper pass, or on a
+  machine whose account differs from the store's. Through the store's server, those variables are the
+  operator's to set on the server, and the lineup is the one the served store has, never an open session's.
+- A tool that refuses its model is a failed reviewer. The command does not try another model for it.
 - The scratch files under the output directory hold each reviewer's raw output and are safe to delete when the
   operator has the synthesis. They can contain the plan, so do not commit them. A printed run writes none.

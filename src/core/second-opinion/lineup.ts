@@ -1,3 +1,5 @@
+import { SHIPPED_DEFAULTS } from '../../config/defaults.js';
+import type { SecondOpinionLineup } from '../../config/schema.js';
 import type { SourceEnv } from './environment.js';
 
 /**
@@ -22,43 +24,36 @@ export const QUORUM = 2;
 /** Linux caps one argv element at 128 KiB; agy is the only CLI given its prompt as argv. */
 export const MAX_ARGV_BYTES = 120_000;
 
-interface CliModel {
+/** Where a model came from: this run's environment, the store's configuration, or contexture's shipped lineup. */
+export type LineupSource = 'environment' | 'store' | 'default';
+
+export interface CliModel {
   model: string;
-  effort?: string | null;
+  /** Null when the CLI is left to its own default, and for agy, whose effort is part of the model name. */
+  effort: string | null;
+  source: LineupSource;
 }
 
 /**
- * Model choice lives here, in one table. Override by environment, never by editing a store.
+ * second-opinion-lineup-in-store-config D2, D3: what one model CLI is asked
+ * for at one tier. The lineup is the store's `second_opinion` block, or the
+ * schema's own defaults outside a store; the shipped values live in
+ * `config/defaults.ts` and nowhere here.
  *
- * The tiers name a class of model, not a price. `strong` is each family's frontier model and `fast` its
- * workhorse: claude `fable` and `opus`; codex `gpt-6-astra` ("frontier intelligence") and `gpt-6.1-sol`
- * ("latest workhorse"), as codex's model catalog described them on 2026-10-15; agy `Gemini 4 Argon` and
- * `Gemini 3.8 Flash`, once agy offered Argon (2026-10-19). The tiers differ in model only: every model runs at
- * its provider's default effort.
- *
- * Effort is each provider's own recommended default, not one this command picked:
- *  - claude: no --effort at all, so Claude Code applies its own default for the model.
- *  - codex: the default its model catalog declares (`default_reasoning_level`), which was `low` for both
- *    gpt-6-astra and gpt-6.1-sol on 2026-10-15. It is passed explicitly because the flag cannot simply be
- *    left off: with no pin in config.toml, codex resolves to `reasoning effort: none` on a ChatGPT login
- *    (seen 2026-10-05), which is no review at all. Set CTXR_SECOND_OPINION_CODEX_EFFORT to use another.
- *  - agy: the effort is part of the model name. The default thinking level is `(Medium)` for Gemini 4 Argon
- *    and `(High)` for Gemini 3.8 Flash. agy rejects an unknown name, and preflight tests it.
+ * A non-empty `CTXR_SECOND_OPINION_<CLI>_MODEL` or `_EFFORT` wins, for both
+ * tiers, since it is the narrower scope: this run, on this machine. An empty
+ * one is unset, which is how a deployment passes a variable it did not set. A
+ * store's value equal to the shipped one reports `default`: the loaded
+ * configuration cannot tell the two apart, and nothing depends on it.
  */
-export function tiers(source: SourceEnv): Record<Tier, Record<Cli, CliModel>> {
-  const env = (name: string, fallback: string | null): string | null => source[`CTXR_SECOND_OPINION_${name}`] || fallback;
-  return {
-    strong: {
-      claude: { model: env('CLAUDE_MODEL', 'fable')!, effort: env('CLAUDE_EFFORT', null) },
-      codex: { model: env('CODEX_MODEL', 'gpt-6-astra')!, effort: env('CODEX_EFFORT', 'low') },
-      agy: { model: env('AGY_MODEL', 'Gemini 4 Argon (Medium)')! },
-    },
-    fast: {
-      claude: { model: env('CLAUDE_MODEL', 'opus')!, effort: env('CLAUDE_EFFORT', null) },
-      codex: { model: env('CODEX_MODEL', 'gpt-6.1-sol')!, effort: env('CODEX_EFFORT', 'low') },
-      agy: { model: env('AGY_MODEL', 'Gemini 3.8 Flash (High)')! },
-    },
-  };
+export function lineupCell(source: SourceEnv, lineup: SecondOpinionLineup, tier: Tier, cli: Cli): CliModel {
+  const env = (name: 'MODEL' | 'EFFORT'): string | null => source[`CTXR_SECOND_OPINION_${cli.toUpperCase()}_${name}`] || null;
+  const fromEnv = env('MODEL');
+  const configured = lineup[tier][cli].model;
+  const model = fromEnv ?? configured;
+  const from: LineupSource = fromEnv !== null ? 'environment' : configured === SHIPPED_DEFAULTS.second_opinion[tier][cli].model ? 'default' : 'store';
+  if (cli === 'agy') return { model, effort: null, source: from };
+  return { model, effort: env('EFFORT') ?? lineup[tier][cli].effort ?? null, source: from };
 }
 
 /**
@@ -100,8 +95,7 @@ export interface Invocation {
  * act; agy does not (its headless plan mode still wrote a file), so it is held to an empty working
  * directory and an untrusted plan should run without it.
  */
-export function buildInvocation(cli: Cli, prompt: string, tier: Tier, source: SourceEnv): Invocation {
-  const t = tiers(source)[tier][cli];
+export function buildInvocation(cli: Cli, prompt: string, t: CliModel): Invocation {
   if (cli === 'claude') {
     const args = ['-p', '--tools', '', '--model', t.model, '--no-session-persistence', '--disable-slash-commands', '--output-format', 'json'];
     if (t.effort) args.push('--effort', t.effort);

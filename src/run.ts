@@ -781,7 +781,8 @@ export function buildProgram(env: RunEnv): { program: Command; state: { result: 
     });
 
   // run-the-second-opinion-from-the-cli D1: the one command group that invokes a model CLI. Its options are
-  // contexture's own; the model CLIs' flags stay inside src/core/second-opinion/. It opens no store.
+  // contexture's own; the model CLIs' flags stay inside src/core/second-opinion/. Inside a store it reads the
+  // store's lineup (second-opinion-lineup-in-store-config D4); outside one it runs on the shipped lineup.
   const secondOpinionGroup = program
     .command('second-opinion')
     .description('a cross-model second opinion: the same plan or question sent to three model families\' command-line tools in parallel');
@@ -795,8 +796,8 @@ export function buildProgram(env: RunEnv): { program: Command; state: { result: 
   commonSecondOpinionOptions(
     secondOpinionGroup.command('preflight').description('check each model CLI answers, at the tier the run will use, and still accepts the flags this command passes'),
   ).action(async (cmdOpts: { tier?: string; only?: string; timeout?: string; requireConfinement?: boolean }, cmd: Command) => {
-    const { runEnv, jsonMode } = deriveRunEnv(env, cmd);
-    state.result = await runCommand('second-opinion.preflight', runEnv, jsonMode, () => secondOpinionCommand.executePreflight(runEnv, cmdOpts));
+    const { runEnv, jsonMode, root } = deriveRunEnv(env, cmd);
+    state.result = await runCommand('second-opinion.preflight', runEnv, jsonMode, async () => secondOpinionCommand.executePreflight(runEnv, (await storeIfAny(runEnv, root)) ?? null, cmdOpts));
   });
 
   commonSecondOpinionOptions(
@@ -807,8 +808,8 @@ export function buildProgram(env: RunEnv): { program: Command; state: { result: 
     .option('--seed <n>', 'seed the letter assignment, for a reproducible mapping')
     .option('--print', 'print each critique, then the letter table, on stdout and write no files')
     .action(async (cmdOpts: { tier?: string; only?: string; timeout?: string; requireConfinement?: boolean; planFile?: string; out?: string; seed?: string; print?: boolean }, cmd: Command) => {
-      const { runEnv, jsonMode } = deriveRunEnv(env, cmd);
-      state.result = await runCommand('second-opinion.critique', runEnv, jsonMode, () => secondOpinionCommand.executeCritique(runEnv, cmdOpts));
+      const { runEnv, jsonMode, root } = deriveRunEnv(env, cmd);
+      state.result = await runCommand('second-opinion.critique', runEnv, jsonMode, async () => secondOpinionCommand.executeCritique(runEnv, (await storeIfAny(runEnv, root)) ?? null, cmdOpts));
     });
 
   commonSecondOpinionOptions(
@@ -820,8 +821,8 @@ export function buildProgram(env: RunEnv): { program: Command; state: { result: 
     .option('--no-wrap', 'send the question as written, without the answer scaffold')
     .option('--print', 'print each answer on stdout and write no files')
     .action(async (cmdOpts: { tier?: string; only?: string; timeout?: string; requireConfinement?: boolean; promptFile?: string; out?: string; lens?: string; wrap: boolean; print?: boolean }, cmd: Command) => {
-      const { runEnv, jsonMode } = deriveRunEnv(env, cmd);
-      state.result = await runCommand('second-opinion.poll', runEnv, jsonMode, () => secondOpinionCommand.executePoll(runEnv, cmdOpts));
+      const { runEnv, jsonMode, root } = deriveRunEnv(env, cmd);
+      state.result = await runCommand('second-opinion.poll', runEnv, jsonMode, async () => secondOpinionCommand.executePoll(runEnv, (await storeIfAny(runEnv, root)) ?? null, cmdOpts));
     });
 
   const sharedStoresCommand = program.command('shared-stores').description('the stores this store mounts under shared/');
