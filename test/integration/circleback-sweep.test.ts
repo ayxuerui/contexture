@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { chmodSync, copyFileSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { chmodSync, copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
@@ -31,21 +31,37 @@ const MEETINGS = [
   recordingUrl: 'https://storage.example.test/signed?X-Goog-Signature=secret',
 }));
 
-function fakeBin(dir: string): void {
+/**
+ * Stand-in `cb` and `gh`. `rateLimit` makes transcript reads number `after + 1` to `after + times` (counted
+ * across calls, retries included) fail as the Free plan's limit does; every read is logged to `transcript-reads`,
+ * and the time of every call to `cb-calls`.
+ */
+function fakeBin(dir: string, meetings: unknown[] = MEETINGS, rateLimit = { after: 0, times: 0 }): void {
   mkdirSync(dir, { recursive: true });
   const fixtures = path.join(dir, 'meetings.json');
-  writeFileSync(fixtures, JSON.stringify(MEETINGS));
+  writeFileSync(fixtures, JSON.stringify(meetings));
+  const reads = path.join(dir, 'transcript-reads');
   // `cb`: search returns every meeting with its tags blanked, as the real CLI does; read returns them whole.
   writeFileSync(
     path.join(dir, 'cb'),
     `#!/usr/bin/env node
-const all = JSON.parse(require('fs').readFileSync(${JSON.stringify(fixtures)}, 'utf8'));
+const fs = require('fs');
+const all = JSON.parse(fs.readFileSync(${JSON.stringify(fixtures)}, 'utf8'));
+fs.appendFileSync(${JSON.stringify(path.join(dir, 'cb-calls'))}, Date.now() + '\\n');
 const [noun, verb, ...rest] = process.argv.slice(2);
 const ids = rest.filter((a) => !a.startsWith('--') && !/^[0-9]+$/.test(a));
 let out;
 if (noun === 'meetings' && verb === 'search') out = rest.includes('0') ? all.map((m) => ({ ...m, tags: [] })) : [];
 else if (noun === 'meetings' && verb === 'read') out = all.filter((m) => ids.includes(m.id));
-else if (noun === 'transcripts' && verb === 'read') out = ids.map((id) => ({ id, transcript: [{ speaker: 'Rui Xue', text: 'hello   there  ', timestamp: 1.5 }] }));
+else if (noun === 'transcripts' && verb === 'read') {
+  fs.appendFileSync(${JSON.stringify(reads)}, ids.join(' ') + '\\n');
+  const n = fs.readFileSync(${JSON.stringify(reads)}, 'utf8').trim().split('\\n').length;
+  if (n > ${rateLimit.after} && n <= ${rateLimit.after + rateLimit.times}) {
+    process.stderr.write(JSON.stringify({ status: 'error', reason: 'rate_limited', message: 'Ratelimit exceeded for the Free plan.', retryable: true }));
+    process.exit(1);
+  }
+  out = ids.map((id) => ({ id, transcript: [{ speaker: 'Rui Xue', text: 'hello   there  ', timestamp: 1.5 }] }));
+}
 process.stdout.write(JSON.stringify(out));
 `,
   );
@@ -89,7 +105,7 @@ describe('ctxr-capture-circleback runner', () => {
 
       const report = execFileSync('node', [path.join(skill, 'sweep.mjs')], {
         encoding: 'utf8',
-        env: { ...process.env, PATH: `${bin}${path.delimiter}${process.env.PATH}`, CONTEXTURE_STORE_ROOT: store, TMPDIR: scratch },
+        env: { ...process.env, PATH: `${bin}${path.delimiter}${process.env.PATH}`, CONTEXTURE_STORE_ROOT: store, TMPDIR: scratch, CTXR_CIRCLEBACK_WAIT_SCALE: '0' },
       });
 
       expect(report).not.toContain('COLLECTION FAILED');
@@ -118,7 +134,7 @@ describe('ctxr-capture-circleback runner', () => {
       // A second run reuses the fixed worktree path instead of colliding with the first.
       const again = execFileSync('node', [path.join(skill, 'sweep.mjs')], {
         encoding: 'utf8',
-        env: { ...process.env, PATH: `${bin}${path.delimiter}${process.env.PATH}`, CONTEXTURE_STORE_ROOT: store, TMPDIR: scratch },
+        env: { ...process.env, PATH: `${bin}${path.delimiter}${process.env.PATH}`, CONTEXTURE_STORE_ROOT: store, TMPDIR: scratch, CTXR_CIRCLEBACK_WAIT_SCALE: '0' },
       });
       expect(again).not.toContain('COLLECTION FAILED');
       // Its own review worktree, holding last run's capture, is not counted as the meeting being present.
@@ -126,5 +142,93 @@ describe('ctxr-capture-circleback runner', () => {
     } finally {
       await tmp.cleanup();
     }
+  });
+
+  const OWED = ['owedP1', 'owedQ2', 'owedR3'].map((id, i) => ({
+    id,
+    name: `Backlog ${i + 1}`,
+    createdAt: daysAgo(20 - i),
+    tags: ['alpha-store'],
+    notes: 'n',
+    duration: 60,
+    attendees: [],
+    actionItems: [],
+  }));
+
+  /** A store owing three meetings, swept once with transcript reads rate-limited as `rateLimit` says. */
+  async function sweepBacklog(
+    rateLimit: { after: number; times: number },
+    waitScale = '0',
+  ): Promise<{ report: string; reads: string[]; inbox: string[]; callTimes: number[] }> {
+    const tmp = await makeTmpDir();
+    try {
+      const git = (cwd: string, ...args: string[]): string =>
+        execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], env: { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' } });
+      const origin = path.join(tmp.root, 'origin.git');
+      const store = path.join(tmp.root, 'store');
+      git(tmp.root, 'init', '-q', '--bare', '-b', 'trunk', origin);
+      git(tmp.root, 'clone', '-q', origin, store);
+      writeFileSync(path.join(store, 'README.md'), 'store\n');
+      git(store, 'add', '.');
+      git(store, 'commit', '-q', '-m', 'seed');
+      git(store, 'push', '-q', 'origin', 'HEAD:trunk');
+      const skill = path.join(tmp.root, 'skill');
+      mkdirSync(skill);
+      copyFileSync(RUNNER, path.join(skill, 'sweep.mjs'));
+      writeFileSync(
+        path.join(skill, 'settings.json'),
+        JSON.stringify({ tag: 'alpha-store', other_tags: [], decline_tag: 'no-capture', inbox_path: 'raw/inbox/', default_branch: 'trunk', required_section: 'Transcript' }),
+      );
+      const bin = path.join(tmp.root, 'bin');
+      fakeBin(bin, OWED, rateLimit);
+      const scratch = path.join(tmp.root, 'scratch');
+      mkdirSync(scratch);
+      const report = execFileSync('node', [path.join(skill, 'sweep.mjs')], {
+        encoding: 'utf8',
+        env: { ...process.env, PATH: `${bin}${path.delimiter}${process.env.PATH}`, CONTEXTURE_STORE_ROOT: store, TMPDIR: scratch, CTXR_CIRCLEBACK_WAIT_SCALE: waitScale },
+      });
+      const callTimes = readFileSync(path.join(bin, 'cb-calls'), 'utf8').trim().split('\n').map(Number);
+      const readsFile = path.join(bin, 'transcript-reads');
+      const reads = existsSync(readsFile) ? readFileSync(readsFile, 'utf8').trim().split('\n') : [];
+      const inboxDir = path.join(scratch, 'ctxr-capture-circleback-store', 'raw', 'inbox');
+      return { report, reads, inbox: existsSync(inboxDir) ? readdirSync(inboxDir).sort() : [], callTimes };
+    } finally {
+      await tmp.cleanup();
+    }
+  }
+
+  it('retries a rate-limited transcript read and retrieves everything owed', async () => {
+    const { report, reads, inbox } = await sweepBacklog({ after: 1, times: 2 });
+    expect(report).not.toContain('COLLECTION FAILED');
+    // The second meeting's read is refused twice, then succeeds; nothing is skipped.
+    expect(reads).toEqual(['owedP1', 'owedQ2', 'owedQ2', 'owedQ2', 'owedR3']);
+    expect(inbox).toHaveLength(3);
+    expect(report).toMatch(/DEFERRED[^\n]*\(0\):\n\(none\)/);
+  });
+
+  it('keeps what it read and defers the rest when the rate limit outlasts every retry', async () => {
+    const { report, reads, inbox } = await sweepBacklog({ after: 1, times: 1000 });
+    expect(report).not.toContain('COLLECTION FAILED');
+    // One read, then the first try and three retries of the second; the third is not attempted this run.
+    expect(reads).toEqual(['owedP1', ...Array(4).fill('owedQ2')]);
+    expect(inbox).toEqual([expect.stringContaining('backlog-1')]);
+    const retrieved = report.split('RETRIEVED')[1]?.split('\nDEFERRED')[0] ?? '';
+    expect(retrieved).toContain('backlog-1');
+    const deferred = report.split('DEFERRED')[1]?.split('\n\n')[0] ?? '';
+    expect(deferred).toContain('(2):');
+    expect(deferred).toContain('owedQ2');
+    expect(deferred).toContain('owedR3');
+    expect(deferred).not.toContain('owedP1');
+    // The rest of the report still prints.
+    expect(report).toContain('UNTAGGED');
+  });
+
+  it('spaces every cb call to stay under the Free plan limit of 20 a minute', async () => {
+    // At a twentieth of real time, the 3.5 s spacing is 175 ms.
+    const { callTimes } = await sweepBacklog({ after: 0, times: 0 }, '0.05');
+    // The search, the meetings read and three transcript reads.
+    expect(callTimes).toHaveLength(5);
+    const gaps = callTimes.slice(1).map((t, i) => t - (callTimes[i] ?? 0));
+    for (const gap of gaps) expect(gap).toBeGreaterThanOrEqual(170);
   });
 });

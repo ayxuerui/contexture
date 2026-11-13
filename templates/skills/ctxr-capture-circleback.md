@@ -25,6 +25,12 @@ writes the record into `__INBOX_PATH__` there: the meeting's metadata and attend
 summary (marked as the service's derivation), and the transcript verbatim, with `source_type` and `source_id`
 stamped. It never writes the recording URL, which is a signed, expiring link and so a credential.
 
+Circleback's free plan allows an account 20 requests a minute, counting every other use of the same account. The
+runner spaces its calls to stay under that, so a large backlog takes a few minutes, and waits and retries when it is
+refused anyway. If the limit still holds, it keeps the records it already wrote and lists the meetings it could not
+read under DEFERRED; the next run retrieves them. That is a partial result, not a failure: carry on with what was
+retrieved.
+
 The report is authoritative. Do not work the list out again yourself, and do not rebuild the files it wrote. If it
 prints `COLLECTION FAILED`, report that line and stop.
 
@@ -53,6 +59,7 @@ Give the counts (retrieved, already present), the pull request link, and the run
 they are:
 
 - **LOCKED**: tagged for this store but no longer readable in full, so it cannot be captured.
+- **DEFERRED**: owed, but not read this run because of the rate limit. The next run retrieves them.
 - **UNPUSHED**: captured in a local worktree but not yet on the default branch or in a pull request. That work
   needs landing; nothing here captures it again.
 - **UNTAGGED**, **TAGGED FOR MORE THAN ONE STORE** and **DECLINED IN THE LAST 8 DAYS**, when the runner prints them.
