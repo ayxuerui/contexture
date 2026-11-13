@@ -12,6 +12,13 @@
 // Two facts about `cb` shape this file: search results carry no tags (every `tags` field is empty), so
 // tags come from `cb meetings read`; and a meeting older than the plan's history window reads back with
 // a notice in place of its notes, which is how a locked meeting is recognised.
+//
+// Circleback's API documentation limits each account to 3 requests a second and 20 a minute on the Free plan
+// (20 and 300 on paid plans), counting every API key and CLI token of the account together; `cb` reports a
+// refusal as `rate_limited` but passes on no Retry-After. So every `cb` call is spaced to stay under the Free
+// plan's 20 a minute, which also keeps it under 3 a second; a refused call is retried after waiting out a
+// one-minute window; and if the limit still holds, the meetings not yet read are reported as deferred, keeping
+// what was already written: the next run picks them up.
 
 import { execFileSync } from 'node:child_process';
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -27,6 +34,32 @@ const PAGE_SIZE = 20;
 const READ_BATCH = 50;
 const BRANCH = 'circleback-capture';
 const LOCKED_NOTICE = 'outside the history available';
+// The Free plan's limits. The runner cannot tell which plan the account is on, so it keeps to the lowest.
+const REQUESTS_PER_MINUTE = 20;
+// A little under the limit, leaving room for whatever else uses the account and for a `cb` call that makes
+// more than one request: about 17 calls a minute.
+const CALL_SPACING_MS = Math.ceil(60_000 / REQUESTS_PER_MINUTE) + 500;
+// The minute window refills within 60 seconds, so the first retry waits half of it and the rest a whole one.
+const RETRY_DELAYS_MS = [30_000, 60_000, 60_000];
+const RATE_LIMITED = /"reason"\s*:\s*"rate_limited"/;
+// Every wait is multiplied by this. Only the tests set it, to 0; a store never does.
+const WAIT_SCALE = Number.isFinite(Number(process.env.CTXR_CIRCLEBACK_WAIT_SCALE)) ? Number(process.env.CTXR_CIRCLEBACK_WAIT_SCALE) : 1;
+
+/** Thrown when `cb` is still rate-limited after every retry. */
+class RateLimited extends Error {}
+
+function pause(ms) {
+  const wait = ms * WAIT_SCALE;
+  if (wait > 0) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, wait);
+}
+
+let lastCbCall = -Infinity;
+
+/** Waits until CALL_SPACING_MS has passed since the previous `cb` call, retries included. */
+function spaceCbCall() {
+  pause(Math.max(0, lastCbCall + CALL_SPACING_MS - Date.now()));
+  lastCbCall = Date.now();
+}
 
 function run(command, args, { cwd, check = true } = {}) {
   try {
@@ -34,12 +67,32 @@ function run(command, args, { cwd, check = true } = {}) {
   } catch (error) {
     if (!check) return error.stdout ?? '';
     const detail = String(error.stderr || error.message).trim().slice(0, 300);
-    throw new Error(`${command} ${args.slice(0, 2).join(' ')} failed: ${detail}`);
+    throw Object.assign(new Error(`${command} ${args.slice(0, 2).join(' ')} failed: ${detail}`), {
+      output: `${error.stdout ?? ''}\n${error.stderr ?? ''}`,
+    });
   }
 }
 
+/** One `cb` call, retried with backoff while Circleback reports a rate limit. */
 function cb(args) {
-  return JSON.parse(run('cb', [...args, '--json']));
+  for (let attempt = 0; ; attempt += 1) {
+    let output;
+    spaceCbCall();
+    try {
+      output = run('cb', [...args, '--json']);
+    } catch (error) {
+      if (!RATE_LIMITED.test(error.output ?? '')) throw error;
+      if (attempt >= RETRY_DELAYS_MS.length) throw new RateLimited(error.message);
+      pause(RETRY_DELAYS_MS[attempt]);
+      continue;
+    }
+    const result = JSON.parse(output);
+    if (result?.status !== 'error') return result;
+    // An error printed as the result, with a zero exit: treat it the same as a failed call.
+    if (!RATE_LIMITED.test(output)) throw new Error(`cb ${args.slice(0, 2).join(' ')} failed: ${output.trim().slice(0, 300)}`);
+    if (attempt >= RETRY_DELAYS_MS.length) throw new RateLimited(`cb ${args.slice(0, 2).join(' ')} failed: ${output.trim().slice(0, 300)}`);
+    pause(RETRY_DELAYS_MS[attempt]);
+  }
 }
 
 function storeRoot() {
@@ -232,12 +285,26 @@ function main() {
     mkdirSync(inbox, { recursive: true });
     report.push(`\nWORKTREE: ${worktree} (branch \`${BRANCH}\`, ${continuing ? `continuing pull request #${continuing}` : `fresh from origin/${settings.default_branch}`})`);
     report.push('RETRIEVED (verbatim records in the inbox; continue with ctxr-capture from step 2):');
+    const deferred = [];
     for (const meeting of owed) {
-      const transcript = cb(['transcripts', 'read', meeting.id]);
+      // Once the limit has outlasted every retry, read nothing more this run.
+      if (deferred.length > 0) {
+        deferred.push(line(meeting));
+        continue;
+      }
+      let transcript;
+      try {
+        transcript = cb(['transcripts', 'read', meeting.id]);
+      } catch (error) {
+        if (!(error instanceof RateLimited)) throw error;
+        deferred.push(line(meeting));
+        continue;
+      }
       const file = path.join(inbox, captureFileName(meeting));
       writeFileSync(file, renderCapture(meeting, transcript, settings));
       report.push(file);
     }
+    report.push(...section('DEFERRED — owed, but Circleback is rate-limiting transcript reads; the next run retrieves them', deferred));
   }
   report.push(
     ...section('UNPUSHED — captured in a local worktree but not on the default branch or in an open pull request; land that work', unpushed),
