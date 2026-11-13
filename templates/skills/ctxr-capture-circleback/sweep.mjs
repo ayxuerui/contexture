@@ -21,7 +21,7 @@
 // what was already written: the next run picks them up.
 
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -187,9 +187,17 @@ function prepareWorktree(root, settings) {
   return { worktree, continuing: open[0]?.number };
 }
 
-function captureFileName(meeting) {
-  const slug = meeting.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || meeting.id;
-  return `circleback-${meeting.createdAt.slice(0, 10)}-${slug}.md`;
+/**
+ * Where a meeting's record goes in the inbox: named for its date and title, with the meeting id added when that
+ * name is already taken. The slug keeps only ASCII letters and digits, so two titles mostly in another script can
+ * reduce to the same name, and one record must never overwrite another, from this run or already in the inbox.
+ */
+function captureFilePath(inbox, meeting) {
+  const date = meeting.createdAt.slice(0, 10);
+  const slug = meeting.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+  const named = path.join(inbox, `circleback-${date}-${slug || meeting.id}.md`);
+  if (!existsSync(named)) return named;
+  return path.join(inbox, `circleback-${date}-${slug ? `${slug}-` : ''}${meeting.id}.md`);
 }
 
 /** The mechanical part of a capture. The speaker judgment is the agent's, added afterwards. */
@@ -300,7 +308,7 @@ function main() {
         deferred.push(line(meeting));
         continue;
       }
-      const file = path.join(inbox, captureFileName(meeting));
+      const file = captureFilePath(inbox, meeting);
       writeFileSync(file, renderCapture(meeting, transcript, settings));
       report.push(file);
     }

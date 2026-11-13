@@ -159,7 +159,8 @@ describe('ctxr-capture-circleback runner', () => {
   async function sweepBacklog(
     rateLimit: { after: number; times: number },
     waitScale = '0',
-  ): Promise<{ report: string; reads: string[]; inbox: string[]; callTimes: number[] }> {
+    meetings: unknown[] = OWED,
+  ): Promise<{ report: string; reads: string[]; inbox: string[]; ids: (string | undefined)[]; callTimes: number[] }> {
     const tmp = await makeTmpDir();
     try {
       const git = (cwd: string, ...args: string[]): string =>
@@ -180,7 +181,7 @@ describe('ctxr-capture-circleback runner', () => {
         JSON.stringify({ tag: 'alpha-store', other_tags: [], decline_tag: 'no-capture', inbox_path: 'raw/inbox/', default_branch: 'trunk', required_section: 'Transcript' }),
       );
       const bin = path.join(tmp.root, 'bin');
-      fakeBin(bin, OWED, rateLimit);
+      fakeBin(bin, meetings, rateLimit);
       const scratch = path.join(tmp.root, 'scratch');
       mkdirSync(scratch);
       const report = execFileSync('node', [path.join(skill, 'sweep.mjs')], {
@@ -191,7 +192,9 @@ describe('ctxr-capture-circleback runner', () => {
       const readsFile = path.join(bin, 'transcript-reads');
       const reads = existsSync(readsFile) ? readFileSync(readsFile, 'utf8').trim().split('\n') : [];
       const inboxDir = path.join(scratch, 'ctxr-capture-circleback-store', 'raw', 'inbox');
-      return { report, reads, inbox: existsSync(inboxDir) ? readdirSync(inboxDir).sort() : [], callTimes };
+      const inbox = existsSync(inboxDir) ? readdirSync(inboxDir).sort() : [];
+      const ids = inbox.map((file) => /source_id: circleback\/(\S+)/.exec(readFileSync(path.join(inboxDir, file), 'utf8'))?.[1]);
+      return { report, reads, inbox, ids, callTimes };
     } finally {
       await tmp.cleanup();
     }
@@ -230,5 +233,20 @@ describe('ctxr-capture-circleback runner', () => {
     expect(callTimes).toHaveLength(5);
     const gaps = callTimes.slice(1).map((t, i) => t - (callTimes[i] ?? 0));
     for (const gap of gaps) expect(gap).toBeGreaterThanOrEqual(170);
+  });
+
+  it('gives two meetings whose titles reduce to the same name a file each', async () => {
+    // Titles mostly in another script keep only their ASCII letters: both slug to `aon`.
+    const twins = ['aonOne11', 'aonTwo22'].map((id, i) => ({
+      ...OWED[0],
+      id,
+      name: i === 0 ? 'AON 检索算法优化方案讨论' : 'AON 推荐召回率优化方案',
+      createdAt: daysAgo(14),
+    }));
+    const { inbox, ids } = await sweepBacklog({ after: 0, times: 0 }, '0', twins);
+    expect(inbox).toHaveLength(2);
+    expect(inbox).toContain(`circleback-${daysAgo(14).slice(0, 10)}-aon.md`);
+    expect(inbox).toContain(`circleback-${daysAgo(14).slice(0, 10)}-aon-aonTwo22.md`);
+    expect([...ids].sort()).toEqual(['aonOne11', 'aonTwo22']);
   });
 });
