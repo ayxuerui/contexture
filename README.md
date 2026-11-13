@@ -113,15 +113,15 @@ Every harness loads this file on every turn, so it is kept short. contexture's o
 |---|---|---|
 | `claude` | `fable` | `opus` |
 | `codex` | `gpt-6-astra`, effort `low` | `gpt-6.1-sol`, effort `low` |
-| `agy` | `Gemini 4 Argon (Medium)` | `Gemini 3.8 Flash (High)` |
+| `agy` | `Gemini 3.8 Flash (High)` | `Gemini 3.8 Flash (High)` |
 
-A store whose account is not offered one of these names its own in `contexture.yaml`, and records nothing else:
+`agy` lists models by the account's plan, so its default is the one every account is offered. A store whose account offers a stronger one, or is not offered a default, names its own in `contexture.yaml`, and records nothing else:
 
 ```yaml
 second_opinion:
   strong:
     agy:
-      model: Gemini 3.8 Flash (High)
+      model: Gemini 4 Argon (Medium)
 ```
 
 `claude` and `codex` also take `effort`; `claude` ships none, so Claude Code applies its own. A misspelled tier or CLI fails when the configuration loads. For one run, `CTXR_SECOND_OPINION_{CLAUDE,CODEX,AGY}_MODEL` and `CTXR_SECOND_OPINION_{CLAUDE,CODEX}_EFFORT` win over the store, in both tiers. Outside a store the command runs on the shipped lineup. `preflight` and the manifest name the model each CLI was asked for and whether the environment, the store or the shipped default chose it. A CLI that refuses its model is a failed critic; no other model is tried.

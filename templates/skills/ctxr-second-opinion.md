@@ -129,7 +129,7 @@ effort setting, so Claude Code applies its default for the model. Codex gets the
 declares, which the command passes explicitly. Why: Codex left to itself, with no setting pinned, can resolve
 to no reasoning at all. Gemini's effort is part of its model name, and the command names each model at its
 default level. Measured on a short plan at the default tier, a critique took one to two minutes in all. Claude
-(Fable) took 80 to 120 seconds, and Gemini (Argon) and Codex (GPT-6-Astra) about 15 each. The fast tier is
+(Fable) took 80 to 120 seconds, and Codex (GPT-6-Astra) about 15. The fast tier is
 quicker and costs less. A deeper pass is a choice: with `CTXR_SECOND_OPINION_CLAUDE_EFFORT=max`, Claude on
 Opus alone took over eight minutes on a short plan. That is close to the command's ten-minute limit per tool,
 and Fable is slower than Opus; raise it with `ctxr second-opinion critique --timeout <seconds>` for such a

@@ -15,6 +15,7 @@
   - `renderStoreConfig` omits the block for a store that names nothing, and writes only the named cell otherwise.
 
   `npx vitest run test/unit/config-schema.test.ts test/unit/single-source-literals.test.ts` exits 0.
+- [x] 1.4 Ship `Gemini 3.8 Flash (High)` as `strong.agy.model` (D7), and update the comment in `src/config/defaults.ts`, the README table and the tests that name the model. `npx vitest run test/unit/second-opinion.test.ts` exits 0.
 
 ## 2. Resolution and its source (D2, D3)
 
@@ -53,7 +54,7 @@
 
 ## 6. Real CLIs (operator checkpoint)
 
-- [ ] 6.1 After the release, in a store whose `agy` account lacks the `strong` default: land a session pull request naming `second_opinion.strong.agy.model`, then run `ctxr second-opinion preflight --require-confinement` in that store's `serve` with no lineup variable set. It exits 0, and reports all three CLIs up with that model's source as the store.
+- [ ] 6.1 After the release, in the `serve` of a store whose `agy` account is not offered `Gemini 4 Argon`, with no lineup variable set and no lineup in the store: `ctxr second-opinion preflight --require-confinement` exits 0 and reports all three CLIs up on the shipped default.
 
 ## Workflow follow-up
 

@@ -29,10 +29,10 @@ See proposal.md, Why. Current state:
 second_opinion:
   strong:
     agy:
-      model: Gemini 3.8 Flash (High)
+      model: Gemini 4 Argon (Medium)
 ```
 
-That is the whole of what a store on a narrower `agy` account writes. The full shape, with today's values as the shipped defaults:
+That is the whole of what a store writes when its `agy` account offers a stronger model than the shipped one. The full shape, with the shipped defaults:
 
 | Key | `strong` | `fast` |
 |---|---|---|
@@ -40,7 +40,7 @@ That is the whole of what a store on a narrower `agy` account writes. The full s
 | `claude.effort` | none (optional) | none (optional) |
 | `codex.model` | `gpt-6-astra` | `gpt-6.1-sol` |
 | `codex.effort` | `low` | `low` |
-| `agy.model` | `Gemini 4 Argon (Medium)` | `Gemini 3.8 Flash (High)` |
+| `agy.model` | `Gemini 3.8 Flash (High)` (was `Gemini 4 Argon (Medium)`, D7) | `Gemini 3.8 Flash (High)` |
 
 - **Tier first,** because that is how a run is asked for (`--tier fast`) and how the tiers differ: in model only.
 - **`claude.effort` is `.optional()` with no shipped default.** Its absence means "Claude Code's own default for the model", which is a different thing from any value. This is the existing `context-store` rule for a key whose absence is meaningful.
@@ -91,6 +91,17 @@ That is the whole of what a store on a narrower `agy` account writes. The full s
 
 `templates/skills/ctxr-second-opinion.md` replaces "Nothing about the lineup lives in the store's configuration" with: the store's `second_opinion` block is where a lasting choice goes, by a session and a pull request; the environment is for one run. Its step for a CLI that `preflight` reports down gains the case seen here: a signed-in CLI that rejects the model, which is the store's lineup to change. It stays free of the seven tier words and of flag attribution. The plugin is regenerated.
 
+### D7. `agy`'s shipped `strong` model is the one every account is offered
+
+`strong.agy.model` ships as `Gemini 3.8 Flash (High)`, the `fast` tier's model, and no longer `Gemini 4 Argon (Medium)`. Every other default moves as it was.
+
+- **Why.** agy lists models by the account's plan. On 2026-11-13 a signed-in account listed three Flash levels, two Claude models and one open-weights model, and no Argon, so agy was refused on every default run in a shell and on the server. A shipped default that part of the audience cannot run makes the default tier a two-critic result for them until someone finds the override.
+- **What it costs.** For an account that does offer Argon, the `strong` tier's third critic drops to a workhorse model until the store names Argon, which is three lines. The tiers no longer differ for `agy`.
+
+**Opposing case: keep Argon as the default and let narrower accounts override.** It keeps `strong` meaning each family's frontier model, and the override now exists. But a default should work for whoever has signed in, and a store that never touches its configuration should get three critics. Naming the stronger model is the opt-in; being refused is not a reasonable opt-out.
+
+**Opposing case: try Argon and fall back to Flash when refused.** No store would need to say anything. It is the silent substitution the specs refuse: the manifest would have to explain which model actually ran and why, and a refused name would stop being a visible fault.
+
 ## Risks / Trade-offs
 
 - **[A store pins a model name that the vendor later retires]** → `preflight` names the CLI, its reason and that the model came from the store, so the fix is visible. A store that names nothing never has this.
@@ -103,5 +114,5 @@ That is the whole of what a store on a narrower `agy` account writes. The full s
 ## Migration Plan
 
 1. **Release.** No `schema_version` change and no migration step. Stores that name no lineup behave as before.
-2. **A store on a narrower account** adds its lines by a session pull request once the containers that run its second opinion have the release. Until then the environment override keeps working, in a shell and (contexture-images #102) in `serve`.
+2. **`agy` runs on Flash at the default tier** from this release, for every store that names no lineup (D7). A store whose account offers a stronger model adds its lines by a session pull request once the containers that run its second opinion have the release.
 3. **Rollback.** A patch release restores the table; a store's `second_opinion` block is then ignored by the pass-through root and can stay.

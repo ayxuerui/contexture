@@ -303,9 +303,15 @@ export function serveSyncMinutes(config: { serve?: { sync_minutes?: number | und
  * The tiers name a class of model, not a price. `strong` is each family's
  * frontier model and `fast` its workhorse: claude `fable` and `opus`; codex
  * `gpt-6-astra` ("frontier intelligence") and `gpt-6.1-sol` ("latest
- * workhorse"), as codex's model catalog described them on 2026-10-15; agy
- * `Gemini 4 Argon` and `Gemini 3.8 Flash`, once agy offered Argon (2026-10-19).
- * The tiers differ in model only.
+ * workhorse"), as codex's model catalog described them on 2026-10-15. The
+ * tiers differ in model only.
+ *
+ * agy is `Gemini 3.8 Flash` in both tiers. agy lists models by the account's
+ * plan: `Gemini 4 Argon` was the `strong` default from 2026-10-19, and an
+ * account that is not offered it had agy refused on every default run (seen
+ * 2026-11-13). A shipped default has to be a model every signed-in account
+ * can run, so it is the Flash every account seen lists; a store whose account
+ * offers a stronger one names it in `second_opinion.strong.agy.model`.
  *
  * Effort is each provider's own recommended default, not one contexture picked:
  *  - claude carries none, so Claude Code applies its own default for the model.
@@ -314,15 +320,14 @@ export function serveSyncMinutes(config: { serve?: { sync_minutes?: number | und
  *    `low` for both models on 2026-10-15. It is shipped because the flag cannot
  *    be left off: with no pin in config.toml, codex resolves to
  *    `reasoning effort: none` on a ChatGPT login (seen 2026-10-05).
- *  - agy: the effort is part of the model name, `(Medium)` for Gemini 4 Argon
- *    and `(High)` for Gemini 3.8 Flash. agy rejects an unknown name, and
- *    `preflight` tests it.
+ *  - agy: the effort is part of the model name, `(High)` for Gemini 3.8 Flash.
+ *    agy rejects an unknown name, and `preflight` tests it.
  */
 export const DEFAULT_SECOND_OPINION_LINEUP = {
   strong: {
     claude: { model: 'fable' },
     codex: { model: 'gpt-6-astra', effort: 'low' },
-    agy: { model: 'Gemini 4 Argon (Medium)' },
+    agy: { model: 'Gemini 3.8 Flash (High)' },
   },
   fast: {
     claude: { model: 'opus' },
