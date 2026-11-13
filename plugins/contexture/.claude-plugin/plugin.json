@@ -1,7 +1,7 @@
 {
   "name": "contexture",
   "displayName": "contexture",
-  "version": "0.39.0",
+  "version": "0.40.0",
   "description": "contexture's skills for working in a contexture store from Claude: capture material, file it into notes, find and propose connections, keep rollups and the mission current, and submit a change for approval. Add your store's connector separately.",
   "author": {
     "name": "contexture",
