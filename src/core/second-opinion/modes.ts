@@ -1,12 +1,13 @@
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import type { SecondOpinionLineup } from '../../config/schema.js';
 import { SecondOpinionUnconfinedError, SecondOpinionUsageError } from '../errors.js';
 import { onPath, type Confinement, type ConfinedRun } from './confine.js';
 import { childEnvironment, PASS_ENV_VARIABLE, protectedPassThroughNames, type SourceEnv } from './environment.js';
 import { judgeCritique } from './judge.js';
 import { firstLines, runCli, type CliResult } from './launch.js';
-import { ALL_CLIS, buildInvocation, FLAGS_USED, INSTALL_LEVELS, LOGIN_FILES, MAX_ARGV_BYTES, normalize, QUORUM, ROLE_CLI, ROLES, TIERS, tiers, type Cli, type Role, type Tier } from './lineup.js';
+import { ALL_CLIS, buildInvocation, FLAGS_USED, INSTALL_LEVELS, LOGIN_FILES, MAX_ARGV_BYTES, normalize, QUORUM, ROLE_CLI, ROLES, TIERS, lineupCell, type Cli, type LineupSource, type Role, type Tier } from './lineup.js';
 import { critiquePrompt, pollPrompt } from './prompts.js';
 
 /**
@@ -19,6 +20,8 @@ import { critiquePrompt, pollPrompt } from './prompts.js';
 export interface SecondOpinionContext {
   /** The command's own environment: the source the allowlist filters, and where the lineup overrides are read. */
   source: SourceEnv;
+  /** The store's `second_opinion` block, or the schema's defaults outside a store (second-opinion-lineup-in-store-config). */
+  lineup: SecondOpinionLineup;
   cwd: string;
   home: string;
   /** Progress narration, for stderr. */
@@ -117,7 +120,13 @@ export interface PreflightEntry {
   cli: Cli;
   ok: boolean;
   detail: string;
+  /** The model this CLI was asked for, and where it came from. */
+  model_asked: string;
+  model_source: LineupSource;
 }
+
+/** How a model's source reads beside its name. */
+const SOURCE_LABEL: Record<LineupSource, string> = { environment: 'environment', store: 'store configuration', default: 'shipped default' };
 
 export interface PreflightResult {
   tier: Tier;
@@ -136,21 +145,24 @@ export async function preflight(ctx: SecondOpinionContext, opts: CommonOptions):
   const results = await Promise.all(
     r.clis.map(async (cli): Promise<PreflightEntry> => {
       const spec = FLAGS_USED[cli];
+      const cell = lineupCell(ctx.source, ctx.lineup, r.tier, cli);
+      const asked = { model_asked: cell.model, model_source: cell.source };
+      // A CLI that is down still names the model and its source: a refused model is the lineup's to fix.
+      const down = (detail: string): PreflightEntry => ({ cli, ok: false, detail: `${detail} [asked for ${cell.model}, ${SOURCE_LABEL[cell.source]}]`, ...asked });
       const confine = confinedRun(ctx, r, cli);
       const help = await runCli(cli, spec.helpArgs, '', 30, r.env, confine);
-      if (!help.ok) return { cli, ok: false, detail: help.cause ?? 'failed' };
+      if (!help.ok) return down(help.cause ?? 'failed');
       const helpText = help.stdout + help.stderr;
       const missing = spec.flags.filter((f) => !helpText.includes(f));
       // The ping runs at the tier the run will use. A fixed tier left the other tier's model untested, so a
       // model name agy no longer accepted passed preflight and failed the critique (2026-10-13).
-      const inv = buildInvocation(cli, 'say PONG only', r.tier, ctx.source);
+      const inv = buildInvocation(cli, 'say PONG only', cell);
       const ping = await runCli(inv.cmd, inv.args, inv.stdin, Math.min(r.timeout, 60), r.env, confine);
-      if (!ping.ok) return { cli, ok: false, detail: ping.cause ?? 'failed' };
+      if (!ping.ok) return down(ping.cause ?? 'failed');
       const { text } = normalize(cli, ping);
-      if (!/pong/i.test(text)) return { cli, ok: false, detail: `unexpected reply: ${firstLines(text, 2)}` };
-      if (missing.length) return { cli, ok: false, detail: `answers, but its --help no longer lists: ${missing.join(' ')}` };
-      const model = tiers(ctx.source)[r.tier][cli].model;
-      return { cli, ok: true, detail: model ? `PONG (${model})` : 'PONG' };
+      if (!/pong/i.test(text)) return down(`unexpected reply: ${firstLines(text, 2)}`);
+      if (missing.length) return down(`answers, but its --help no longer lists: ${missing.join(' ')}`);
+      return { cli, ok: true, detail: `PONG (${cell.model}, ${SOURCE_LABEL[cell.source]})`, ...asked };
     }),
   );
   const ok = results.every((x) => x.ok);
@@ -237,6 +249,9 @@ export interface CritiqueEntry {
   letter: string | null;
   role: Role;
   cli: Cli;
+  /** The model the CLI was asked for, and whether the environment, the store or the shipped lineup named it. */
+  model_asked: string;
+  model_source: LineupSource;
   model_reported: string | null;
   status: 'valid' | 'blind' | 'failed';
   cause: string | null;
@@ -278,16 +293,17 @@ export async function critique(ctx: SecondOpinionContext, opts: CritiqueOptions)
     roles.map(async (role) => {
       const cli = ROLE_CLI[role];
       const prompt = critiquePrompt(role, plan);
+      const cell = lineupCell(ctx.source, ctx.lineup, r.tier, cli);
       const started = Date.now();
       let raw: CliResult;
       const refused = cli === 'agy' ? tooLong(prompt, `prompt is ${Buffer.byteLength(prompt)} bytes; agy takes it as one argument and the limit is ${MAX_ARGV_BYTES}`) : null;
       if (refused) raw = refused;
       else {
-        const inv = buildInvocation(cli, prompt, r.tier, ctx.source);
+        const inv = buildInvocation(cli, prompt, cell);
         raw = await runCli(inv.cmd, inv.args, inv.stdin, r.timeout, r.env, confinedRun(ctx, r, cli));
       }
       if (dir !== null) writeFileSync(path.join(dir, 'raw', `${role}-${cli}.txt`), `${raw.stdout}\n--- stderr ---\n${raw.stderr}\n`);
-      const base = { role, cli, duration_ms: Date.now() - started };
+      const base = { role, cli, asked: cell, duration_ms: Date.now() - started };
       if (!raw.ok) return { ...base, status: 'failed' as const, cause: raw.cause ?? null, model: null, text: '', verdict: null, findings: 0, veto: false };
       const { text, model } = normalize(cli, raw);
       const judged = judgeCritique(text, plan);
@@ -309,6 +325,8 @@ export async function critique(ctx: SecondOpinionContext, opts: CritiqueOptions)
       letter: letters.find((l) => l.role === x.role)?.letter ?? null,
       role: x.role,
       cli: x.cli,
+      model_asked: x.asked.model,
+      model_source: x.asked.source,
       model_reported: x.model,
       status: x.status,
       cause: x.cause,
@@ -361,7 +379,11 @@ export interface PollAnswer {
   cli: Cli;
   status: 'valid' | 'failed';
   cause: string | null;
+  /** The model the CLI reports having run, where it reports one. */
   model: string | null;
+  /** The model the CLI was asked for, and whether the environment, the store or the shipped lineup named it. */
+  model_asked: string;
+  model_source: LineupSource;
 }
 
 export interface PollManifest {
@@ -395,17 +417,19 @@ export async function poll(ctx: SecondOpinionContext, opts: PollOptions): Promis
   const runs = await Promise.all(
     r.clis.map(async (cli) => {
       let raw: CliResult;
+      const cell = lineupCell(ctx.source, ctx.lineup, r.tier, cli);
+      const asked = { model_asked: cell.model, model_source: cell.source };
       const refused = cli === 'agy' ? tooLong(prompt, `prompt exceeds the ${MAX_ARGV_BYTES}-byte argument limit`) : null;
       if (refused) raw = refused;
       else {
-        const inv = buildInvocation(cli, prompt, r.tier, ctx.source);
+        const inv = buildInvocation(cli, prompt, cell);
         raw = await runCli(inv.cmd, inv.args, inv.stdin, r.timeout, r.env, confinedRun(ctx, r, cli));
       }
       if (dir !== null) writeFileSync(path.join(dir, 'raw', `poll-${cli}.txt`), `${raw.stdout}\n--- stderr ---\n${raw.stderr}\n`);
-      if (!raw.ok) return { cli, status: 'failed' as const, cause: raw.cause ?? null, model: null, text: '' };
+      if (!raw.ok) return { cli, status: 'failed' as const, cause: raw.cause ?? null, model: null, ...asked, text: '' };
       const { text, model } = normalize(cli, raw);
-      if (!text) return { cli, status: 'failed' as const, cause: 'empty output', model, text };
-      return { cli, status: 'valid' as const, cause: null, model, text };
+      if (!text) return { cli, status: 'failed' as const, cause: 'empty output', model, ...asked, text };
+      return { cli, status: 'valid' as const, cause: null, model, ...asked, text };
     }),
   );
 

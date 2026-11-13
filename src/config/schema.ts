@@ -273,6 +273,41 @@ const UpdateCheckSchema = z.object({
 });
 
 /**
+ * harness-portability spec (second-opinion-lineup-in-store-config D1): the
+ * second opinion's lineup, tier first and then model CLI. Every model, and
+ * codex's effort, defaults to the shipped lineup, so a store records only the
+ * cell that differs and follows a changed default on upgrade.
+ *
+ * Strict at every level, unlike the pass-through root: a misspelled tier, CLI
+ * or field fails here, at load, and not as a model CLI's refusal minutes
+ * later. `claude.effort` is optional with no default, because its absence
+ * means "Claude Code's own default for the model". `agy` has no effort key:
+ * its effort is part of the model name.
+ */
+const secondOpinionTier = (tier: 'strong' | 'fast') =>
+  z.strictObject({
+    claude: z
+      .strictObject({
+        model: z.string().min(1).default(SHIPPED_DEFAULTS.second_opinion[tier].claude.model),
+        effort: z.string().min(1).optional(),
+      })
+      .prefault({}),
+    codex: z
+      .strictObject({
+        model: z.string().min(1).default(SHIPPED_DEFAULTS.second_opinion[tier].codex.model),
+        effort: z.string().min(1).default(SHIPPED_DEFAULTS.second_opinion[tier].codex.effort),
+      })
+      .prefault({}),
+    agy: z.strictObject({ model: z.string().min(1).default(SHIPPED_DEFAULTS.second_opinion[tier].agy.model) }).prefault({}),
+  });
+
+export const SecondOpinionSchema = z.strictObject({
+  strong: secondOpinionTier('strong').prefault({}),
+  fast: secondOpinionTier('fast').prefault({}),
+});
+export type SecondOpinionLineup = z.infer<typeof SecondOpinionSchema>;
+
+/**
  * harness-portability spec (a store declares which note templates it installs):
  * where a store's note templates live, and which of the packaged library it
  * installs. Shaped as its own block rather than as keys on `harness`, matching
@@ -508,6 +543,7 @@ export const StoreConfigSchema = z
     templates: TemplatesSchema.prefault({}),
     skills: SkillsSchema.prefault({}),
     update_check: UpdateCheckSchema.prefault({}),
+    second_opinion: SecondOpinionSchema.prefault({}),
     ingest: IngestSchema.prefault({}),
     organize: OrganizeSchema,
     harness: HarnessSchema.prefault({}),

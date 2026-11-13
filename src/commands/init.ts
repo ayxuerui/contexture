@@ -332,6 +332,7 @@ async function runInitCore(env: RunEnv, flags: InitFlags): Promise<RunInitResult
     templates: { path: DEFAULT_TEMPLATES_PATH, installed: [...DEFAULT_INSTALLED_TEMPLATES] },
     skills: { vendored: [...DEFAULT_VENDORED_SKILLS] },
     update_check: SHIPPED_DEFAULTS.update_check,
+    second_opinion: SHIPPED_DEFAULTS.second_opinion,
     ingest: { inbox_path: DEFAULT_INBOX_PATH, capture_root: DEFAULT_CAPTURE_ROOT, tracking_params: [...DEFAULT_TRACKING_PARAMS] },
     organize: {
       archive_destination: archiveDestination,

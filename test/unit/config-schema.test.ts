@@ -600,6 +600,62 @@ describe('templates block (standardize-note-templates)', () => {
   });
 });
 
+/**
+ * second-opinion-lineup-in-store-config (D1, D2): the lineup is a fully
+ * defaulted block, so a store records only the cell that differs, and a typo
+ * fails at load.
+ */
+describe('second_opinion block (second-opinion-lineup-in-store-config)', () => {
+  async function load(extra: string) {
+    const tmp = await makeTmpDir();
+    try {
+      await writeFile(path.join(tmp.root, CONFIG_FILE_NAME), `${minimalConfig()}${extra}`);
+      return await readConfig(tmp.root);
+    } finally {
+      await tmp.cleanup();
+    }
+  }
+
+  it('resolves to the shipped lineup when a config declares no block', async () => {
+    const config = await load('');
+    expect(config.second_opinion).toEqual(SHIPPED_DEFAULTS.second_opinion);
+    expect(config.second_opinion.strong.claude.effort).toBeUndefined();
+  });
+
+  it('takes one named cell and leaves every other model at its default', async () => {
+    const config = await load('second_opinion: { strong: { agy: { model: m-alt } } }\n');
+    expect(config.second_opinion.strong.agy.model).toBe('m-alt');
+    expect(config.second_opinion.strong.claude).toEqual(SHIPPED_DEFAULTS.second_opinion.strong.claude);
+    expect(config.second_opinion.strong.codex).toEqual(SHIPPED_DEFAULTS.second_opinion.strong.codex);
+    expect(config.second_opinion.fast).toEqual(SHIPPED_DEFAULTS.second_opinion.fast);
+  });
+
+  it('takes an effort for claude, which ships none', async () => {
+    const config = await load('second_opinion: { fast: { claude: { effort: high } } }\n');
+    expect(config.second_opinion.fast.claude).toEqual({ model: SHIPPED_DEFAULTS.second_opinion.fast.claude.model, effort: 'high' });
+  });
+
+  it.each([
+    ['an unknown tier', 'second_opinion: { deep: { agy: { model: m-alt } } }\n', 'deep'],
+    ['an unknown CLI', 'second_opinion: { strong: { gemini: { model: m-alt } } }\n', 'gemini'],
+    ['an effort for agy', 'second_opinion: { strong: { agy: { effort: high } } }\n', 'effort'],
+  ])('refuses %s, naming the key', async (_name, extra, key) => {
+    const failure = await load(extra).then(
+      () => null,
+      (err: unknown) => err,
+    );
+    expect(failure).toBeInstanceOf(InvalidConfigError);
+    expect((failure as Error).message).toContain(key);
+  });
+
+  it('is omitted from a written config that names nothing, and written as only the named cell otherwise', async () => {
+    expect(renderStoreConfig(await load(''))).not.toContain('second_opinion');
+    const rendered = renderStoreConfig(await load('second_opinion: { strong: { agy: { model: m-alt } } }\n'));
+    expect(rendered).toContain('second_opinion:\n  strong:\n    agy:\n      model: m-alt\n');
+    for (const untouched of ['claude', 'codex', 'fast']) expect(rendered).not.toContain(untouched);
+  });
+});
+
 describe('renderStoreConfig (config-defaults-as-the-convention)', () => {
   async function resolved(text: string) {
     const tmp = await makeTmpDir();

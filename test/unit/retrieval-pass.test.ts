@@ -29,6 +29,7 @@ function makeConfig(overrides: Partial<StoreConfig['retrieval']> = {}): StoreCon
     templates: { path: '.contexture/templates/', installed: [] },
     skills: { vendored: [] },
     update_check: SHIPPED_DEFAULTS.update_check,
+    second_opinion: SHIPPED_DEFAULTS.second_opinion,
     ingest: { inbox_path: 'inbox/', tracking_params: [] },
     organize: { archive_destination: 'zeta/', rollup_stale_days: 30, mission_path: 'guidance/mission.md' },
     harness: { skills_path: 'skills/', guidance_path: 'guidance/' },

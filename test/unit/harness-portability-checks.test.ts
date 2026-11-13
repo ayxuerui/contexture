@@ -32,6 +32,7 @@ function makeConfig(overrides: Partial<StoreConfig> = {}): StoreConfig {
     templates: { path: '.contexture/templates/', installed: [] },
     skills: { vendored: [] },
     update_check: SHIPPED_DEFAULTS.update_check,
+    second_opinion: SHIPPED_DEFAULTS.second_opinion,
     ingest: { inbox_path: 'raw/inbox/', capture_root: 'raw/', tracking_params: [] },
     organize: { archive_destination: 'archive/', rollup_stale_days: 7 },
     harness: { skills_path: 'skills/', guidance_path: 'guidance/', convention_max_bytes: 32768 },

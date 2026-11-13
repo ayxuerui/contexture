@@ -294,6 +294,43 @@ export function serveSyncMinutes(config: { serve?: { sync_minutes?: number | und
   return config.serve?.sync_minutes ?? DEFAULT_SERVE_SYNC_MINUTES;
 }
 
+/**
+ * harness-portability spec (second-opinion-lineup-in-store-config D1, D2): the
+ * model each model CLI is asked for in a second opinion, per tier, and the
+ * effort where contexture ships one. This is the one copy: the schema defaults
+ * read it and `core/second-opinion/` holds no model name of its own.
+ *
+ * The tiers name a class of model, not a price. `strong` is each family's
+ * frontier model and `fast` its workhorse: claude `fable` and `opus`; codex
+ * `gpt-6-astra` ("frontier intelligence") and `gpt-6.1-sol` ("latest
+ * workhorse"), as codex's model catalog described them on 2026-10-15; agy
+ * `Gemini 4 Argon` and `Gemini 3.8 Flash`, once agy offered Argon (2026-10-19).
+ * The tiers differ in model only.
+ *
+ * Effort is each provider's own recommended default, not one contexture picked:
+ *  - claude carries none, so Claude Code applies its own default for the model.
+ *    `claude.effort` is optional with no shipped default for that reason.
+ *  - codex: the default its model catalog declares (`default_reasoning_level`),
+ *    `low` for both models on 2026-10-15. It is shipped because the flag cannot
+ *    be left off: with no pin in config.toml, codex resolves to
+ *    `reasoning effort: none` on a ChatGPT login (seen 2026-10-05).
+ *  - agy: the effort is part of the model name, `(Medium)` for Gemini 4 Argon
+ *    and `(High)` for Gemini 3.8 Flash. agy rejects an unknown name, and
+ *    `preflight` tests it.
+ */
+export const DEFAULT_SECOND_OPINION_LINEUP = {
+  strong: {
+    claude: { model: 'fable' },
+    codex: { model: 'gpt-6-astra', effort: 'low' },
+    agy: { model: 'Gemini 4 Argon (Medium)' },
+  },
+  fast: {
+    claude: { model: 'opus' },
+    codex: { model: 'gpt-6.1-sol', effort: 'low' },
+    agy: { model: 'Gemini 3.8 Flash (High)' },
+  },
+} as const;
+
 export const DEFAULT_UPDATE_CHECK_ENABLED = true;
 export const DEFAULT_UPDATE_CHECK_TTL_HOURS = 24;
 
@@ -327,4 +364,5 @@ export const SHIPPED_DEFAULTS = {
   },
   adapters: DEFAULT_ADAPTERS,
   update_check: { enabled: DEFAULT_UPDATE_CHECK_ENABLED, ttl_hours: DEFAULT_UPDATE_CHECK_TTL_HOURS },
+  second_opinion: DEFAULT_SECOND_OPINION_LINEUP,
 } as const;

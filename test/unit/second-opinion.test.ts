@@ -3,7 +3,10 @@ import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, wr
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { SHIPPED_DEFAULTS } from '../../src/config/defaults.js';
+import { SUPPORTED_SCHEMA_VERSION } from '../../src/config/schema.js';
 import { ExitCode } from '../../src/core/exit-codes.js';
+import { CONFIG_FILE_NAME } from '../../src/core/root.js';
 import { DIST_BIN } from '../helpers/dist-bin.js';
 import { installSecondOpinionStubs } from '../helpers/second-opinion-stubs.js';
 import { makeTmpDir, type TmpDir } from '../helpers/tmp-store.js';
@@ -53,13 +56,13 @@ afterEach(async () => {
 type Behavior = Record<string, unknown>;
 
 /** `ctxr second-opinion <args>` against the stubs. Usage errors print on stdout, as every ctxr command's do. */
-function run(args: string[], behaviors: Record<string, Behavior> = {}, opts: { input?: string; env?: Record<string, string> } = {}) {
+function run(args: string[], behaviors: Record<string, Behavior> = {}, opts: { input?: string; env?: Record<string, string>; cwd?: string } = {}) {
   // HOME points at the temp dir so the ~/.local/bin PATH fallback can never reach a real CLI.
   const env: NodeJS.ProcessEnv = { ...process.env, HOME: tmp.root, PATH: `${binDir}${path.delimiter}${process.env.PATH ?? ''}`, CTXR_SECOND_OPINION_STUB_DIR: logDir };
   for (const cli of ['claude', 'codex', 'agy']) {
     env[`CTXR_SECOND_OPINION_STUB_${cli.toUpperCase()}`] = JSON.stringify(behaviors[cli] ?? { kind: 'ok', text: critique(ROLE_OF[cli]!) });
   }
-  const result = spawnSync(process.execPath, [DIST_BIN, 'second-opinion', ...args], { cwd: tmp.root, env: { ...env, ...opts.env }, encoding: 'utf8', input: opts.input ?? '' });
+  const result = spawnSync(process.execPath, [DIST_BIN, 'second-opinion', ...args], { cwd: opts.cwd ?? tmp.root, env: { ...env, ...opts.env }, encoding: 'utf8', input: opts.input ?? '' });
   return { status: result.status, stdout: result.stdout, stderr: result.stderr, output: result.stdout + result.stderr, pid: result.pid };
 }
 
@@ -474,8 +477,8 @@ describe('usage and preflight', () => {
     expect(strong.status).toBe(ExitCode.Ok);
     const pings = () => calls('claude').filter((c) => c.args.includes('--model'));
     expect(modelOf(pings().at(-1)!.args)).toBe('fable');
-    expect(strong.stdout).toContain('PONG (fable)');
-    expect(strong.stdout).toContain('PONG (Gemini 4 Argon (Medium))');
+    expect(strong.stdout).toContain('PONG (fable, shipped default)');
+    expect(strong.stdout).toContain('PONG (Gemini 4 Argon (Medium), shipped default)');
     expect(run(['preflight', '--tier', 'fast'], PONG).status).toBe(ExitCode.Ok);
     expect(modelOf(pings().at(-1)!.args)).toBe('opus');
   });
@@ -721,5 +724,123 @@ describe('--print', () => {
     const r = run(['poll', '--print', '--out', outDir, '--prompt-file', planFile('q')]);
     expect(r.status).toBe(ExitCode.Usage);
     expect(allCalls()).toEqual([]);
+  });
+});
+
+/**
+ * second-opinion-lineup-in-store-config, harness-portability requirements "The
+ * second opinion's lineup is store configuration with shipped defaults", "The
+ * environment overrides the lineup for one run, and the source is reported"
+ * and "An invalid lineup fails and is never substituted". The stubs record the
+ * arguments they were given, so each scenario reads the model a CLI was asked
+ * for from the call itself.
+ */
+describe('the lineup is the store\'s configuration, with shipped defaults', () => {
+  const SHIPPED = SHIPPED_DEFAULTS.second_opinion;
+  const modelOf = (cli: string): string | undefined => {
+    const args = calls(cli).filter((c) => c.args.includes('--model')).at(-1)?.args;
+    return args?.[args.indexOf('--model') + 1];
+  };
+  const asked = () => ({ claude: modelOf('claude'), codex: modelOf('codex'), agy: modelOf('agy') });
+  const sources = (m: { critiques: Array<{ cli: string; model_asked: string; model_source: string }> }) =>
+    Object.fromEntries(m.critiques.map((c) => [c.cli, [c.model_asked, c.model_source]]));
+
+  /** A store under the temp dir: a git repository holding a `contexture.yaml` with this lineup. */
+  function store(lineup: string): string {
+    const root = path.join(tmp.root, 'ctx-a');
+    mkdirSync(root);
+    spawnSync('git', ['init', '-q', root]);
+    writeFileSync(
+      path.join(root, CONFIG_FILE_NAME),
+      [`schema_version: ${SUPPORTED_SCHEMA_VERSION}`, 'taxonomy: { profile: para, layers: [] }', 'git: { default_branch: main }', 'organize: { archive_destination: archives/ }', lineup, ''].join('\n'),
+    );
+    return root;
+  }
+
+  it('a store names one model and keeps the rest, at that tier only', () => {
+    const cwd = store('second_opinion: { strong: { agy: { model: m-alt } } }');
+    expect(run(critiqueArgs(), {}, { cwd }).status).toBe(ExitCode.Ok);
+    expect(asked()).toEqual({ claude: SHIPPED.strong.claude.model, codex: SHIPPED.strong.codex.model, agy: 'm-alt' });
+    expect(sources(manifest())).toEqual({
+      claude: [SHIPPED.strong.claude.model, 'default'],
+      codex: [SHIPPED.strong.codex.model, 'default'],
+      agy: ['m-alt', 'store'],
+    });
+
+    rmSync(outDir, { recursive: true });
+    expect(run(critiqueArgs(['--tier', 'fast']), {}, { cwd }).status).toBe(ExitCode.Ok);
+    expect(asked()).toEqual({ claude: SHIPPED.fast.claude.model, codex: SHIPPED.fast.codex.model, agy: SHIPPED.fast.agy.model });
+  });
+
+  it('a store that names nothing, and a directory outside any store, both run on the shipped lineup', () => {
+    for (const cwd of [store(''), tmp.root]) {
+      const r = run(['preflight'], PONG, { cwd });
+      expect(r.status, r.output).toBe(ExitCode.Ok);
+      expect(asked()).toEqual({ claude: SHIPPED.strong.claude.model, codex: SHIPPED.strong.codex.model, agy: SHIPPED.strong.agy.model });
+      expect(r.stdout.match(/, shipped default\)/g)).toHaveLength(3);
+    }
+  });
+
+  it('carries a configured effort to the CLI that takes one', () => {
+    const cwd = store('second_opinion: { strong: { claude: { effort: high }, codex: { effort: medium } } }');
+    expect(run(critiqueArgs(), {}, { cwd }).status).toBe(ExitCode.Ok);
+    const claude = calls('claude').at(-1)!.args;
+    expect(claude[claude.indexOf('--effort') + 1]).toBe('high');
+    expect(calls('codex').at(-1)!.args).toContain('model_reasoning_effort=medium');
+  });
+
+  it('the environment wins over the store for one run, in both tiers, and is named as the source', () => {
+    const cwd = store('second_opinion: { strong: { agy: { model: m-alt } }, fast: { agy: { model: m-alt-fast } } }');
+    const env = { CTXR_SECOND_OPINION_AGY_MODEL: 'm-env' };
+    for (const tier of ['strong', 'fast']) {
+      const r = run(['preflight', '--tier', tier, '--json'], PONG, { cwd, env });
+      expect(r.status, r.output).toBe(ExitCode.Ok);
+      expect(modelOf('agy')).toBe('m-env');
+      const agy = JSON.parse(r.stdout).data.clis.find((c: { cli: string }) => c.cli === 'agy');
+      expect(agy).toMatchObject({ model_asked: 'm-env', model_source: 'environment' });
+    }
+    // An empty variable is unset: that is how a deployment passes one it did not set.
+    const blank = run(['preflight'], PONG, { cwd, env: { CTXR_SECOND_OPINION_AGY_MODEL: '' } });
+    expect(blank.stdout).toContain('PONG (m-alt, store configuration)');
+  });
+
+  it('a poll records the model each CLI was asked for and its source', () => {
+    const cwd = store('second_opinion: { strong: { codex: { model: m-alt } } }');
+    const r = run(['poll', '--prompt-file', planFile('Which name? A or B.'), '--out', outDir], { claude: { kind: 'ok', text: 'A' }, codex: { kind: 'ok', text: 'B' }, agy: { kind: 'ok', text: 'A' } }, { cwd });
+    expect(r.status, r.output).toBe(ExitCode.Ok);
+    const answers = Object.fromEntries(manifest().answers.map((a: { cli: string; model_asked: string; model_source: string }) => [a.cli, [a.model_asked, a.model_source]]));
+    expect(answers).toEqual({ claude: [SHIPPED.strong.claude.model, 'default'], codex: ['m-alt', 'store'], agy: [SHIPPED.strong.agy.model, 'default'] });
+  });
+
+  it('a refused model is a failed critic: no other model is asked for', () => {
+    const cwd = store('second_opinion: { strong: { agy: { model: m-gone } } }');
+    const refusal = { kind: 'exit', code: 1, stderr: 'error: invalid model selection' };
+    const r = run(critiqueArgs(), { agy: refusal }, { cwd });
+    expect(r.status).toBe(ExitCode.Ok);
+    const agy = manifest().critiques.find((c: { cli: string }) => c.cli === 'agy');
+    expect(agy).toMatchObject({ status: 'failed', model_asked: 'm-gone', model_source: 'store' });
+    expect(agy.cause).toContain('invalid model selection');
+    expect(calls('agy').filter((c) => c.args.includes('--model')).map((c) => c.args[c.args.indexOf('--model') + 1])).toEqual(['m-gone']);
+
+    const pre = run(['preflight'], { ...PONG, agy: refusal }, { cwd });
+    expect(pre.status).toBe(ExitCode.CheckFailed);
+    expect(pre.stdout).toMatch(/\[DOWN\] agy\s+.*invalid model selection.*\[asked for m-gone, store configuration\]/);
+  });
+
+  it('an unknown CLI in the lineup is refused at load, before any model CLI starts', () => {
+    const cwd = store('second_opinion: { strong: { gemini: { model: m-alt } } }');
+    const r = run(critiqueArgs(), {}, { cwd });
+    expect(r.status).not.toBe(ExitCode.Ok);
+    expect(r.output).toContain('gemini');
+    expect(allCalls()).toEqual([]);
+  });
+
+  it('no model name is spelled under src/core/second-opinion/', () => {
+    const names = Object.values(SHIPPED).flatMap((tier) => Object.values(tier).map((cli) => cli.model));
+    expect(names.length).toBeGreaterThan(0); // anti-vacuity
+    for (const file of sourceFilesUnder(path.join(SRC, 'core/second-opinion'))) {
+      const code = readFileSync(file, 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
+      for (const name of names) expect(code, `${path.basename(file)} spells ${name}`).not.toContain(`'${name}'`);
+    }
   });
 });
