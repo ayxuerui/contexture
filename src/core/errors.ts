@@ -839,6 +839,29 @@ export class SecondOpinionUnconfinedError extends ContextureError {
 }
 
 /**
+ * second-opinion-start-and-fetch D4: a detached run is already going for this
+ * machine user. The failed-check code, raised before any model CLI starts. The
+ * running run's id is named only when the caller owns it (D5), so it can be
+ * fetched instead of started again.
+ */
+export class SecondOpinionBusyError extends ContextureError {
+  constructor(run: string | null) {
+    const message =
+      run === null
+        ? 'A second opinion is already running here, and they run one at a time. Try again in a few minutes.'
+        : `A second opinion of yours is already running here as ${run}, and they run one at a time. Fetch it with: ctxr second-opinion result ${run}`;
+    super(ExitCode.CheckFailed, { code: 'second_opinion.busy', severity: 'error', message, details: run === null ? {} : { run } });
+  }
+}
+
+/** second-opinion-start-and-fetch: a run id that names no run of the caller's, including one already removed. */
+export class SecondOpinionNoSuchRunError extends ContextureError {
+  constructor(run: string) {
+    super(ExitCode.Usage, { code: 'second_opinion.no_such_run', severity: 'error', message: `No second-opinion run ${run} here: it never existed, was removed an hour after it ended, or is not yours.`, subject: run });
+  }
+}
+
+/**
  * bring-the-session-lifecycle-into-the-cli D3: a session command's refusal —
  * the usage code for what the caller named (a session that is not one, a
  * branch another session carries, a body with a generated section's heading),

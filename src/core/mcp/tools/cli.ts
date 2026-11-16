@@ -16,6 +16,8 @@ import {
   matchCommand,
   SECOND_OPINION_CLI_TIMEOUT_SECONDS,
   SECOND_OPINION_COMMANDS,
+  SECOND_OPINION_MAX_WAIT_SECONDS,
+  SECOND_OPINION_OWNER_VARIABLE,
   SECOND_OPINION_TIMEOUT_MS,
 } from '../tool-map.js';
 
@@ -173,6 +175,8 @@ export interface CliToolContext {
   timeoutMs?: number;
   /** The second opinion's own bound, when a caller (a test) needs a different one. */
   secondOpinionTimeoutMs?: number;
+  /** The longest `result --wait`, when a caller (a test) needs a different one. */
+  secondOpinionMaxWaitSeconds?: number;
 }
 
 export interface CliToolResult extends CliRunResult {
@@ -187,63 +191,100 @@ function finalArgv(argv: readonly string[]): string[] {
   return argv.includes('--no-input') ? [...argv] : [...argv, '--no-input'];
 }
 
-/** True while a second opinion runs on this server (D4): three model CLIs at once are most of a small container. */
-let secondOpinionRunning = false;
-
 const optionValue = (argv: readonly string[], name: string): string | undefined => {
   const at = argv.findIndex((a) => a === name || a.startsWith(`${name}=`));
   if (at === -1) return undefined;
   return argv[at]!.startsWith(`${name}=`) ? argv[at]!.slice(name.length + 1) : argv[at + 1];
 };
 
+const hasOption = (argv: readonly string[], name: string): boolean => argv.some((a) => a === name || a.startsWith(`${name}=`));
+
+/** `argv` with every occurrence of option `name` and its value removed. */
+function withoutOption(argv: readonly string[], name: string): string[] {
+  const out: string[] = [];
+  for (let i = 0; i < argv.length; i++) {
+    if (argv[i] === name) {
+      i++;
+      continue;
+    }
+    if (argv[i]!.startsWith(`${name}=`)) continue;
+    out.push(argv[i]!);
+  }
+  return out;
+}
+
+/** The run id a detached start printed: the human `run:` line, or the envelope's `data.run` under `--json`. */
+function startedRun(stdout: string): string | null {
+  const line = /^run: ([a-z2-7]{26})$/m.exec(stdout)?.[1];
+  if (line !== undefined) return line;
+  try {
+    const run = (JSON.parse(stdout) as { data?: { run?: unknown } }).data?.run;
+    return typeof run === 'string' ? run : null;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * serve-the-second-opinion-to-chat-apps D2–D5: the second opinion runs as in
- * a shell, with what the server needs added: the answers printed rather than
- * written, a per-CLI timeout inside the bound, confinement required, and the
- * plan or question from `input` in a temp folder outside any checkout. It
- * runs outside the view's lock, in that temp folder.
+ * a shell, with what the server needs added: confinement required, a per-CLI
+ * timeout within the shell's own, and the plan or question from `input` in a
+ * temp folder outside any checkout. It runs outside the view's lock, in that
+ * temp folder.
+ *
+ * second-opinion-start-and-fetch D5, D6: every call answers within its bound.
+ * The member's email goes to the CLI as the run's owner, so a run is fetched,
+ * and named in a busy refusal, only by the member who started it. A critique
+ * or poll without `--detach` is started detached and waited on for the
+ * longest `result` wait: a short run answers in that one call, and a long one
+ * hands back its run id. The CLI's own lock, not this process, keeps runs one
+ * at a time, so a call the chat app dropped no longer blocks the retry.
  *
  * second-opinion-lineup-in-store-config D5: the command's store root is the
  * view, so the lineup is the served commit's, whether or not the call names a
  * session: a session's working copy is unreviewed, and its configuration
- * would otherwise choose a model for the server to ask. The command reads the
- * view's `contexture.yaml` once, at start. A sync that moves the view in that
- * instant fails the read, which ends the command with a configuration error
- * before any model CLI starts.
+ * would otherwise choose a model for the server to ask. The start reads the
+ * view's `contexture.yaml` once, and the detached run keeps that lineup.
  */
-async function secondOpinionTool(ctx: CliToolContext, args: CliArgs, command: string, checkedArgv: string[], servedRoot: string, ranAgainst: CliToolResult['ran_against']): Promise<CliToolResult> {
-  if (checkedArgv.some((a) => a === '--out' || a.startsWith('--out='))) throw invalid('"--out" is not accepted here: the answers come back in the result, and nothing is left on the server.');
+async function secondOpinionTool(ctx: CliToolContext, email: string, args: CliArgs, command: string, checkedArgv: string[], servedRoot: string, ranAgainst: CliToolResult['ran_against']): Promise<CliToolResult> {
+  if (hasOption(checkedArgv, '--out')) throw invalid('"--out" is not accepted here: the answers come back in the result, and nothing is left on the server beyond the run\'s hour.');
+  if (hasOption(checkedArgv, '--run-folder')) throw invalid('"--run-folder" is internal to a detached run.');
   const timeout = optionValue(checkedArgv, '--timeout');
   if (timeout !== undefined && !(Number(timeout) > 0 && Number(timeout) <= SECOND_OPINION_CLI_TIMEOUT_SECONDS)) {
-    throw invalid(`"--timeout" is at most ${SECOND_OPINION_CLI_TIMEOUT_SECONDS} seconds here, so the answers come back before the chat app stops waiting.`);
+    throw invalid(`"--timeout" is at most ${SECOND_OPINION_CLI_TIMEOUT_SECONDS} seconds here.`);
   }
   const usesInput = checkedArgv.some((a) => a === INPUT_ARGUMENT || a.endsWith(`=${INPUT_ARGUMENT}`));
   if (usesInput && args.input === undefined) throw invalid(`An argument is "${INPUT_ARGUMENT}" but no "input" text was given.`);
-  if (secondOpinionRunning) {
-    throw new ToolRefusal('mcp.busy', 'A second opinion is already running on this server, and they run one at a time. Try again in a few minutes.');
-  }
-  secondOpinionRunning = true;
+  const maxWait = ctx.secondOpinionMaxWaitSeconds ?? SECOND_OPINION_MAX_WAIT_SECONDS;
   const folder = await mkdtemp(path.join(tmpdir(), 'ctxr-mcp-second-opinion-'));
+  const env = { ...childEnv(ctx.write.env, servedRoot, folder), [SECOND_OPINION_OWNER_VARIABLE]: email };
+  const runCli = (argv: string[]) =>
+    runServerCli({ entry: ctx.entry, argv: finalArgv(argv), cwd: folder, env, timeoutMs: ctx.secondOpinionTimeoutMs ?? SECOND_OPINION_TIMEOUT_MS });
   try {
+    if (command === 'second-opinion result') {
+      // A longer wait is cut to the bound, so the call still answers in time.
+      const wait = optionValue(checkedArgv, '--wait');
+      const capped = wait !== undefined && Number(wait) >= 0 && Number(wait) <= maxWait ? wait : String(maxWait);
+      const argv = [...withoutOption(checkedArgv, '--wait'), '--wait', capped];
+      return { command, args: checkedArgv, ...(await runCli(argv)), ran_against: ranAgainst };
+    }
     let argv = [...checkedArgv];
     if (usesInput) {
       const inputFile = path.join(folder, 'input.md');
       await writeFile(inputFile, args.input!, { flag: 'wx', mode: 0o600 });
       argv = argv.map((a) => (a === INPUT_ARGUMENT ? inputFile : a.endsWith(`=${INPUT_ARGUMENT}`) ? `${a.slice(0, -INPUT_ARGUMENT.length)}${inputFile}` : a));
     }
-    if (timeout === undefined) argv.push('--timeout', String(SECOND_OPINION_CLI_TIMEOUT_SECONDS));
     argv.push('--require-confinement');
-    if (command !== 'second-opinion preflight') argv.push('--print');
-    const run = await runServerCli({
-      entry: ctx.entry,
-      argv: finalArgv(argv),
-      cwd: folder,
-      env: childEnv(ctx.write.env, servedRoot, folder),
-      timeoutMs: ctx.secondOpinionTimeoutMs ?? SECOND_OPINION_TIMEOUT_MS,
-    });
-    return { command, args: checkedArgv, ...run, ran_against: ranAgainst };
+    if (command === 'second-opinion preflight') return { command, args: checkedArgv, ...(await runCli(argv)), ran_against: ranAgainst };
+    if (hasOption(argv, '--detach')) return { command, args: checkedArgv, ...(await runCli(argv)), ran_against: ranAgainst };
+    // D6: the blocking form is a detached start and one bounded wait.
+    const start = await runCli([...argv.filter((a) => a !== '--print'), '--detach']);
+    const run = start.exit_code === 0 ? startedRun(start.stdout) : null;
+    if (run === null) return { command, args: checkedArgv, ...start, ran_against: ranAgainst };
+    const json = argv.includes('--json') ? ['--json'] : [];
+    const fetched = await runCli(['second-opinion', 'result', run, '--wait', String(maxWait), ...json]);
+    return { command, args: checkedArgv, ...fetched, duration_ms: start.duration_ms + fetched.duration_ms, ran_against: ranAgainst };
   } finally {
-    secondOpinionRunning = false;
     await rm(folder, { recursive: true, force: true });
   }
 }
@@ -257,14 +298,14 @@ export async function ctxrTool(ctx: CliToolContext, email: string, args: CliArgs
         const session = await ownedSession(ctx.write, email, args.session);
         const checked = checkArguments(args.args, CTXR_READ_COMMANDS, 'ctxr', ctx.write.config, session.root);
         const { servedRoot } = await ctx.view.read(ctx.syncDeps, async (snapshot) => ({ servedRoot: snapshot.store.root }));
-        return secondOpinionTool(ctx, args, command, checked.argv, servedRoot, { session: session.name, root: session.root });
+        return secondOpinionTool(ctx, email, args, command, checked.argv, servedRoot, { session: session.name, root: session.root });
       }
       const { checked, head, servedRoot } = await ctx.view.read(ctx.syncDeps, async (snapshot) => ({
         checked: checkArguments(args.args, CTXR_READ_COMMANDS, 'ctxr', snapshot.store.config, null),
         head: snapshot.head,
         servedRoot: snapshot.store.root,
       }));
-      return secondOpinionTool(ctx, args, command, checked.argv, servedRoot, { commit: head });
+      return secondOpinionTool(ctx, email, args, command, checked.argv, servedRoot, { commit: head });
     }
   }
   if (args.session !== undefined) {

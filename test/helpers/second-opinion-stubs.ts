@@ -27,6 +27,7 @@ if (!isHelp && behavior.touchOriginal) fs.writeFileSync(behavior.touchOriginal, 
 if (isHelp) { console.log(behavior.help ?? '--tools --model --effort --no-session-persistence --disable-slash-commands --output-format --skip-git-repo-check --sandbox --ephemeral --color --config --print'); process.exit(0); }
 if (behavior.kind === 'exit') { console.error(behavior.stderr ?? 'boom'); process.exit(behavior.code ?? 1); }
 if (behavior.kind === 'hang') { setInterval(() => {}, 1000); return; }
+if (behavior.delayMs) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, behavior.delayMs);
 let text = behavior.text;
 if (behavior.read) { let seen; try { seen = 'read ' + fs.readFileSync(behavior.read, 'utf8').trim(); } catch (e) { seen = 'refused ' + e.code; } text += '\\nREAD-RESULT: ' + seen; }
 if (name === 'claude') console.log(JSON.stringify({ result: text, modelUsage: { 'claude-stub-1': {} } }));

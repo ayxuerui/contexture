@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { closeSync, mkdtempSync, openSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { confinedEnv, landlockArgs, onPath, returnLogins, seedLogins, type ConfinedRun, type SeededLogin } from './confine.js';
@@ -110,4 +110,26 @@ export function runCli(cmd: string, args: readonly string[], stdin: string, time
     });
     child.stdin?.end(stdin);
   });
+}
+
+/**
+ * second-opinion-start-and-fetch D3: start this CLI again as a detached run,
+ * in a process group of its own and the run's folder, its output going to
+ * log files there. Returns its pid, or null when it did not start. The one
+ * other process this module starts: the run that then launches the model CLIs.
+ */
+export function spawnDetachedRun(argv: readonly string[], folder: string, env: Record<string, string | undefined>): number | null {
+  const entry = process.argv[1];
+  if (entry === undefined) return null;
+  const out = openSync(path.join(folder, 'stdout.log'), 'a', 0o600);
+  const err = openSync(path.join(folder, 'stderr.log'), 'a', 0o600);
+  try {
+    const child = spawn(process.execPath, [entry, ...argv], { cwd: folder, env, detached: true, stdio: ['ignore', out, err], shell: false });
+    if (child.pid === undefined) return null;
+    child.unref();
+    return child.pid;
+  } finally {
+    closeSync(out);
+    closeSync(err);
+  }
 }
