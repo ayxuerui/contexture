@@ -27,6 +27,7 @@ describe('mcp ctxr second-opinion', () => {
   let binDir: string;
   let logDir: string;
   let home: string;
+  let runsTmp: string;
 
   const serverEnv = (extra: Record<string, string> = {}, behaviors: Record<string, Record<string, unknown>> = {}) => {
     const env: Record<string, string | undefined> = {
@@ -36,6 +37,7 @@ describe('mcp ctxr second-opinion', () => {
       CTXR_SECOND_OPINION_STUB_DIR: logDir,
       CTXR_SECOND_OPINION_STUB_SETPRIV: 'landlock',
       GH_TOKEN: 'ghp-forge-secret',
+      TMPDIR: runsTmp,
       ...extra,
     };
     for (const cli of ['claude', 'codex', 'agy']) env[`CTXR_SECOND_OPINION_STUB_${cli.toUpperCase()}`] = JSON.stringify(behaviors[cli] ?? { kind: 'ok', text: critique(ROLE_OF[cli]!) });
@@ -53,14 +55,28 @@ describe('mcp ctxr second-opinion', () => {
     binDir = path.join(f.store.tmp.root, 'bin');
     logDir = path.join(f.store.tmp.root, 'stub-log');
     home = path.join(f.store.tmp.root, 'server-home');
-    for (const dir of [binDir, logDir, home]) mkdirSync(dir, { recursive: true });
+    runsTmp = path.join(f.store.tmp.root, 'server-tmp');
+    for (const dir of [binDir, logDir, home, runsTmp]) mkdirSync(dir, { recursive: true });
     installSecondOpinionStubs(binDir);
     serverEnv();
   });
 
   afterEach(async () => {
+    // A detached run a test left going is killed with its stub CLIs, so nothing outlives the test.
+    for (const run of runRecords()) {
+      try {
+        process.kill(-run.pid, 'SIGKILL');
+      } catch {
+        // Already gone.
+      }
+    }
     await f.store.tmp.cleanup();
   });
+
+  const runsRoot = () => path.join(runsTmp, readdirSync(runsTmp).find((n) => n.startsWith('ctxr-second-opinion-runs-')) ?? 'none');
+  const runRecords = (): { run: string; pid: number; owner: string | null }[] =>
+    existsSync(runsRoot()) ? readdirSync(runsRoot()).filter((n) => /^[a-z2-7]{26}$/.test(n)).map((n) => JSON.parse(readFileSync(path.join(runsRoot(), n, 'run.json'), 'utf8'))) : [];
+  const runIdIn = (stdout: string) => /([a-z2-7]{26})/.exec(stdout)?.[1];
 
   it('answers a critique written in chat, and leaves nothing on the server', async () => {
     const before = leftovers().length;
@@ -85,21 +101,73 @@ describe('mcp ctxr second-opinion', () => {
     expect(result.stdout).toContain('===== critique-A =====');
   });
 
-  it('runs one second opinion at a time', async () => {
-    serverEnv({}, { agy: { kind: 'hang' } });
-    const first = ctxr({ args: ['second-opinion', 'critique', '--plan-file', '@input', '--timeout', '3'], input: PLAN });
-    await new Promise((r) => setTimeout(r, 300));
-    await expect(ctxr({ args: ['second-opinion', 'poll', '--prompt-file', '@input'], input: 'A or B?' })).rejects.toMatchObject({ code: 'mcp.busy' });
-    await first;
+  it('runs one second opinion at a time, and names the running one to the member who started it', async () => {
+    serverEnv({}, { claude: { kind: 'hang' }, codex: { kind: 'hang' }, agy: { kind: 'hang' } });
+    const first = await ctxr({ args: ['second-opinion', 'critique', '--plan-file', '@input', '--detach', '--timeout', '60'], input: PLAN });
+    expect(first.exit_code, first.stdout + first.stderr).toBe(ExitCode.Ok);
+    const run = runIdIn(first.stdout)!;
+    const again = await ctxr({ args: ['second-opinion', 'poll', '--prompt-file', '@input'], input: 'A or B?' });
+    expect(again.exit_code).toBe(ExitCode.CheckFailed);
+    expect(again.stdout + again.stderr).toContain(`ctxr second-opinion result ${run}`);
+    const other = (await f.call('ctxr', { args: ['second-opinion', 'critique', '--plan-file', '@input', '--detach'], input: PLAN }, 'b@example.com')) as unknown as CliToolResult;
+    expect(other.exit_code).toBe(ExitCode.CheckFailed);
+    expect(other.stdout + other.stderr).not.toContain(run);
     expect(calls('claude')).toHaveLength(1);
   });
 
   it('refuses a larger timeout, --out, and input for any other command, before anything runs', async () => {
-    await expect(ctxr({ args: ['second-opinion', 'critique', '--timeout', '600', '--plan-file', '@input'], input: PLAN })).rejects.toThrow(/at most 200 seconds/);
+    await expect(ctxr({ args: ['second-opinion', 'critique', '--timeout', '1200', '--plan-file', '@input', '--detach'], input: PLAN })).rejects.toThrow(/at most 600 seconds/);
+    await expect(ctxr({ args: ['second-opinion', 'critique', '--run-folder', 'x', '--plan-file', '@input'], input: PLAN })).rejects.toMatchObject({ code: 'mcp.invalid_arguments' });
     await expect(ctxr({ args: ['second-opinion', 'critique', '--out', 'x', '--plan-file', '@input'], input: PLAN })).rejects.toMatchObject({ code: 'mcp.invalid_arguments' });
     await expect(ctxr({ args: ['lint'], input: 'text' })).rejects.toMatchObject({ code: 'mcp.invalid_arguments' });
     await expect(ctxr({ args: ['second-opinion', 'critique', '--plan-file', '@input'] })).rejects.toMatchObject({ code: 'mcp.invalid_arguments' });
     expect(calls('claude')).toEqual([]);
+  });
+
+  it('starts a detached run and fetches it with result, across calls', async () => {
+    const started = await ctxr({ args: ['second-opinion', 'critique', '--plan-file', '@input', '--detach'], input: PLAN });
+    expect(started.exit_code, started.stdout + started.stderr).toBe(ExitCode.Ok);
+    expect(started.command).toBe('second-opinion critique');
+    const run = runIdIn(started.stdout)!;
+    expect(runRecords().map((r) => r.owner)).toEqual(['a@example.com']);
+    const fetched = await ctxr({ args: ['second-opinion', 'result', run, '--wait', '20'] });
+    expect(fetched.exit_code, fetched.stdout + fetched.stderr).toBe(ExitCode.Ok);
+    for (const letter of ['A', 'B', 'C']) expect(fetched.stdout).toContain(`===== critique-${letter} =====`);
+    // The member's identity never reaches a model CLI.
+    for (const cli of ['claude', 'codex', 'agy']) expect(calls(cli)[0]!.env.CONTEXTURE_SECOND_OPINION_OWNER, cli).toBeUndefined();
+  });
+
+  it('hands back the run id when a blocking critique outlasts the wait, and a later result carries the critiques', async () => {
+    f.ctx.secondOpinionMaxWaitSeconds = 1;
+    serverEnv({}, Object.fromEntries(['claude', 'codex', 'agy'].map((cli) => [cli, { kind: 'ok', text: critique(ROLE_OF[cli]!), delayMs: 4000 }])));
+    const first = await ctxr({ args: ['second-opinion', 'critique', '--plan-file', '@input'], input: PLAN });
+    expect(first.exit_code, first.stdout + first.stderr).toBe(ExitCode.Ok);
+    expect(first.duration_ms).toBeLessThan(4000);
+    expect(first.stdout).toMatch(/^running: [a-z2-7]{26} /);
+    const run = runIdIn(first.stdout)!;
+    f.ctx.secondOpinionMaxWaitSeconds = 20;
+    const later = await ctxr({ args: ['second-opinion', 'result', run] });
+    expect(later.exit_code).toBe(ExitCode.Ok);
+    expect(later.stdout).toContain('===== critique-A =====');
+  });
+
+  it('cuts a longer wait to the bound', async () => {
+    f.ctx.secondOpinionMaxWaitSeconds = 1;
+    serverEnv({}, { claude: { kind: 'hang' }, codex: { kind: 'hang' }, agy: { kind: 'hang' } });
+    const started = await ctxr({ args: ['second-opinion', 'critique', '--plan-file', '@input', '--detach', '--timeout', '60'], input: PLAN });
+    const run = runIdIn(started.stdout)!;
+    const fetched = await ctxr({ args: ['second-opinion', 'result', run, '--wait', '600'] });
+    expect(fetched.duration_ms).toBeLessThan(5000);
+    expect(fetched.stdout).toMatch(new RegExp(`^running: ${run}`));
+  });
+
+  it('lets no other member fetch a run', async () => {
+    const started = await ctxr({ args: ['second-opinion', 'critique', '--plan-file', '@input', '--detach'], input: PLAN });
+    const run = runIdIn(started.stdout)!;
+    const other = (await f.call('ctxr', { args: ['second-opinion', 'result', run, '--wait', '20'] }, 'b@example.com')) as unknown as CliToolResult;
+    expect(other.exit_code).toBe(ExitCode.Usage);
+    expect(other.stdout).not.toContain('critique-A');
+    expect(other.stdout).not.toContain('Rename the module');
   });
 
   it('does not run where the model CLIs cannot be confined', async () => {

@@ -58,19 +58,33 @@ export const CTXR_READ_COMMANDS = [
   'second-opinion preflight',
   'second-opinion critique',
   'second-opinion poll',
+  // second-opinion-start-and-fetch: fetch a detached critique or poll within a bounded wait.
+  'second-opinion result',
 ] as const;
 
 /**
  * serve-the-second-opinion-to-chat-apps D3, D5: the read commands that start
- * model CLIs. They take `input`, run one at a time per server, under their own
- * time bound, with a per-CLI timeout inside it, `--require-confinement` always
- * and `--print` for the two that answer.
+ * or fetch model CLIs' runs. They take `input`, run confined, and answer in
+ * bounded calls.
+ *
+ * second-opinion-start-and-fetch D6: every call answers within its bound
+ * whatever the run takes. A critique or poll is started detached and fetched
+ * with `result`, whose wait is capped so the call returns well inside the
+ * 125 seconds a chat app's connection was measured to survive.
  */
-export const SECOND_OPINION_COMMANDS: readonly string[] = ['second-opinion preflight', 'second-opinion critique', 'second-opinion poll'];
-/** Under the roughly four minutes claude.ai and Claude Desktop wait for a tool; a default-tier critique takes one to two. */
-export const SECOND_OPINION_TIMEOUT_MS = 240_000;
-/** Each model CLI's own limit, leaving the run time to start and print before the bound. */
-export const SECOND_OPINION_CLI_TIMEOUT_SECONDS = 200;
+export const SECOND_OPINION_COMMANDS: readonly string[] = ['second-opinion preflight', 'second-opinion critique', 'second-opinion poll', 'second-opinion result'];
+/**
+ * second-opinion-start-and-fetch D5: the variable the server sets to the
+ * member's email, so a detached run records who started it and `result`
+ * returns it only to them. Under a protected prefix, so no model CLI sees it.
+ */
+export const SECOND_OPINION_OWNER_VARIABLE = 'CONTEXTURE_SECOND_OPINION_OWNER';
+/** The longest `result --wait` the server passes: 90 s, leaving 35 s of the measured 125 s cut for spawning and output. */
+export const SECOND_OPINION_MAX_WAIT_SECONDS = 90;
+/** One call's bound: the longest wait plus ten seconds to start the CLI and print. */
+export const SECOND_OPINION_TIMEOUT_MS = (SECOND_OPINION_MAX_WAIT_SECONDS + 10) * 1000;
+/** Each model CLI's own limit: the shell's default, since no call waits on the whole run any more. */
+export const SECOND_OPINION_CLI_TIMEOUT_SECONDS = 600;
 
 /** D4: writing commands `ctxr_write` runs inside a member's own session. `session capture` is one of them (revision 2). */
 export const CTXR_WRITE_COMMANDS = [

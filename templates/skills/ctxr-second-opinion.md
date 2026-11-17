@@ -97,14 +97,29 @@ S2. <step>
 - Irreversible: <steps>
 ```
 
-In a shell, write the plan to a file and run:
+Write the plan to a file. Start the critique:
 
 ```
-ctxr second-opinion critique --plan-file <plan> --out <dir>
+ctxr second-opinion critique --plan-file <plan> --detach
 ```
 
-Through the store's server, give the plan as `input`. Run the `ctxr` tool with `args` set to
-`["second-opinion", "critique", "--plan-file", "@input"]`. The critiques come back in the result.
+The command prints a run id and returns at once. The reviewers keep working in the background. Fetch their
+critiques:
+
+```
+ctxr second-opinion result <run>
+```
+
+Each call waits up to 90 seconds. If it says the run is still running, run the same command again. Why: a
+chat app drops a tool call after about two minutes, and a critique often takes longer. Short calls never
+reach that limit.
+
+If the command says a second opinion is already running and names a run, that run is yours. Fetch it with
+`ctxr second-opinion result` and that run id. Do not start another. If it names no run, wait a few minutes and
+start again. Why: one second opinion runs at a time on a machine.
+
+If `--detach` or `result` is refused as unknown, the installed ctxr is older. Run
+`ctxr second-opinion critique --plan-file <plan>` without `--detach`. It returns when the critiques are ready.
 
 Three reviewers each read the plan alone: structure and ordering, failure modes and trust boundaries,
 simplicity and cost. None sees another's answer. That is deliberate: reviewers who read each other converge
@@ -113,8 +128,8 @@ on whoever spoke first, and a correct one gets talked out of it. Do not add a se
 The command prints the letters it wrote, whether each is valid or blind, and any reviewer that failed. It
 never prints which model wrote which letter. With `ctxr second-opinion critique --json` the same result, with
 the manifest, arrives as one envelope instead. With `ctxr second-opinion critique --print`, the command prints
-each critique under its letter, then the letter table, and writes no files. Through the store's server it
-always prints. A **blind** critique returned a well-formed verdict but cited
+each critique under its letter, then the letter table, and writes no files. `ctxr second-opinion result`
+prints in the same way. A **blind** critique returned a well-formed verdict but cited
 nothing in the plan, so it was written without reading it; it does not count. **Partial** means fewer than
 two valid critiques, and the command then exits with the failed-check status rather than success: say so at
 the top of your answer and do not call anything a consensus.
@@ -133,9 +148,8 @@ default level. Measured on a short plan at the default tier, a critique took one
 quicker and costs less. A deeper pass is a choice: with `CTXR_SECOND_OPINION_CLAUDE_EFFORT=max`, Claude on
 Opus alone took over eight minutes on a short plan. That is close to the command's ten-minute limit per tool,
 and Fable is slower than Opus; raise it with `ctxr second-opinion critique --timeout <seconds>` for such a
-run. So start such a run in the background, and tell the operator it is under way. Through the store's
-server, each tool gets at most 200 seconds and the whole run four minutes. Run a deep pass in a shell.
-Why: the chat app stops waiting for a tool after about four minutes. A machine that pins its own
+run. Tell the operator that such a run is under way. Through the store's server, each tool gets at most 600
+seconds, the same default as in a shell. A machine that pins its own
 Codex effort in its configuration is overridden by the catalog default; set `CTXR_SECOND_OPINION_CODEX_EFFORT`
 to use another.
 
@@ -190,14 +204,14 @@ for a typo.
 
 ## 6. Run a poll
 
-Write the question and the options down. In a shell, write them to a file and run:
+Write the question and the options to a file. Start the poll:
 
 ```
-ctxr second-opinion poll --prompt-file <question>
+ctxr second-opinion poll --prompt-file <question> --detach
 ```
 
-Through the store's server, give them as `input`. Run the `ctxr` tool with `args` set to
-`["second-opinion", "poll", "--prompt-file", "@input"]`. The answers come back in the result.
+Fetch the answers with `ctxr second-opinion result` and the run id it printed, as for a critique (section 3).
+Run it again while it says the run is still running.
 
 The same question goes to all three models, each answering with a pick, reasons, and anything surprising.
 This mode names its files by model, because what you are reading is whether the models agree.
@@ -249,4 +263,6 @@ include your own family, say so.
   operator's to set on the server, and the lineup is the one the served store has, never an open session's.
 - A tool that refuses its model is a failed reviewer. The command does not try another model for it.
 - The scratch files under the output directory hold each reviewer's raw output and are safe to delete when the
-  operator has the synthesis. They can contain the plan, so do not commit them. A printed run writes none.
+  operator has the synthesis. They can contain the plan, so do not commit them. A printed run writes none. A
+  detached run keeps its plan and answers in a folder only its user can read. The folder is removed one hour
+  after the run ends.

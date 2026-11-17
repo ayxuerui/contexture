@@ -1,4 +1,4 @@
-import { Command } from 'commander';
+import { Command, Option } from 'commander';
 import * as catalogBuildCommand from './commands/catalog-build.js';
 import * as catalogCheckCommand from './commands/catalog-check.js';
 import * as catalogShowCommand from './commands/catalog-show.js';
@@ -89,6 +89,15 @@ function deriveRunEnv(env: RunEnv, cmd: Command): { runEnv: RunEnv; jsonMode: bo
  * when one resolves, or undefined when none does. Only "no store root found" is
  * an absence; a store that resolves but cannot be opened fails as for any command.
  */
+/**
+ * second-opinion-start-and-fetch: a detached child runs on the lineup recorded when its run started, so it opens
+ * no store; a store moved or reset meanwhile cannot fail it or change the models it asks.
+ */
+async function secondOpinionStore(runEnv: RunEnv, root: string | undefined, runFolder: string | undefined): Promise<Store | null> {
+  if (runFolder !== undefined) return null;
+  return (await storeIfAny(runEnv, root)) ?? null;
+}
+
 async function storeIfAny(runEnv: RunEnv, root: string | undefined): Promise<Store | undefined> {
   try {
     resolveExistingRoot(runEnv, { root });
@@ -807,9 +816,11 @@ export function buildProgram(env: RunEnv): { program: Command; state: { result: 
     .option('--out <dir>', 'where to write the critiques and the manifest (default: a new temporary directory)')
     .option('--seed <n>', 'seed the letter assignment, for a reproducible mapping')
     .option('--print', 'print each critique, then the letter table, on stdout and write no files')
-    .action(async (cmdOpts: { tier?: string; only?: string; timeout?: string; requireConfinement?: boolean; planFile?: string; out?: string; seed?: string; print?: boolean }, cmd: Command) => {
+    .option('--detach', 'start the critique in the background, print its run id and return; fetch it with second-opinion result')
+    .addOption(new Option('--run-folder <dir>').hideHelp())
+    .action(async (cmdOpts: { tier?: string; only?: string; timeout?: string; requireConfinement?: boolean; planFile?: string; out?: string; seed?: string; print?: boolean; detach?: boolean; runFolder?: string }, cmd: Command) => {
       const { runEnv, jsonMode, root } = deriveRunEnv(env, cmd);
-      state.result = await runCommand('second-opinion.critique', runEnv, jsonMode, async () => secondOpinionCommand.executeCritique(runEnv, (await storeIfAny(runEnv, root)) ?? null, cmdOpts));
+      state.result = await runCommand('second-opinion.critique', runEnv, jsonMode, async () => secondOpinionCommand.executeCritique(runEnv, await secondOpinionStore(runEnv, root, cmdOpts.runFolder), cmdOpts));
     });
 
   commonSecondOpinionOptions(
@@ -820,9 +831,22 @@ export function buildProgram(env: RunEnv): { program: Command; state: { result: 
     .option('--lens <lenses>', 'two or three comma-separated taste lenses: built-in names or Name:description')
     .option('--no-wrap', 'send the question as written, without the answer scaffold')
     .option('--print', 'print each answer on stdout and write no files')
-    .action(async (cmdOpts: { tier?: string; only?: string; timeout?: string; requireConfinement?: boolean; promptFile?: string; out?: string; lens?: string; wrap: boolean; print?: boolean }, cmd: Command) => {
+    .option('--detach', 'start the poll in the background, print its run id and return; fetch it with second-opinion result')
+    .addOption(new Option('--run-folder <dir>').hideHelp())
+    .action(async (cmdOpts: { tier?: string; only?: string; timeout?: string; requireConfinement?: boolean; promptFile?: string; out?: string; lens?: string; wrap: boolean; print?: boolean; detach?: boolean; runFolder?: string }, cmd: Command) => {
       const { runEnv, jsonMode, root } = deriveRunEnv(env, cmd);
-      state.result = await runCommand('second-opinion.poll', runEnv, jsonMode, async () => secondOpinionCommand.executePoll(runEnv, (await storeIfAny(runEnv, root)) ?? null, cmdOpts));
+      state.result = await runCommand('second-opinion.poll', runEnv, jsonMode, async () => secondOpinionCommand.executePoll(runEnv, await secondOpinionStore(runEnv, root, cmdOpts.runFolder), cmdOpts));
+    });
+
+  // second-opinion-start-and-fetch: fetch a detached critique or poll, waiting a bounded time for it.
+  secondOpinionGroup
+    .command('result')
+    .description('fetch a detached critique or poll: its answers once it has finished, or that it is still running')
+    .argument('<run>', 'the run id that --detach printed')
+    .option('--wait <seconds>', `how long to wait for the run to finish before answering (default ${secondOpinionCommand.DEFAULT_RESULT_WAIT_SECONDS})`)
+    .action(async (run: string, cmdOpts: { wait?: string }, cmd: Command) => {
+      const { runEnv, jsonMode } = deriveRunEnv(env, cmd);
+      state.result = await runCommand('second-opinion.result', runEnv, jsonMode, async () => secondOpinionCommand.executeResult(runEnv, run, cmdOpts));
     });
 
   const sharedStoresCommand = program.command('shared-stores').description('the stores this store mounts under shared/');

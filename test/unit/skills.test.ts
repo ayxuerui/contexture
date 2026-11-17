@@ -1015,7 +1015,9 @@ describe('the second-opinion skill', () => {
     const owned = renderSkills(makeConfig()).find((s) => s.file === 'ctxr-second-opinion')!;
     expect([...owned.supportingFiles.keys()]).toEqual([]);
     const s = skill();
-    for (const sub of ['preflight', 'critique --plan-file <plan> --out <dir>', 'poll --prompt-file <question>']) expect(s).toContain(`ctxr second-opinion ${sub}`);
+    // second-opinion-start-and-fetch D8: start detached, then fetch, the same steps in a shell and through the server.
+    for (const sub of ['preflight', 'critique --plan-file <plan> --detach', 'poll --prompt-file <question> --detach', 'result <run>']) expect(s).toContain(`ctxr second-opinion ${sub}`);
+    expect(s).not.toMatch(/four minutes/);
     expect(s).not.toMatch(/run\.mjs|node [^ ]*skills/);
     expect(s).not.toContain('__SKILLS_PATH__');
   });

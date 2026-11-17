@@ -178,6 +178,22 @@ export async function preflight(ctx: SecondOpinionContext, opts: CommonOptions):
   return { tier: r.tier, ok, ...confinement, clis: results, ...(ok ? {} : { withheld: r.withheld }), lines };
 }
 
+/**
+ * second-opinion-start-and-fetch: every refusal the run would make, made
+ * before a detached run is started — the input, the options, the quorum,
+ * confinement where it is required and, for a poll, the lenses. Returns the
+ * plan or question, which the detached child is handed as a file.
+ */
+export async function validateDetached(ctx: SecondOpinionContext, mode: 'critique' | 'poll', opts: CritiqueOptions | PollOptions): Promise<string> {
+  const input =
+    mode === 'critique'
+      ? await readInput(ctx, (opts as CritiqueOptions).planFile, '--plan-file')
+      : await readInput(ctx, (opts as PollOptions).promptFile, '--prompt-file');
+  await resolve(ctx, opts, true);
+  if (mode === 'poll') pollPrompt(input, { lens: (opts as PollOptions).lens, wrap: (opts as PollOptions).wrap !== false });
+  return input;
+}
+
 // ---------------------------------------------------------------------------
 // Input and output.
 // ---------------------------------------------------------------------------
