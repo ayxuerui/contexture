@@ -249,7 +249,7 @@ export interface ResultData {
 }
 
 /** How long `result` waits by default, in a shell and on the server alike. */
-export const DEFAULT_RESULT_WAIT_SECONDS = 90;
+export const DEFAULT_RESULT_WAIT_SECONDS = 45;
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 

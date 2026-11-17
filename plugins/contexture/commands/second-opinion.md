@@ -149,8 +149,8 @@ critiques:
 ctxr second-opinion result <run>
 ```
 
-Each call waits up to 90 seconds. If it says the run is still running, run the same command again. Why: a
-chat app drops a tool call after about two minutes, and a critique often takes longer. Short calls never
+Each call waits up to 45 seconds. If it says the run is still running, run the same command again. Why: a
+chat app can drop a tool call after a minute or less, and a critique often takes two minutes or more. Short calls never
 reach that limit.
 
 If the command says a second opinion is already running and names a run, that run is yours. Fetch it with
