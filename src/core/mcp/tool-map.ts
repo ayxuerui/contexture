@@ -79,8 +79,11 @@ export const SECOND_OPINION_COMMANDS: readonly string[] = ['second-opinion prefl
  * returns it only to them. Under a protected prefix, so no model CLI sees it.
  */
 export const SECOND_OPINION_OWNER_VARIABLE = 'CONTEXTURE_SECOND_OPINION_OWNER';
-/** The longest `result --wait` the server passes: 90 s, leaving 35 s of the measured 125 s cut for spawning and output. */
-export const SECOND_OPINION_MAX_WAIT_SECONDS = 90;
+/**
+ * The longest `result --wait` the server passes: 45 s. A tunnel cut calls at 125 s, and a connector proxy
+ * in front of a remote Claude Code session dropped a 90 s wait in under 60 s (measured 2026-11-17).
+ */
+export const SECOND_OPINION_MAX_WAIT_SECONDS = 45;
 /** One call's bound: the longest wait plus ten seconds to start the CLI and print. */
 export const SECOND_OPINION_TIMEOUT_MS = (SECOND_OPINION_MAX_WAIT_SECONDS + 10) * 1000;
 /** Each model CLI's own limit: the shell's default, since no call waits on the whole run any more. */

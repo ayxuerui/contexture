@@ -16,7 +16,7 @@ With `--detach`, `ctxr second-opinion critique` and `ctxr second-opinion poll` S
 - **THEN** it exits with the usage code and no model CLI is invoked
 
 ### Requirement: `ctxr second-opinion result` fetches a run within a bounded wait
-`ctxr second-opinion result <run>` SHALL wait up to `--wait` seconds (default 90) for the run to finish. A finished run SHALL be printed as `--print` prints it, with that run's exit code. An unfinished one SHALL be reported as running, with its elapsed time, and exit `0`. With `--json` the envelope SHALL carry the run's state, one of `running`, `finished` or `stopped`. Fetching a finished run again SHALL print the same answers.
+`ctxr second-opinion result <run>` SHALL wait up to `--wait` seconds (default 45) for the run to finish. A finished run SHALL be printed as `--print` prints it, with that run's exit code. An unfinished one SHALL be reported as running, with its elapsed time, and exit `0`. With `--json` the envelope SHALL carry the run's state, one of `running`, `finished` or `stopped`. Fetching a finished run again SHALL print the same answers.
 
 #### Scenario: A finished run prints as a blocking run would
 - **WHEN** `ctxr second-opinion result <run>` is called for a detached critique that finished with three valid critiques

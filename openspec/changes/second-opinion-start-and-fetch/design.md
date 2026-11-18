@@ -12,7 +12,7 @@ See proposal.md for why. The relevant state today:
 
 **Goals:**
 
-- Every `ctxr` tool call for a second opinion returns in about 90 s or less, whatever the run takes.
+- Every `ctxr` tool call for a second opinion returns in about 45 s or less, whatever the run takes.
 - One skill text for the shell and the server. The steps are the same and only the transport differs.
 - A busy refusal leads to the answers instead of a lost run.
 
@@ -66,11 +66,11 @@ The shell writes no owner, and a shell user reads every run in their own runs fo
 
 ### D6. The bounds
 
-- **Per call: 100 s.** `result --wait` is capped at 90 s through the server, which leaves 10 s for spawn and output, inside the 125 s cut with 25 s to spare.
+- **Per call: 55 s.** `result --wait` is capped at 45 s through the server, which leaves 10 s for spawn and output. See revision 7 for why it is not 90 s.
 - **Per CLI.** `--timeout` defaults to the CLI's 600 s and is capped at 600 s through the server. The 200 s cap existed only to fit one HTTP call.
-- **The blocking form through the server** is detach plus `result --wait 90`. Skill copies already in stores keep working for short plans. For long plans they now get a run id instead of a dropped connection.
-- **Why 90 s and not closer to 125 s.** The 125 s figure comes from one host's path, and its source (the tunnel's edge or the chat app) is unconfirmed. If another client turns out to be shorter, only the declared bound changes.
-- **Opposing case: a lower wait, such as 30 s, so even Claude Code's reported 60 s drops are covered.** That means more calls per critique, at about two minutes a run. If the 60 s drop is measured, lowering the cap is one constant. It is not raised now on a report that has not been measured.
+- **The blocking form through the server** is detach plus `result --wait 45`. Skill copies already in stores keep working for short plans. For long plans they now get a run id instead of a dropped connection.
+- **Why 45 s and not closer to 125 s.** The 125 s figure comes from one path. A shorter one was measured after release (revision 7), and only the declared bound changed.
+- **Opposing case: keep 90 s and accept that some clients need a shorter `--wait`.** Fewer calls per critique, but the skill text is shared, so every client would have to pass a client-specific flag. A lower default costs one or two more calls per run and needs no flag.
 
 ### D7. Exit code for a run still in progress is `0`
 
@@ -85,7 +85,7 @@ Section 3 (critique) and the poll section become:
 1. Start: `ctxr second-opinion critique --plan-file <plan> --detach`. Through the server, `@input` as before.
 2. Fetch: `ctxr second-opinion result <run>`, repeated until the run is finished.
 
-**On a busy refusal:** fetch the run it names if that run is yours, or else wait. The sentence about four minutes is replaced with the measured 125 s cut and the 90 s wait. The deep-pass advice ("run it in a shell") is dropped: with a 600 s per-CLI cap the server can run a deep pass too.
+**On a busy refusal:** fetch the run it names if that run is yours, or else wait. The sentence about four minutes is replaced with the measured 125 s cut and the 45 s wait. The deep-pass advice ("run it in a shell") is dropped: with a 600 s per-CLI cap the server can run a deep pass too.
 
 ## Risks / Trade-offs
 
@@ -93,7 +93,7 @@ Section 3 (critique) and the poll section become:
 - **[A serve restart or a runtime update kills runs]** → `result` reports `stopped` with the failed-check code (spec), and the sweep clears the lock. A restart happens about once a day, at the runtime update.
 - **[A sweep runs only when a command starts]** → An idle server can hold an expired folder until the next second opinion. That is acceptable for an hour-scale lifetime. A timer in serve would put lifetime logic in two places.
 - **[pid reuse makes a dead run look alive]** → `run.json` records the process start time beside the pid, and liveness checks both. On Linux the start time is read from `/proc/<pid>/stat`. Elsewhere only the pid is checked, and that weakness is documented.
-- **[Agents loop on `result` too eagerly]** → Each call already waits up to 90 s. The skill says to call again, not to sleep and poll.
+- **[Agents loop on `result` too eagerly]** → Each call already waits up to 45 s. The skill says to call again, not to sleep and poll.
 
 ## Migration Plan
 
@@ -118,9 +118,10 @@ A second opinion on the proposal and this design (strong tier) returned three va
 2. **The skill and serve roll out apart (B).** A refreshed skill could call `result` on a serve that still refuses it, and pkm-serve showed that lag is real. The skill falls back to the blocking form when the server refuses `--detach` or `result` as unknown. The migration restarts serve before stores refresh their skills, and rollback regenerates skills from the previous release.
 3. **Order and pid-less folders (B).** The order is sweep, then lock, then folder, then spawn. A folder with no recorded pid becomes stopped after 60 s, and a folder with no record ages out from its creation time.
 4. **A restart (B).** A detached child is in its own process group. If serve's service manager leaves it running, its run stays fetchable, because state comes from the child's liveness and not from serve.
-5. **Rejected: drop `--detach`, and make `critique` wait 90 s then hand back an id (A).** In a shell that would cut off blocking runs and their `--out` folders. The server's blocking form already answers a short plan in one call.
+5. **Rejected: drop `--detach`, and make `critique` wait a bounded time then hand back an id (A).** In a shell that would cut off blocking runs and their `--out` folders. The server's blocking form already answers a short plan in one call.
 6. **Rejected: keep ownership in the server runner only (A).** The run's state lives in files the CLI writes. A runner-side map would be a second store of run state. The owner field is null in a shell and costs nothing there.
+7. **The wait drops from 90 s to 45 s (measured 2026-11-17, after 0.44.0).** On pkm, a `result` call with the 90 s wait, made from a remote Claude Code session through claude.ai's connector proxy, was dropped in under 60 s while the run was alive; cloudflared logged nothing, so the cut was the proxy's, not the tunnel's. `result --wait 20` on the same run returned the critiques. The default wait in a shell drops too, so the shared skill text states one figure.
 
 ## Open Questions
 
-- Which link imposes the 125 s cut: Cloudflare's edge or the chat app? This does not change the design, since every call stays under 90 s either way. It decides whether other store hostnames, without a tunnel in front, could take a higher wait.
+- Which link imposes the 125 s cut: Cloudflare's edge or the chat app? This does not change the design, since every call stays under 55 s either way. It decides whether other store hostnames, without a tunnel in front, could take a higher wait.

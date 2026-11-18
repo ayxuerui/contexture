@@ -11,14 +11,14 @@ serve-the-second-opinion-to-chat-apps D3 named start-and-fetch as the next chang
 ## What Changes
 
 - `ctxr second-opinion critique` and `ctxr second-opinion poll` gain `--detach`. It starts the run in the background, prints a run id, and returns at once.
-- New `ctxr second-opinion result <run>`. It waits up to `--wait` seconds (default 90) for that run, then prints the answers in the same form as `--print`. If the run has not finished, it prints that it is still running, and how long it has run.
+- New `ctxr second-opinion result <run>`. It waits up to `--wait` seconds (default 45) for that run, then prints the answers in the same form as `--print`. If the run has not finished, it prints that it is still running, and how long it has run.
 - A detached run's state and answers live in a run folder under the machine's temporary directory, private to the user. The folder is removed one hour after the run finishes, so a fetch whose response was lost can be repeated.
 - One detached run at a time per machine user, in a shell and on the server alike. A second `--detach` is refused as busy and names the run already going, so the caller can fetch that one instead.
 - Through the store's `ctxr` tool:
-  - `--detach` and `result` take the same arguments as in a shell. `result --wait` is capped at 90 seconds, so every call answers well inside the measured 125-second cut.
+  - `--detach` and `result` take the same arguments as in a shell. `result --wait` is capped at 45 seconds, so every call answers inside the shortest measured cut (under 60 seconds through a connector proxy; 125 seconds through the tunnel).
   - A run belongs to the member who started it, and `result` refuses anyone else's.
   - The per-CLI `--timeout` cap rises from 200 to the shell's 600 seconds, since no HTTP call waits on the run any more.
-- **BREAKING (server only):** a `critique` or `poll` through the `ctxr` tool without `--detach` no longer blocks for up to 240 seconds. It starts a detached run and waits up to 90 seconds for it. A run that finishes in time returns the answers as before. A run that does not returns the run id and says to fetch it with `result`. Skill copies in stores that still call the blocking form keep working for short plans and get a fetch path for long ones.
+- **BREAKING (server only):** a `critique` or `poll` through the `ctxr` tool without `--detach` no longer blocks for up to 240 seconds. It starts a detached run and waits up to 45 seconds for it. A run that finishes in time returns the answers as before. A run that does not returns the run id and says to fetch it with `result`. Skill copies in stores that still call the blocking form keep working for short plans and get a fetch path for long ones.
 - The shared second-opinion skill runs every critique and poll as `--detach`, then `result`, the same way in a shell and through the server. The claim that the chat app waits about four minutes is removed. The measured cut is 125 seconds.
 
 ## Non-goals
@@ -38,7 +38,7 @@ None.
 ### Modified Capabilities
 
 - `cli-contract`: `--detach` on `critique` and `poll`; the new `result` command, its wait, and its output; the one-detached-run rule and its busy refusal; the run folder and its one-hour lifetime.
-- `remote-access`: the second opinion's time bound and one-at-a-time rule change from one blocking call to a detached run fetched in bounded calls. Each run belongs to the member who started it. The blocking form becomes start-and-wait-90-seconds.
+- `remote-access`: the second opinion's time bound and one-at-a-time rule change from one blocking call to a detached run fetched in bounded calls. Each run belongs to the member who started it. The blocking form becomes start-and-wait-45-seconds.
 
 ## Impact
 
