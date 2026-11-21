@@ -1,10 +1,11 @@
-import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { ExitCode } from '../../src/core/exit-codes.js';
 import type { CliToolResult } from '../../src/core/mcp/tools/cli.js';
 import { makeMcpWriteFixture, type McpWriteFixture } from '../helpers/mcp-write.js';
+import { startOpenRouterStub, STUB_KEY, type OpenRouterStub } from '../helpers/openrouter-stub.js';
 import { installSecondOpinionStubs } from '../helpers/second-opinion-stubs.js';
 
 /**
@@ -218,6 +219,71 @@ describe('mcp ctxr second-opinion', () => {
       const result = await critiqueCall();
       expect(result.exit_code, result.stdout + result.stderr).toBe(ExitCode.Ok);
       expect(modelAsked('agy')).toBe('m-operator');
+    });
+  });
+
+  /**
+   * second-opinion-through-openrouter tasks 4.1–4.2 (remote-access requirements
+   * "The server gives the OpenRouter key to a second opinion only" and "A
+   * member cannot choose a second opinion's route").
+   */
+  describe('a critic answered through OpenRouter', () => {
+    let stub: OpenRouterStub;
+    const serveLineup = async (lineup: string) => {
+      const config = readFileSync(path.join(f.store.root, 'contexture.yaml'), 'utf8');
+      await f.store.advanceMain({ 'contexture.yaml': `${config}${lineup}\n` });
+      f.tick(61);
+    };
+    const operator = () => ({ OPENROUTER_API_KEY: STUB_KEY, CTXR_SECOND_OPINION_OPENROUTER_URL: stub.url });
+
+    beforeEach(async () => {
+      stub = await startOpenRouterStub(logDir);
+      stub.behave({ kind: 'ok', text: critique('pragmatist') });
+    });
+    afterEach(() => stub.stop());
+
+    it('reaches OpenRouter with the server\'s key, which no tool result carries', async () => {
+      await serveLineup('second_opinion: { strong: { agy: { openrouter: vendor/model-x } } }');
+      serverEnv(operator());
+      const result = await ctxr({ args: ['second-opinion', 'critique', '--plan-file', '@input', '--json'], input: PLAN });
+      expect(result.exit_code, result.stdout + result.stderr).toBe(ExitCode.Ok);
+      expect(stub.requests()).toHaveLength(1);
+      expect(stub.requests()[0]!.headers.authorization).toBe(`Bearer ${STUB_KEY}`);
+      expect(stub.requests()[0]!.body!.model).toBe('vendor/model-x');
+      expect(calls('agy')).toEqual([]);
+      expect(JSON.stringify(result)).not.toContain(STUB_KEY);
+      expect(result.stdout).toContain('"route":"openrouter"');
+      for (const cli of ['claude', 'codex']) expect(calls(cli)[0]!.env.OPENROUTER_API_KEY, cli).toBeUndefined();
+    });
+
+    it('withholds the key from every other command the server runs', async () => {
+      // A stand-in for the server's own CLI that records the environment it was started with.
+      const recorder = path.join(f.store.tmp.root, 'record-env.cjs');
+      const seen = path.join(logDir, 'server-cli.json');
+      writeFileSync(
+        recorder,
+        `const fs = require('node:fs');\nconst prior = fs.existsSync(${JSON.stringify(seen)}) ? JSON.parse(fs.readFileSync(${JSON.stringify(seen)}, 'utf8')) : [];\nprior.push({ argv: process.argv.slice(2), keys: Object.keys(process.env) });\nfs.writeFileSync(${JSON.stringify(seen)}, JSON.stringify(prior));\n`,
+      );
+      const { session, root } = await f.start('keys');
+      serverEnv(operator());
+      f.ctx.cliEntry = recorder;
+      await ctxr({ args: ['lint'] });
+      await f.call('ctxr_write', { args: ['entry', 'append', `${root}projects/a.md`, '--region', 'log', '--text', 'x'], session });
+      await ctxr({ args: ['second-opinion', 'preflight'] });
+      const runs = JSON.parse(readFileSync(seen, 'utf8')) as { argv: string[]; keys: string[] }[];
+      const holdsKey = Object.fromEntries(runs.map((r) => [r.argv.slice(0, 2).join(' '), r.keys.includes('OPENROUTER_API_KEY')]));
+      expect(holdsKey).toEqual({ 'lint --no-input': false, 'entry append': false, 'second-opinion preflight': true });
+    });
+
+    it('is not chosen by a session\'s unreviewed working copy', async () => {
+      const { session } = await f.start('route');
+      appendFileSync(path.join(f.store.root, '.worktrees', session, 'contexture.yaml'), 'second_opinion: { strong: { agy: { openrouter: vendor/model-session } } }\n');
+      serverEnv(operator());
+      const result = await ctxr({ args: ['second-opinion', 'critique', '--plan-file', '@input'], input: PLAN, session });
+      expect(result.exit_code, result.stdout + result.stderr).toBe(ExitCode.Ok);
+      expect(result.ran_against).toMatchObject({ session });
+      expect(stub.requests()).toEqual([]);
+      expect(calls('agy').length).toBeGreaterThan(0);
     });
   });
 });

@@ -4,6 +4,7 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { ExitCode } from '../../src/core/exit-codes.js';
 import { DIST_BIN } from '../helpers/dist-bin.js';
+import { startOpenRouterStub, STUB_KEY } from '../helpers/openrouter-stub.js';
 import { installSecondOpinionStubs } from '../helpers/second-opinion-stubs.js';
 import { makeTmpDir, type TmpDir } from '../helpers/tmp-store.js';
 
@@ -198,4 +199,36 @@ describe('the run lifetime', () => {
     expect(existsSync(path.join(runsRoot()!, old))).toBe(false);
     expect(run(['second-opinion', 'result', old, '--wait', '0']).status).toBe(ExitCode.Usage);
   }, 30_000);
+});
+
+/**
+ * second-opinion-through-openrouter, harness-portability requirement "The
+ * OpenRouter key is read from the environment and appears nowhere else": a
+ * detached run inherits the key in its environment and keeps a folder of its
+ * own, which is where a leak would sit for an hour.
+ */
+describe('a detached run with a critic answered through OpenRouter', () => {
+  it('sends the key to the endpoint and leaves it in no file of the run and no line either command printed', async () => {
+    const stub = await startOpenRouterStub(logDir);
+    try {
+      stub.behave({ kind: 'ok', text: critique('pragmatist') });
+      const env = { CTXR_SECOND_OPINION_OPENROUTER_URL: stub.url, OPENROUTER_API_KEY: STUB_KEY, CTXR_SECOND_OPINION_AGY_OPENROUTER: 'vendor/model-x' };
+      const started = run(['second-opinion', 'critique', '--plan-file', 'plan.md', '--detach'], {}, env);
+      expect(started.status, started.output).toBe(ExitCode.Ok);
+      const id = /^run: ([a-z2-7]{26})$/m.exec(started.stdout)![1]!;
+      const r = run(['second-opinion', 'result', id, '--wait', '30'], {}, env);
+      expect(r.status, r.output).toBe(ExitCode.Ok);
+      expect(r.stdout).toContain('MARK-pragmatist');
+      expect(r.stdout).toMatch(/pragmatist {2}agy {2}model=stub\/answered, through OpenRouter/);
+      expect(stub.requests()).toHaveLength(1);
+      expect(stub.requests()[0]!.headers.authorization).toBe(`Bearer ${STUB_KEY}`);
+      expect(started.output + r.output).not.toContain(STUB_KEY);
+      const folder = path.join(runsRoot()!, id);
+      const files = readdirSync(folder, { recursive: true, withFileTypes: true }).filter((e) => e.isFile()).map((e) => path.join(e.parentPath, e.name));
+      expect(files.length).toBeGreaterThan(2); // anti-vacuity: the run record, its input, its result and its logs
+      for (const file of files) expect(readFileSync(file, 'utf8'), file).not.toContain(STUB_KEY);
+    } finally {
+      stub.stop();
+    }
+  }, 60_000);
 });

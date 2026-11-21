@@ -1041,6 +1041,31 @@ describe('the second-opinion skill', () => {
     for (const name of ['CLAUDE_MODEL', 'CLAUDE_EFFORT', 'CODEX_MODEL', 'CODEX_EFFORT', 'AGY_MODEL', 'PASS_ENV']) expect(s).toContain(`CTXR_SECOND_OPINION_${name}`);
   });
 
+  // second-opinion-through-openrouter D8 (harness-portability requirement "The second-opinion skill explains
+  // the OpenRouter route"): conventions the command cannot make for the agent, asserted on the text.
+  it('explains the OpenRouter route: the lineup key, the variables, where the key lives, where the plan goes', () => {
+    const s = skill();
+    expect(rendered()['ctxr-second-opinion']).toContain('      agy:\n        openrouter: <vendor>/<model>\n');
+    for (const cli of ['CLAUDE', 'CODEX', 'AGY']) expect(s).toContain(`CTXR_SECOND_OPINION_${cli}_OPENROUTER`);
+    expect(s).toContain('Do not set both for one critic');
+    expect(s).toContain('Set it in the environment of the command. Do not write it in the store.');
+    expect(s).toContain('`OPENROUTER_API_KEY is not set` means the key is missing');
+    expect(s).toContain('went to OpenRouter and to the provider behind it');
+    expect(s).toContain("Name each reviewer that ran through OpenRouter. The manifest gives each reviewer's `route`.");
+    expect(s).toContain('only providers that do not collect it');
+    expect(s).toContain('set a spending limit on the key');
+    expect(s).toContain('`NODE_USE_ENV_PROXY=1`');
+  });
+
+  it('keeps a critic answered through OpenRouter in a run on someone else\'s plan, and replaces no failed one', () => {
+    const s = skill();
+    expect(s).toContain('Keep agy in that run when its preflight line ends with `through OpenRouter`');
+    expect(s).toContain('so it cannot act');
+    expect(s).toContain('The command does not start its tool in its place');
+    // No model slug is spelled out: the example is a placeholder a release cannot make stale.
+    expect(s).not.toMatch(/openrouter: [a-z0-9-]+\/[a-z0-9.-]+/);
+  });
+
   it('says when to critique, poll, or answer directly', () => {
     expect(skill()).toContain('## 1. Critique, poll, or just answer?');
     expect(skill()).toContain('**Answer directly**');

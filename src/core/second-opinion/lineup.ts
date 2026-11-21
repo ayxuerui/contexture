@@ -27,7 +27,12 @@ export const MAX_ARGV_BYTES = 120_000;
 /** Where a model came from: this run's environment, the store's configuration, or contexture's shipped lineup. */
 export type LineupSource = 'environment' | 'store' | 'default';
 
+/** How a critic is reached: its model CLI, or one request to OpenRouter (second-opinion-through-openrouter). */
+export type Route = 'cli' | 'openrouter';
+
 export interface CliModel {
+  /** `openrouter` when the entry resolved to a slug; then `model` is that slug and `effort` is null. */
+  route: Route;
   model: string;
   /** Null when the CLI is left to its own default, and for agy, whose effort is part of the model name. */
   effort: string | null;
@@ -47,13 +52,35 @@ export interface CliModel {
  * configuration cannot tell the two apart, and nothing depends on it.
  */
 export function lineupCell(source: SourceEnv, lineup: SecondOpinionLineup, tier: Tier, cli: Cli): CliModel {
-  const env = (name: 'MODEL' | 'EFFORT'): string | null => source[`CTXR_SECOND_OPINION_${cli.toUpperCase()}_${name}`] || null;
+  const env = (name: 'MODEL' | 'EFFORT' | 'OPENROUTER'): string | null => source[`CTXR_SECOND_OPINION_${cli.toUpperCase()}_${name}`] || null;
+  // second-opinion-through-openrouter D2: the environment's slug, then the environment's CLI model, then the
+  // store's slug, then the store's or the shipped CLI model. Both environment variables at once is refused
+  // before this is reached (`routeConflicts`).
+  const slugFromEnv = env('OPENROUTER');
+  if (slugFromEnv !== null) return { route: 'openrouter', model: slugFromEnv, effort: null, source: 'environment' };
   const fromEnv = env('MODEL');
+  const slug = lineup[tier][cli].openrouter;
+  if (fromEnv === null && slug !== undefined) return { route: 'openrouter', model: slug, effort: null, source: 'store' };
   const configured = lineup[tier][cli].model;
   const model = fromEnv ?? configured;
   const from: LineupSource = fromEnv !== null ? 'environment' : configured === SHIPPED_DEFAULTS.second_opinion[tier][cli].model ? 'default' : 'store';
-  if (cli === 'agy') return { model, effort: null, source: from };
-  return { model, effort: env('EFFORT') ?? lineup[tier][cli].effort ?? null, source: from };
+  if (cli === 'agy') return { route: 'cli', model, effort: null, source: from };
+  return { route: 'cli', model, effort: env('EFFORT') ?? lineup[tier][cli].effort ?? null, source: from };
+}
+
+/** The two variables that each choose one entry's route for a run. */
+export const routeVariables = (cli: Cli): { openrouter: string; model: string } => ({
+  openrouter: `CTXR_SECOND_OPINION_${cli.toUpperCase()}_OPENROUTER`,
+  model: `CTXR_SECOND_OPINION_${cli.toUpperCase()}_MODEL`,
+});
+
+/**
+ * second-opinion-through-openrouter D2: the entries whose route the
+ * environment names twice. Either order would be a guess about where a plan
+ * is sent, so the command refuses instead.
+ */
+export function routeConflicts(source: SourceEnv, clis: readonly Cli[]): Array<{ openrouter: string; model: string }> {
+  return clis.map(routeVariables).filter((v) => Boolean(source[v.openrouter]) && Boolean(source[v.model]));
 }
 
 /**

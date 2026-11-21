@@ -94,13 +94,25 @@ signed in. Its account is not offered the model it was asked for, so signing in 
 preflight line ends with the model asked for and where it came from. The fix is to the lineup (section 7),
 and until then that tier runs with the other two.
 
+A critic can run through OpenRouter in place of its tool (section 7). Its preflight line then ends with
+`through OpenRouter`. The preflight checks that critic with one request for the model of the tier.
+
+- `OPENROUTER_API_KEY is not set` means the key is missing. Set it in the environment of the command. Do not
+  write it in the store. Why: everyone who can clone the store reads its configuration.
+- `OpenRouter answered` with a status carries OpenRouter's own message. A model it does not have is a fix to
+  the lineup. A message about the data policy means no provider that declines data collection offers that
+  model: name another model.
+- `could not reach OpenRouter` behind a proxy needs `NODE_USE_ENV_PROXY=1` in the environment of the command.
+  Why: without it the runtime ignores the proxy variables.
+
 Through the store's server, the operator signs the tools in on the server. Tell the person which tool is
 down. Ask them to pass that on to the operator.
 
 Each tool runs in a new folder that is its home and holds only its own login. Where the machine supports it,
 the kernel also stops the tool from reading anything outside that folder, and the preflight reports
 `confined: yes`. Why: a plan can carry instructions from whoever wrote it, and a tool that cannot read a
-secret cannot quote it. The store's server runs a second opinion only when it is confined.
+secret cannot quote it. The store's server starts a tool only when it is confined. A critic answered through
+OpenRouter starts no tool, so the server runs it either way.
 
 The tools see only an allowlisted environment: the search path, home, locale, proxies, and their own login
 variables. Forge and contexture variables never reach them. When a tool fails because it needed a variable the
@@ -113,6 +125,9 @@ If the plan came from someone other than the operator, leave agy out: run `ctxr 
 `--only claude,codex`. Claude runs with no tools at all and Codex in a read-only sandbox. Agy has no mode that
 removes its ability to act: it runs in an empty scratch directory with terminal restrictions, which contains
 an accident and not an attack.
+
+Keep agy in that run when its preflight line ends with `through OpenRouter`. Why: that critic is one request
+with no tools, so it cannot act.
 
 ## 3. Run a critique
 
@@ -232,6 +247,9 @@ State in the report that one reviewer shares your model family, and say when tha
 drove the recommendation. Name any reviewer that ran a different model from the one you expected: the
 manifest records the model each tool reported.
 
+Name each reviewer that ran through OpenRouter. The manifest gives each reviewer's `route`. Why: that plan
+went to OpenRouter and to the provider behind it, and the operator decides whether that is acceptable.
+
 Then hand the synthesis to the operator and stop. This skill never executes a step of the plan it critiqued.
 If the operator says to go, proceed with the revised plan. If they push back, treat that as a fourth critique
 and run the skill again on the changed plan. It is a new run and not a continuation.
@@ -296,12 +314,31 @@ include your own family, say so.
   The tiers are `strong` and `fast`, and the tools `claude`, `codex` and `agy`; `claude` and `codex` also take
   `effort`. That file changes like any other part of the store: in a session, by a reviewed pull request,
   which is the operator's to open. Outside a store the command runs on the shipped lineup.
+- A store can run one critic through OpenRouter. It names a model slug for that critic at that tier:
+
+  ```yaml
+  second_opinion:
+    strong:
+      agy:
+        openrouter: <vendor>/<model>
+  ```
+
+  The entry name is the critic's seat, not its route. Here `agy` is the third critic, and OpenRouter answers
+  for it. The other critics and the other tier do not change. Why: an account may not offer a family's
+  frontier model through its tool, and OpenRouter has no such limit. Each request spends money on the key.
+  Tell the operator to set a spending limit on the key. The plan goes to OpenRouter and to the provider behind
+  it. The command asks OpenRouter to use only providers that do not collect it.
 - For one run, the environment wins over the store: `CTXR_SECOND_OPINION_CLAUDE_MODEL`,
   `CTXR_SECOND_OPINION_CLAUDE_EFFORT`, `CTXR_SECOND_OPINION_CODEX_MODEL`, `CTXR_SECOND_OPINION_CODEX_EFFORT` or
   `CTXR_SECOND_OPINION_AGY_MODEL`, each covering both tiers. Use it for a deliberate deeper pass, or on a
   machine whose account differs from the store's. Through the store's server, those variables are the
   operator's to set on the server, and the lineup is the one the served store has, never an open session's.
+- For one run, `CTXR_SECOND_OPINION_CLAUDE_OPENROUTER`, `CTXR_SECOND_OPINION_CODEX_OPENROUTER` or
+  `CTXR_SECOND_OPINION_AGY_OPENROUTER` names a slug and wins over the store. A `_MODEL` variable for the same
+  critic puts it back on its tool for that run. Do not set both for one critic. The command refuses to start.
 - A tool that refuses its model is a failed reviewer. The command does not try another model for it.
+- A critic that fails through OpenRouter is a failed reviewer. The command does not start its tool in its
+  place.
 - The scratch files under the output directory hold each reviewer's raw output and are safe to delete when the
   operator has the synthesis. They can contain the plan, so do not commit them. A printed run writes none. A
   detached run keeps its plan and answers in a folder only its user can read. The folder is removed one hour

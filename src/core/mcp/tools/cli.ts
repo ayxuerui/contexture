@@ -151,10 +151,13 @@ export function checkArguments(
 }
 
 /** D4: the server's environment without its forge credentials, with the checkout as the store root. */
-export function childEnv(env: Readonly<Record<string, string | undefined>>, cwd: string, cacheDir: string): Record<string, string> {
+export function childEnv(env: Readonly<Record<string, string | undefined>>, cwd: string, cacheDir: string, opts: { secondOpinion?: boolean } = {}): Record<string, string> {
   const child: Record<string, string> = {};
   for (const [key, value] of Object.entries(env)) {
     if (value === undefined) continue;
+    // second-opinion-through-openrouter D4: the OpenRouter key is for a second opinion's own request. No other
+    // command the server runs, in the view or in a member's session, has a use for it.
+    if (key.startsWith('OPENROUTER_') && !opts.secondOpinion) continue;
     if (/TOKEN/i.test(key) || key.startsWith('GH_') || key.startsWith('GITHUB_') || key.startsWith('CONTEXTURE_GITHUB_')) continue;
     if (key === 'CONTEXTURE_ROOT' || key === 'CONTEXTURE_STORE_ROOT' || key === 'GIT_ASKPASS' || key === 'SSH_ASKPASS' || key === 'SSH_AUTH_SOCK') continue;
     child[key] = value;
@@ -257,7 +260,7 @@ async function secondOpinionTool(ctx: CliToolContext, email: string, args: CliAr
   if (usesInput && args.input === undefined) throw invalid(`An argument is "${INPUT_ARGUMENT}" but no "input" text was given.`);
   const maxWait = ctx.secondOpinionMaxWaitSeconds ?? SECOND_OPINION_MAX_WAIT_SECONDS;
   const folder = await mkdtemp(path.join(tmpdir(), 'ctxr-mcp-second-opinion-'));
-  const env = { ...childEnv(ctx.write.env, servedRoot, folder), [SECOND_OPINION_OWNER_VARIABLE]: email };
+  const env = { ...childEnv(ctx.write.env, servedRoot, folder, { secondOpinion: true }), [SECOND_OPINION_OWNER_VARIABLE]: email };
   const runCli = (argv: string[]) =>
     runServerCli({ entry: ctx.entry, argv: finalArgv(argv), cwd: folder, env, timeoutMs: ctx.secondOpinionTimeoutMs ?? SECOND_OPINION_TIMEOUT_MS });
   try {

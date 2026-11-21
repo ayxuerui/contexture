@@ -273,6 +273,15 @@ const UpdateCheckSchema = z.object({
 });
 
 /**
+ * second-opinion-through-openrouter D1: an entry's OpenRouter model slug. The
+ * one key is both the switch and the slug, so it cannot be half set. An opt-in
+ * key with no shipped default: absent means the entry runs its CLI, and `init`
+ * never writes it. The entry's name is the critic's seat (its role, its
+ * `--only` name), not the route.
+ */
+const openRouterSlug = z.string().min(1).optional();
+
+/**
  * harness-portability spec (second-opinion-lineup-in-store-config D1): the
  * second opinion's lineup, tier first and then model CLI. Every model, and
  * codex's effort, defaults to the shipped lineup, so a store records only the
@@ -290,15 +299,17 @@ const secondOpinionTier = (tier: 'strong' | 'fast') =>
       .strictObject({
         model: z.string().min(1).default(SHIPPED_DEFAULTS.second_opinion[tier].claude.model),
         effort: z.string().min(1).optional(),
+        openrouter: openRouterSlug,
       })
       .prefault({}),
     codex: z
       .strictObject({
         model: z.string().min(1).default(SHIPPED_DEFAULTS.second_opinion[tier].codex.model),
         effort: z.string().min(1).default(SHIPPED_DEFAULTS.second_opinion[tier].codex.effort),
+        openrouter: openRouterSlug,
       })
       .prefault({}),
-    agy: z.strictObject({ model: z.string().min(1).default(SHIPPED_DEFAULTS.second_opinion[tier].agy.model) }).prefault({}),
+    agy: z.strictObject({ model: z.string().min(1).default(SHIPPED_DEFAULTS.second_opinion[tier].agy.model), openrouter: openRouterSlug }).prefault({}),
   });
 
 export const SecondOpinionSchema = z.strictObject({

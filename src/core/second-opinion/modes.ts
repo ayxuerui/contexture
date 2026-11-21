@@ -7,7 +7,8 @@ import { onPath, type Confinement, type ConfinedRun } from './confine.js';
 import { childEnvironment, PASS_ENV_VARIABLE, protectedPassThroughNames, type SourceEnv } from './environment.js';
 import { judgeCritique } from './judge.js';
 import { firstLines, runCli, type CliResult } from './launch.js';
-import { ALL_CLIS, buildInvocation, FLAGS_USED, INSTALL_LEVELS, LOGIN_FILES, MAX_ARGV_BYTES, normalize, QUORUM, ROLE_CLI, ROLES, TIERS, lineupCell, type Cli, type LineupSource, type Role, type Tier } from './lineup.js';
+import { ALL_CLIS, buildInvocation, FLAGS_USED, INSTALL_LEVELS, LOGIN_FILES, MAX_ARGV_BYTES, normalize, QUORUM, ROLE_CLI, ROLES, TIERS, lineupCell, routeConflicts, type Cli, type CliModel, type LineupSource, type Role, type Route, type Tier } from './lineup.js';
+import { askOpenRouter, OPENROUTER_KEY_VARIABLE, openRouterBase } from './openrouter.js';
 import { critiquePrompt, pollPrompt } from './prompts.js';
 
 /**
@@ -79,7 +80,10 @@ const confinementLine = (c: Confinement): string =>
 async function resolve(ctx: SecondOpinionContext, opts: CommonOptions, needQuorum: boolean): Promise<Resolved> {
   const r = resolveOptions(ctx, opts, needQuorum);
   const confinement = await detectConfinement(r.env);
-  if (opts.requireConfinement && !confinement.confined) throw new SecondOpinionUnconfinedError(confinement.reason);
+  // second-opinion-through-openrouter D6: a critic answered by OpenRouter starts no process, so only a run
+  // that would start a model CLI needs the machine to confine one.
+  const startsCli = r.clis.some((cli) => lineupCell(ctx.source, ctx.lineup, r.tier, cli).route === 'cli');
+  if (opts.requireConfinement && !confinement.confined && startsCli) throw new SecondOpinionUnconfinedError(confinement.reason);
   return { ...r, confinement };
 }
 
@@ -104,13 +108,58 @@ function resolveOptions(ctx: SecondOpinionContext, opts: CommonOptions, needQuor
   const refused = protectedPassThroughNames(ctx.source);
   if (refused.length) {
     throw new SecondOpinionUsageError(
-      `${PASS_ENV_VARIABLE} names ${refused.join(', ')}; forge and contexture variables are never passed to a model CLI`,
+      `${PASS_ENV_VARIABLE} names ${refused.join(', ')}; forge, contexture and OpenRouter variables are never passed to a model CLI`,
       { variables: refused },
     );
+  }
+  // second-opinion-through-openrouter D2: one entry's route named twice is refused, never guessed.
+  const conflicts = routeConflicts(ctx.source, clis);
+  if (conflicts.length) {
+    const named = conflicts.map((v) => `${v.openrouter} and ${v.model}`).join('; ');
+    throw new SecondOpinionUsageError(`${named} are both set; set one, since each chooses that critic's route for this run`, { variables: conflicts.flatMap((v) => [v.openrouter, v.model]) });
   }
   const { env, withheld } = childEnvironment(ctx.source, ctx.home);
   return { tier, timeout, clis, env, withheld };
 }
+
+/** One critic's answer, whichever way it was reached. */
+interface Answered {
+  ok: boolean;
+  cause: string | null;
+  text: string;
+  /** The model the CLI or OpenRouter reports having run, where it reports one. */
+  model: string | null;
+  /** What goes in the raw file: a CLI's two streams, or OpenRouter's response body. Never a request. */
+  rawFile: string;
+}
+
+/**
+ * second-opinion-through-openrouter: ask one critic, through its model CLI or
+ * through OpenRouter as its lineup entry resolved. The key is read here, at
+ * request time, and handed to nothing but the request (D4). A failure on one
+ * route never falls back to the other.
+ */
+async function ask(ctx: SecondOpinionContext, r: Resolved, cli: Cli, cell: CliModel, prompt: string, timeout: number, tooLongCause: string | null): Promise<Answered> {
+  if (cell.route === 'openrouter') {
+    const res = await askOpenRouter({ base: openRouterBase(ctx.source), key: ctx.source[OPENROUTER_KEY_VARIABLE], slug: cell.model, prompt, timeoutSec: timeout });
+    return { ok: res.ok, cause: res.cause ?? null, text: res.text, model: res.model, rawFile: `${res.raw}\n` };
+  }
+  let raw: CliResult;
+  // The argument-size limit is agy the tool's: an agy entry answered by OpenRouter never reaches it.
+  const refused = cli === 'agy' && tooLongCause !== null ? tooLong(prompt, tooLongCause) : null;
+  if (refused) raw = refused;
+  else {
+    const inv = buildInvocation(cli, prompt, cell);
+    raw = await runCli(inv.cmd, inv.args, inv.stdin, timeout, r.env, confinedRun(ctx, r, cli));
+  }
+  const rawFile = `${raw.stdout}\n--- stderr ---\n${raw.stderr}\n`;
+  if (!raw.ok) return { ok: false, cause: raw.cause ?? null, text: '', model: null, rawFile };
+  const { text, model } = normalize(cli, raw);
+  return { ok: true, cause: null, text, model, rawFile };
+}
+
+/** How a routed critic reads beside its model: nothing for a CLI, so those lines are as they were. */
+const routeNote = (route: Route): string => (route === 'openrouter' ? ', through OpenRouter' : '');
 
 // ---------------------------------------------------------------------------
 // Preflight.
@@ -123,6 +172,8 @@ export interface PreflightEntry {
   /** The model this CLI was asked for, and where it came from. */
   model_asked: string;
   model_source: LineupSource;
+  /** Whether the entry was checked through its model CLI or by a request to OpenRouter. */
+  route: Route;
 }
 
 /** How a model's source reads beside its name. */
@@ -146,9 +197,16 @@ export async function preflight(ctx: SecondOpinionContext, opts: CommonOptions):
     r.clis.map(async (cli): Promise<PreflightEntry> => {
       const spec = FLAGS_USED[cli];
       const cell = lineupCell(ctx.source, ctx.lineup, r.tier, cli);
-      const asked = { model_asked: cell.model, model_source: cell.source };
+      const asked = { model_asked: cell.model, model_source: cell.source, route: cell.route };
       // A CLI that is down still names the model and its source: a refused model is the lineup's to fix.
-      const down = (detail: string): PreflightEntry => ({ cli, ok: false, detail: `${detail} [asked for ${cell.model}, ${SOURCE_LABEL[cell.source]}]`, ...asked });
+      const down = (detail: string): PreflightEntry => ({ cli, ok: false, detail: `${detail} [asked for ${cell.model}, ${SOURCE_LABEL[cell.source]}${routeNote(cell.route)}]`, ...asked });
+      if (cell.route === 'openrouter') {
+        // No help text to check and no process to confine: the ping, with the tier's slug, is the whole check.
+        const pong = await ask(ctx, r, cli, cell, 'say PONG only', Math.min(r.timeout, 60), null);
+        if (!pong.ok) return down(pong.cause ?? 'failed');
+        if (!/pong/i.test(pong.text)) return down(`unexpected reply: ${firstLines(pong.text, 2)}`);
+        return { cli, ok: true, detail: `PONG (${cell.model}, ${SOURCE_LABEL[cell.source]}${routeNote(cell.route)})`, ...asked };
+      }
       const confine = confinedRun(ctx, r, cli);
       const help = await runCli(cli, spec.helpArgs, '', 30, r.env, confine);
       if (!help.ok) return down(help.cause ?? 'failed');
@@ -268,6 +326,8 @@ export interface CritiqueEntry {
   /** The model the CLI was asked for, and whether the environment, the store or the shipped lineup named it. */
   model_asked: string;
   model_source: LineupSource;
+  /** Whether the critic ran through its model CLI or was answered by OpenRouter. */
+  route: Route;
   model_reported: string | null;
   status: 'valid' | 'blind' | 'failed';
   cause: string | null;
@@ -311,17 +371,11 @@ export async function critique(ctx: SecondOpinionContext, opts: CritiqueOptions)
       const prompt = critiquePrompt(role, plan);
       const cell = lineupCell(ctx.source, ctx.lineup, r.tier, cli);
       const started = Date.now();
-      let raw: CliResult;
-      const refused = cli === 'agy' ? tooLong(prompt, `prompt is ${Buffer.byteLength(prompt)} bytes; agy takes it as one argument and the limit is ${MAX_ARGV_BYTES}`) : null;
-      if (refused) raw = refused;
-      else {
-        const inv = buildInvocation(cli, prompt, cell);
-        raw = await runCli(inv.cmd, inv.args, inv.stdin, r.timeout, r.env, confinedRun(ctx, r, cli));
-      }
-      if (dir !== null) writeFileSync(path.join(dir, 'raw', `${role}-${cli}.txt`), `${raw.stdout}\n--- stderr ---\n${raw.stderr}\n`);
+      const raw = await ask(ctx, r, cli, cell, prompt, r.timeout, `prompt is ${Buffer.byteLength(prompt)} bytes; agy takes it as one argument and the limit is ${MAX_ARGV_BYTES}`);
+      if (dir !== null) writeFileSync(path.join(dir, 'raw', `${role}-${cli}.txt`), raw.rawFile);
       const base = { role, cli, asked: cell, duration_ms: Date.now() - started };
-      if (!raw.ok) return { ...base, status: 'failed' as const, cause: raw.cause ?? null, model: null, text: '', verdict: null, findings: 0, veto: false };
-      const { text, model } = normalize(cli, raw);
+      if (!raw.ok) return { ...base, status: 'failed' as const, cause: raw.cause, model: raw.model, text: '', verdict: null, findings: 0, veto: false };
+      const { text, model } = raw;
       const judged = judgeCritique(text, plan);
       return { ...base, status: judged.status, cause: judged.cause, model, text, verdict: judged.verdict, findings: judged.findings.length, veto: judged.veto };
     }),
@@ -343,6 +397,7 @@ export async function critique(ctx: SecondOpinionContext, opts: CritiqueOptions)
       cli: x.cli,
       model_asked: x.asked.model,
       model_source: x.asked.source,
+      route: x.asked.route,
       model_reported: x.model,
       status: x.status,
       cause: x.cause,
@@ -374,7 +429,7 @@ export async function critique(ctx: SecondOpinionContext, opts: CritiqueOptions)
   const sorted = [...letters].sort((a, b) => a.letter.localeCompare(b.letter));
   for (const x of sorted) lines.push('', `===== critique-${x.letter} =====`, x.text);
   lines.push('', '===== letters (write the synthesis before reading on) =====');
-  for (const x of sorted) lines.push(`  ${x.letter}  ${x.role}  ${x.cli}  model=${x.model ?? 'not reported'}`);
+  for (const x of sorted) lines.push(`  ${x.letter}  ${x.role}  ${x.cli}  model=${x.model ?? 'not reported'}${routeNote(x.asked.route)}`);
   return { out: null, manifest, texts: Object.fromEntries(sorted.map((x) => [x.letter, x.text])), lines };
 }
 
@@ -400,6 +455,8 @@ export interface PollAnswer {
   /** The model the CLI was asked for, and whether the environment, the store or the shipped lineup named it. */
   model_asked: string;
   model_source: LineupSource;
+  /** Whether the answer came through the model CLI or from OpenRouter. */
+  route: Route;
 }
 
 export interface PollManifest {
@@ -432,18 +489,12 @@ export async function poll(ctx: SecondOpinionContext, opts: PollOptions): Promis
 
   const runs = await Promise.all(
     r.clis.map(async (cli) => {
-      let raw: CliResult;
       const cell = lineupCell(ctx.source, ctx.lineup, r.tier, cli);
-      const asked = { model_asked: cell.model, model_source: cell.source };
-      const refused = cli === 'agy' ? tooLong(prompt, `prompt exceeds the ${MAX_ARGV_BYTES}-byte argument limit`) : null;
-      if (refused) raw = refused;
-      else {
-        const inv = buildInvocation(cli, prompt, cell);
-        raw = await runCli(inv.cmd, inv.args, inv.stdin, r.timeout, r.env, confinedRun(ctx, r, cli));
-      }
-      if (dir !== null) writeFileSync(path.join(dir, 'raw', `poll-${cli}.txt`), `${raw.stdout}\n--- stderr ---\n${raw.stderr}\n`);
-      if (!raw.ok) return { cli, status: 'failed' as const, cause: raw.cause ?? null, model: null, ...asked, text: '' };
-      const { text, model } = normalize(cli, raw);
+      const asked = { model_asked: cell.model, model_source: cell.source, route: cell.route };
+      const raw = await ask(ctx, r, cli, cell, prompt, r.timeout, `prompt exceeds the ${MAX_ARGV_BYTES}-byte argument limit`);
+      if (dir !== null) writeFileSync(path.join(dir, 'raw', `poll-${cli}.txt`), raw.rawFile);
+      if (!raw.ok) return { cli, status: 'failed' as const, cause: raw.cause, model: raw.model, ...asked, text: '' };
+      const { text, model } = raw;
       if (!text) return { cli, status: 'failed' as const, cause: 'empty output', model, ...asked, text };
       return { cli, status: 'valid' as const, cause: null, model, ...asked, text };
     }),
@@ -465,7 +516,7 @@ export async function poll(ctx: SecondOpinionContext, opts: PollOptions): Promis
   };
   if (dir !== null) writeFileSync(path.join(dir, 'manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`);
   const lines = [...(dir !== null ? [`out: ${dir}`] : []), `valid: ${valid}  failed: ${runs.length - valid}`];
-  for (const x of runs) lines.push(`  ${x.cli}  ${x.status}${x.cause ? `  ${x.cause}` : ''}${x.model ? `  model=${x.model}` : ''}`);
+  for (const x of runs) lines.push(`  ${x.cli}  ${x.status}${x.cause ? `  ${x.cause}` : ''}${x.model ? `  model=${x.model}` : ''}${x.route === 'openrouter' ? '  through OpenRouter' : ''}`);
   if (manifest.partial) lines.push(`PARTIAL: fewer than ${QUORUM} answers. Report it as a partial result.`);
   lines.push(confinementLine(r.confinement));
   if (dir !== null) return { out: dir, manifest, lines };
