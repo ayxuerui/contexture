@@ -166,6 +166,14 @@ describe('mcp ctxr and ctxr_write', () => {
     expect(env.GH_CONFIG_DIR).toBe('/store/w/.contexture/cache/mcp/no-gh-config');
   });
 
+  // second-opinion-through-openrouter D4: the OpenRouter key goes to a second opinion and to nothing else.
+  it('withholds the OpenRouter key unless the command is a second opinion', () => {
+    const server = { PATH: '/bin', OPENROUTER_API_KEY: 'sk-or-x', CTXR_SECOND_OPINION_OPENROUTER_URL: 'http://127.0.0.1:9' };
+    expect(childEnv(server, '/store/w', '/cache').OPENROUTER_API_KEY).toBeUndefined();
+    expect(childEnv(server, '/store/w', '/cache', { secondOpinion: true }).OPENROUTER_API_KEY).toBe('sk-or-x');
+    expect(childEnv(server, '/store/w', '/cache').CTXR_SECOND_OPINION_OPENROUTER_URL).toBe('http://127.0.0.1:9');
+  });
+
   it('matches the command path before any option, and leaves prose alone', () => {
     const config = f.write.config;
     expect(checkArguments(['graph', 'query', 'neighbors', 'projects/a.md'], CTXR_READ_COMMANDS, 'ctxr', config, null).command).toBe('graph query');

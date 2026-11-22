@@ -648,6 +648,36 @@ describe('second_opinion block (second-opinion-lineup-in-store-config)', () => {
     expect((failure as Error).message).toContain(key);
   });
 
+  // second-opinion-through-openrouter D1: one optional key per entry, both the switch and the slug.
+  it('takes an OpenRouter slug for one entry, with no default anywhere else', async () => {
+    const config = await load('second_opinion: { strong: { agy: { openrouter: vendor/model-x } } }\n');
+    expect(config.second_opinion.strong.agy).toEqual({ model: SHIPPED_DEFAULTS.second_opinion.strong.agy.model, openrouter: 'vendor/model-x' });
+    for (const entry of [config.second_opinion.strong.claude, config.second_opinion.strong.codex, ...Object.values(config.second_opinion.fast)]) {
+      expect(entry).not.toHaveProperty('openrouter');
+    }
+    expect(JSON.stringify(SHIPPED_DEFAULTS.second_opinion)).not.toContain('openrouter');
+  });
+
+  it.each([
+    ['an empty slug', 'second_opinion: { strong: { agy: { openrouter: "" } } }\n', 'openrouter'],
+    ['an address beside the slug', 'second_opinion: { strong: { agy: { openrouter: vendor/model-x, url: "http://127.0.0.1:9" } } }\n', 'url'],
+    ['a key beside the slug', 'second_opinion: { strong: { agy: { openrouter: vendor/model-x, key: sk-x } } }\n', 'key'],
+  ])('refuses %s, naming the key', async (_name, extra, key) => {
+    const failure = await load(extra).then(
+      () => null,
+      (err: unknown) => err,
+    );
+    expect(failure).toBeInstanceOf(InvalidConfigError);
+    expect((failure as Error).message).toContain(key);
+  });
+
+  it('writes a slug only where a store named one', async () => {
+    expect(renderStoreConfig(await load(''))).not.toContain('openrouter');
+    const rendered = renderStoreConfig(await load('second_opinion: { strong: { agy: { openrouter: vendor/model-x } } }\n'));
+    expect(rendered).toContain('second_opinion:\n  strong:\n    agy:\n      openrouter: vendor/model-x\n');
+    for (const untouched of ['claude', 'codex', 'fast', 'model:']) expect(rendered).not.toContain(untouched);
+  });
+
   it('is omitted from a written config that names nothing, and written as only the named cell otherwise', async () => {
     expect(renderStoreConfig(await load(''))).not.toContain('second_opinion');
     const rendered = renderStoreConfig(await load('second_opinion: { strong: { agy: { model: m-alt } } }\n'));

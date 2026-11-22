@@ -32,8 +32,12 @@ const ALLOWED_NAMES = new Set([
 /** Locale, the model CLIs' own login and configuration variables, and this command's own. */
 const ALLOWED_PREFIXES = ['LC_', 'ANTHROPIC_', 'CLAUDE_', 'OPENAI_', 'CODEX_', 'GEMINI_', 'GOOGLE_', 'AGY_', 'CTXR_SECOND_OPINION_'];
 
-/** The forge and contexture prefixes, which take precedence over the pass-through (Revisions after critique, 1). */
-export const PROTECTED_PREFIXES = ['GH_', 'GITHUB_', 'CONTEXTURE_'];
+/**
+ * The forge and contexture prefixes, which take precedence over the pass-through (Revisions after critique, 1).
+ * `OPENROUTER_` joins them (second-opinion-through-openrouter D4): the key is this command's own, for its own
+ * request, and no critic's process is ever handed it.
+ */
+export const PROTECTED_PREFIXES = ['GH_', 'GITHUB_', 'CONTEXTURE_', 'OPENROUTER_'];
 
 /** Names any further variables an operator chooses to pass through, comma- or space-separated. */
 export const PASS_ENV_VARIABLE = 'CTXR_SECOND_OPINION_PASS_ENV';
