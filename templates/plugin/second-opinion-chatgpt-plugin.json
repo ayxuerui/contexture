@@ -1,0 +1,13 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "__NAME__",
+  "version": "__VERSION__",
+  "description": "The skill for getting a second opinion from three AI models of different families, and the __STORE_NAME__ server that runs it. It reads no notes and changes nothing.",
+  "extensions": {
+    "com.openai": {
+      "interface": {
+        "displayName": "__DISPLAY_NAME__"
+      }
+    }
+  }
+}

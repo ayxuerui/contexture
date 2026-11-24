@@ -3,7 +3,8 @@ import type { ExitCode } from './exit-codes.js';
 
 /**
  * Declarative, per-command metadata read uniformly by run.ts's dispatcher —
- * `init` and `version` declare `store: 'absent'`; `plugin build`
+ * `init`, `version` and `second-opinion serve` (a server with no store,
+ * offer-the-second-opinion-on-its-own D7) declare `store: 'absent'`; `plugin build`
  * (contexture's own plugin needs no store, publish-one-contexture-plugin D1)
  * and `second-opinion` (the lineup is the store's inside one, the shipped one
  * outside, second-opinion-lineup-in-store-config D4) declare `store:

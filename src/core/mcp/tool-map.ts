@@ -10,7 +10,8 @@
  * - `file`: Claude Code's own file tools, plus `Move` and `Delete`, which stand
  *   in for the `git mv` and `git rm` a local agent runs;
  * - `command`: one `ctxr` command, named for its path, taking its options as
- *   fields (plus `session`, the one field the MCP layer adds);
+ *   fields (plus `session`, the one field the MCP layer adds, and the text of
+ *   a file option under the option's name without `_file`);
  * - `runner`: `ctxr` and `ctxr_write`, through which every allowlisted command
  *   without a tool of its own runs (D4);
  * - `exception`: a tool with no command, each with its reason.
@@ -30,8 +31,22 @@ export interface ToolEntry {
 /** The one field the MCP layer adds to a command's options: a local command finds its session from its working directory, a stateless server cannot. */
 export const SESSION_FIELD = 'session';
 
-/** The fields of the two runners (D4, D9). */
-export const RUNNER_FIELDS = ['args', SESSION_FIELD, 'input'] as const;
+/**
+ * The fields of the two runners (D4, D9). offer-the-second-opinion-on-its-own
+ * D3: only `ctxr_write` takes `input`, since no read command the runner still
+ * runs takes text.
+ */
+export const RUNNER_FIELDS: Readonly<Record<string, readonly string[]>> = {
+  ctxr: ['args', SESSION_FIELD],
+  ctxr_write: ['args', SESSION_FIELD, 'input'],
+};
+
+/**
+ * offer-the-second-opinion-on-its-own D2: a command's tool may take a field
+ * named for one of its options without this ending. The field carries as text
+ * what the option reads from a file, so `plan` stands for `--plan-file`.
+ */
+export const FILE_OPTION_SUFFIX = '_file';
 
 /** The literal argument `ctxr_write` replaces with the path of a file holding the call's `input` (D4). */
 export const INPUT_ARGUMENT = '@input';
@@ -54,25 +69,35 @@ export const CTXR_READ_COMMANDS = [
   'publish gather',
   // mount-shared-stores: reads the declared mounts, with no writes and no network.
   'shared-stores status',
-  // serve-the-second-opinion-to-chat-apps: run as in a shell, confined, with the answers printed.
-  'second-opinion preflight',
-  'second-opinion critique',
-  'second-opinion poll',
-  // second-opinion-start-and-fetch: fetch a detached critique or poll within a bounded wait.
-  'second-opinion result',
 ] as const;
 
 /**
- * serve-the-second-opinion-to-chat-apps D3, D5: the read commands that start
- * or fetch model CLIs' runs. They take `input`, run confined, and answer in
- * bounded calls.
+ * offer-the-second-opinion-on-its-own D2: the second-opinion commands, each
+ * with a tool of its own under the `second-opinion` scope. They start or
+ * fetch model CLIs' runs, run confined, and answer in bounded calls.
  *
  * second-opinion-start-and-fetch D6: every call answers within its bound
  * whatever the run takes. A critique or poll is started detached and fetched
  * with `result`, whose wait is capped so the call returns well inside the
  * 125 seconds a chat app's connection was measured to survive.
  */
-export const SECOND_OPINION_COMMANDS: readonly string[] = ['second-opinion preflight', 'second-opinion critique', 'second-opinion poll', 'second-opinion result'];
+export const SECOND_OPINION_COMMAND_TOOLS = {
+  'second-opinion preflight': 'second_opinion_preflight',
+  'second-opinion critique': 'second_opinion_critique',
+  'second-opinion poll': 'second_opinion_poll',
+  'second-opinion result': 'second_opinion_result',
+} as const;
+/** The command group the `ctxr` runner refuses, naming the tool (D3). */
+export const SECOND_OPINION_GROUP = 'second-opinion';
+/** The scope the four tools declare, and the only scope the server with no store grants. */
+export const SECOND_OPINION_SCOPE = 'second-opinion';
+/**
+ * offer-the-second-opinion-on-its-own D7: the variable through which the
+ * server with no store gives a run its lineup, as JSON in the store's own
+ * schema. Under a protected prefix, so no model CLI sees it. `ctxr serve`
+ * removes it from the commands it runs, so there the served store decides.
+ */
+export const SECOND_OPINION_LINEUP_VARIABLE = 'CONTEXTURE_SECOND_OPINION_LINEUP';
 /**
  * second-opinion-start-and-fetch D5: the variable the server sets to the
  * member's email, so a detached run records who started it and `result`
@@ -181,7 +206,14 @@ export const TOOL_REGISTRY: readonly ToolEntry[] = [
   { name: 'session_discard', kind: 'command', command: 'session discard' },
   { name: 'ctxr', kind: 'runner', reason: 'runs every allowlisted read-only command that has no tool of its own (D4)' },
   { name: 'ctxr_write', kind: 'runner', reason: "runs every allowlisted writing command that has no tool of its own, inside the member's session (D4)" },
+  { name: 'second_opinion_preflight', kind: 'command', command: 'second-opinion preflight' },
+  { name: 'second_opinion_critique', kind: 'command', command: 'second-opinion critique' },
+  { name: 'second_opinion_poll', kind: 'command', command: 'second-opinion poll' },
+  { name: 'second_opinion_result', kind: 'command', command: 'second-opinion result' },
 ];
+
+/** The four second-opinion tools, in registry order: all a server with no store offers. */
+export const SECOND_OPINION_TOOL_NAMES: readonly string[] = Object.values(SECOND_OPINION_COMMAND_TOOLS);
 
 export const TOOL_NAMES: readonly string[] = TOOL_REGISTRY.map((t) => t.name);
 
@@ -205,7 +237,7 @@ export type CommandRoute = { via: 'tool'; tool: string } | { via: 'ctxr' } | { v
 /** How a `ctxr <command path>` step runs over MCP; null when the surface does not run it. */
 export function routeForCommand(commandPath: string): CommandRoute | null {
   const words = commandPath.trim().split(/\s+/);
-  const typed = (SESSION_COMMAND_TOOLS as Record<string, string>)[words.slice(0, 2).join(' ')];
+  const typed = ({ ...SESSION_COMMAND_TOOLS, ...SECOND_OPINION_COMMAND_TOOLS } as Record<string, string>)[words.slice(0, 2).join(' ')];
   if (typed !== undefined) return { via: 'tool', tool: typed };
   if (matchCommand(words, CTXR_WRITE_COMMANDS) !== null) return { via: 'ctxr_write' };
   if (matchCommand(words, CTXR_READ_COMMANDS) !== null) return { via: 'ctxr' };
@@ -229,7 +261,8 @@ export interface CommandShape {
  * D9: what is wrong with a registry against the CLI's commands, one line per
  * problem, each naming the tool. Empty when every tool is a file tool, a
  * runner, a named exception, or a command-named tool whose fields other than
- * `session` are options or arguments that command registers.
+ * `session` are options or arguments that command registers, or the text of
+ * a file option it registers.
  */
 export function alignmentProblems(registry: readonly ToolEntry[], toolFields: Readonly<Record<string, readonly string[]>>, commands: readonly CommandShape[]): string[] {
   const problems: string[] = [];
@@ -246,8 +279,9 @@ export function alignmentProblems(registry: readonly ToolEntry[], toolFields: Re
         break;
       case 'runner': {
         if (!(RUNNERS as readonly string[]).includes(entry.name)) problems.push(`${entry.name}: not a command runner (${RUNNERS.join(', ')})`);
-        const extra = fields.filter((f) => !(RUNNER_FIELDS as readonly string[]).includes(f));
-        if (extra.length > 0) problems.push(`${entry.name}: a runner takes only ${RUNNER_FIELDS.join(', ')}, not ${extra.join(', ')}`);
+        const allowed = RUNNER_FIELDS[entry.name] ?? [];
+        const extra = fields.filter((f) => !allowed.includes(f));
+        if (extra.length > 0) problems.push(`${entry.name}: this runner takes only ${allowed.join(', ')}, not ${extra.join(', ')}`);
         break;
       }
       case 'command': {
@@ -256,9 +290,10 @@ export function alignmentProblems(registry: readonly ToolEntry[], toolFields: Re
           problems.push(`${entry.name}: no \`ctxr ${entry.command ?? '?'}\` command exists`);
           break;
         }
-        if (entry.name !== command.path.split(' ').join('_')) problems.push(`${entry.name}: a command's tool is named for its path, \`${command.path.split(' ').join('_')}\``);
-        const extra = fields.filter((f) => f !== SESSION_FIELD && !command.params.includes(f));
-        if (extra.length > 0) problems.push(`${entry.name}: ${extra.join(', ')} ${extra.length === 1 ? 'is not an option' : 'are not options'} of \`ctxr ${command.path}\``);
+        const named = command.path.split(/[ -]/).join('_');
+        if (entry.name !== named) problems.push(`${entry.name}: a command's tool is named for its path, \`${named}\``);
+        const extra = fields.filter((f) => f !== SESSION_FIELD && !command.params.includes(f) && !command.params.includes(`${f}${FILE_OPTION_SUFFIX}`));
+        if (extra.length > 0) problems.push(`${entry.name}: ${extra.join(', ')} ${extra.length === 1 ? 'is not an option' : 'are not options'} of \`ctxr ${command.path}\`, nor the text of a file option`);
         break;
       }
       default:

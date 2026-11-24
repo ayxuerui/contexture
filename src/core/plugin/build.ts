@@ -9,8 +9,8 @@ import { SKILL_FILE_NAME } from '../conventions.js';
 import { ContextureError } from '../errors.js';
 import { ExitCode } from '../exit-codes.js';
 import type { GitRunner } from '../git/exec.js';
-import { renderMcpSkills } from '../skills.js';
-import { commandMapProblems, PLUGIN_COMMANDS } from './commands.js';
+import { renderMcpSkills, type Skill } from '../skills.js';
+import { CONTEXTURE_PLUGIN, definitionProblems, type PluginDefinition } from './commands.js';
 import { createZip } from './zip.js';
 
 /**
@@ -43,11 +43,10 @@ export type PluginTarget = (typeof PLUGIN_TARGETS)[number];
 /** Both vendors cap a plugin's and a skill's name at 64 characters, and a skill's description at 1,024. */
 export const MAX_NAME_LENGTH = 64;
 export const MAX_DESCRIPTION_LENGTH = 1024;
-const NAME_PREFIX = 'contexture-';
 
 /** The general Claude plugin's name (D5, revision 11: `contexture`, the product's name as plugins conventionally are, so its commands read `/contexture:submit`), and the marketplace in contexture's repository that lists it (D1). */
-export const CLAUDE_PLUGIN_NAME = 'contexture';
-export const CLAUDE_PLUGIN_DISPLAY_NAME = 'contexture';
+export const CLAUDE_PLUGIN_NAME = CONTEXTURE_PLUGIN.name;
+export const CLAUDE_PLUGIN_DISPLAY_NAME = CONTEXTURE_PLUGIN.displayName;
 export const PLUGIN_MARKETPLACE = 'ayxuerui/contexture';
 
 export interface BuiltPlugin {
@@ -69,6 +68,16 @@ export interface StorePluginInput {
   storeName: string;
   cliVersion: string;
   /** The commit the plugin is rendered from; null in a repository with no commit yet. */
+  commit: string | null;
+}
+
+/** What a ChatGPT plugin is built for when there is no store configuration to read: a server by its name and address. */
+export interface ServerPluginInput {
+  /** The store's name, or the server's host where there is no store. */
+  storeName: string;
+  /** The origin the connector is served at. */
+  baseUrl: string;
+  cliVersion: string;
   commit: string | null;
 }
 
@@ -127,13 +136,13 @@ function jsonDocument(file: string, values: Readonly<Record<string, string>>): s
   return `${JSON.stringify(JSON.parse(fillPluginTemplate(file, values)), null, 2)}\n`;
 }
 
-/** `contexture-<store name slug>`, within the 64-character limit both vendors set. */
-export function pluginName(storeName: string): string {
+/** `contexture-<store name slug>` for the store's plugin, within the 64-character limit both vendors set. */
+export function pluginName(storeName: string, definition: PluginDefinition = CONTEXTURE_PLUGIN): string {
   const slug = storeName
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '');
-  return `${NAME_PREFIX}${slug === '' ? 'store' : slug}`.slice(0, MAX_NAME_LENGTH).replace(/-+$/, '');
+  return definition.chatgptName(slug === '' ? 'store' : slug).slice(0, MAX_NAME_LENGTH).replace(/-+$/, '');
 }
 
 /** The CLI version, with the rendered commit as semver build metadata. */
@@ -166,20 +175,26 @@ export function skillBody(content: string): string {
  * loads, it has the whole procedure. A command whose skill the plugin does not
  * carry fails the build.
  */
-function commandFiles(skills: readonly { file: string; content: string }[], commands: Readonly<Record<string, string>> = PLUGIN_COMMANDS): Map<string, string> {
-  const problems = commandMapProblems(commands, skills.map((skill) => skill.file));
-  if (problems.length > 0) throw new Error(problems.join('; '));
+function commandFiles(definition: PluginDefinition, skills: readonly { file: string; content: string }[]): Map<string, string> {
   const files = new Map<string, string>();
-  for (const [command, skill] of Object.entries(commands)) {
+  for (const [command, skill] of Object.entries(definition.commands)) {
     const content = skills.find((s) => s.file === skill)!.content;
-    files.set(`commands/${command}.md`, fillPluginTemplate('command.md', { PLUGIN: CLAUDE_PLUGIN_NAME, COMMAND: command, SKILL: skill, BODY: skillBody(content) }));
+    files.set(`commands/${command}.md`, fillPluginTemplate('command.md', { PLUGIN: definition.name, COMMAND: command, SKILL: skill, BODY: skillBody(content) }));
   }
   return files;
 }
 
-/** The MCP render's skills, as plugin files: the same text in both plugins and for every store. */
-function skillFiles(): { skills: string[]; files: Map<string, string> } {
-  const skills = renderMcpSkills();
+/** The MCP render's skills a definition carries: the same text in every plugin and for every store. A definition that names a skill nothing renders, or a command whose skill it does not carry, fails the build. */
+function carriedSkills(definition: PluginDefinition): Skill[] {
+  const rendered = renderMcpSkills();
+  const problems = definitionProblems([definition], rendered.map((skill) => skill.file));
+  if (problems.length > 0) throw new Error(problems.join('; '));
+  return definition.skills === null ? rendered : rendered.filter((skill) => definition.skills!.includes(skill.file));
+}
+
+/** A definition's skills, as plugin files. */
+function skillFiles(definition: PluginDefinition): { skills: string[]; files: Map<string, string> } {
+  const skills = carriedSkills(definition);
   const files = new Map<string, string>();
   for (const skill of skills) {
     checkSkillFrontmatter(skill.file, skill.content);
@@ -251,48 +266,59 @@ function finish(target: PluginTarget, name: string, version: string, skills: str
 }
 
 /**
- * publish-one-contexture-plugin D1, D3: contexture's Claude plugin, read from
- * nothing but the package. `cliVersion` is the version it carries, the CLI's.
+ * publish-one-contexture-plugin D1, D3: a Claude plugin, read from nothing but
+ * the package. `cliVersion` is the version it carries, the CLI's.
+ * offer-the-second-opinion-on-its-own D6: the definition says which skills,
+ * commands and templates; contexture's own is the default.
  */
-export function buildClaudePlugin(cliVersion: string): BuiltPlugin {
+export function buildClaudePlugin(cliVersion: string, definition: PluginDefinition = CONTEXTURE_PLUGIN): BuiltPlugin {
   const license = (JSON.parse(packageFile('package.json')) as { license: string }).license;
-  const values = { NAME: CLAUDE_PLUGIN_NAME, DISPLAY_NAME: CLAUDE_PLUGIN_DISPLAY_NAME, VERSION: cliVersion, LICENSE: license, MARKETPLACE: PLUGIN_MARKETPLACE };
-  const { skills, files } = skillFiles();
-  const vendored = vendoredSkillFiles();
-  const commands = Object.entries(PLUGIN_COMMANDS).map(([command, skill]) => `- \`/${CLAUDE_PLUGIN_NAME}:${command}\` opens \`${skill}\``);
+  const values = { NAME: definition.name, DISPLAY_NAME: definition.displayName, VERSION: cliVersion, LICENSE: license, MARKETPLACE: PLUGIN_MARKETPLACE, OTHER_PLUGIN: CLAUDE_PLUGIN_NAME };
+  const { skills, files } = skillFiles(definition);
+  const vendored = definition.vendored ? vendoredSkillFiles() : { skills: [], files: new Map<string, string>() };
+  const commands = Object.entries(definition.commands).map(([command, skill]) => `- \`/${definition.name}:${command}\` opens \`${skill}\``);
   const tree = new Map([
-    ['.claude-plugin/plugin.json', jsonDocument('claude-plugin.json', values)],
-    ['README.md', fillPluginTemplate('README.md', { ...values, COMMANDS: commands.join('\n'), THIRD_PARTY: thirdPartyNames() })],
+    ['.claude-plugin/plugin.json', jsonDocument(definition.templates.manifest, values)],
+    ['README.md', fillPluginTemplate(definition.templates.readme, { ...values, COMMANDS: commands.join('\n'), THIRD_PARTY: thirdPartyNames() })],
     ['LICENSE', packageFile('LICENSE')],
     ...files,
     ...vendored.files,
-    ...commandFiles(renderMcpSkills()),
+    ...commandFiles(definition, carriedSkills(definition)),
   ]);
-  return finish('claude', CLAUDE_PLUGIN_NAME, cliVersion, [...skills, ...vendored.skills], tree, `${CLAUDE_PLUGIN_NAME}-claude.zip`);
+  return finish('claude', definition.name, cliVersion, [...skills, ...vendored.skills], tree, `${definition.name}-claude.zip`);
 }
 
-/** The store's ChatGPT plugin, with its connector: refused for a store that declares no `mcp` block. */
-export function buildChatgptPlugin(input: StorePluginInput): StorePlugin {
-  const { config } = input;
-  const baseUrl = config.serve?.base_url;
-  if (config.mcp === undefined || baseUrl === undefined) throw new PluginWithoutMcpError();
-
-  const origin = baseUrl.replace(/\/+$/, '');
+/**
+ * A definition's ChatGPT plugin for one server: its skills and one remote MCP
+ * server entry at the server's `/mcp`. A store's carries every shared skill
+ * (serve-the-session-lifecycle-to-chat-apps D7); the `second-opinion`
+ * definition's carries that skill alone, for a member who may only ask for a
+ * review and for the server with no store (offer-the-second-opinion-on-its-own D4, D6).
+ */
+export function buildServerChatgptPlugin(input: ServerPluginInput, definition: PluginDefinition = CONTEXTURE_PLUGIN): StorePlugin {
+  const origin = input.baseUrl.replace(/\/+$/, '');
   const mcpUrl = `${origin}/mcp`;
-  const name = pluginName(input.storeName);
+  const name = pluginName(input.storeName, definition);
   const version = pluginVersion(input.cliVersion, input.commit);
-  const displayName = `${input.storeName} (contexture)`;
+  const displayName = definition === CONTEXTURE_PLUGIN ? `${input.storeName} (contexture)` : `${input.storeName} (${definition.displayName})`;
   const values = { NAME: name, DISPLAY_NAME: displayName, VERSION: version, STORE_NAME: input.storeName, MCP_URL: mcpUrl, BASE_URL: origin };
-  const { skills, files } = skillFiles();
-  const vendored = vendoredSkillFiles();
+  const { skills, files } = skillFiles(definition);
+  const vendored = definition.vendored ? vendoredSkillFiles() : { skills: [], files: new Map<string, string>() };
   const tree = new Map([
-    ['plugin.json', jsonDocument('chatgpt-plugin.json', values)],
+    ['plugin.json', jsonDocument(definition.templates.chatgptManifest, values)],
     ['mcp.json', jsonDocument('chatgpt-mcp.json', values)],
-    ['README.md', fillPluginTemplate('chatgpt-README.md', { ...values, THIRD_PARTY: thirdPartyNames() })],
+    ['README.md', fillPluginTemplate(definition.templates.chatgptReadme, { ...values, THIRD_PARTY: thirdPartyNames() })],
     ...files,
     ...vendored.files,
   ]);
   return { ...finish('chatgpt', name, version, [...skills, ...vendored.skills], tree, `${name}-chatgpt.zip`), storeName: input.storeName, displayName, mcpUrl };
+}
+
+/** The store's ChatGPT plugin, with its connector: refused for a store that declares no `mcp` block. */
+export function buildChatgptPlugin(input: StorePluginInput, definition: PluginDefinition = CONTEXTURE_PLUGIN): StorePlugin {
+  const baseUrl = input.config.serve?.base_url;
+  if (input.config.mcp === undefined || baseUrl === undefined) throw new PluginWithoutMcpError();
+  return buildServerChatgptPlugin({ storeName: input.storeName, baseUrl, cliVersion: input.cliVersion, commit: input.commit }, definition);
 }
 
 /**

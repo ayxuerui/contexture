@@ -20,6 +20,7 @@ import {
   type PreflightEntry,
   type SecondOpinionContext,
 } from '../core/second-opinion/modes.js';
+import { SECOND_OPINION_LINEUP_VARIABLE } from '../core/mcp/tool-map.js';
 import { spawnDetachedRun } from '../core/second-opinion/launch.js';
 import {
   newRunId,
@@ -64,10 +65,25 @@ import {
  */
 export const requires: CommandRequires = { store: 'optional' };
 
+/**
+ * offer-the-second-opinion-on-its-own D7: the lineup the server with no store
+ * hands a run, as JSON in the store's own schema. Present, it is the whole
+ * lineup: no store is read, so a store nearby changes nothing.
+ */
+export function handedLineup(source: Readonly<Record<string, string | undefined>>): SecondOpinionLineup | undefined {
+  const raw = source[SECOND_OPINION_LINEUP_VARIABLE];
+  if (raw === undefined || raw === '') return undefined;
+  try {
+    return SecondOpinionSchema.parse(JSON.parse(raw));
+  } catch {
+    throw new SecondOpinionUsageError(`${SECOND_OPINION_LINEUP_VARIABLE} does not hold a lineup; it is set by ctxr second-opinion serve and by nothing else`);
+  }
+}
+
 function context(env: RunEnv, store: Store | null, lineup?: SecondOpinionLineup): SecondOpinionContext {
   return {
     source: env.env,
-    lineup: lineup ?? store?.config.second_opinion ?? SecondOpinionSchema.parse({}),
+    lineup: lineup ?? handedLineup(env.env) ?? store?.config.second_opinion ?? SecondOpinionSchema.parse({}),
     cwd: env.cwd,
     home: env.env.HOME || homedir(),
     progress: (line) => {

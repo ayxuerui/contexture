@@ -22,11 +22,11 @@ contexture's repository SHALL carry the Claude plugin `second-opinion` under `pl
 - **THEN** it lists `contexture` at `./plugins/contexture` and `second-opinion` at `./plugins/second-opinion`
 
 ### Requirement: The second-opinion skill names the server's tools
-The rendered `ctxr-second-opinion` skill SHALL say which tool runs each `ctxr second-opinion` step through a server, that the plan goes in `plan` and the question in `prompt`, and that a run not ready in time returns an id which `second_opinion_result` fetches. Neither it nor the shared opening section SHALL mention `@input` or an `input` field. These are skill-markdown conventions, asserted by a test over the render and by the drift check.
+The rendered `ctxr-second-opinion` skill SHALL say which tool runs each `ctxr second-opinion` step through a server, that the plan goes in `plan` and the question in `prompt`, and that a run not ready in time returns an id which `second_opinion_result` fetches. The skill's own text SHALL NOT mention `@input` or an `input` field, and the shared opening section SHALL give them to `ctxr_write` alone. These are skill-markdown conventions, asserted by a test over the render and by the drift check.
 
 #### Scenario: The rendered skill covers the tools
 - **WHEN** the skill is rendered for the plugin
-- **THEN** it names `second_opinion_preflight`, `second_opinion_critique`, `second_opinion_poll` and `second_opinion_result`, names the `plan` and `prompt` fields, and contains no `@input`
+- **THEN** it names `second_opinion_preflight`, `second_opinion_critique`, `second_opinion_poll` and `second_opinion_result`, names the `plan` and `prompt` fields, and mentions `@input` once, in the opening section's sentence about `ctxr_write`
 
 #### Scenario: The drift check passes on the move
 - **WHEN** the drift check runs over the plugin's render of the second-opinion skill

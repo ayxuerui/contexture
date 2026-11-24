@@ -4,7 +4,8 @@ import type { CommandOutcome, CommandRequires } from '../core/command.js';
 import type { RunEnv } from '../core/env.js';
 import { ExitCode } from '../core/exit-codes.js';
 import { writeFileAtomic } from '../core/fs/atomic.js';
-import { buildChatgptPlugin, buildClaudePlugin, CLAUDE_PLUGIN_NAME, renderedCommit, storeNameFor, type BuiltPlugin, type PluginTarget } from '../core/plugin/build.js';
+import { buildChatgptPlugin, buildClaudePlugin, renderedCommit, storeNameFor, type BuiltPlugin, type PluginTarget } from '../core/plugin/build.js';
+import { PLUGIN_DEFINITIONS } from '../core/plugin/commands.js';
 import type { Store } from '../core/store.js';
 import { CLI_VERSION } from '../version.js';
 
@@ -18,11 +19,12 @@ export const DEFAULT_PLUGIN_OUT = '.contexture/cache/plugin';
 export const DEFAULT_GENERAL_PLUGIN_OUT = 'contexture-plugin';
 
 /**
- * Where each plugin's directory goes under `--out`. The Claude plugin's is its
+ * Where each plugin's directory goes under `--out`. A Claude plugin's is its
  * name, so `--out plugins` in contexture's repository writes the marketplace's
- * `plugins/contexture/` (publish-one-contexture-plugin revision 9).
+ * `plugins/contexture/` and `plugins/second-opinion/` (publish-one-contexture-plugin
+ * revision 9, offer-the-second-opinion-on-its-own D6).
  */
-export const PLUGIN_DIRECTORIES: Readonly<Record<PluginTarget, string>> = { claude: CLAUDE_PLUGIN_NAME, chatgpt: 'chatgpt' };
+export const pluginDirectory = (plugin: Pick<BuiltPlugin, 'target' | 'name'>): string => (plugin.target === 'claude' ? plugin.name : 'chatgpt');
 
 export interface PluginBuildFlags {
   out?: string;
@@ -37,15 +39,16 @@ export interface PluginBuildData {
 }
 
 /**
- * harness-portability spec, *contexture publishes one plugin for every store*:
- * contexture's Claude plugin, with no connector and the CLI's version, and,
+ * harness-portability spec, *contexture publishes one plugin for every store*
+ * and *contexture publishes a plugin that carries only the second opinion*:
+ * contexture's Claude plugins, with no connector and the CLI's version, and,
  * in a store that declares `mcp`, that store's ChatGPT plugin with its
  * connector — each as a directory and an archive. A store without the block
  * gets the Claude plugin and a notice. Each run replaces the plugin
  * directories whole, so a skill the plugin no longer carries leaves nothing behind.
  */
 export async function execute(env: RunEnv, store: Store | null, flags: PluginBuildFlags): Promise<CommandOutcome<PluginBuildData>> {
-  const built: BuiltPlugin[] = [buildClaudePlugin(CLI_VERSION)];
+  const built: BuiltPlugin[] = PLUGIN_DEFINITIONS.map((definition) => buildClaudePlugin(CLI_VERSION, definition));
   let mcpUrl: string | null = null;
   const notices: string[] = [];
   if (store !== null && store.config.mcp !== undefined) {
@@ -58,14 +61,14 @@ export async function execute(env: RunEnv, store: Store | null, flags: PluginBui
     built.push(chatgpt);
     mcpUrl = chatgpt.mcpUrl;
   } else if (store !== null) {
-    notices.push("plugin build: this store declares no mcp block, so no ChatGPT plugin was written; contexture's Claude plugin needs none.");
+    notices.push("plugin build: this store declares no mcp block, so no ChatGPT plugin was written; contexture's Claude plugins need none.");
   }
 
   const out =
     flags.out !== undefined ? path.resolve(env.cwd, flags.out) : store !== null ? path.join(store.root, DEFAULT_PLUGIN_OUT) : path.resolve(env.cwd, DEFAULT_GENERAL_PLUGIN_OUT);
   const plugins: PluginBuildData['plugins'] = [];
   for (const plugin of built) {
-    const directory = path.join(out, PLUGIN_DIRECTORIES[plugin.target]);
+    const directory = path.join(out, pluginDirectory(plugin));
     await rm(directory, { recursive: true, force: true });
     for (const [file, content] of plugin.files) {
       const target = path.join(directory, ...file.split('/'));

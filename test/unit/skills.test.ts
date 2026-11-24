@@ -1,7 +1,7 @@
 import { RELATION_DIRECTEDNESS_NOTE, RELATION_VOCABULARY } from '../../src/config/defaults.js';
 import { packagedTemplate } from '../../src/core/templates.js';
 import { renderPagesSection } from '../../src/core/session/submit.js';
-import { GIT_STEP_TOOLS, routeForCommand, TOOL_NAMES, UNAVAILABLE_COMMANDS } from '../../src/core/mcp/tool-map.js';
+import { GIT_STEP_TOOLS, routeForCommand, SECOND_OPINION_TOOL_NAMES, TOOL_NAMES, UNAVAILABLE_COMMANDS } from '../../src/core/mcp/tool-map.js';
 import { readFileSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
@@ -1022,6 +1022,31 @@ describe('the second-opinion skill', () => {
     expect(s).not.toContain('__SKILLS_PATH__');
   });
 
+  /**
+   * offer-the-second-opinion-on-its-own D10 (harness-portability requirement
+   * "The second-opinion skill names the server's tools"): conventions the
+   * tools cannot make for the agent, asserted on the render.
+   */
+  it('names the tool that runs each step through a server, the text fields, and the fetch by run id', () => {
+    for (const s of [skill(), renderMcpSkills().find((x) => x.file === 'ctxr-second-opinion')!.content.replace(/[ \t]*\n(?!\n)[ \t]*/g, ' ')]) {
+      for (const tool of SECOND_OPINION_TOOL_NAMES) expect(s).toContain(`\`${tool}\``);
+      expect(s).toContain('Call `second_opinion_critique` with the whole plan as `plan`');
+      expect(s).toContain('call `second_opinion_poll` with the question and the options as `prompt`');
+      expect(s).toContain('A run that is still going returns `running:` and a run id. Then call `second_opinion_result` with that id as `run`');
+      expect(s).toContain('its `ctxr` tool refuses them');
+      // The shared opening section maps the command group to its tools, and keeps `input` for ctxr_write alone.
+      expect(s).toContain('A `ctxr second-opinion <verb>` step is the tool `second_opinion_<verb>`');
+      expect(s.match(/@input/g)).toHaveLength(1);
+      expect(s).toContain('For `ctxr_write`, a file you prepared goes as `input`, with `@input` in `args`');
+      // The rule for the store's list.
+      expect(s).toContain('A store that does not write the key lets every reader run one');
+      expect(s).toContain('an empty list lets nobody');
+    }
+    // Below the opening section, the skill itself names neither.
+    const body = packagedTemplate('skills', 'ctxr-second-opinion');
+    expect(body).not.toMatch(/@input|`input`/);
+  });
+
   it('every option it names is one the second-opinion group registers', () => {
     const source = readFileSync(path.resolve(SRC_DIR, 'run.ts'), 'utf8');
     const group = source.slice(source.indexOf(".command('second-opinion')"), source.indexOf("const sessionCommand"));
@@ -1441,10 +1466,11 @@ describe('the shared skills, in a store and in the plugin', () => {
       '**Which store:** the one the person means. With several contexture connectors attached, use that store\'s, and ask when it is unclear.',
       '**Where:** in a checkout of that store (a `contexture.yaml` at the working directory\'s root and a shell that runs `ctxr`), follow each step in the shell as written, even when the store\'s connector is attached too. Otherwise work through the store\'s connector',
       'A `ctxr session <verb>` step is the tool `session_<verb>`',
+      'A `ctxr second-opinion <verb>` step is the tool `second_opinion_<verb>`',
       'Every other `ctxr` step is the `ctxr` tool, or `ctxr_write` when it writes, with the words after `ctxr` as `args`',
       "A command's options are the tool's fields",
       '`ctxr_write` always needs one',
-      'goes as `input`, with `@input` in `args`',
+      'For `ctxr_write`, a file you prepared goes as `input`, with `@input` in `args`',
       "Paths go under the session's root",
       'Commits, pushes and pull requests happen only in `session_submit`',
       'call `session_list` and mention each open session',
@@ -1521,7 +1547,7 @@ function driftProblems(skills: readonly { file: string; content: string }[]): st
     for (const m of content.matchAll(/`ctxr ([a-z][a-z-]*(?: [a-z][a-z-]*)?)/g)) {
       const unavailable = (UNAVAILABLE_COMMANDS as readonly string[]).some((c) => m[1] === c || m[1]!.startsWith(`${c} `));
       // The opening section's generic form, `ctxr session <verb>`, names every session command at once.
-      if (m[1] === 'session' && content.startsWith(' <verb>`', m.index + m[0].length)) continue;
+      if ((m[1] === 'session' || m[1] === 'second-opinion') && content.startsWith(' <verb>`', m.index + m[0].length)) continue;
       if (unavailable) {
         if (!/through the store's server, skip this step/.test(sentenceAt(m.index))) problems.push(`${file}: ctxr ${m[1]} without its skip`);
       } else if (routeForCommand(m[1]!) === null) problems.push(`${file}: ctxr ${m[1]}`);
@@ -1532,7 +1558,8 @@ function driftProblems(skills: readonly { file: string; content: string }[]): st
       if (row === undefined || row[1] === null) problems.push(`${file}: ${step}`);
       else if (!sentenceAt(m.index).includes(`\`${row[1]}\``)) problems.push(`${file}: ${step} without \`${row[1]}\``);
     }
-    for (const m of content.matchAll(/`(session_[a-z]+|ctxr_write|Move|Delete)`/g)) {
+    for (const m of content.matchAll(/`(session_[a-z]+|second_opinion_[a-z]+|ctxr_write|Move|Delete)`/g)) {
+      // The opening section's generic forms, `session_<verb>` and `second_opinion_<verb>`, are not matched: `<` ends the name.
       if (!TOOL_NAMES.includes(m[1]!)) problems.push(`${file}: tool ${m[1]}`);
     }
   }

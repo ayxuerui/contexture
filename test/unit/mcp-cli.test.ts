@@ -4,6 +4,8 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { checkArguments, childEnv, type CliToolResult } from '../../src/core/mcp/tools/cli.js';
 import { CTXR_READ_COMMANDS, CTXR_WRITE_COMMANDS } from '../../src/core/mcp/tool-map.js';
+import { secondOpinionEnv } from '../../src/core/mcp/tools/second-opinion.js';
+import { SecondOpinionSchema } from '../../src/config/schema.js';
 import { makeMcpWriteFixture, type McpWriteFixture } from '../helpers/mcp-write.js';
 
 /**
@@ -167,11 +169,23 @@ describe('mcp ctxr and ctxr_write', () => {
   });
 
   // second-opinion-through-openrouter D4: the OpenRouter key goes to a second opinion and to nothing else.
-  it('withholds the OpenRouter key unless the command is a second opinion', () => {
-    const server = { PATH: '/bin', OPENROUTER_API_KEY: 'sk-or-x', CTXR_SECOND_OPINION_OPENROUTER_URL: 'http://127.0.0.1:9' };
-    expect(childEnv(server, '/store/w', '/cache').OPENROUTER_API_KEY).toBeUndefined();
-    expect(childEnv(server, '/store/w', '/cache', { secondOpinion: true }).OPENROUTER_API_KEY).toBe('sk-or-x');
-    expect(childEnv(server, '/store/w', '/cache').CTXR_SECOND_OPINION_OPENROUTER_URL).toBe('http://127.0.0.1:9');
+  it('withholds the OpenRouter key and a handed lineup from a runner, and gives the key to a second opinion', () => {
+    const server = { PATH: '/bin', OPENROUTER_API_KEY: 'sk-or-x', CTXR_SECOND_OPINION_OPENROUTER_URL: 'http://127.0.0.1:9', CONTEXTURE_SECOND_OPINION_LINEUP: '{}', GH_TOKEN: 't' };
+    const runner = childEnv(server, '/store/w', '/cache');
+    expect(runner.OPENROUTER_API_KEY).toBeUndefined();
+    expect(runner.CONTEXTURE_SECOND_OPINION_LINEUP).toBeUndefined();
+    expect(runner.CTXR_SECOND_OPINION_OPENROUTER_URL).toBe('http://127.0.0.1:9');
+
+    const served = secondOpinionEnv(server, { storeRoot: '/store/w' }, '/tmp/call', 'a@example.com');
+    expect(served).toMatchObject({ OPENROUTER_API_KEY: 'sk-or-x', CONTEXTURE_STORE_ROOT: '/store/w', CONTEXTURE_SECOND_OPINION_OWNER: 'a@example.com' });
+    expect(served.GH_TOKEN).toBeUndefined();
+    // In ctxr serve the served store decides the lineup, whatever the server's environment holds.
+    expect(served.CONTEXTURE_SECOND_OPINION_LINEUP).toBeUndefined();
+
+    const lineup = SecondOpinionSchema.parse({ strong: { agy: { openrouter: 'vendor/model-x' } } });
+    const standalone = secondOpinionEnv({ ...server, CONTEXTURE_STORE_ROOT: '/elsewhere' }, { lineup }, '/tmp/call', 'a@example.com');
+    expect(standalone.CONTEXTURE_STORE_ROOT).toBeUndefined();
+    expect(JSON.parse(standalone.CONTEXTURE_SECOND_OPINION_LINEUP!)).toEqual(lineup);
   });
 
   it('matches the command path before any option, and leaves prose alone', () => {

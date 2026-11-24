@@ -7,8 +7,8 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { DEFAULT_VENDORED_SKILLS } from '../../src/config/defaults.js';
 import { readConfig } from '../../src/config/load.js';
 import { ExitCode } from '../../src/core/exit-codes.js';
-import { buildChatgptPlugin, buildClaudePlugin, MAX_DESCRIPTION_LENGTH, MAX_NAME_LENGTH, pluginName, pluginVersion } from '../../src/core/plugin/build.js';
-import { PLUGIN_COMMANDS } from '../../src/core/plugin/commands.js';
+import { buildChatgptPlugin, buildClaudePlugin, buildServerChatgptPlugin, MAX_DESCRIPTION_LENGTH, MAX_NAME_LENGTH, pluginName, pluginVersion, skillBody } from '../../src/core/plugin/build.js';
+import { CONTEXTURE_PLUGIN, definitionProblems, PLUGIN_COMMANDS, PLUGIN_DEFINITIONS, SECOND_OPINION_PLUGIN } from '../../src/core/plugin/commands.js';
 import { renderMcpSkills } from '../../src/core/skills.js';
 
 /** publish-through-the-plugin D3: the default craft skills each plugin carries, unchanged, beside their licenses, and the notices. */
@@ -85,8 +85,11 @@ describe('ctxr plugin build outside any store', () => {
     const out = path.join(tmp.root, 'contexture-plugin');
     const skills = renderMcpSkills();
     expect(envelope.data).toMatchObject({ out, mcp_url: null, skills: CARRIED_SKILLS(skills) });
-    expect(envelope.data.plugins.map((p) => [p.target, p.name, p.version])).toEqual([['claude', 'contexture', CLI_VERSION]]);
-    expect((await readdir(out)).sort()).toEqual(['contexture', 'contexture-claude.zip']);
+    expect(envelope.data.plugins.map((p) => [p.target, p.name, p.version])).toEqual([
+      ['claude', 'contexture', CLI_VERSION],
+      ['claude', 'second-opinion', CLI_VERSION],
+    ]);
+    expect((await readdir(out)).sort()).toEqual(['contexture', 'contexture-claude.zip', 'second-opinion', 'second-opinion-claude.zip']);
 
     const dir = path.join(out, 'contexture');
     expect(await filesUnder(dir)).toEqual(['.claude-plugin/plugin.json', 'LICENSE', 'README.md', ...Object.keys(PLUGIN_COMMANDS).map((c) => `commands/${c}.md`), ...skills.map((s) => `skills/${s.file}/SKILL.md`), ...VENDORED_FILES].sort());
@@ -124,13 +127,60 @@ describe('ctxr plugin build outside any store', () => {
     for (const [file, content] of buildClaudePlugin(CLI_VERSION).files) expect(await readFile(path.join(dir, ...file.split('/')), 'utf8'), file).toBe(content);
   });
 
-  it('archives the directory with its manifest at the root, readable by an independent unzip', async () => {
+  it('archives each directory with its manifest at the root, readable by an independent unzip', async () => {
     const out = path.join(tmp.root, 'contexture-plugin');
-    const archive = path.join(out, 'contexture-claude.zip');
-    expect(await unzip(['-tq', archive])).toMatch(/No errors detected/);
-    const listed = (await unzip(['-Z1', archive])).trim().split('\n').sort();
-    expect(listed).toEqual(await filesUnder(path.join(out, 'contexture')));
-    for (const file of listed) expect(await unzip(['-p', archive, file]), file).toBe(await readFile(path.join(out, 'contexture', file), 'utf8'));
+    for (const name of ['contexture', 'second-opinion']) {
+      const archive = path.join(out, `${name}-claude.zip`);
+      expect(await unzip(['-tq', archive])).toMatch(/No errors detected/);
+      const listed = (await unzip(['-Z1', archive])).trim().split('\n').sort();
+      expect(listed).toEqual(await filesUnder(path.join(out, name)));
+      for (const file of listed) expect(await unzip(['-p', archive, file]), file).toBe(await readFile(path.join(out, name, file), 'utf8'));
+    }
+  });
+
+  /**
+   * offer-the-second-opinion-on-its-own D6 (harness-portability spec,
+   * *contexture publishes a plugin that carries only the second opinion*).
+   */
+  it('writes the second-opinion plugin with one skill, one command, no MCP server entry and the CLI version', async () => {
+    const dir = path.join(tmp.root, 'contexture-plugin', 'second-opinion');
+    expect(await filesUnder(dir)).toEqual(['.claude-plugin/plugin.json', 'LICENSE', 'README.md', 'commands/ask.md', 'skills/ctxr-second-opinion/SKILL.md']);
+    const manifest = await json(path.join(dir, '.claude-plugin/plugin.json'));
+    expect(Object.keys(manifest).sort()).toEqual(['author', 'description', 'displayName', 'homepage', 'keywords', 'license', 'name', 'repository', 'version']);
+    expect(manifest).toMatchObject({ name: 'second-opinion', version: CLI_VERSION, author: { name: 'contexture' } });
+    await expectNothingRunnable(dir);
+
+    // Both plugins carry the same skill text, byte for byte.
+    const skill = await readFile(path.join(dir, 'skills/ctxr-second-opinion/SKILL.md'), 'utf8');
+    expect(skill).toBe(await readFile(path.join(tmp.root, 'contexture-plugin', 'contexture', 'skills/ctxr-second-opinion/SKILL.md'), 'utf8'));
+    expect(skill).toBe(renderMcpSkills().find((s) => s.file === 'ctxr-second-opinion')!.content);
+
+    const command = await readFile(path.join(dir, 'commands/ask.md'), 'utf8');
+    expect(command).toMatch(/^---\ndescription: Typed shortcut for \/second-opinion:ask, which opens the ctxr-second-opinion skill\./);
+    expect(command).toContain(skillBody(skill));
+
+    const readme = await readFile(path.join(dir, 'README.md'), 'utf8');
+    expect(readme).toContain('- `/second-opinion:ask` opens `ctxr-second-opinion`');
+    expect(readme.replace(/\s+/g, ' ')).toContain('Install `second-opinion` only if you do not use `contexture`');
+    expect(readme).toContain('ayxuerui/contexture');
+    expect(readme).not.toMatch(/__[A-Z_]+__/);
+    for (const [file, content] of buildClaudePlugin(CLI_VERSION, SECOND_OPINION_PLUGIN).files) expect(await readFile(path.join(dir, ...file.split('/')), 'utf8'), file).toBe(content);
+  });
+
+  it('fails the build naming the plugin and the command when a command opens a skill the plugin does not carry', () => {
+    const broken = { ...SECOND_OPINION_PLUGIN, commands: { ask: 'ctxr-second-opinion', capture: 'ctxr-capture' } };
+    expect(definitionProblems([CONTEXTURE_PLUGIN, broken], renderMcpSkills().map((s) => s.file))).toEqual(['plugin second-opinion: command capture opens ctxr-capture, which the plugin does not carry']);
+    expect(() => buildClaudePlugin(CLI_VERSION, broken)).toThrow(/plugin second-opinion: command capture opens ctxr-capture/);
+    expect(definitionProblems(PLUGIN_DEFINITIONS, renderMcpSkills().map((s) => s.file))).toEqual([]);
+    expect(PLUGIN_DEFINITIONS.map((d) => d.name)).toEqual(['contexture', 'second-opinion']);
+  });
+
+  it('builds a ChatGPT plugin that carries the second-opinion skill alone, with a server\'s connector', () => {
+    const plugin = buildServerChatgptPlugin({ storeName: 'opinion.example.com', baseUrl: 'https://opinion.example.com/', cliVersion: CLI_VERSION, commit: null }, SECOND_OPINION_PLUGIN);
+    expect(plugin).toMatchObject({ name: 'second-opinion-opinion-example-com', version: CLI_VERSION, mcpUrl: 'https://opinion.example.com/mcp', skills: ['ctxr-second-opinion'], archiveName: 'second-opinion-opinion-example-com-chatgpt.zip' });
+    expect([...plugin.files.keys()]).toEqual(['README.md', 'mcp.json', 'plugin.json', 'skills/ctxr-second-opinion/SKILL.md']);
+    expect(JSON.parse(plugin.files.get('mcp.json')!)).toMatchObject({ mcpServers: { 'second-opinion-opinion-example-com': { type: 'streamable-http', url: 'https://opinion.example.com/mcp' } } });
+    expect(plugin.files.get('README.md')).not.toMatch(/__[A-Z_]+__/);
   });
 });
 
@@ -161,9 +211,10 @@ describe('ctxr plugin build in a store', () => {
     expect(data).toMatchObject({ out, mcp_url: `${BASE}/mcp`, skills: CARRIED_SKILLS(skills) });
     expect(data.plugins.map((p) => [p.target, p.name, p.version])).toEqual([
       ['claude', 'contexture', CLI_VERSION],
+      ['claude', 'second-opinion', CLI_VERSION],
       ['chatgpt', 'contexture-store', `${CLI_VERSION}+${head.slice(0, 12)}`],
     ]);
-    expect((await readdir(out)).sort()).toEqual(['chatgpt', 'contexture', 'contexture-claude.zip', 'contexture-store-chatgpt.zip']);
+    expect((await readdir(out)).sort()).toEqual(['chatgpt', 'contexture', 'contexture-claude.zip', 'contexture-store-chatgpt.zip', 'second-opinion', 'second-opinion-claude.zip']);
 
     // The Claude plugin is the same as anywhere else: the store's configuration does not reach it.
     const claude = path.join(out, 'contexture');
@@ -179,7 +230,7 @@ describe('ctxr plugin build in a store', () => {
     expect(chatgptManifest).toMatchObject({
       $schema: 'https://agent-plugins.org/schemas/1.0.0/plugin.schema.json',
       name: 'contexture-store',
-      version: data.plugins[1]!.version,
+      version: data.plugins[2]!.version,
       extensions: { 'com.openai': { interface: { displayName: 'store (contexture)' } } },
     });
     // The nesting OpenAI's plugin guide documents: extensions -> "com.openai" -> auth.
@@ -214,17 +265,17 @@ describe('ctxr plugin build in a store', () => {
     const result = await runCli(['plugin', 'build', '--out', '../plugins'], { cwd: store.root, env: store.env, timeoutMs: 60_000 });
     expect(result.exitCode, result.stderr).toBe(ExitCode.Ok);
     expect(result.stdout).toContain('contexture-store-chatgpt.zip');
-    expect((await readdir(path.join(store.tmp.root, 'plugins'))).sort()).toEqual(['chatgpt', 'contexture', 'contexture-claude.zip', 'contexture-store-chatgpt.zip']);
+    expect((await readdir(path.join(store.tmp.root, 'plugins'))).sort()).toEqual(['chatgpt', 'contexture', 'contexture-claude.zip', 'contexture-store-chatgpt.zip', 'second-opinion', 'second-opinion-claude.zip']);
   });
 
-  it('writes only the Claude plugin, and says why, in a store with no mcp block', async () => {
+  it('writes only the Claude plugins, and says why, in a store with no mcp block', async () => {
     const result = await runCli(['plugin', 'build', '--json'], { cwd: bare.root, env: bare.env, timeoutMs: 60_000 });
     expect(result.exitCode, result.stderr + result.stdout).toBe(ExitCode.Ok);
     const data = (JSON.parse(result.stdout) as { data: BuildData }).data;
     expect(data.mcp_url).toBeNull();
-    expect(data.plugins.map((p) => p.target)).toEqual(['claude']);
+    expect(data.plugins.map((p) => p.target)).toEqual(['claude', 'claude']);
     expect(result.stderr).toContain('declares no mcp block, so no ChatGPT plugin was written');
-    expect((await readdir(path.join(bare.root, '.contexture/cache/plugin'))).sort()).toEqual(['contexture', 'contexture-claude.zip']);
+    expect((await readdir(path.join(bare.root, '.contexture/cache/plugin'))).sort()).toEqual(['contexture', 'contexture-claude.zip', 'second-opinion', 'second-opinion-claude.zip']);
   });
 
   it('builds the same archive bytes twice from one commit and configuration, and refuses a ChatGPT plugin without mcp', async () => {

@@ -23,6 +23,7 @@ import * as publishStampCommand from './commands/publish-stamp.js';
 import * as pluginBuildCommand from './commands/plugin-build.js';
 import * as reviewListCommand from './commands/review-list.js';
 import * as secondOpinionCommand from './commands/second-opinion.js';
+import * as secondOpinionServeCommand from './commands/second-opinion-serve.js';
 import * as sharedStoresStatusCommand from './commands/shared-stores-status.js';
 import * as sharedStoresSyncCommand from './commands/shared-stores-sync.js';
 import * as sessionCaptureCommand from './commands/session-capture.js';
@@ -95,6 +96,8 @@ function deriveRunEnv(env: RunEnv, cmd: Command): { runEnv: RunEnv; jsonMode: bo
  */
 async function secondOpinionStore(runEnv: RunEnv, root: string | undefined, runFolder: string | undefined): Promise<Store | null> {
   if (runFolder !== undefined) return null;
+  // offer-the-second-opinion-on-its-own D7: a lineup handed over by the server with no store is the whole lineup.
+  if (secondOpinionCommand.handedLineup(runEnv.env) !== undefined) return null;
   return (await storeIfAny(runEnv, root)) ?? null;
 }
 
@@ -818,7 +821,7 @@ export function buildProgram(env: RunEnv): { program: Command; state: { result: 
     secondOpinionGroup.command('preflight').description('check each model CLI answers, at the tier the run will use, and still accepts the flags this command passes'),
   ).action(async (cmdOpts: { tier?: string; only?: string; timeout?: string; requireConfinement?: boolean }, cmd: Command) => {
     const { runEnv, jsonMode, root } = deriveRunEnv(env, cmd);
-    state.result = await runCommand('second-opinion.preflight', runEnv, jsonMode, async () => secondOpinionCommand.executePreflight(runEnv, (await storeIfAny(runEnv, root)) ?? null, cmdOpts));
+    state.result = await runCommand('second-opinion.preflight', runEnv, jsonMode, async () => secondOpinionCommand.executePreflight(runEnv, await secondOpinionStore(runEnv, root, undefined), cmdOpts));
   });
 
   commonSecondOpinionOptions(
@@ -859,6 +862,19 @@ export function buildProgram(env: RunEnv): { program: Command; state: { result: 
     .action(async (run: string, cmdOpts: { wait?: string }, cmd: Command) => {
       const { runEnv, jsonMode } = deriveRunEnv(env, cmd);
       state.result = await runCommand('second-opinion.result', runEnv, jsonMode, async () => secondOpinionCommand.executeResult(runEnv, run, cmdOpts));
+    });
+
+  // offer-the-second-opinion-on-its-own D7: a server for the second opinion alone. It opens no store, wherever it is started.
+  secondOpinionGroup
+    .command('serve')
+    .description('serve the second opinion to chat apps over HTTP (loopback by default), without a store: sign-in, the four second-opinion tools and a connect page, with the people and the lineup read from a file')
+    .requiredOption('--config <file>', "the server's file: base_url, identity, members, and optionally second_opinion (the lineup)")
+    .option('--port <n>', 'port to bind (default: OS-assigned)', (v) => Number.parseInt(v, 10), 0)
+    .option('--host <address>', 'address to bind — widening beyond the default exposes the server to whatever can reach that address; put an access proxy in front', secondOpinionServeCommand.DEFAULT_HOST)
+    .option('--state-dir <dir>', "where the server keeps its sign-in signing key (default: ctxr/second-opinion-serve under the user's state directory)")
+    .action(async (cmdOpts: { config: string; port: number; host: string; stateDir?: string }, cmd: Command) => {
+      const { runEnv, jsonMode } = deriveRunEnv(env, cmd);
+      state.result = await runCommand('second-opinion.serve', runEnv, jsonMode, () => secondOpinionServeCommand.execute(runEnv, cmdOpts));
     });
 
   const sharedStoresCommand = program.command('shared-stores').description('the stores this store mounts under shared/');

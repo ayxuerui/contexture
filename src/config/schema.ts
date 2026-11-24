@@ -114,7 +114,7 @@ const CatalogSchema = z.object({
  * port and a path prefix. Query and fragment are refused because a base URL
  * carrying either cannot be joined to a route without producing nonsense.
  */
-function isAbsoluteHttpBase(value: string): boolean {
+export function isAbsoluteHttpBase(value: string): boolean {
   let parsed: URL;
   try {
     parsed = new URL(value);
@@ -171,7 +171,7 @@ const ServeSchema = z.object({
 });
 
 /** An exact email address or an `@domain` suffix — the one form every list of people in this file takes. */
-const PersonEntrySchema = z
+export const PersonEntrySchema = z
   .string()
   .min(2)
   .refine((entry) => /^@[^@\s]+$/.test(entry) || /^[^@\s]+@[^@\s]+$/.test(entry), {
@@ -185,14 +185,16 @@ const PersonEntrySchema = z
  * the key. Tokens never live here — serve and `ctxr land` read their forge
  * credential from their own environments (design.md D10).
  */
+/** approve-from-the-review-page design.md D2: the signed assertion the access proxy in front forwards on every request. */
+export const IdentitySchema = z.object({
+  header: z.string().min(1),
+  issuer: z.string().min(1),
+  audience: z.string().min(1),
+  jwks_url: z.string().min(1).refine(isAbsoluteHttpBase, { message: 'must be an absolute http(s) URL' }),
+});
+
 const ChangeApprovalSchema = z.object({
-  /** design.md D2: the signed assertion the access proxy in front forwards on every request. */
-  identity: z.object({
-    header: z.string().min(1),
-    issuer: z.string().min(1),
-    audience: z.string().min(1),
-    jwks_url: z.string().min(1).refine(isAbsoluteHttpBase, { message: 'must be an absolute http(s) URL' }),
-  }),
+  identity: IdentitySchema,
   /** Each entry is an exact email address or an `@domain` suffix. */
   deciders: z.array(PersonEntrySchema).min(1),
   /** design.md D4: the forge login whose reviews count as decisions; never the login that opens pull requests. */
@@ -237,9 +239,15 @@ const McpSchema = z
     readers: z.array(PersonEntrySchema).optional(),
     capturers: z.array(PersonEntrySchema).optional(),
     editors: z.array(PersonEntrySchema).optional(),
+    /**
+     * offer-the-second-opinion-on-its-own D1: who holds the `second-opinion`
+     * scope. Absent means every reader; present means exactly this list, so
+     * an empty one withholds it from everyone. No shipped default.
+     */
+    second_opinion: z.array(PersonEntrySchema).optional(),
   })
-  .refine((value) => (value.readers?.length ?? 0) + (value.capturers?.length ?? 0) + (value.editors?.length ?? 0) > 0, {
-    message: 'name at least one entry in readers, capturers or editors',
+  .refine((value) => (value.readers?.length ?? 0) + (value.capturers?.length ?? 0) + (value.editors?.length ?? 0) + (value.second_opinion?.length ?? 0) > 0, {
+    message: 'name at least one entry in readers, capturers, editors or second_opinion',
   });
 
 /**

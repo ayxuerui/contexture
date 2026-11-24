@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Get a second opinion from Claude or ChatGPT</title>
+<style>
+  :root { color-scheme: light dark; --fg: #1d1d1f; --muted: #5f6368; --bg: #f6f6f4; --card: #ffffff; --line: #d9d9d4; --accent: #2f5d50; }
+  @media (prefers-color-scheme: dark) { :root { --fg: #ececea; --muted: #a4a4a0; --bg: #1b1b1a; --card: #262624; --line: #3a3a37; --accent: #8cc5b2; } }
+  * { box-sizing: border-box; }
+  body { margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 16px; background: var(--bg); color: var(--fg); font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { width: 100%; max-width: 560px; background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 28px 24px; }
+  h1 { font-size: 1.25rem; margin: 0 0 12px; }
+  h2 { font-size: 1.05rem; margin: 24px 0 8px; }
+  p { margin: 0 0 12px; }
+  .muted { color: var(--muted); }
+  ol { margin: 0 0 12px; padding-left: 20px; }
+  code { font: 0.95em ui-monospace, SFMono-Regular, Menlo, monospace; overflow-wrap: anywhere; }
+  a.download { display: inline-block; padding: 10px 14px; border-radius: 8px; background: var(--accent); color: var(--card); font-weight: 600; text-decoration: none; }
+</style>
+</head>
+<body>
+<main>
+<h1>Get a second opinion from Claude or ChatGPT</h1>
+<p>__STORE_NAME__ offers you a second opinion: three AI models of different families review a plan you write, or answer one question, and your app compares what they say. Two things set it up: a skill, which says how to ask, and this server's connector, which runs the review. You set each up once. Signing in goes through this server's own login; nothing you install holds a password or key.</p>
+
+<h2>This server's connector</h2>
+<p>The address to add:</p>
+<p><code>__MCP_URL__</code></p>
+<ol>
+<li><strong>Claude:</strong> open <strong>Customize</strong>, then <strong>Connectors</strong>. Choose <strong>Add custom connector</strong>, give it the name second opinion, and paste the address above.</li>
+<li><strong>ChatGPT:</strong> the plugin below brings this connector with it. To add the connector on its own, open <strong>Settings</strong>, then <strong>Apps &amp; Connectors</strong>, turn on developer mode under <strong>Advanced settings</strong>, then choose <strong>Create</strong> and paste the address above.</li>
+<li>The first time an app asks for a second opinion, it asks you to sign in.</li>
+</ol>
+<p class="muted">The connector offers four tools, all for the review. It reads no notes and changes nothing.</p>
+
+<h2>Claude: the __PLUGIN_NAME__ plugin</h2>
+<ol>
+<li>In Claude, open <strong>Customize</strong>, then <strong>Plugins</strong>.</li>
+<li>Choose <strong>Add</strong>, then <strong>Add marketplace</strong>, and enter <code>__MARKETPLACE__</code>.</li>
+<li>Turn on <strong>Sync automatically</strong>, so each new release of the skill arrives on its own.</li>
+<li>Install the <strong>__PLUGIN_NAME__</strong> plugin from that marketplace.</li>
+<li>Do not install it beside the <strong>__OTHER_PLUGIN__</strong> plugin: that one carries the same skill, with the skills for working in a store.</li>
+</ol>
+
+<h2>ChatGPT: this server's plugin</h2>
+<p><a class="download" href="__CHATGPT_HREF__" download>Download __CHATGPT_ARCHIVE__</a></p>
+<ol>
+<li>If your workspace has an admin, send them the file: an admin uploads a plugin once for the whole workspace.</li>
+<li>Otherwise, turn on developer mode in ChatGPT's settings and upload the file there.</li>
+<li>ChatGPT does not update an uploaded plugin. When contexture releases a new skill, download this file again and upload it over the old one.</li>
+</ol>
+<p class="muted">Version __VERSION__.</p>
+
+<p class="muted">A plan you send goes to the AI model vendors this server's operator configured. Send only text you may send to them.</p>
+</main>
+</body>
+</html>

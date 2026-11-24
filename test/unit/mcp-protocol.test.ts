@@ -8,6 +8,7 @@ import { RELATION_DIRECTEDNESS_NOTE, RELATION_VOCABULARY } from '../../src/confi
 import { readConfig } from '../../src/config/load.js';
 import type { StoreConfig } from '../../src/config/schema.js';
 import { buildTools, serverInstructions, type ToolContext } from '../../src/core/mcp/tools/index.js';
+import { SECOND_OPINION_TOOL_NAMES } from '../../src/core/mcp/tool-map.js';
 import { placeholderName, STORE_PLACEHOLDERS } from '../../src/core/skill-placeholders.js';
 import { renderMcpSkills } from '../../src/core/skills.js';
 import { CLI_VERSION } from '../../src/version.js';
@@ -103,6 +104,10 @@ describe('mcp jsonrpc dispatch', () => {
     for (const name of ['find', 'gather', 'Read', 'Grep', 'Glob', 'ctxr', 'session_list', 'session_status']) expect(hints[name], name).toMatchObject({ readOnlyHint: true, destructiveHint: false, idempotentHint: true });
     for (const name of ['capture', 'session_start', 'Edit', 'Write', 'Move', 'ctxr_write', 'session_rebase', 'session_submit']) expect(hints[name], name).toMatchObject({ readOnlyHint: false, destructiveHint: false });
     for (const name of ['Delete', 'session_discard']) expect(hints[name], name).toMatchObject({ readOnlyHint: false, destructiveHint: true });
+    for (const name of ['second_opinion_preflight', 'second_opinion_critique', 'second_opinion_poll']) expect(hints[name], name).toMatchObject({ readOnlyHint: false, destructiveHint: false, idempotentHint: false });
+    expect(hints.second_opinion_result).toMatchObject({ readOnlyHint: true, destructiveHint: false });
+    // offer-the-second-opinion-on-its-own: the scope reaches the four tools and no other, and no other scope reaches them.
+    expect(shipped.filter((t) => t.scope === 'second-opinion').map((t) => t.name)).toEqual(SECOND_OPINION_TOOL_NAMES);
   });
 
   it('tools/call returns structured content, and a refusal as an isError result', async () => {
@@ -255,6 +260,34 @@ describe('the server instructions', () => {
     for (const relation of RELATION_VOCABULARY) expect(section).toContain(`- **${relation.name}**: ${relation.definition}`);
     expect(section).toContain(RELATION_DIRECTEDNESS_NOTE);
     expect(section).toContain(`This server runs ctxr ${CLI_VERSION}.`);
+  });
+
+  /** offer-the-second-opinion-on-its-own D4: the instructions follow the member's scopes. */
+  it('tell a member without read how the four tools are used, and nothing of the store', () => {
+    const config = { ...loaded, ingest: { ...loaded.ingest, inbox_path: 'raw/inbox/' }, taxonomy: { profile: 'custom' as const, layers: [{ name: 'work', path: 'work/', description: 'client work' }] } };
+    const text = serverInstructions('pkm', config, ['second-opinion']);
+    expect(text).not.toMatch(/__[A-Z][A-Z0-9_]*__/);
+    for (const tool of SECOND_OPINION_TOOL_NAMES) expect(text).toContain(`\`${tool}\``);
+    expect(text).toContain('pkm');
+    expect(text).toContain(`This server runs ctxr ${CLI_VERSION}.`);
+    expect(text).not.toContain('work');
+    expect(text).not.toContain('## This store');
+    for (const placeholder of STORE_PLACEHOLDERS) {
+      const value = placeholder.value(config);
+      if (/[/.]/.test(value)) expect(text, placeholder.token).not.toContain(value);
+    }
+    for (const name of ['find', 'gather', 'Read', 'session_start', 'ctxr_write']) expect(text, name).not.toContain(`\`${name}\``);
+  });
+
+  it('name the second-opinion tools to a reader who holds that scope, and leave them out for one who does not', () => {
+    const both = serverInstructions('pkm', loaded, ['read', 'second-opinion']);
+    expect(both).toContain('## This store');
+    expect(both).toContain('`second_opinion_critique`');
+    expect(serverInstructions('pkm', loaded)).toBe(both);
+    const reader = serverInstructions('pkm', loaded, ['read']);
+    expect(reader).toContain('## This store');
+    expect(reader).not.toContain('second_opinion');
+    expect(reader).not.toMatch(/__[A-Z][A-Z0-9_]*__/);
   });
 
   it('says so when the store declares no layers', async () => {

@@ -171,6 +171,11 @@ describe('the MCP surface of ctxr serve (real CLI, fake forge, real signatures)'
           ['Glob', true],
           ['capture', false],
           ['ctxr', true],
+          // offer-the-second-opinion-on-its-own D1: a store that names no list leaves the review with its readers.
+          ['second_opinion_preflight', false],
+          ['second_opinion_critique', false],
+          ['second_opinion_poll', false],
+          ['second_opinion_result', true],
         ]);
 
         // serve-the-session-lifecycle-to-chat-apps D4: the runner spawns the server's own built CLI against the served commit.
@@ -276,6 +281,51 @@ describe('the MCP surface of ctxr serve (real CLI, fake forge, real signatures)'
     }
   });
 
+  /**
+   * offer-the-second-opinion-on-its-own D1, D4 (remote-access spec, *A store
+   * may list who runs a second opinion* and *The server instructions give
+   * this store's values*).
+   */
+  it('gives a person listed for the second opinion alone the four tools and nothing of the store', async () => {
+    const store = await approvalStore(false);
+    try {
+      const config = await readFile(path.join(store.root, 'contexture.yaml'), 'utf8');
+      await writeFile(path.join(store.root, 'contexture.yaml'), `${config}mcp:\n  readers: ["@example.com"]\n  second_opinion: ["o@elsewhere.example"]\n`);
+      await store.git(['commit', '-qam', 'declare mcp', '--no-verify']);
+      await store.git(['push', '-q', '--no-verify', 'origin', 'main']);
+      await withServer(store, async (url) => {
+        const token = await signIn(url, 'o@elsewhere.example');
+        const names = async (t: string) => ((await rpc(url, t, 'tools/list')).json.result as { tools: { name: string }[] }).tools.map((tool) => tool.name);
+        expect(await names(token)).toEqual(['second_opinion_preflight', 'second_opinion_critique', 'second_opinion_poll', 'second_opinion_result']);
+
+        const init = await rpc(url, token, 'initialize', { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'test', version: '0' } });
+        const instructions = (init.json.result as { instructions: string }).instructions;
+        for (const name of await names(token)) expect(instructions).toContain(`\`${name}\``);
+        expect(instructions).toContain(`This server runs ctxr ${CLI_VERSION}.`);
+        expect(instructions).not.toContain('## This store');
+        expect(instructions).not.toContain('raw/inbox/');
+        expect(instructions).not.toContain('log.md');
+
+        const refused = async (t: string, name: string, args: Record<string, unknown>) => {
+          const result = (await rpc(url, t, 'tools/call', { name, arguments: args })).json.result as { isError?: boolean; content: { text: string }[] };
+          expect(result.isError, name).toBe(true);
+          expect(result.content[0]!.text, name).toContain('mcp.insufficient_scope');
+        };
+        await refused(token, 'Read', { file_path: 'AGENTS.md' });
+        await refused(token, 'find', { text: 'kestrel' });
+        await refused(token, 'ctxr', { args: ['lint'] });
+
+        // A reader the list leaves out keeps reading and loses the review.
+        const reader = await signIn(url, 'a@example.com');
+        expect(await names(reader)).not.toContain('second_opinion_critique');
+        expect(await names(reader)).toContain('find');
+        await refused(reader, 'second_opinion_preflight', {});
+      });
+    } finally {
+      await store.tmp.cleanup();
+    }
+  });
+
   it('refuses sign-in without a verified assertion, and for a verified non-member', async () => {
     const store = await approvalStore(true);
     try {
@@ -348,6 +398,46 @@ describe('the MCP surface of ctxr serve (real CLI, fake forge, real signatures)'
           const again = await download(new URL(`/plugin/contexture-store-${target}.zip`, url).toString(), member);
           expect(again.body.equals(zip.body)).toBe(true);
         }
+      });
+    } finally {
+      await store.tmp.cleanup();
+    }
+  });
+
+  /** offer-the-second-opinion-on-its-own D4 (remote-access spec, scenario *A second-opinion member is shown the small plugin*). */
+  it('shows a second-opinion member the small plugin, and an archive that carries that skill alone', async () => {
+    const store = await approvalStore(false);
+    try {
+      const config = await readFile(path.join(store.root, 'contexture.yaml'), 'utf8');
+      await writeFile(path.join(store.root, 'contexture.yaml'), `${config}mcp:\n  readers: ["@example.com"]\n  second_opinion: ["o@elsewhere.example"]\n`);
+      await store.git(['commit', '-qam', 'declare mcp', '--no-verify']);
+      await store.git(['push', '-q', '--no-verify', 'origin', 'main']);
+      await withServer(store, async (url) => {
+        const member = { [HEADER]: assertion('o@elsewhere.example') };
+        const html = await http(new URL('/plugin/', url).toString(), { headers: member });
+        expect(html.status).toBe(200);
+        expect(html.body).toContain('Install the <strong>second-opinion</strong> plugin');
+        expect(html.body).toContain('<code>ayxuerui/contexture</code>');
+        expect(html.body).toContain(`<code>${BASE}/mcp</code>`);
+        expect(html.body).toContain('href="/plugin/second-opinion-store-chatgpt.zip"');
+        expect(html.body).not.toContain('contexture-store-chatgpt.zip');
+        // The store's own archive carries every skill for a store: not this member's to fetch.
+        expect((await http(new URL('/plugin/contexture-store-chatgpt.zip', url).toString(), { headers: member })).status).toBe(404);
+
+        const zip = await download(new URL('/plugin/second-opinion-store-chatgpt.zip', url).toString(), member);
+        expect(zip.status).toBe(200);
+        const file = path.join(store.tmp.root, 'second-opinion.zip');
+        await writeFile(file, zip.body);
+        const exec = promisify(execFile);
+        const listed = (await exec('unzip', ['-Z1', file])).stdout.trim().split('\n').sort();
+        expect(listed).toEqual(['README.md', 'mcp.json', 'plugin.json', 'skills/ctxr-second-opinion/SKILL.md']);
+        const mcp = JSON.parse((await exec('unzip', ['-p', file, 'mcp.json'])).stdout) as { mcpServers: Record<string, Record<string, unknown>> };
+        expect(mcp.mcpServers['second-opinion-store']).toMatchObject({ type: 'streamable-http', url: `${BASE}/mcp` });
+
+        // A reader is still shown contexture's plugin and the store's archive.
+        const reader = await http(new URL('/plugin/', url).toString(), { headers: { [HEADER]: assertion('a@example.com') } });
+        expect(reader.body).toContain('Install the <strong>contexture</strong> plugin');
+        expect(reader.body).toContain('href="/plugin/contexture-store-chatgpt.zip"');
       });
     } finally {
       await store.tmp.cleanup();

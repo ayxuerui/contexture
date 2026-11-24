@@ -18,11 +18,12 @@ that runs `ctxr`), follow each step in the shell as written, even when the store
 too. Otherwise work through the store's connector:
 
 - A `ctxr session <verb>` step is the tool `session_<verb>`; `session_start` takes the session's name as
-  `label`. Every other `ctxr` step is the `ctxr` tool, or `ctxr_write` when it writes, with the words after
-  `ctxr` as `args`, one per entry: `ctxr lint` is the `ctxr` tool with `args` set to `["lint"]`.
+  `label`. A `ctxr second-opinion <verb>` step is the tool `second_opinion_<verb>`. Every other `ctxr` step
+  is the `ctxr` tool, or `ctxr_write` when it writes, with the words after `ctxr` as `args`, one per entry:
+  `ctxr lint` is the `ctxr` tool with `args` set to `["lint"]`.
 - A command's options are the tool's fields, named without the dashes. `session` names the session's
-  directory, which `session_start` returns and `session_list` lists; `ctxr_write` always needs one. A file
-  you prepared goes as `input`, with `@input` in `args` where its path goes.
+  directory, which `session_start` returns and `session_list` lists; `ctxr_write` always needs one. For
+  `ctxr_write`, a file you prepared goes as `input`, with `@input` in `args` where its path goes.
 - Paths go under the session's root: the note `work/a.md` is `<worktrees path><directory>/work/a.md` for
   `Read`, `Edit`, `Write`, `Move`, `Delete`, `Grep` and `Glob`. A path outside a session reads the store as
   last approved and cannot be written. Commits, pushes and pull requests happen only in `session_submit`.
