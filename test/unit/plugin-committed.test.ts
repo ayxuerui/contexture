@@ -3,7 +3,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { buildClaudePlugin, CLAUDE_PLUGIN_NAME, firstDifference, skillBody } from '../../src/core/plugin/build.js';
-import { commandMapProblems, PLUGIN_COMMANDS } from '../../src/core/plugin/commands.js';
+import { commandMapProblems, PLUGIN_COMMANDS, PLUGIN_DEFINITIONS, SECOND_OPINION_PLUGIN } from '../../src/core/plugin/commands.js';
 import { MCP_SKILL_FILES, renderMcpSkills } from '../../src/core/skills.js';
 import { CLI_VERSION } from '../../src/version.js';
 import { makeTmpDir, type TmpDir } from '../helpers/tmp-store.js';
@@ -25,6 +25,16 @@ describe('the committed plugin', () => {
     expect(await firstDifference(buildClaudePlugin(await packageVersion()), COMMITTED)).toBeNull();
   });
 
+  /** offer-the-second-opinion-on-its-own D6: every plugin the marketplace lists is checked, not the first alone. */
+  it('holds for every declared plugin, each at the package version', async () => {
+    for (const definition of PLUGIN_DEFINITIONS) {
+      const dir = path.join(REPO, 'plugins', definition.name);
+      expect(await firstDifference(buildClaudePlugin(await packageVersion(), definition), dir), definition.name).toBeNull();
+      const manifest = JSON.parse(await readFile(path.join(dir, '.claude-plugin/plugin.json'), 'utf8')) as { name: string; version: string };
+      expect(manifest).toMatchObject({ name: definition.name, version: await packageVersion() });
+    }
+  });
+
   it("carries the package's version, which the CLI reports", async () => {
     const manifest = JSON.parse(await readFile(path.join(COMMITTED, '.claude-plugin/plugin.json'), 'utf8')) as { name: string; version: string };
     expect(manifest.version).toBe(await packageVersion());
@@ -40,10 +50,11 @@ describe('the committed plugin', () => {
     };
     expect(marketplace.name).toBe('contexture');
     expect(marketplace.owner.name).toBe('contexture');
-    expect(marketplace.plugins).toHaveLength(1);
+    expect(marketplace.plugins.map((p) => [p.name, p.source])).toEqual(PLUGIN_DEFINITIONS.map((d) => [d.name, `./plugins/${d.name}`]));
     expect(marketplace.plugins[0]).toMatchObject({ name: CLAUDE_PLUGIN_NAME, source: `./plugins/${CLAUDE_PLUGIN_NAME}` });
+    expect(marketplace.plugins[1]).toMatchObject({ name: 'second-opinion', source: './plugins/second-opinion' });
     // A version here would be read before plugin.json's only when that one is missing; one place keeps them from disagreeing.
-    expect(marketplace.plugins[0]).not.toHaveProperty('version');
+    for (const plugin of marketplace.plugins) expect(plugin).not.toHaveProperty('version');
   });
 });
 
@@ -87,6 +98,16 @@ describe('the freshness comparison', () => {
     await fresh();
     await rm(path.join(copy, 'skills/eli5/LICENSE.txt'));
     expect(await firstDifference(buildClaudePlugin(CLI_VERSION), copy)).toBe('skills/eli5/LICENSE.txt: in the build, but missing on disk');
+  });
+
+  it('fails naming the second plugin\'s skill file when the skill changes and that plugin is not regenerated', async () => {
+    const second = path.join(tmp.root, 'second-opinion');
+    await rm(second, { recursive: true, force: true });
+    await cp(path.join(REPO, 'plugins', SECOND_OPINION_PLUGIN.name), second, { recursive: true });
+    expect(await firstDifference(buildClaudePlugin(CLI_VERSION, SECOND_OPINION_PLUGIN), second)).toBeNull();
+    const skill = path.join(second, 'skills/ctxr-second-opinion/SKILL.md');
+    await writeFile(skill, `${await readFile(skill, 'utf8')}\nAn edit to the template the plugin never saw.\n`);
+    expect(await firstDifference(buildClaudePlugin(CLI_VERSION, SECOND_OPINION_PLUGIN), second)).toBe('skills/ctxr-second-opinion/SKILL.md: differs from the build');
   });
 
   it('fails on the manifest when only the version moves', async () => {

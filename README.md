@@ -491,7 +491,10 @@ mcp:
   readers: ["@example.com"]       # find, gather, Read, Grep, Glob, ctxr
   capturers: ["a@example.com"]    # capture
   editors: ["a@example.com"]      # sessions, Edit, Write, Move, Delete, ctxr_write
+  # second_opinion: ["b@partner.example"]   # optional: the four second-opinion tools
 ```
+
+`second_opinion` is optional. Without it, every reader can run a second opinion. With it, exactly the people it lists can, whether or not they are readers, and `second_opinion: []` withholds it from everyone. Someone on that list alone gets the four second-opinion tools and nothing of the store: no note, no path, no layer name. A block may hold that list and no other. Update `ctxr` on every host before writing the key, since an older version refuses a configuration that holds it.
 
 What a connected app gets. The only models the server runs are a second opinion's, when asked for one:
 
@@ -500,12 +503,12 @@ What a connected app gets. The only models the server runs are a second opinion'
 - **`capture`** saves one item of outside material into the inbox as its own session pull request, in one call.
 - **Sessions**, for editors, work as they do for a local agent. `session_start` starts a session worktree on the server and returns its root, such as `.worktrees/session-20261023-101500-kestrel/`. `Edit`, `Write`, `Move` and `Delete` change files under that root and commit nothing; `Read`, `Grep` and `Glob` under the root read the session's uncommitted copy. `session_status` re-scans it, and `session_submit` runs `ctxr doctor` as the gate, commits as the signed-in person, pushes the named branch and opens the pull request with the title and body the agent wrote. `session_list` shows each of the person's sessions with its pull request and the decider's decision and comment, so requested changes reach them; `session_rebase` and `session_discard` do what the `ctxr session` commands of the same name do. Each tool calls the same code as its `ctxr session` command. A person sees only the sessions they started over MCP, and holds at most 20 open at once.
 - **`ctxr`** runs a read-only command such as `lint`, `doctor`, `catalog show` or `graph query` against the served commit or one of the person's sessions; **`ctxr_write`** runs a writing one such as `ingest`, `entry append` or `catalog build` inside a session. Both spawn the server's own CLI as an argument list, with no shell, a 30-second limit and the forge credentials removed from its environment, and refuse `--root` and any path outside the checkout.
-- **A second opinion** runs through `ctxr` as it runs in a shell: `second-opinion critique` or `poll` with `--detach` starts the run and returns its id, and `second-opinion result <run>` fetches it, with the plan or question as `input` and `@input` as the `--plan-file` or `--prompt-file` value. Each `result` call waits at most 45 seconds, then returns the answers or says the run is still going, so no call outlasts what a chat app's connection survives (125 seconds through a Cloudflare tunnel, and under 60 seconds through the connector proxy a remote Claude Code session uses). A `critique` or `poll` without `--detach` starts a run the same way and waits those 45 seconds: a short plan answers in one call, and a long one hands back its run id. The server adds `--require-confinement`, so it runs only where each model CLI is confined to its own folder, and caps each model CLI at 600 seconds. One detached run goes at a time per machine user; a second is refused, naming the running one to the person who started it so they can fetch it. A run belongs to the person who started it, and nobody else can fetch it. Its plan and answers stay in a folder only the server's user can read, removed an hour after the run ends. The models are the lineup of the commit the server was serving when the run started, never an open session's, and the server's own `CTXR_SECOND_OPINION_*` variables still win. The model CLIs must be installed and signed in on the server: in the stock images, `docker compose exec serve claude` (then `/login`), `codex login` and one interactive `agy` run. Restart `serve` after updating `ctxr`: until it restarts, it keeps running the version it started with.
+- **A second opinion** has four tools of its own, each running its `ctxr second-opinion` command and each needing the `second-opinion` scope: `second_opinion_preflight`, `second_opinion_critique`, `second_opinion_poll` and `second_opinion_result`. The plan goes in as the text field `plan` and a poll's question as `prompt`; the other fields are the command's options (`tier`, `only`, `timeout`, `seed`, `lens`, `wrap`). No field names a file, a session, an output directory or a model, so the scope opens nothing in the store: to get an opinion on a note, a reader reads it and passes its text. A critique or poll starts a run and waits up to 45 seconds for it: a short plan answers in that call, and a long one returns `running:` and a run id, which `second_opinion_result` fetches. Each `second_opinion_result` call also waits at most 45 seconds, so no call outlasts what a chat app's connection survives (125 seconds through a Cloudflare tunnel, and under 60 seconds through the connector proxy a remote Claude Code session uses). The `ctxr` tool no longer runs a second opinion: a call that names one is refused with the name of the tool to call. The server adds `--require-confinement`, so it runs only where each model CLI is confined to its own folder, and caps each model CLI at 600 seconds. One run goes at a time per machine user; a second is refused, naming the running one to the person who started it so they can fetch it. A run belongs to the person who started it, and nobody else can fetch it. Its plan and answers stay in a folder only the server's user can read, removed an hour after the run ends. The models are the lineup of the commit the server was serving when the run started, never an open session's, and the server's own `CTXR_SECOND_OPINION_*` variables still win. The model CLIs must be installed and signed in on the server: in the stock images, `docker compose exec serve claude` (then `/login`), `codex login` and one interactive `agy` run. Restart `serve` after updating `ctxr`: until it restarts, it keeps running the version it started with.
 - **Never writable** over MCP, by any tool: `contexture.yaml`, the `.githooks/` directory and every other `.git*` path (a commit in a session worktree runs that worktree's hooks on the server), derived paths, the worktrees path and the managed skills path. A `ctxr_write` command that changes one anyway has the change undone and the call refused.
 
 Every session's pull request appears on the approval page like any other, and nothing lands until a decider approves it. A per-person draft from an earlier version is adopted as that person's session; its pull request stays open and landable. Each tool declares MCP annotations (read-only, destructive, idempotent), so the apps ask before `Delete` and `session_discard`.
 
-**Sign-in.** Someone connecting an app goes through the access proxy's login and then a consent page naming the app, where it will be sent back to, their email and what it may do. They are admitted only if `readers`, `capturers` or `editors` lists them. Nothing is stored on the server: client registrations, codes and 30-day tokens are all signed, and every call re-checks the configuration, so removing someone from the lists refuses their next call. With a GitHub App as the recording identity, the signing key is derived from the App's key, so rotating the App key signs everyone out. With `gh`'s own credential, people sign in again after every restart.
+**Sign-in.** Someone connecting an app goes through the access proxy's login and then a consent page naming the app, where it will be sent back to, their email and what it may do. They are admitted only if `readers`, `capturers`, `editors` or `second_opinion` lists them. Nothing is stored on the server: client registrations, codes and 30-day tokens are all signed, and every call re-checks the configuration, so removing someone from the lists refuses their next call. With a GitHub App as the recording identity, the signing key is derived from the App's key, so rotating the App key signs everyone out. With `gh`'s own credential, people sign in again after every restart.
 
 **The access proxy.** Keep `/authorize` behind it, because that is where the identity comes from. Exempt exactly these, because the apps' servers call them directly and cannot pass a proxy login: `/mcp`, `/token`, `/register`, `/.well-known/oauth-protected-resource`, `/.well-known/oauth-protected-resource/mcp`, `/.well-known/oauth-authorization-server` and `/.well-known/openid-configuration`. With Cloudflare Access, that means a self-hosted application for those paths with a **Bypass** policy, alongside the application covering the rest of the hostname. Check it from outside:
 
@@ -523,17 +526,53 @@ The plugin carries no connector, because one plugin serves every store. Its skil
 
 **The connect page.** `serve` answers `https://ctx.example.com/plugin/` with a page giving a member both steps: the marketplace and plugin for Claude, and this store's connector address with how to add it in each app. It also links the store's ChatGPT plugin, `contexture-<store>-chatgpt.zip`: ChatGPT has no marketplace on personal plans, so its plugin stays the store's own download, bundling the same skills and the store's connector. A workspace admin uploads it for the whole workspace; without an admin, turn on developer mode and upload it there. ChatGPT does not update an uploaded plugin, so download it again after a release. The page and the download need the same verified identity as the approval page, and only people the `mcp` block admits get them, so keep `/plugin/` behind the access proxy, outside the Bypass list above. Someone who uploaded an earlier `contexture-<store>` plugin to Claude removes it once they install `contexture`, and keeps their connector.
 
+Someone whose only scope is `second-opinion` is shown a different page at the same address: the `second-opinion` plugin in place of `contexture`, and a ChatGPT download that carries that one skill, `second-opinion-<store>-chatgpt.zip`.
+
 To build the plugins yourself:
 
 ```sh
-ctxr plugin build                # outside a store: contexture's Claude plugin, under ./contexture-plugin/
+ctxr plugin build                # outside a store: contexture's two Claude plugins, under ./contexture-plugin/
 ctxr plugin build                # inside a store with mcp: also its ChatGPT plugin, under .contexture/cache/plugin/
 ctxr plugin build --out dist/    # somewhere else
 ```
 
-Each plugin is written as a directory (`contexture/`, `chatgpt/`) and a zip beside it. A store without an `mcp` block gets the Claude plugin alone, with a notice. If the marketplace ever has to be withdrawn, members can upload `contexture-claude.zip` from a build instead, and keep their store connector; an uploaded plugin does not update itself. In this repository, `npm run plugin` regenerates `plugins/contexture/`, and a test fails any change whose committed plugin differs from a fresh build.
+Each plugin is written as a directory (`contexture/`, `second-opinion/`, `chatgpt/`) and a zip beside it. A store without an `mcp` block gets the Claude plugins alone, with a notice. If the marketplace ever has to be withdrawn, members can upload `contexture-claude.zip` from a build instead, and keep their store connector; an uploaded plugin does not update itself. In this repository, `npm run plugin` regenerates `plugins/contexture/` and `plugins/second-opinion/`, and a test fails any change whose committed plugins differ from a fresh build.
 
 **Where reads come from.** Reads come from a checkout `serve` keeps for itself under `.contexture/cache/mcp/view`, brought up to date from `origin` at most once a minute. It never touches the checkout your agents work in. Each MCP request writes one line to `serve`'s stderr, naming the person, the method and the tool, but never the arguments or the results.
+
+### A second opinion on its own
+
+Someone with no store can still use the second opinion. Two pieces make that possible, and neither needs the other.
+
+**The `second-opinion` plugin** carries the `ctxr-second-opinion` skill and one command, `/second-opinion:ask`. It is listed in the same marketplace, at [`plugins/second-opinion/`](plugins/second-opinion/). Install it only without `contexture`, which carries the same skill: with both, Claude is offered the skill twice.
+
+**`ctxr second-opinion serve`** is a server that offers the second opinion and nothing else:
+
+```sh
+ctxr second-opinion serve --config /etc/ctxr/second-opinion.yaml --port 18081
+```
+
+It answers sign-in, `/mcp` with the four second-opinion tools, and a connect page at `/plugin/`. Every other path is `404`. It needs no store, and one nearby changes nothing. It runs no git, and it never reads a forge credential, the GitHub App's key or the webhook secret, so it can run where none of those exist. Its people and its lineup come from one file:
+
+```yaml
+base_url: https://opinion.example.com      # the origin people reach it at; no path
+identity:                                  # as a store's change_approval.identity
+  header: Cf-Access-Jwt-Assertion
+  issuer: https://example.cloudflareaccess.com
+  audience: <application audience>
+  jwks_url: https://example.cloudflareaccess.com/cdn-cgi/access/certs
+members: ["@example.com"]                  # who may sign in: emails or @domain entries
+second_opinion:                            # optional: the lineup, as a store's block
+  strong:
+    agy:
+      openrouter: <vendor>/<model>
+```
+
+The file is strict: an unknown key stops the start, naming the key. It holds no secret. `OPENROUTER_API_KEY` and the `CTXR_SECOND_OPINION_*` variables stay in the server's environment, where they still win over the file. Everyone in `members` holds the `second-opinion` scope and no other. The server re-reads the file when it changes, so someone removed from it is refused on their next call; a file that no longer loads leaves the last good one in force and is reported once on stderr.
+
+**The state directory.** This server has no App key to derive a sign-in key from, so it keeps a 32-byte signing key in `signing-key` under `--state-dir`, which defaults to `ctxr/second-opinion-serve` under `$XDG_STATE_HOME` (or `~/.local/state`). It creates the file for its own user alone on first start, and refuses to start when the file or the directory can be read by anyone else. Keep the directory across restarts and people stay signed in; delete the file to sign everyone out. A model CLI the server starts cannot read it: the confinement rules do not include the directory.
+
+**The access proxy** in front must protect the same paths as for a store: keep `/authorize` and `/plugin/` behind its login, and exempt `/mcp`, `/token`, `/register` and the `/.well-known/` paths listed above. As with a store, each critic that runs as a model CLI must be installed and signed in for the server's user, and the server runs one only where it is confined. A lineup answered wholly through OpenRouter starts no CLI and needs none.
 
 ## Keeping a store current
 
@@ -598,7 +637,9 @@ To pin a value against a future default change, declare it. Nothing rewrites wha
 | `shared-stores sync \| status` | Clone and fast-forward the stores this store mounts under `shared/`, or report their state |
 | `adapters generate` | Regenerate harness outputs (`ctxr update` does this too) |
 | `serve` | Read the store in a browser |
-| `plugin build [--out <dir>]` | Build contexture's Claude plugin (no store needed) and, in a store with `mcp`, its ChatGPT plugin with its connector |
+| `plugin build [--out <dir>]` | Build contexture's two Claude plugins (no store needed) and, in a store with `mcp`, its ChatGPT plugin with its connector |
+| `second-opinion preflight \| critique \| poll \| result` | The same plan or question sent to three model families, with their answers |
+| `second-opinion serve --config <file>` | Serve the second opinion to chat apps, without a store |
 | `update` | Bring contexture-owned files up to the installed version |
 | `version [--check]` | Report the installed version; `--check` compares it against the latest published release |
 | `verify [--portable]` | Exercise core store operations end to end |

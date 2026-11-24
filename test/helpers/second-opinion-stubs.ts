@@ -48,10 +48,12 @@ export const SETPRIV_STUB = [
   "const fs = require('node:fs');",
   'const args = process.argv.slice(2);',
   "const landlock = process.env.CTXR_SECOND_OPINION_STUB_SETPRIV === 'landlock';",
-  "if (args.includes('--help')) { console.log(landlock ? ' --landlock-access <access>  add Landlock access' : ' --reuid <uid>'); process.exit(0); }",
+  // Only its own options, before `--`: a wrapped CLI's `--help` is that CLI's to answer.
+  "const own = args.includes('--') ? args.slice(0, args.indexOf('--')) : args;",
+  "if (own.includes('--help')) { console.log(landlock ? ' --landlock-access <access>  add Landlock access' : ' --reuid <uid>'); process.exit(0); }",
   "if (args.includes('--version')) { console.log('setpriv stub'); process.exit(0); }",
   // One file per call: three CLIs start at once, and a shared log would lose one.
-  "try { fs.writeFileSync(process.env.CTXR_SECOND_OPINION_STUB_DIR + '/setpriv-' + process.pid + '.json', JSON.stringify(args)); } catch {}",
+  "if (!args.includes('--help')) try { fs.writeFileSync(process.env.CTXR_SECOND_OPINION_STUB_DIR + '/setpriv-' + process.pid + '.json', JSON.stringify(args)); } catch {}",
   "const rest = args.slice(args.indexOf('--') + 1);",
   "const r = spawnSync(rest[0], rest.slice(1), { stdio: 'inherit' });",
   'process.exit(r.status ?? 1);',

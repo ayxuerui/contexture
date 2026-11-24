@@ -8,7 +8,7 @@ import type { ToolAnnotations, ToolDefinition } from '../jsonrpc.js';
 import type { Principal } from '../oauth.js';
 import { asToolRefusal, type Mutex, type WriteDeps } from '../sessions.js';
 import type { McpView, SyncDeps } from '../sync.js';
-import { TOOL_REGISTRY } from '../tool-map.js';
+import { SECOND_OPINION_SCOPE, SECOND_OPINION_TOOL_NAMES, TOOL_REGISTRY } from '../tool-map.js';
 import { capture, CAPTURE_INPUT_SCHEMA, parseCaptureArgs } from './capture.js';
 import { CTXR_INPUT_SCHEMA, CTXR_WRITE_INPUT_SCHEMA, ctxrTool, ctxrWriteTool, parseCliArgs, renderCli } from './cli.js';
 import {
@@ -41,6 +41,20 @@ import {
 } from './files.js';
 import { find, FIND_INPUT_SCHEMA, parseFindArgs } from './find.js';
 import { GATHER_INPUT_SCHEMA, gatherWithBodies, parseGatherArgs } from './gather.js';
+import {
+  parseCritiqueArgs,
+  parsePollArgs,
+  parsePreflightArgs,
+  parseResultArgs,
+  renderSecondOpinion,
+  SECOND_OPINION_CRITIQUE_INPUT_SCHEMA,
+  SECOND_OPINION_POLL_INPUT_SCHEMA,
+  SECOND_OPINION_PREFLIGHT_INPUT_SCHEMA,
+  SECOND_OPINION_RESULT_INPUT_SCHEMA,
+  secondOpinionTool,
+  type SecondOpinionArgs,
+  type SecondOpinionToolContext,
+} from './second-opinion.js';
 import {
   SESSION_DISCARD_INPUT_SCHEMA,
   SESSION_LIST_INPUT_SCHEMA,
@@ -75,15 +89,33 @@ import {
  * the label `skill-placeholders.ts` gives both, with this store's value, then
  * the layers, the relation vocabulary and the server's ctxr version.
  */
-export function serverInstructions(storeName: string, config: StoreConfig): string {
+export function serverInstructions(storeName: string, config: StoreConfig, scopes: readonly string[] = ['read', SECOND_OPINION_SCOPE]): string {
+  // offer-the-second-opinion-on-its-own D4: the store section is for a member who may read the store.
+  if (!scopes.includes('read')) return secondOpinionInstructions(storeName);
   const values = STORE_PLACEHOLDERS.map((p) => `- \`${placeholderName(p)}\`: \`${p.value(config)}\``);
   const layers = config.taxonomy.layers.length === 0 ? ['- none'] : config.taxonomy.layers.map((layer) => `- **${layer.name}** (\`${layer.path.replace(/\/*$/, '/')}\`): ${layer.description}`);
   const relations = [...RELATION_VOCABULARY.map((relation) => `- **${relation.name}**: ${relation.definition}`), '', RELATION_DIRECTEDNESS_NOTE];
   let text = packagedTemplate('mcp', 'server-instructions');
+  // A reader the store's own list leaves out is not told of tools the connector does not list for them.
+  text = scopes.includes(SECOND_OPINION_SCOPE) ? substituteBlock(text, '__SECOND_OPINION__', [secondOpinionParagraph()]) : text.replace('__SECOND_OPINION__\n\n', '');
   text = substituteBlock(text, '__STORE_VALUES__', values);
   text = substituteBlock(text, '__STORE_LAYERS__', layers);
   text = substituteBlock(text, '__RELATION_VOCABULARY__', relations);
   return text.replaceAll('__STORE_NAME__', storeName).replaceAll('__CLI_VERSION__', CLI_VERSION);
+}
+
+const secondOpinionParagraph = (): string => packagedTemplate('mcp', 'second-opinion-instructions').trim();
+
+/**
+ * offer-the-second-opinion-on-its-own D4 (remote-access spec, *The server
+ * instructions give this store's values*): what a member without `read` is
+ * told, and all the server with no store says. The server's name, its ctxr
+ * version and how the four tools are used: no path, layer or other value of
+ * a store.
+ */
+export function secondOpinionInstructions(serverName: string): string {
+  const text = substituteBlock(packagedTemplate('mcp', 'server-instructions-second-opinion'), '__SECOND_OPINION__', [secondOpinionParagraph()]);
+  return text.replaceAll('__SERVER_NAME__', serverName).replaceAll('__CLI_VERSION__', CLI_VERSION);
 }
 
 export interface ToolContext {
@@ -121,11 +153,56 @@ async function refusing<T>(fn: () => Promise<T>): Promise<T> {
 
 type Implementation = Omit<ToolDefinition<Principal>, 'name'>;
 
+/** A second opinion is neither read-only nor a write to the store: it starts model runs, and asking twice asks twice. */
+const STARTS_A_RUN: ToolAnnotations = { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false };
+
+/**
+ * offer-the-second-opinion-on-its-own D2, D7: the four second-opinion tools,
+ * built from what they use alone, so `ctxr serve` and the server with no
+ * store offer the same four. They run outside the view's lock and the write
+ * mutex: the CLI's own lock keeps runs one at a time.
+ */
+export function secondOpinionImplementations(ctx: SecondOpinionToolContext): Record<string, Implementation> {
+  const prose = (name: string) => packagedTemplate('mcp', name);
+  const tool = (name: string, title: string, inputSchema: Record<string, unknown>, parse: (args: Record<string, unknown>) => SecondOpinionArgs, annotations: ToolAnnotations): Implementation => ({
+    title,
+    description: prose(name),
+    inputSchema,
+    scope: SECOND_OPINION_SCOPE,
+    annotations,
+    render: renderSecondOpinion,
+    run: (args, principal) => {
+      const parsed = parse(args);
+      return refusing(() => secondOpinionTool(ctx, principal.email, parsed));
+    },
+  });
+  return {
+    second_opinion_preflight: tool('second_opinion_preflight', 'Check the second-opinion critics', SECOND_OPINION_PREFLIGHT_INPUT_SCHEMA, parsePreflightArgs, STARTS_A_RUN),
+    second_opinion_critique: tool('second_opinion_critique', 'Get a second opinion on a plan', SECOND_OPINION_CRITIQUE_INPUT_SCHEMA, parseCritiqueArgs, STARTS_A_RUN),
+    second_opinion_poll: tool('second_opinion_poll', 'Poll three models on a question', SECOND_OPINION_POLL_INPUT_SCHEMA, parsePollArgs, STARTS_A_RUN),
+    second_opinion_result: tool('second_opinion_result', 'Fetch a second opinion', SECOND_OPINION_RESULT_INPUT_SCHEMA, parseResultArgs, READ_ONLY),
+  };
+}
+
+/** The tool set of the server with no store: the four second-opinion tools, in registry order. */
+export function buildSecondOpinionTools(ctx: SecondOpinionToolContext): ToolDefinition<Principal>[] {
+  const implementations = secondOpinionImplementations(ctx);
+  return SECOND_OPINION_TOOL_NAMES.map((name) => ({ name, ...implementations[name]! }));
+}
+
 export function buildTools(ctx: ToolContext): ToolDefinition<Principal>[] {
   const read = <T extends object>(fn: (snapshot: Parameters<Parameters<McpView['read']>[1]>[0]) => Promise<T>) => ctx.view.read(ctx.syncDeps, fn);
   const writing = <T>(fn: () => Promise<T>): Promise<T> => refusing(() => ctx.mutex.run(fn));
   const files = { view: ctx.view, syncDeps: ctx.syncDeps, write: ctx.write };
-  const cli = { ...files, entry: ctx.cliEntry ?? packagedCliEntry(), timeoutMs: ctx.cliTimeoutMs, secondOpinionTimeoutMs: ctx.secondOpinionTimeoutMs, secondOpinionMaxWaitSeconds: ctx.secondOpinionMaxWaitSeconds };
+  const cli = { ...files, entry: ctx.cliEntry ?? packagedCliEntry(), timeoutMs: ctx.cliTimeoutMs };
+  // second-opinion-lineup-in-store-config D5: the lineup is the served commit's, never a session's working copy.
+  const secondOpinion: SecondOpinionToolContext = {
+    entry: cli.entry,
+    env: ctx.write.env,
+    lineupSource: () => ctx.view.read(ctx.syncDeps, async (snapshot) => ({ storeRoot: snapshot.store.root })),
+    timeoutMs: ctx.secondOpinionTimeoutMs,
+    maxWaitSeconds: ctx.secondOpinionMaxWaitSeconds,
+  };
   const prose = (name: string) => packagedTemplate('mcp', name);
 
   const implementations: Record<string, Implementation> = {
@@ -305,6 +382,7 @@ export function buildTools(ctx: ToolContext): ToolDefinition<Principal>[] {
         return writing(() => ctxrWriteTool(cli, principal.email, parsed));
       },
     },
+    ...secondOpinionImplementations(secondOpinion),
   };
 
   const unregistered = Object.keys(implementations).filter((name) => !TOOL_REGISTRY.some((t) => t.name === name));

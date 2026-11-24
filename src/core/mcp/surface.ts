@@ -1,12 +1,14 @@
 import { randomBytes } from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import path from 'node:path';
+import type { McpConfig } from '../../config/schema.js';
+import type { IdentityVerifier } from '../approval/identity.js';
 import type { ApprovalServer } from '../browse/approve.js';
 import { ContextureError } from '../errors.js';
 import type { GitRunner } from '../git/exec.js';
 import type { Store } from '../store.js';
 import { handleMcpRequest, MCP_PATH, sendText } from './http.js';
-import { ToolRefusal } from './jsonrpc.js';
+import { ToolRefusal, type ToolDefinition } from './jsonrpc.js';
 import { AuthorizationServer, OAUTH_PATHS, Signer, type Principal } from './oauth.js';
 import { renderConsentPage } from './pages.js';
 import { Mutex } from './sessions.js';
@@ -52,6 +54,78 @@ function describeMessage(body: unknown): string {
     return typeof message.method === 'string' ? message.method : 'response';
   };
   return Array.isArray(body) ? `[${body.map(one).join(', ')}]` : one(body);
+}
+
+/**
+ * offer-the-second-opinion-on-its-own D7: what every MCP surface needs,
+ * whatever it serves — sign-in against a verified identity, the member lists
+ * to narrow each token by, and the tools and instructions a signed-in member
+ * gets. `ctxr serve` fills it from a store; the server with no store fills it
+ * from its own file. Neither the OAuth endpoints nor the scope checks know
+ * which.
+ */
+export interface SurfaceCore {
+  /** The origin the surface is served at: the token issuer, and the only `Origin` a consent `POST` may carry. */
+  issuer: string;
+  identityHeader: string;
+  verifier: IdentityVerifier;
+  /** The member lists of the configuration last loaded; a token's scopes are narrowed to them on every request. */
+  members(): McpConfig | undefined;
+  signer: Signer;
+  spentCodes: Map<string, number>;
+  /** What the consent page says the app is connecting to. */
+  name: string;
+  now(): Date;
+  log(line: string): void;
+  /** Every tool the surface has; each principal is listed and may call the ones their scopes reach. Built only for a request to `/mcp`. */
+  tools(): Promise<ToolDefinition<Principal>[]>;
+  instructionsFor(principal: Principal): string;
+}
+
+/** Answers one request to an MCP path: the OAuth endpoints, or `/mcp` for a signed-in member. */
+export async function handleSurfaceRequest(core: SurfaceCore, req: IncomingMessage, res: ServerResponse, pathname: string): Promise<void> {
+  const oauth = new AuthorizationServer({
+    issuer: core.issuer,
+    resource: `${core.issuer}${MCP_PATH}`,
+    identityHeader: core.identityHeader,
+    verifier: core.verifier,
+    mcp: core.members,
+    signer: core.signer,
+    spentCodes: core.spentCodes,
+    now: core.now,
+    renderConsentPage: (view) => renderConsentPage(core.name, view),
+    log: core.log,
+  });
+
+  if (await oauth.handle(req, res, pathname)) {
+    core.log(`mcp ${req.method ?? 'GET'} ${pathname} -> ${res.statusCode}`);
+    return;
+  }
+
+  const tools = await core.tools();
+  await handleMcpRequest<Principal>(
+    {
+      originAllowed: (origin) => origin === core.issuer,
+      authenticate: (r) => oauth.authenticate(r),
+      onMessage: (principal, body) => core.log(`mcp ${principal.email}: ${describeMessage(body)}`),
+      contextFor: (principal) => ({
+        principal,
+        tools: () => tools.filter((tool) => (principal.scopes as readonly string[]).includes(tool.scope)),
+        lookup: (name) => tools.find((tool) => tool.name === name),
+        // The scopes are the ones `authenticate` has just narrowed to the loaded configuration.
+        instructions: core.instructionsFor(principal),
+        authorizeCall: (tool) => {
+          if (!(principal.scopes as readonly string[]).includes(tool.scope)) {
+            throw new ToolRefusal('mcp.insufficient_scope', `Calling "${tool.name}" needs the "${tool.scope}" scope.`);
+          }
+        },
+        refusalFor: (err) => (err instanceof ContextureError ? new ToolRefusal(err.finding.code, err.finding.message, err.finding.details) : undefined),
+      }),
+    },
+    req,
+    res,
+    pathname,
+  );
 }
 
 export class McpSurface {
@@ -106,59 +180,38 @@ export class McpSurface {
     const approval = state.approval;
     const issuer = approval.origin;
     const storeName = path.basename(state.store.root);
-    const oauth = new AuthorizationServer({
-      issuer,
-      resource: `${issuer}${MCP_PATH}`,
-      identityHeader: approval.approval.identity.header,
-      verifier: approval.verifier,
-      mcp: () => config.mcp,
-      signer: this.signerFor(approval),
-      spentCodes: this.spentCodes,
-      now: this.options.now,
-      renderConsentPage: (view) => renderConsentPage(storeName, view),
-      log: this.options.log,
-    });
-
-    if (await oauth.handle(req, res, pathname)) {
-      this.options.log(`mcp ${method} ${pathname} -> ${res.statusCode}`);
-      return;
-    }
-
-    this.repoPrefix ??= (await this.options.git.run(['rev-parse', '--show-prefix'], { cwd: this.options.canonicalRoot, allowFailure: true })).stdout.trim();
-    const syncDeps = { config, credentials: approval.credentials, forge: approval.forge, env: this.options.env };
-    const tools = buildTools({
-      view: this.view,
-      syncDeps,
-      write: {
-        ...syncDeps,
-        git: this.options.git,
-        canonicalRoot: this.options.canonicalRoot,
-        now: this.options.now,
-        recordingLogin: approval.approval.recording_login,
-        baseUrl: config.serve?.base_url ?? issuer,
-        repoPrefix: this.repoPrefix,
-      },
-      mutex: this.mutex,
-      baseUrl: config.serve?.base_url,
-    });
-    const instructions = serverInstructions(storeName, config);
-    await handleMcpRequest<Principal>(
+    await handleSurfaceRequest(
       {
-        originAllowed: (origin) => origin === issuer,
-        authenticate: (r) => oauth.authenticate(r),
-        onMessage: (principal, body) => this.options.log(`mcp ${principal.email}: ${describeMessage(body)}`),
-        contextFor: (principal) => ({
-          principal,
-          tools: () => tools.filter((tool) => (principal.scopes as readonly string[]).includes(tool.scope)),
-          lookup: (name) => tools.find((tool) => tool.name === name),
-          instructions,
-          authorizeCall: (tool) => {
-            if (!(principal.scopes as readonly string[]).includes(tool.scope)) {
-              throw new ToolRefusal('mcp.insufficient_scope', `Calling "${tool.name}" needs the "${tool.scope}" scope.`);
-            }
-          },
-          refusalFor: (err) => (err instanceof ContextureError ? new ToolRefusal(err.finding.code, err.finding.message, err.finding.details) : undefined),
-        }),
+        issuer,
+        identityHeader: approval.approval.identity.header,
+        verifier: approval.verifier,
+        members: () => config.mcp,
+        signer: this.signerFor(approval),
+        spentCodes: this.spentCodes,
+        name: storeName,
+        now: this.options.now,
+        log: this.options.log,
+        // The part a store adds: the read view, the write side and the forge.
+        tools: async () => {
+          this.repoPrefix ??= (await this.options.git.run(['rev-parse', '--show-prefix'], { cwd: this.options.canonicalRoot, allowFailure: true })).stdout.trim();
+          const syncDeps = { config, credentials: approval.credentials, forge: approval.forge, env: this.options.env };
+          return buildTools({
+            view: this.view,
+            syncDeps,
+            write: {
+              ...syncDeps,
+              git: this.options.git,
+              canonicalRoot: this.options.canonicalRoot,
+              now: this.options.now,
+              recordingLogin: approval.approval.recording_login,
+              baseUrl: config.serve?.base_url ?? issuer,
+              repoPrefix: this.repoPrefix,
+            },
+            mutex: this.mutex,
+            baseUrl: config.serve?.base_url,
+          });
+        },
+        instructionsFor: (principal) => serverInstructions(storeName, config, principal.scopes),
       },
       req,
       res,

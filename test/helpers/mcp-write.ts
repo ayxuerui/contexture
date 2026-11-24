@@ -63,7 +63,7 @@ export async function makeMcpWriteFixture(opts: ApprovalStoreOptions = {}): Prom
     async call(name: string, args: Record<string, unknown>, email = MEMBER) {
       const tool = buildTools(fixture.ctx).find((t) => t.name === name);
       if (tool === undefined) throw new Error(`no tool ${name}`);
-      return (await tool.run(args, { email, scopes: ['read', 'capture', 'edit'] })) as Record<string, unknown>;
+      return (await tool.run(args, { email, scopes: ['read', 'capture', 'edit', 'second-opinion'] })) as Record<string, unknown>;
     },
     async start(label?: string, email = MEMBER) {
       return (await fixture.call('session_start', label === undefined ? {} : { label }, email)) as unknown as { session: string; root: string; branch: string };

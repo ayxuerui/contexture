@@ -26,7 +26,7 @@ const tool = (name: string, scope: string): ToolDefinition<Principal> => ({
   annotations: { readOnlyHint: scope === 'read', destructiveHint: false, idempotentHint: scope === 'read', openWorldHint: false },
   run: async () => ({ ok: true }),
 });
-const TOOLS = [tool('find', 'read'), tool('capture', 'capture')];
+const TOOLS = [tool('find', 'read'), tool('capture', 'capture'), tool('second_opinion_preflight', 'second-opinion')];
 
 function pkce(): { verifier: string; challenge: string } {
   const verifier = randomBytes(32).toString('base64url');
@@ -36,11 +36,24 @@ function pkce(): { verifier: string; challenge: string } {
 describe('mcp scopes from the configuration', () => {
   it('maps readers and capturers to scopes, with @domain matching that domain only', () => {
     const mcp: McpConfig = { readers: ['@ctx-a.example'], capturers: ['b@ctx-b.example'], editors: ['e@ctx-a.example'] };
-    expect(scopesFor('a@ctx-a.example', mcp)).toEqual(['read']);
-    expect(scopesFor('e@ctx-a.example', mcp)).toEqual(['read', 'edit']);
+    expect(scopesFor('a@ctx-a.example', mcp)).toEqual(['read', 'second-opinion']);
+    expect(scopesFor('e@ctx-a.example', mcp)).toEqual(['read', 'edit', 'second-opinion']);
     expect(scopesFor('b@ctx-b.example', mcp)).toEqual(['capture']);
     expect(scopesFor('a@ctx-a.example.evil.test', mcp)).toEqual([]);
     expect(scopesFor('a@ctx-a.example', undefined)).toEqual([]);
+  });
+
+  /** offer-the-second-opinion-on-its-own D1 (remote-access spec, *A store may list who runs a second opinion*). */
+  it('gives second-opinion to readers when the store names no list, to the list when it does, and to nobody for an empty one', () => {
+    expect(scopesFor('a@ctx-a.example', { readers: ['@ctx-a.example'] })).toEqual(['read', 'second-opinion']);
+    expect(scopesFor('b@ctx-b.example', { capturers: ['b@ctx-b.example'] })).toEqual(['capture']);
+
+    const listed: McpConfig = { readers: ['@ctx-a.example'], second_opinion: ['o@ctx-b.example'] };
+    expect(scopesFor('o@ctx-b.example', listed)).toEqual(['second-opinion']);
+    expect(scopesFor('a@ctx-a.example', listed)).toEqual(['read']);
+
+    expect(scopesFor('a@ctx-a.example', { readers: ['@ctx-a.example'], second_opinion: [] })).toEqual(['read']);
+    expect(scopesFor('o@ctx-b.example', { second_opinion: ['@ctx-b.example'] })).toEqual(['second-opinion']);
   });
 });
 
@@ -167,7 +180,7 @@ describe('mcp authorisation server', () => {
 
   it('publishes both metadata documents and challenges a request without a token', async () => {
     const prm = (await (await fetch(`${base}/.well-known/oauth-protected-resource/mcp`)).json()) as Record<string, unknown>;
-    expect(prm).toMatchObject({ resource: `${base}/mcp`, authorization_servers: [base], scopes_supported: ['read', 'capture', 'edit'] });
+    expect(prm).toMatchObject({ resource: `${base}/mcp`, authorization_servers: [base], scopes_supported: ['read', 'capture', 'edit', 'second-opinion'] });
     const asm = (await (await fetch(`${base}/.well-known/oauth-authorization-server`)).json()) as Record<string, unknown>;
     expect(asm).toMatchObject({ issuer: base, code_challenge_methods_supported: ['S256'], grant_types_supported: ['authorization_code'] });
     const res = await listTools('');
@@ -195,8 +208,8 @@ describe('mcp authorisation server', () => {
 
   it('completes registration → consent → token → tools/list, listing only what the scopes reach', async () => {
     const reader = await signIn('a@ctx-a.example');
-    expect(reader.scope).toBe('read');
-    expect(await toolNames(await listTools(reader.token))).toEqual(['find']);
+    expect(reader.scope).toBe('read second-opinion');
+    expect(await toolNames(await listTools(reader.token))).toEqual(['find', 'second_opinion_preflight']);
 
     const clientId = await register();
     const { verifier, challenge } = pkce();
@@ -208,8 +221,8 @@ describe('mcp authorisation server', () => {
     const token = await exchange(clientId, location.searchParams.get('code')!, verifier);
     const body = (await token.json()) as { access_token: string; expires_in: number; scope: string };
     // b@ is a reader through the @ctx-a.example entry and a capturer by name.
-    expect(body).toMatchObject({ expires_in: ACCESS_TOKEN_TTL_SECONDS, scope: 'read capture' });
-    expect(await toolNames(await listTools(body.access_token))).toEqual(['find', 'capture']);
+    expect(body).toMatchObject({ expires_in: ACCESS_TOKEN_TTL_SECONDS, scope: 'read capture second-opinion' });
+    expect(await toolNames(await listTools(body.access_token))).toEqual(['find', 'capture', 'second_opinion_preflight']);
   });
 
   it('refuses without a verified assertion (401) and a verified non-member (403), issuing nothing', async () => {
@@ -278,9 +291,37 @@ describe('mcp authorisation server', () => {
 
     mcp = { readers: ['b@ctx-a.example'], capturers: ['b@ctx-a.example'] };
     const both = await signIn('b@ctx-a.example');
-    expect(await toolNames(await listTools(both.token))).toEqual(['find', 'capture']);
+    expect(await toolNames(await listTools(both.token))).toEqual(['find', 'capture', 'second_opinion_preflight']);
     mcp = { readers: ['b@ctx-a.example'] };
-    expect(await toolNames(await listTools(both.token))).toEqual(['find']);
+    expect(await toolNames(await listTools(both.token))).toEqual(['find', 'second_opinion_preflight']);
+  });
+
+  /** offer-the-second-opinion-on-its-own (remote-access spec, *A member signs in with the verified identity the approval page uses*). */
+  it('signs in a person listed for the second opinion alone, naming and granting that scope alone', async () => {
+    mcp = { readers: ['@ctx-a.example'], second_opinion: ['o@ctx-b.example'] };
+    const clientId = await register();
+    const html = await (await consent(authorizeParams(clientId, pkce().challenge), 'o@ctx-b.example')).text();
+    expect(html).toContain('three AI models');
+    expect(html).not.toContain('search and read');
+    expect(html).not.toContain('save material');
+
+    const only = await signIn('o@ctx-b.example');
+    expect(only.scope).toBe('second-opinion');
+    expect(await toolNames(await listTools(only.token))).toEqual(['second_opinion_preflight']);
+    // A client cannot widen the grant by asking for more.
+    expect((await signIn('o@ctx-b.example', { scope: 'read second-opinion' })).scope).toBe('second-opinion');
+  });
+
+  /** remote-access spec, *Scopes follow the configuration on every call*: naming a list takes the review from a reader on the next call. */
+  it('narrows a reader\'s token when the store names a second-opinion list, and refuses a member removed from every list', async () => {
+    const reader = await signIn('a@ctx-a.example');
+    expect(await toolNames(await listTools(reader.token))).toEqual(['find', 'second_opinion_preflight']);
+    mcp = { readers: ['@ctx-a.example'], second_opinion: ['o@ctx-b.example'] };
+    expect(await toolNames(await listTools(reader.token))).toEqual(['find']);
+
+    const only = await signIn('o@ctx-b.example');
+    mcp = { readers: ['@ctx-a.example'], second_opinion: [] };
+    expect((await listTools(only.token)).status).toBe(401);
   });
 
   it('an access token stops working when it expires', async () => {

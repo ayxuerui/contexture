@@ -467,6 +467,31 @@ describe('readConfig', () => {
     }
   });
 
+  /** offer-the-second-opinion-on-its-own D1: the list counts toward the block's one-entry rule, and is never written for a store. */
+  it('loads an mcp block holding only second_opinion, refuses one with no entry, and writes no such key itself', async () => {
+    const tmp = await makeTmpDir();
+    try {
+      const head = `${minimalConfig()}serve: { base_url: "https://ctx-a.example.test" }\n${CHANGE_APPROVAL_BLOCK}`;
+      await writeFile(path.join(tmp.root, CONFIG_FILE_NAME), `${head}mcp: { second_opinion: ["o@ctx-b.example", "@ctx-a.example"] }\n`);
+      const config = await readConfig(tmp.root);
+      expect(config.mcp).toEqual({ second_opinion: ['o@ctx-b.example', '@ctx-a.example'] });
+      expect(renderStoreConfig(config)).toContain('second_opinion:\n    - o@ctx-b.example');
+
+      await writeFile(path.join(tmp.root, CONFIG_FILE_NAME), `${head}mcp: { readers: ["@ctx-a.example"], second_opinion: [] }\n`);
+      expect((await readConfig(tmp.root)).mcp).toEqual({ readers: ['@ctx-a.example'], second_opinion: [] });
+
+      await writeFile(path.join(tmp.root, CONFIG_FILE_NAME), `${head}mcp: { second_opinion: [] }\n`);
+      await expect(readConfig(tmp.root)).rejects.toThrow(/second_opinion/);
+
+      await writeFile(path.join(tmp.root, CONFIG_FILE_NAME), `${head}mcp: { readers: ["@ctx-a.example"] }\n`);
+      const rendered = renderStoreConfig(await readConfig(tmp.root));
+      expect(rendered).toContain('readers:');
+      expect(rendered.split('mcp:')[1]).not.toContain('second_opinion');
+    } finally {
+      await tmp.cleanup();
+    }
+  });
+
   it('refuses mcp without change_approval, naming both keys', async () => {
     const tmp = await makeTmpDir();
     try {

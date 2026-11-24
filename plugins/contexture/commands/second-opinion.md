@@ -18,11 +18,12 @@ that runs `ctxr`), follow each step in the shell as written, even when the store
 too. Otherwise work through the store's connector:
 
 - A `ctxr session <verb>` step is the tool `session_<verb>`; `session_start` takes the session's name as
-  `label`. Every other `ctxr` step is the `ctxr` tool, or `ctxr_write` when it writes, with the words after
-  `ctxr` as `args`, one per entry: `ctxr lint` is the `ctxr` tool with `args` set to `["lint"]`.
+  `label`. A `ctxr second-opinion <verb>` step is the tool `second_opinion_<verb>`. Every other `ctxr` step
+  is the `ctxr` tool, or `ctxr_write` when it writes, with the words after `ctxr` as `args`, one per entry:
+  `ctxr lint` is the `ctxr` tool with `args` set to `["lint"]`.
 - A command's options are the tool's fields, named without the dashes. `session` names the session's
-  directory, which `session_start` returns and `session_list` lists; `ctxr_write` always needs one. A file
-  you prepared goes as `input`, with `@input` in `args` where its path goes.
+  directory, which `session_start` returns and `session_list` lists; `ctxr_write` always needs one. For
+  `ctxr_write`, a file you prepared goes as `input`, with `@input` in `args` where its path goes.
 - Paths go under the session's root: the note `work/a.md` is `<worktrees path><directory>/work/a.md` for
   `Read`, `Edit`, `Write`, `Move`, `Delete`, `Grep` and `Glob`. A path outside a session reads the store as
   last approved and cannot be written. Commits, pushes and pull requests happen only in `session_submit`.
@@ -79,6 +80,9 @@ settings, and nothing else notices. Give `ctxr second-opinion preflight` the sam
 The preflight pings each tool with that tier's model, names the model it tested, and says where that model
 came from: the environment of this run, the store's configuration, or the shipped default. Why: a model the
 tool no longer offers fails only at the tier that uses it.
+
+Through a server, call the `second_opinion_preflight` tool. Give it the tier as `tier`. Why: the server
+runs each second-opinion command through a tool of its own, and its `ctxr` tool refuses them.
 
 If one is down, stop and give the operator the two real choices: sign that tool in and re-run, or continue
 with the others by rerunning `ctxr second-opinion critique` with `--only` and naming them. Do not quietly run with one
@@ -175,6 +179,12 @@ start again. Why: one second opinion runs at a time on a machine.
 If `--detach` or `result` is refused as unknown, the installed ctxr is older. Run
 `ctxr second-opinion critique --plan-file <plan>` without `--detach`. It returns when the critiques are ready.
 
+Through a server, do not write a file. Call `second_opinion_critique` with the whole plan as `plan`. Why:
+the tool takes text and reads no file, so the reviewers see exactly what you sent. The call waits up to 45
+seconds. A run that has finished returns the critiques in that call. A run that is still going returns
+`running:` and a run id. Then call `second_opinion_result` with that id as `run`. Call it again while it
+says the run is still running. Why: no single call can outlast the limit of the chat app.
+
 Three reviewers each read the plan alone: structure and ordering, failure modes and trust boundaries,
 simplicity and cost. None sees another's answer. That is deliberate: reviewers who read each other converge
 on whoever spoke first, and a correct one gets talked out of it. Do not add a second round.
@@ -183,7 +193,7 @@ The command prints the letters it wrote, whether each is valid or blind, and any
 never prints which model wrote which letter. With `ctxr second-opinion critique --json` the same result, with
 the manifest, arrives as one envelope instead. With `ctxr second-opinion critique --print`, the command prints
 each critique under its letter, then the letter table, and writes no files. `ctxr second-opinion result`
-prints in the same way. A **blind** critique returned a well-formed verdict but cited
+prints in the same way, and so does each tool of a server. A **blind** critique returned a well-formed verdict but cited
 nothing in the plan, so it was written without reading it; it does not count. **Partial** means fewer than
 two valid critiques, and the command then exits with the failed-check status rather than success: say so at
 the top of your answer and do not call anything a consensus.
@@ -270,6 +280,10 @@ ctxr second-opinion poll --prompt-file <question> --detach
 Fetch the answers with `ctxr second-opinion result` and the run id it printed, as for a critique (section 3).
 Run it again while it says the run is still running.
 
+Through a server, call `second_opinion_poll` with the question and the options as `prompt`. Give it the
+lenses as `lens`. Why: the tool takes text and reads no file. When the result starts with `running:`, call
+`second_opinion_result` with the run id as `run`, as for a critique.
+
 The same question goes to all three models, each answering with a pick, reasons, and anything surprising.
 This mode names its files by model, because what you are reading is whether the models agree.
 
@@ -313,6 +327,13 @@ include your own family, say so.
   The tiers are `strong` and `fast`, and the tools `claude`, `codex` and `agy`; `claude` and `codex` also take
   `effort`. That file changes like any other part of the store: in a session, by a reviewed pull request,
   which is the operator's to open. Outside a store the command runs on the shipped lineup.
+- Through a store's server, `mcp.second_opinion` in `contexture.yaml` lists who can run a second opinion. A
+  store that does not write the key lets every reader run one. A store that writes the key lets only the
+  listed people run one, and an empty list lets nobody. Why: each run spends the operator's model accounts,
+  and the operator decides who spends them. A person on that list alone gets the four second-opinion tools
+  and reads nothing of the store.
+- A server that offers only the second opinion has no store. Its operator names the people and the lineup
+  in the file that server reads. Ask the operator for a change. Do not look for a `contexture.yaml` there.
 - A store can run one critic through OpenRouter. It names a model slug for that critic at that tier:
 
   ```yaml

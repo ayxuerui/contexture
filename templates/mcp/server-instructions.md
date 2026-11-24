@@ -22,6 +22,8 @@ How to change the store, for people allowed to edit: work in a session, as a loc
 
 Changes rest in the session between calls; nothing is published until `session_submit`. Keep one session per piece of work.
 
+__SECOND_OPINION__
+
 Every result read from the store carries `store.head`, the commit it was read from, and `store.sync_error` when the server could not fetch the latest version; mention that the answer may be out of date if it is set.
 
 ## This store

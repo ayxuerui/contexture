@@ -43,12 +43,12 @@ export interface ServingStateOptions {
 
 const DEFAULT_RETRY_MS = 30_000;
 
-async function identifyFile(file: string): Promise<FileIdentity> {
+export async function identifyFile(file: string): Promise<FileIdentity> {
   const s = await stat(file);
   return { mtimeMs: s.mtimeMs, size: s.size, dev: s.dev, ino: s.ino };
 }
 
-function identityKey(id: FileIdentity): string {
+export function identityKey(id: FileIdentity): string {
   return `${id.mtimeMs}:${id.size}:${id.dev}:${id.ino}`;
 }
 

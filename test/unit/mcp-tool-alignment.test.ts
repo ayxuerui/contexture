@@ -2,7 +2,7 @@ import type { Command } from 'commander';
 import { describe, expect, it } from 'vitest';
 import type { RunEnv } from '../../src/core/env.js';
 import { buildTools, type ToolContext } from '../../src/core/mcp/tools/index.js';
-import { alignmentProblems, TOOL_REGISTRY, routeForCommand, type CommandShape, type ToolEntry } from '../../src/core/mcp/tool-map.js';
+import { alignmentProblems, CTXR_READ_COMMANDS, SECOND_OPINION_TOOL_NAMES, TOOL_REGISTRY, routeForCommand, type CommandShape, type ToolEntry } from '../../src/core/mcp/tool-map.js';
 import { buildProgram } from '../../src/run.js';
 
 /**
@@ -59,11 +59,35 @@ describe('MCP tools align with ctxr commands (D9)', () => {
     expect(alignmentProblems(seeded, toolFields(), commands)).toEqual([expect.stringMatching(/^summarize: not a named exception/)]);
   });
 
+  /** offer-the-second-opinion-on-its-own D2 (remote-access spec, scenario *A text field needs a file option*). */
+  it('lets a command\'s tool take the text of a file option, and no other field', () => {
+    const critique = commands.find((c) => c.path === 'second-opinion critique')!;
+    expect(critique.params).toEqual(expect.arrayContaining(['plan_file', 'tier', 'only', 'timeout', 'seed']));
+    expect(critique.params).not.toContain('plan');
+    expect(toolFields().second_opinion_critique).toEqual(['plan', 'tier', 'only', 'timeout', 'seed']);
+    const fields = { ...toolFields(), second_opinion_critique: ['plan', 'notes'] };
+    expect(alignmentProblems(TOOL_REGISTRY, fields, commands)).toEqual([expect.stringMatching(/^second_opinion_critique: notes is not an option/)]);
+  });
+
+  it('gives the four second-opinion tools no session, path or model field, and the ctxr runner no input', () => {
+    const fields = toolFields();
+    expect(fields.second_opinion_preflight).toEqual(['tier', 'only', 'timeout']);
+    expect(fields.second_opinion_poll).toEqual(['prompt', 'lens', 'wrap', 'tier', 'only', 'timeout']);
+    expect(fields.second_opinion_result).toEqual(['run', 'wait']);
+    expect(fields.ctxr).toEqual(['args', 'session']);
+    expect(fields.ctxr_write).toEqual(['args', 'session', 'input']);
+    expect(alignmentProblems(TOOL_REGISTRY, { ...fields, ctxr: ['args', 'session', 'input'] }, commands)).toEqual([expect.stringMatching(/^ctxr: this runner takes only args, session, not input/)]);
+    for (const name of SECOND_OPINION_TOOL_NAMES) expect(CTXR_READ_COMMANDS.some((c) => c.startsWith('second-opinion')), name).toBe(false);
+  });
+
   it('routes every command step through one mapping, with session capture through ctxr_write', () => {
     expect(routeForCommand('session submit')).toEqual({ via: 'tool', tool: 'session_submit' });
     expect(routeForCommand('session capture')).toEqual({ via: 'ctxr_write' });
     expect(routeForCommand('graph query neighbors')).toEqual({ via: 'ctxr' });
     expect(routeForCommand('update')).toEqual({ via: 'ctxr_write' });
+    expect(routeForCommand('second-opinion critique')).toEqual({ via: 'tool', tool: 'second_opinion_critique' });
+    expect(routeForCommand('second-opinion result')).toEqual({ via: 'tool', tool: 'second_opinion_result' });
+    expect(routeForCommand('second-opinion serve')).toBeNull();
     expect(routeForCommand('init')).toBeNull();
     expect(routeForCommand('land')).toBeNull();
   });

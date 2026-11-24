@@ -581,7 +581,9 @@ describe('no other command depends on the second opinion', () => {
       .filter((file) => /from '[^']*second-opinion[^']*'/.test(readFileSync(file, 'utf8')))
       .map((file) => path.relative(SRC, file).split(path.sep).join('/'))
       .sort();
-    expect(importers).toEqual(['commands/second-opinion.ts', 'run.ts']);
+    // offer-the-second-opinion-on-its-own: the server for the second opinion alone, and the MCP tools that run the
+    // command's own CLI (they import the tools module, never the modules that launch a model CLI).
+    expect(importers).toEqual(['commands/second-opinion-serve.ts', 'commands/second-opinion.ts', 'core/mcp/tools/index.ts', 'run.ts']);
   });
 });
 
