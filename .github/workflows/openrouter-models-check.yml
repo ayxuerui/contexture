@@ -1,0 +1,103 @@
+name: OpenRouter models check
+
+# ship-default-openrouter-models D6: the second opinion ships an OpenRouter
+# model for each family it names. A vendor can retire one between releases, and
+# nothing in the test suite would notice, since the suite makes no network
+# request. This job asks OpenRouter's public model list weekly and turns a
+# missing slug into a single reused tracking issue. It never writes to
+# repository contents: the fix is one constant, reviewed as an ordinary pull
+# request. Whether a newer model should replace a listed one is not checked
+# here; that is decided at release time.
+
+on:
+  schedule:
+    - cron: '43 6 * * 1' # every Monday, off the hour and apart from the vendor check
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: openrouter-models-check
+  cancel-in-progress: false
+
+env:
+  GH_TOKEN: ${{ github.token }}
+  ISSUE_LABEL: openrouter-model-missing
+
+jobs:
+  check:
+    name: check
+    if: github.repository == 'ayxuerui/contexture'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '26'
+          package-manager-cache: false
+
+      # No `npm ci`: the script imports only Node builtins and reads the table
+      # from the source file, so the check does not depend on the tree it watches.
+      - name: Check the shipped slugs
+        id: check
+        run: |
+          set +e
+          node scripts/check-openrouter-models.mjs | tee /tmp/missing.txt
+          echo "code=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
+
+      - name: Fail loudly if the answer could not be determined
+        if: steps.check.outputs.code == '2'
+        run: |
+          echo "::error::check-openrouter-models.mjs could not read the table or OpenRouter's model list — see the step output above"
+          exit 1
+
+      - name: Ensure the label exists
+        if: steps.check.outputs.code == '1'
+        run: |
+          gh label create "$ISSUE_LABEL" \
+            --repo "${{ github.repository }}" \
+            --color B60205 \
+            --description "A shipped second-opinion model is no longer listed by OpenRouter" \
+            2>/dev/null || true
+
+      - name: File or update the tracking issue
+        if: steps.check.outputs.code == '1'
+        run: |
+          set -euo pipefail
+          body_file="$(mktemp)"
+          {
+            echo "\`node scripts/check-openrouter-models.mjs\` found a shipped slug that OpenRouter no longer lists:"
+            echo
+            echo '```'
+            cat /tmp/missing.txt
+            echo '```'
+            echo
+            echo "A store that names that family fails that critic until this is fixed. To fix: change the slug in"
+            echo "\`OPENROUTER_FAMILY_MODELS\` (\`src/config/defaults.ts\`), update the review date in its comment,"
+            echo "run \`npm test\`, and open a normal pull request."
+          } > "$body_file"
+
+          existing="$(gh issue list --repo "${{ github.repository }}" --label "$ISSUE_LABEL" --state open --json number --jq '.[0].number // empty')"
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --repo "${{ github.repository }}" --body-file "$body_file"
+          else
+            gh issue create --repo "${{ github.repository }}" \
+              --title "A shipped OpenRouter model is no longer listed" \
+              --label "$ISSUE_LABEL" \
+              --body-file "$body_file"
+          fi
+
+      - name: Close the tracking issue once every slug is listed again
+        if: steps.check.outputs.code == '0'
+        run: |
+          existing="$(gh issue list --repo "${{ github.repository }}" --label "$ISSUE_LABEL" --state open --json number --jq '.[0].number // empty')"
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --repo "${{ github.repository }}" --body "\`node scripts/check-openrouter-models.mjs\` now finds every shipped slug listed. Closing."
+            gh issue close "$existing" --repo "${{ github.repository }}"
+          fi

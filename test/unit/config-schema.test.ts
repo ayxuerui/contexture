@@ -2,7 +2,7 @@ import { readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_CAPTURE_ROOT, DEFAULT_PUBLISH_PATH, DEFAULT_SERVE_SYNC_MINUTES, DEFAULT_VENDORED_SKILLS, serveSyncMinutes, SHIPPED_DEFAULTS } from '../../src/config/defaults.js';
+import { DEFAULT_CAPTURE_ROOT, DEFAULT_PUBLISH_PATH, DEFAULT_SERVE_SYNC_MINUTES, DEFAULT_VENDORED_SKILLS, OPENROUTER_FAMILY_MODELS, serveSyncMinutes, SHIPPED_DEFAULTS } from '../../src/config/defaults.js';
 import { readConfig } from '../../src/config/load.js';
 import { SUPPORTED_SCHEMA_VERSION } from '../../src/config/schema.js';
 import { renderStoreConfig } from '../../src/config/render.js';
@@ -630,7 +630,7 @@ describe('templates block (standardize-note-templates)', () => {
  * defaulted block, so a store records only the cell that differs, and a typo
  * fails at load.
  */
-describe('second_opinion block (second-opinion-lineup-in-store-config)', () => {
+describe('second_opinion block (second-opinion-lineup-in-store-config, as ship-default-openrouter-models D10 reshaped it)', () => {
   async function load(extra: string) {
     const tmp = await makeTmpDir();
     try {
@@ -641,29 +641,41 @@ describe('second_opinion block (second-opinion-lineup-in-store-config)', () => {
     }
   }
 
-  it('resolves to the shipped lineup when a config declares no block', async () => {
+  // ship-default-openrouter-models D10: family first, then how it is reached and, optionally, a model per tier.
+  it('holds nothing when a config declares no block: every route and model is resolved at run time', async () => {
     const config = await load('');
     expect(config.second_opinion).toEqual(SHIPPED_DEFAULTS.second_opinion);
-    expect(config.second_opinion.strong.claude.effort).toBeUndefined();
+    expect(config.second_opinion).toEqual({ claude: {}, gpt: {}, gemini: {}, grok: {} });
   });
 
-  it('takes one named cell and leaves every other model at its default', async () => {
-    const config = await load('second_opinion: { strong: { agy: { model: m-alt } } }\n');
-    expect(config.second_opinion.strong.agy.model).toBe('m-alt');
-    expect(config.second_opinion.strong.claude).toEqual(SHIPPED_DEFAULTS.second_opinion.strong.claude);
-    expect(config.second_opinion.strong.codex).toEqual(SHIPPED_DEFAULTS.second_opinion.strong.codex);
-    expect(config.second_opinion.fast).toEqual(SHIPPED_DEFAULTS.second_opinion.fast);
+  it('takes a route for one family and leaves the others unwritten', async () => {
+    const config = await load('second_opinion: { gemini: { via: openrouter } }\n');
+    expect(config.second_opinion).toEqual({ claude: {}, gpt: {}, gemini: { via: 'openrouter' }, grok: {} });
   });
 
-  it('takes an effort for claude, which ships none', async () => {
-    const config = await load('second_opinion: { fast: { claude: { effort: high } } }\n');
-    expect(config.second_opinion.fast.claude).toEqual({ model: SHIPPED_DEFAULTS.second_opinion.fast.claude.model, effort: 'high' });
+  it('takes a model for one tier beside its route, and an effort for a tool that has one', async () => {
+    const config = await load('second_opinion: { gemini: { via: openrouter, strong: vendor/model-x }, claude: { via: cli, fast: m-alt, effort: high }, grok: { via: off } }\n');
+    expect(config.second_opinion.gemini).toEqual({ via: 'openrouter', strong: 'vendor/model-x' });
+    expect(config.second_opinion.claude).toEqual({ via: 'cli', fast: 'm-alt', effort: 'high' });
+    expect(config.second_opinion.grok).toEqual({ via: 'off' });
   });
 
   it.each([
-    ['an unknown tier', 'second_opinion: { deep: { agy: { model: m-alt } } }\n', 'deep'],
-    ['an unknown CLI', 'second_opinion: { strong: { gemini: { model: m-alt } } }\n', 'gemini'],
-    ['an effort for agy', 'second_opinion: { strong: { agy: { effort: high } } }\n', 'effort'],
+    ['an unknown family', 'second_opinion: { mistral: { via: openrouter } }\n', 'mistral'],
+    ['an unknown route', 'second_opinion: { gemini: { via: api } }\n', 'via is cli, openrouter or off'],
+    ['a tool route for grok, which has no tool', 'second_opinion: { grok: { via: cli } }\n', 'this family has no command-line tool'],
+    ['a model with no route beside it', 'second_opinion: { gemini: { strong: m-alt } }\n', 'a model needs via written beside it'],
+    ['a model beside via: off', 'second_opinion: { gemini: { via: off, fast: m-alt } }\n', 'a model needs via written beside it'],
+    ['a model through OpenRouter that is not a slug', 'second_opinion: { gemini: { via: openrouter, strong: gemini } }\n', '<vendor>/<model>'],
+    ['an empty model', 'second_opinion: { gemini: { via: cli, strong: "" } }\n', 'strong'],
+    ['an effort for gemini', 'second_opinion: { gemini: { effort: high } }\n', 'effort'],
+    ['an address beside the route', 'second_opinion: { gemini: { via: openrouter, url: "http://127.0.0.1:9" } }\n', 'url'],
+    ['a key beside the route', 'second_opinion: { gemini: { via: openrouter, key: sk-x } }\n', 'key'],
+    // The layout through 0.45.0 was tier first, with two critics named for their tools.
+    ['the tier-first layout', 'second_opinion: { strong: { gemini: { model: m-alt } } }\n', 'now keyed by model family'],
+    ['the tier-first layout, fast', 'second_opinion: { fast: { claude: { effort: high } } }\n', 'now keyed by model family'],
+    ['the retired name agy', 'second_opinion: { agy: { via: cli } }\n', 'now named gemini'],
+    ['the retired name codex', 'second_opinion: { codex: { via: cli } }\n', 'now named gpt'],
   ])('refuses %s, naming the key', async (_name, extra, key) => {
     const failure = await load(extra).then(
       () => null,
@@ -673,41 +685,14 @@ describe('second_opinion block (second-opinion-lineup-in-store-config)', () => {
     expect((failure as Error).message).toContain(key);
   });
 
-  // second-opinion-through-openrouter D1: one optional key per entry, both the switch and the slug.
-  it('takes an OpenRouter slug for one entry, with no default anywhere else', async () => {
-    const config = await load('second_opinion: { strong: { agy: { openrouter: vendor/model-x } } }\n');
-    expect(config.second_opinion.strong.agy).toEqual({ model: SHIPPED_DEFAULTS.second_opinion.strong.agy.model, openrouter: 'vendor/model-x' });
-    for (const entry of [config.second_opinion.strong.claude, config.second_opinion.strong.codex, ...Object.values(config.second_opinion.fast)]) {
-      expect(entry).not.toHaveProperty('openrouter');
-    }
-    expect(JSON.stringify(SHIPPED_DEFAULTS.second_opinion)).not.toContain('openrouter');
-  });
-
-  it.each([
-    ['an empty slug', 'second_opinion: { strong: { agy: { openrouter: "" } } }\n', 'openrouter'],
-    ['an address beside the slug', 'second_opinion: { strong: { agy: { openrouter: vendor/model-x, url: "http://127.0.0.1:9" } } }\n', 'url'],
-    ['a key beside the slug', 'second_opinion: { strong: { agy: { openrouter: vendor/model-x, key: sk-x } } }\n', 'key'],
-  ])('refuses %s, naming the key', async (_name, extra, key) => {
-    const failure = await load(extra).then(
-      () => null,
-      (err: unknown) => err,
-    );
-    expect(failure).toBeInstanceOf(InvalidConfigError);
-    expect((failure as Error).message).toContain(key);
-  });
-
-  it('writes a slug only where a store named one', async () => {
-    expect(renderStoreConfig(await load(''))).not.toContain('openrouter');
-    const rendered = renderStoreConfig(await load('second_opinion: { strong: { agy: { openrouter: vendor/model-x } } }\n'));
-    expect(rendered).toContain('second_opinion:\n  strong:\n    agy:\n      openrouter: vendor/model-x\n');
-    for (const untouched of ['claude', 'codex', 'fast', 'model:']) expect(rendered).not.toContain(untouched);
-  });
-
-  it('is omitted from a written config that names nothing, and written as only the named cell otherwise', async () => {
-    expect(renderStoreConfig(await load(''))).not.toContain('second_opinion');
-    const rendered = renderStoreConfig(await load('second_opinion: { strong: { agy: { model: m-alt } } }\n'));
-    expect(rendered).toContain('second_opinion:\n  strong:\n    agy:\n      model: m-alt\n');
-    for (const untouched of ['claude', 'codex', 'fast']) expect(rendered).not.toContain(untouched);
+  it('is omitted from a written config that names nothing, and written as only what a store named otherwise', async () => {
+    const empty = renderStoreConfig(await load(''));
+    expect(empty).not.toContain('second_opinion');
+    // Nothing from the shipped tables is written: a store follows them from release to release.
+    for (const slug of Object.values(OPENROUTER_FAMILY_MODELS).flatMap((tiers) => Object.values(tiers))) expect(empty).not.toContain(slug);
+    const rendered = renderStoreConfig(await load('second_opinion: { gemini: { via: openrouter, strong: vendor/model-x } }\n'));
+    expect(rendered).toContain('second_opinion:\n  gemini:\n    via: openrouter\n    strong: vendor/model-x\n');
+    for (const untouched of ['claude', 'gpt:', 'grok', 'fast']) expect(rendered).not.toContain(untouched);
   });
 });
 

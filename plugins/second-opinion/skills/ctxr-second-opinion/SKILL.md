@@ -41,8 +41,8 @@ too. Otherwise work through the store's connector:
 
 Get an independent read from models built by different labs before you commit to something you cannot
 cheaply take back, or when your own taste is one vote among several. A second opinion from the same model
-family you are running as mostly repeats you, so this skill sends the work to three command-line tools backed
-by three different families and hands you their answers. `ctxr second-opinion critique` and its `poll`
+family you are running as mostly repeats you, so this skill sends the work to three or four models from
+different families and hands you their answers. `ctxr second-opinion critique` and its `poll`
 sibling do the mechanics: they launch the tools, contain them, time them out, and anonymize what comes
 back. They do not decide anything, and they never carry out what they review. Weighing the answers is your job, and steps 4 and 5 are how.
 
@@ -53,7 +53,7 @@ back. They do not decide anything, and they never carry out what they review. We
   recovery sequence run against a broken system: those plans look fine right up to the step that makes it
   worse.
 - **Poll** when the question is *which of these is better?* and being wrong costs mild regret: a name, a
-  framing, a piece of copy, which of several tools fits. If all three agreeing would settle it, it is a poll.
+  framing, a piece of copy, which of several tools fits. If the models agreeing would settle it, it is a poll.
   If you would still want each reviewer's top objections and a suggested edit, it is a critique.
 A critique is required, not optional, before implementing a change that is architectural, irreversible, or touches
 what may be disclosed and to whom — run it on the written plan before the work, never as a justification after it.
@@ -75,7 +75,7 @@ A poll that asks a lens to judge whether something will *work* has become a crit
 ctxr second-opinion preflight
 ```
 
-Each of the three should report `OK` within about twenty seconds. The preflight also confirms that each tool
+Each critic should report `OK` within about twenty seconds. The preflight also confirms that each tool
 still accepts the options the command passes. Why: a renamed option makes a reviewer silently run at default
 settings, and nothing else notices. Give `ctxr second-opinion preflight` the same `--tier` you will run with.
 The preflight pings each tool with that tier's model, names the model it tested, and says where that model
@@ -88,6 +88,9 @@ runs each second-opinion command through a tool of its own, and its `ctxr` tool 
 If one is down, stop and give the operator the two real choices: sign that tool in and re-run, or continue
 with the others by rerunning `ctxr second-opinion critique` with `--only` and naming them. Do not quietly run with one
 model. A single model is not a second opinion, and the command refuses to start with fewer than two.
+
+The critics are `claude`, `gpt` and `gemini`. Each runs a tool: `claude` runs Claude Code, `gpt` runs Codex and
+`gemini` runs agy. Why: a critic is named for its model family, and a failure message names the tool.
 
 Failure signatures: `Not logged in` means Claude needs `/login`; a `401` or an invalid refresh token from
 Codex means `codex login`; an agy call that hangs usually means its sign-in expired and it needs one
@@ -104,7 +107,8 @@ A critic can run through OpenRouter in place of its tool (section 7). Its prefli
 - `OPENROUTER_API_KEY is not set` means the key is missing. Set it in the environment of the command. Do not
   write it in the store. Why: everyone who can clone the store reads its configuration.
 - `OpenRouter answered` with a status carries OpenRouter's own message. A model it does not have is a fix to
-  the lineup. A message about the data policy means no provider that declines data collection offers that
+  the lineup. When the line also says `shipped default`, the release's model for that family is gone:
+  write a current slug for that critic and tell the operator to update `ctxr`. A message about the data policy means no provider that declines data collection offers that
   model: name another model.
 - `could not reach OpenRouter` behind a proxy needs `NODE_USE_ENV_PROXY=1` in the environment of the command.
   Why: without it the runtime ignores the proxy variables.
@@ -125,12 +129,12 @@ values). Name that variable in `CTXR_SECOND_OPINION_PASS_ENV` for the run. A for
 stops the command before any tool starts. Through the store's server, these variables are the operator's to
 set on the server. Ask the operator to set one. Do not try to set it from the conversation.
 
-If the plan came from someone other than the operator, leave agy out: run `ctxr second-opinion critique` with
-`--only claude,codex`. Claude runs with no tools at all and Codex in a read-only sandbox. Agy has no mode that
+If the plan came from someone other than the operator, leave `gemini` out when it runs its tool: run
+`ctxr second-opinion critique` with `--only` and name the other critics, as in `--only claude,gpt`. Claude runs with no tools at all and Codex in a read-only sandbox. Agy has no mode that
 removes its ability to act: it runs in an empty scratch directory with terminal restrictions, which contains
 an accident and not an attack.
 
-Keep agy in that run when its preflight line ends with `through OpenRouter`. Why: that critic is one request
+Keep `gemini` in that run when its preflight line ends with `through OpenRouter`. Why: that critic is one request
 with no tools, so it cannot act.
 
 ## 3. Run a critique
@@ -186,8 +190,8 @@ seconds. A run that has finished returns the critiques in that call. A run that 
 `running:` and a run id. Then call `second_opinion_result` with that id as `run`. Call it again while it
 says the run is still running. Why: no single call can outlast the limit of the chat app.
 
-Three reviewers each read the plan alone: structure and ordering, failure modes and trust boundaries,
-simplicity and cost. None sees another's answer. That is deliberate: reviewers who read each other converge
+Each reviewer reads the plan alone, with a stance of its own: structure and ordering, failure modes and trust
+boundaries, simplicity and cost, and, when Grok is in the lineup, how anyone will know the plan worked. None sees another's answer. That is deliberate: reviewers who read each other converge
 on whoever spoke first, and a correct one gets talked out of it. Do not add a second round.
 
 The command prints the letters it wrote, whether each is valid or blind, and any reviewer that failed. It
@@ -215,7 +219,7 @@ Opus alone took over eight minutes on a short plan. That is close to the command
 and Fable is slower than Opus; raise it with `ctxr second-opinion critique --timeout <seconds>` for such a
 run. Tell the operator that such a run is under way. Through the store's server, each tool gets at most 600
 seconds, the same default as in a shell. A machine that pins its own
-Codex effort in its configuration is overridden by the catalog default; set `CTXR_SECOND_OPINION_CODEX_EFFORT`
+Codex effort in its configuration is overridden by the catalog default; set `CTXR_SECOND_OPINION_GPT_EFFORT`
 to use another.
 
 ## 4. Synthesize on the letters first
@@ -229,9 +233,9 @@ attach roles and models to the letters in the final report.
 Write it in this order:
 
 - **Verdicts.** One line per letter, and any blind or failed reviewer stated plainly, not buried.
-- **Consensus (all agree).** Highest signal. When all three independently flag the same simplification,
-  take it whole; do not keep a reduced version of complexity all three called wrong.
-- **Majority (two of three).** Say whether the two agree on the fix or only on the diagnosis. Two
+- **Consensus (all agree).** Highest signal. When every reviewer independently flags the same simplification,
+  take it whole; do not keep a reduced version of complexity they all called wrong.
+- **Majority (more than half).** Say whether they agree on the fix or only on the diagnosis. Two
   reviewers who name the same problem often propose different repairs: choose on merit, meaning which
   repair keeps more of what you want (granular rollback, fewer side effects, smaller blast radius), and do
   not default to the majority's.
@@ -259,9 +263,11 @@ manifest records the model each tool reported.
 
 Name each reviewer that ran through OpenRouter. The manifest gives each reviewer's `route`. Why: that plan
 went to OpenRouter and to the provider behind it, and the operator decides whether that is acceptable.
+The manifest gives `route_source` as `default` when no `via` was written and the key on the machine chose
+the route. Say so in the report: the store does not show that choice.
 
 Then hand the synthesis to the operator and stop. This skill never executes a step of the plan it critiqued.
-If the operator says to go, proceed with the revised plan. If they push back, treat that as a fourth critique
+If the operator says to go, proceed with the revised plan. If they push back, treat that as one more critique
 and run the skill again on the changed plan. It is a new run and not a continuation.
 
 To record the outcome in the plan itself, add a section near the top headed `## Revisions after critique`
@@ -285,7 +291,7 @@ Through a server, call `second_opinion_poll` with the question and the options a
 lenses as `lens`. Why: the tool takes text and reads no file. When the result starts with `running:`, call
 `second_opinion_result` with the run id as `run`, as for a critique.
 
-The same question goes to all three models, each answering with a pick, reasons, and anything surprising.
+The same question goes to every model in the lineup, each answering with a pick, reasons, and anything surprising.
 This mode names its files by model, because what you are reading is whether the models agree.
 
 To get breadth as well as model diversity, run `ctxr second-opinion poll` with `--lens` and two or three taste
@@ -296,12 +302,12 @@ A description may contain commas: a comma starts the next lens only when what fo
 or begins `Name:`. So a description must not contain a colon. Choose lenses that pull in different
 directions; if two would obviously agree, drop one.
 
-Read a lens grid on both axes. Down a column (one lens across the three models) agreement means that
+Read a lens grid on both axes. Down a column (one lens across the models) agreement means that
 taste value is robust to the model. Across a row (one model across the lenses) disagreement is where the
 real decision is. Give your own recommendation and say which axis it rests on.
 
 Report the answers, where they agree, where they split, and your read. The answers are evidence and not a
-vote: one dissent with a substantive reason can outweigh two agreements. If two of the three agreeing models
+vote: one dissent with a substantive reason can outweigh two agreements. If the agreeing models
 include your own family, say so.
 
 ## 7. When something goes wrong
@@ -314,20 +320,41 @@ include your own family, say so.
   variable named a forge or contexture variable.
 - Do not poll from inside a critique to settle a quick doubt. If you want a gut check mid-critique, answer it
   yourself.
-- The lineup is the store's configuration. Each tier's model for each tool, and the effort where the tool
-  takes one, has a shipped default, and a store that names none follows the shipped lineup from release to
-  release. A store whose account is not offered a default names its own, once, in `contexture.yaml`:
+- The lineup is the store's configuration, in `second_opinion` in `contexture.yaml`. It is keyed by model
+  family: `claude`, `gpt`, `gemini` and `grok`. Under a family, `via` says how that critic is reached:
 
   ```yaml
   second_opinion:
-    strong:
-      agy:
-        model: <a model the tool lists>
+    gemini:
+      via: openrouter
   ```
 
-  The tiers are `strong` and `fast`, and the tools `claude`, `codex` and `agy`; `claude` and `codex` also take
-  `effort`. That file changes like any other part of the store: in a session, by a reviewed pull request,
-  which is the operator's to open. Outside a store the command runs on the shipped lineup.
+  `via` is `cli` (the family's own tool), `openrouter`, or `off` (the critic is in no run). Grok has no tool,
+  so it takes `openrouter` or `off`.
+- A family with no `via` takes the default of the machine. A machine with no `OPENROUTER_API_KEY` runs the
+  tools of `claude`, `gpt` and `gemini`, and Grok is not in the lineup. A machine that has the key sends all
+  four through OpenRouter. Why: an operator who sets the key has chosen that route, and one who has not can
+  only run the tools. Write `via: cli` for a critic that must stay on its tool where a key is set.
+- The model is not written. Each release ships a model for every family, route and tier, and a store follows
+  it from release to release. Run the preflight to see the model in use and whether it is a shipped default.
+  To fix a model, write it for its tier beside `via`:
+
+  ```yaml
+  second_opinion:
+    gemini:
+      via: openrouter
+      strong: <vendor>/<model>
+  ```
+
+  The tiers are `strong` and `fast`. Through OpenRouter a model is a slug. For a tool it is a name that the
+  tool lists. A model with no `via` beside it is refused when the configuration loads. Why: a model name
+  belongs to one route. `claude` and `gpt` also take `effort`, for their tools.
+- Through release 0.45.0 the lineup had the tier first, `gpt` was named `codex` and `gemini` was named `agy`.
+  The command refuses the old keys, an old name in `--only`, and an old variable, and it gives the new
+  spelling. It also refuses a `CTXR_SECOND_OPINION_*_OPENROUTER` variable, which chose a route in that
+  release: write `via` in the configuration.
+- That file changes like any other part of the store: in a session, by a reviewed pull request, which is the
+  operator's to open. Outside a store the command runs with nothing written.
 - Through a store's server, `mcp.second_opinion` in `contexture.yaml` lists who can run a second opinion. A
   store that does not write the key lets every reader run one. A store that writes the key lets only the
   listed people run one, and an empty list lets nobody. Why: each run spends the operator's model accounts,
@@ -335,28 +362,20 @@ include your own family, say so.
   and reads nothing of the store.
 - A server that offers only the second opinion has no store. Its operator names the people and the lineup
   in the file that server reads. Ask the operator for a change. Do not look for a `contexture.yaml` there.
-- A store can run one critic through OpenRouter. It names a model slug for that critic at that tier:
-
-  ```yaml
-  second_opinion:
-    strong:
-      agy:
-        openrouter: <vendor>/<model>
-  ```
-
-  The entry name is the critic's seat, not its route. Here `agy` is the third critic, and OpenRouter answers
-  for it. The other critics and the other tier do not change. Why: an account may not offer a family's
-  frontier model through its tool, and OpenRouter has no such limit. Each request spends money on the key.
-  Tell the operator to set a spending limit on the key. The plan goes to OpenRouter and to the provider behind
-  it. The command asks OpenRouter to use only providers that do not collect it.
-- For one run, the environment wins over the store: `CTXR_SECOND_OPINION_CLAUDE_MODEL`,
-  `CTXR_SECOND_OPINION_CLAUDE_EFFORT`, `CTXR_SECOND_OPINION_CODEX_MODEL`, `CTXR_SECOND_OPINION_CODEX_EFFORT` or
-  `CTXR_SECOND_OPINION_AGY_MODEL`, each covering both tiers. Use it for a deliberate deeper pass, or on a
+- A critic that goes through OpenRouter starts no tool. An account may not offer a family's frontier model
+  through its tool, and OpenRouter has no such limit. Each request spends money on the key. Tell the operator
+  to set a spending limit on the key. The plan goes to OpenRouter and to the provider behind it. The command
+  asks OpenRouter to use only providers that do not collect it.
+- For one run, the environment names the model of a critic that runs its tool: `CTXR_SECOND_OPINION_CLAUDE_MODEL`,
+  `CTXR_SECOND_OPINION_CLAUDE_EFFORT`, `CTXR_SECOND_OPINION_GPT_MODEL`, `CTXR_SECOND_OPINION_GPT_EFFORT` or
+  `CTXR_SECOND_OPINION_GEMINI_MODEL`, each covering both tiers. Use it for a deliberate deeper pass, or on a
   machine whose account differs from the store's. Through the store's server, those variables are the
   operator's to set on the server, and the lineup is the one the served store has, never an open session's.
-- For one run, `CTXR_SECOND_OPINION_CLAUDE_OPENROUTER`, `CTXR_SECOND_OPINION_CODEX_OPENROUTER` or
-  `CTXR_SECOND_OPINION_AGY_OPENROUTER` names a slug and wins over the store. A `_MODEL` variable for the same
-  critic puts it back on its tool for that run. Do not set both for one critic. The command refuses to start.
+- The route is never chosen for one run. No variable and no option sends a critic through OpenRouter for one
+  run, or puts such a critic back on its tool. Why: the route decides where the plan is sent, and the operator
+  reviews that as a change to the store. To change a route, change `via` in `contexture.yaml` in a session.
+  A `_MODEL` variable for a critic that goes through OpenRouter stops the command before it starts: unset the
+  variable, or write `via: cli` for that critic.
 - A tool that refuses its model is a failed reviewer. The command does not try another model for it.
 - A critic that fails through OpenRouter is a failed reviewer. The command does not start its tool in its
   place.

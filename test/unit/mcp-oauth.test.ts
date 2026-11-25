@@ -301,7 +301,7 @@ describe('mcp authorisation server', () => {
     mcp = { readers: ['@ctx-a.example'], second_opinion: ['o@ctx-b.example'] };
     const clientId = await register();
     const html = await (await consent(authorizeParams(clientId, pkce().challenge), 'o@ctx-b.example')).text();
-    expect(html).toContain('three AI models');
+    expect(html).toContain('several AI models');
     expect(html).not.toContain('search and read');
     expect(html).not.toContain('save material');
 

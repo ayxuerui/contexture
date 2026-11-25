@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { SHIPPED_DEFAULTS } from '../../src/config/defaults.js';
+import { OPENROUTER_FAMILIES, OPENROUTER_FAMILY_MODELS, SECOND_OPINION_TOOL_MODELS } from '../../src/config/defaults.js';
 import { SecondOpinionSchema } from '../../src/config/schema.js';
-import { lineupCell, routeConflicts } from '../../src/core/second-opinion/lineup.js';
+import { criticRoute, lineupCell, lineupCritics, retiredVariables, routeConflicts, TIERS } from '../../src/core/second-opinion/lineup.js';
 import { askOpenRouter, openRouterBase, OPENROUTER_KEY_VARIABLE } from '../../src/core/second-opinion/openrouter.js';
 import { startOpenRouterStub, STUB_KEY, type OpenRouterStub } from '../helpers/openrouter-stub.js';
 import { makeTmpDir, type TmpDir } from '../helpers/tmp-store.js';
@@ -109,36 +109,82 @@ describe('failure is a cause, never a throw and never the key', () => {
   });
 });
 
-/** second-opinion-through-openrouter D2: one entry resolves to exactly one route, in a fixed order. */
-describe('route resolution for one entry', () => {
-  const lineup = (agy: Record<string, string> = {}) => SecondOpinionSchema.parse({ strong: { agy, codex: { effort: 'medium' } } });
-  const AGY_DEFAULT = SHIPPED_DEFAULTS.second_opinion.strong.agy.model;
+/** ship-default-openrouter-models D9–D11: the route is the configuration's `via`, or the default for the machine. */
+describe('route and model resolution for one critic', () => {
+  const lineup = (block: Record<string, unknown> = {}) => SecondOpinionSchema.parse(block);
+  const KEY = { OPENROUTER_API_KEY: 'sk-or-x' };
+  const TOOL = SECOND_OPINION_TOOL_MODELS;
 
-  it('follows the order: environment slug, environment CLI model, store slug, store or shipped CLI model', () => {
-    const withSlug = lineup({ openrouter: 'vendor/store' });
-    expect(lineupCell({ CTXR_SECOND_OPINION_AGY_OPENROUTER: 'vendor/env' }, withSlug, 'strong', 'agy')).toEqual({ route: 'openrouter', model: 'vendor/env', effort: null, source: 'environment' });
-    expect(lineupCell({ CTXR_SECOND_OPINION_AGY_MODEL: 'm-env' }, withSlug, 'strong', 'agy')).toEqual({ route: 'cli', model: 'm-env', effort: null, source: 'environment' });
-    expect(lineupCell({}, withSlug, 'strong', 'agy')).toEqual({ route: 'openrouter', model: 'vendor/store', effort: null, source: 'store' });
-    expect(lineupCell({}, lineup({ model: 'm-alt' }), 'strong', 'agy')).toEqual({ route: 'cli', model: 'm-alt', effort: null, source: 'store' });
-    expect(lineupCell({}, lineup(), 'strong', 'agy')).toEqual({ route: 'cli', model: AGY_DEFAULT, effort: null, source: 'default' });
+  it('with nothing written, runs each tool where no key is set and leaves grok out', () => {
+    expect(lineupCritics({}, lineup())).toEqual(['claude', 'gpt', 'gemini']);
+    expect(criticRoute({}, lineup(), 'grok')).toBeNull();
+    expect(lineupCell({}, lineup(), 'strong', 'gemini')).toEqual({ route: 'cli', route_source: 'default', model: TOOL.gemini.strong, effort: null, source: 'default' });
+    expect(lineupCell({}, lineup(), 'fast', 'gpt')).toEqual({ route: 'cli', route_source: 'default', model: TOOL.gpt.fast, effort: 'low', source: 'default' });
+    expect(lineupCell({}, lineup(), 'strong', 'claude')).toMatchObject({ model: TOOL.claude.strong, effort: null });
   });
 
-  it('counts an empty variable as unset, and leaves the other tier alone', () => {
-    const withSlug = lineup({ openrouter: 'vendor/store' });
-    expect(lineupCell({ CTXR_SECOND_OPINION_AGY_OPENROUTER: '', CTXR_SECOND_OPINION_AGY_MODEL: '' }, withSlug, 'strong', 'agy')).toMatchObject({ route: 'openrouter', model: 'vendor/store' });
-    expect(lineupCell({}, withSlug, 'fast', 'agy')).toMatchObject({ route: 'cli', source: 'default' });
-    expect(lineupCell({ CTXR_SECOND_OPINION_AGY_OPENROUTER: 'vendor/env' }, withSlug, 'fast', 'agy')).toMatchObject({ route: 'openrouter', model: 'vendor/env' });
+  it('with nothing written, sends every critic through OpenRouter where a key is set, grok among them', () => {
+    expect(lineupCritics(KEY, lineup())).toEqual(['claude', 'gpt', 'gemini', 'grok']);
+    for (const critic of ['claude', 'gpt', 'gemini', 'grok'] as const) {
+      for (const tier of TIERS) {
+        expect(lineupCell(KEY, lineup(), tier, critic)).toEqual({ route: 'openrouter', route_source: 'default', model: OPENROUTER_FAMILY_MODELS[critic][tier], effort: null, source: 'default' });
+      }
+    }
+    // An empty key is unset, which is how a deployment passes one it did not set.
+    expect(lineupCritics({ OPENROUTER_API_KEY: '' }, lineup())).toEqual(['claude', 'gpt', 'gemini']);
   });
 
-  it('carries no effort on the OpenRouter route, from the store or the environment', () => {
-    const cell = lineupCell({ CTXR_SECOND_OPINION_CODEX_OPENROUTER: 'vendor/env', CTXR_SECOND_OPINION_CODEX_EFFORT: 'high' }, lineup(), 'strong', 'codex');
-    expect(cell).toEqual({ route: 'openrouter', model: 'vendor/env', effort: null, source: 'environment' });
-    expect(lineupCell({}, lineup(), 'strong', 'codex')).toMatchObject({ route: 'cli', effort: 'medium' });
+  it('follows the configuration over the default, in both directions, and leaves out a critic that is off', () => {
+    const written = lineup({ claude: { via: 'cli' }, gemini: { via: 'openrouter' }, grok: { via: 'off' } });
+    expect(lineupCritics(KEY, written)).toEqual(['claude', 'gpt', 'gemini']);
+    expect(lineupCell(KEY, written, 'strong', 'claude')).toMatchObject({ route: 'cli', route_source: 'store', model: TOOL.claude.strong });
+    expect(lineupCell(KEY, written, 'strong', 'gpt')).toMatchObject({ route: 'openrouter', route_source: 'default' });
+    // Written `openrouter` holds without a key too: the critic is asked and fails naming the key.
+    expect(lineupCell({}, written, 'strong', 'gemini')).toMatchObject({ route: 'openrouter', route_source: 'store', model: OPENROUTER_FAMILY_MODELS.gemini.strong });
+    expect(lineupCritics({}, lineup({ grok: { via: 'openrouter' } }))).toEqual(['claude', 'gpt', 'gemini', 'grok']);
   });
 
-  it('names the entries whose route the environment sets twice', () => {
-    const both = { CTXR_SECOND_OPINION_AGY_OPENROUTER: 'vendor/env', CTXR_SECOND_OPINION_AGY_MODEL: 'm-env', CTXR_SECOND_OPINION_CODEX_MODEL: 'm-env' };
-    expect(routeConflicts(both, ['claude', 'codex', 'agy'])).toEqual([{ openrouter: 'CTXR_SECOND_OPINION_AGY_OPENROUTER', model: 'CTXR_SECOND_OPINION_AGY_MODEL' }]);
-    expect(routeConflicts(both, ['claude', 'codex'])).toEqual([]);
+  it('takes a written model for its tier only, on the route written beside it', () => {
+    const routed = lineup({ gemini: { via: 'openrouter', strong: 'vendor/store' } });
+    expect(lineupCell({}, routed, 'strong', 'gemini')).toMatchObject({ model: 'vendor/store', source: 'store' });
+    expect(lineupCell({}, routed, 'fast', 'gemini')).toMatchObject({ model: OPENROUTER_FAMILY_MODELS.gemini.fast, source: 'default' });
+    const tool = lineup({ gemini: { via: 'cli', strong: 'm-alt' } });
+    expect(lineupCell(KEY, tool, 'strong', 'gemini')).toEqual({ route: 'cli', route_source: 'store', model: 'm-alt', effort: null, source: 'store' });
+  });
+
+  it('takes a tool\'s model and effort from the environment over the configuration, and carries no effort through OpenRouter', () => {
+    const tool = lineup({ gpt: { via: 'cli', strong: 'm-alt', effort: 'medium' } });
+    expect(lineupCell({}, tool, 'strong', 'gpt')).toMatchObject({ model: 'm-alt', effort: 'medium', source: 'store' });
+    expect(lineupCell({ CTXR_SECOND_OPINION_GPT_MODEL: 'm-env', CTXR_SECOND_OPINION_GPT_EFFORT: 'high' }, tool, 'fast', 'gpt')).toMatchObject({ model: 'm-env', effort: 'high', source: 'environment' });
+    expect(lineupCell({ CTXR_SECOND_OPINION_GPT_MODEL: '' }, tool, 'strong', 'gpt')).toMatchObject({ model: 'm-alt' });
+    expect(lineupCell({ ...KEY, CTXR_SECOND_OPINION_GPT_EFFORT: 'high' }, lineup({ gpt: { effort: 'medium' } }), 'strong', 'gpt')).toMatchObject({ route: 'openrouter', effort: null });
+  });
+
+  it('gives every family a <vendor>/<model> slug at every tier, and every tool a model', () => {
+    expect(OPENROUTER_FAMILIES).toEqual(['claude', 'gpt', 'gemini', 'grok']);
+    for (const family of OPENROUTER_FAMILIES) {
+      expect(Object.keys(OPENROUTER_FAMILY_MODELS[family]).sort()).toEqual([...TIERS].sort());
+      for (const tier of TIERS) expect(OPENROUTER_FAMILY_MODELS[family][tier], `${family}.${tier}`).toMatch(/^[a-z0-9-]+\/[a-z0-9.-]+$/);
+    }
+    expect(Object.keys(TOOL)).toEqual(['claude', 'gpt', 'gemini']);
+  });
+
+  it('names a tool model set for a critic that goes through OpenRouter, whether written or by default', () => {
+    const env = { CTXR_SECOND_OPINION_GEMINI_MODEL: 'm-env', CTXR_SECOND_OPINION_GPT_MODEL: 'm-env' };
+    const written = lineup({ gemini: { via: 'openrouter' } });
+    expect(routeConflicts(env, written, ['claude', 'gpt', 'gemini'])).toEqual([{ critic: 'gemini', variable: 'CTXR_SECOND_OPINION_GEMINI_MODEL' }]);
+    expect(routeConflicts(env, written, ['claude', 'gpt'])).toEqual([]);
+    expect(routeConflicts({ ...env, ...KEY }, lineup(), ['claude', 'gpt', 'gemini']).map((v) => v.critic)).toEqual(['gpt', 'gemini']);
+    expect(routeConflicts({ CTXR_SECOND_OPINION_GEMINI_MODEL: '' }, written, ['gemini'])).toEqual([]);
+  });
+
+  it('names each retired variable that is set, with what replaces it', () => {
+    const env = { CTXR_SECOND_OPINION_AGY_MODEL: 'm', CTXR_SECOND_OPINION_CODEX_EFFORT: 'high', CTXR_SECOND_OPINION_GPT_OPENROUTER: 'gpt', CTXR_SECOND_OPINION_AGY_OPENROUTER: 'x/y', CTXR_SECOND_OPINION_CODEX_OPENROUTER: '', CTXR_SECOND_OPINION_GPT_MODEL: 'kept' };
+    expect(retiredVariables(env)).toEqual([
+      { old: 'CTXR_SECOND_OPINION_AGY_MODEL', now: 'CTXR_SECOND_OPINION_GEMINI_MODEL' },
+      { old: 'CTXR_SECOND_OPINION_CODEX_EFFORT', now: 'CTXR_SECOND_OPINION_GPT_EFFORT' },
+      { old: 'CTXR_SECOND_OPINION_AGY_OPENROUTER', now: 'second_opinion.gemini.via in the configuration' },
+      { old: 'CTXR_SECOND_OPINION_GPT_OPENROUTER', now: 'second_opinion.gpt.via in the configuration' },
+    ]);
   });
 });

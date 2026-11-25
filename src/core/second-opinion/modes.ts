@@ -7,7 +7,7 @@ import { onPath, type Confinement, type ConfinedRun } from './confine.js';
 import { childEnvironment, PASS_ENV_VARIABLE, protectedPassThroughNames, type SourceEnv } from './environment.js';
 import { judgeCritique } from './judge.js';
 import { firstLines, runCli, type CliResult } from './launch.js';
-import { ALL_CLIS, buildInvocation, FLAGS_USED, INSTALL_LEVELS, LOGIN_FILES, MAX_ARGV_BYTES, normalize, QUORUM, ROLE_CLI, ROLES, TIERS, lineupCell, routeConflicts, type Cli, type CliModel, type LineupSource, type Role, type Route, type Tier } from './lineup.js';
+import { ALL_CLIS, buildInvocation, FLAGS_USED, INSTALL_LEVELS, LOGIN_FILES, MAX_ARGV_BYTES, normalize, QUORUM, ROLE_CLI, ROLES, TIERS, lineupCell, CRITIC_TOOL, hasTool, lineupCritics, RETIRED_CRITIC_NAMES, retiredVariables, routeConflicts, type Cli, type CliModel, type LineupSource, type Role, type Route, type RouteSource, type Tier, type ToolCritic } from './lineup.js';
 import { askOpenRouter, OPENROUTER_KEY_VARIABLE, openRouterBase } from './openrouter.js';
 import { critiquePrompt, pollPrompt } from './prompts.js';
 
@@ -68,7 +68,7 @@ async function detectConfinement(env: Record<string, string>): Promise<Confineme
 }
 
 /** One CLI's confined run, or undefined when this machine cannot confine. */
-function confinedRun(ctx: SecondOpinionContext, r: Resolved, cli: Cli): ConfinedRun | undefined {
+function confinedRun(ctx: SecondOpinionContext, r: Resolved, cli: ToolCritic): ConfinedRun | undefined {
   if (!r.confinement.confined) return undefined;
   return { setpriv: r.confinement.setpriv, sourceHome: ctx.home, logins: LOGIN_FILES[cli], installLevels: INSTALL_LEVELS[cli] };
 }
@@ -93,15 +93,31 @@ function resolveOptions(ctx: SecondOpinionContext, opts: CommonOptions, needQuor
   const timeout = opts.timeout === undefined ? 600 : Number(opts.timeout);
   if (!Number.isFinite(timeout) || timeout <= 0) throw new SecondOpinionUsageError('--timeout must be a positive number of seconds');
 
-  let clis: Cli[] = [...ALL_CLIS];
+  // ship-default-openrouter-models D10, D11: the lineup is the critics that have a route on this machine.
+  const lineup = lineupCritics(ctx.source, ctx.lineup);
+  let clis: Cli[] = lineup;
   if (opts.only !== undefined) {
     const named = opts.only.split(',').map((c) => c.trim()).filter(Boolean);
+    // D8: a retired name is refused with its replacement, never read as the critic.
+    const retired = named.filter((c) => Object.hasOwn(RETIRED_CRITIC_NAMES, c)) as Array<keyof typeof RETIRED_CRITIC_NAMES>;
+    if (retired.length) {
+      throw new SecondOpinionUsageError(`--only names ${retired.map((c) => `${c}, which is now ${RETIRED_CRITIC_NAMES[c]}`).join('; ')} (valid: ${ALL_CLIS.join(', ')})`);
+    }
     const bad = named.filter((c) => !(ALL_CLIS as readonly string[]).includes(c));
-    if (bad.length) throw new SecondOpinionUsageError(`unknown CLI in --only: ${bad.join(', ')} (valid: ${ALL_CLIS.join(', ')})`);
+    if (bad.length) throw new SecondOpinionUsageError(`unknown critic in --only: ${bad.join(', ')} (valid: ${ALL_CLIS.join(', ')})`);
+    const out = (named as Cli[]).filter((c) => !lineup.includes(c));
+    if (out.length) {
+      const why = (c: Cli): string => (ctx.lineup[c].via === 'off' ? `${c} is off in the configuration` : `${c} runs through OpenRouter only, and no ${OPENROUTER_KEY_VARIABLE} is set`);
+      throw new SecondOpinionUsageError(`--only names a critic that is not in the lineup here: ${out.map(why).join('; ')}`);
+    }
     clis = [...new Set(named as Cli[])];
   }
   if (needQuorum && clis.length < QUORUM) {
-    throw new SecondOpinionUsageError(`--only names ${clis.length} CLI; a second opinion needs at least ${QUORUM}`);
+    throw new SecondOpinionUsageError(
+      opts.only !== undefined
+        ? `--only names ${clis.length} critic; a second opinion needs at least ${QUORUM}`
+        : `the lineup here has ${clis.length} critic; a second opinion needs at least ${QUORUM}, so turn fewer off in the configuration`,
+    );
   }
 
   // D3 and Revisions after critique 1: the protected prefixes win over the pass-through, and naming one stops the run.
@@ -112,11 +128,16 @@ function resolveOptions(ctx: SecondOpinionContext, opts: CommonOptions, needQuor
       { variables: refused },
     );
   }
-  // second-opinion-through-openrouter D2: one entry's route named twice is refused, never guessed.
-  const conflicts = routeConflicts(ctx.source, clis);
+  const stale = retiredVariables(ctx.source);
+  if (stale.length) {
+    throw new SecondOpinionUsageError(`${stale.map((v) => `${v.old} is no longer read; use ${v.now}`).join('; ')}`, { variables: stale.map((v) => v.old) });
+  }
+  // ship-default-openrouter-models D9: the route is the configuration's. A tool model named for an entry the
+  // configuration routes through OpenRouter cannot apply, and is refused, never guessed.
+  const conflicts = routeConflicts(ctx.source, ctx.lineup, clis);
   if (conflicts.length) {
-    const named = conflicts.map((v) => `${v.openrouter} and ${v.model}`).join('; ');
-    throw new SecondOpinionUsageError(`${named} are both set; set one, since each chooses that critic's route for this run`, { variables: conflicts.flatMap((v) => [v.openrouter, v.model]) });
+    const named = conflicts.map((v) => `${v.variable} is set, and ${v.critic} goes through OpenRouter here`).join('; ');
+    throw new SecondOpinionUsageError(`${named}; unset the variable, or write via: cli for that critic in the configuration`, { variables: conflicts.map((v) => v.variable) });
   }
   const { env, withheld } = childEnvironment(ctx.source, ctx.home);
   return { tier, timeout, clis, env, withheld };
@@ -144,9 +165,10 @@ async function ask(ctx: SecondOpinionContext, r: Resolved, cli: Cli, cell: CliMo
     const res = await askOpenRouter({ base: openRouterBase(ctx.source), key: ctx.source[OPENROUTER_KEY_VARIABLE], slug: cell.model, prompt, timeoutSec: timeout });
     return { ok: res.ok, cause: res.cause ?? null, text: res.text, model: res.model, rawFile: `${res.raw}\n` };
   }
+  if (!hasTool(cli)) return { ok: false, cause: `${cli} has no command-line tool`, text: '', model: null, rawFile: '' };
   let raw: CliResult;
-  // The argument-size limit is agy the tool's: an agy entry answered by OpenRouter never reaches it.
-  const refused = cli === 'agy' && tooLongCause !== null ? tooLong(prompt, tooLongCause) : null;
+  // The argument-size limit is agy the tool's: a gemini entry answered by OpenRouter never reaches it.
+  const refused = cli === 'gemini' && tooLongCause !== null ? tooLong(prompt, tooLongCause) : null;
   if (refused) raw = refused;
   else {
     const inv = buildInvocation(cli, prompt, cell);
@@ -159,7 +181,7 @@ async function ask(ctx: SecondOpinionContext, r: Resolved, cli: Cli, cell: CliMo
 }
 
 /** How a routed critic reads beside its model: nothing for a CLI, so those lines are as they were. */
-const routeNote = (route: Route): string => (route === 'openrouter' ? ', through OpenRouter' : '');
+const routeNote = (cell: { route: Route }): string => (cell.route === 'openrouter' ? ', through OpenRouter' : '');
 
 // ---------------------------------------------------------------------------
 // Preflight.
@@ -174,6 +196,8 @@ export interface PreflightEntry {
   model_source: LineupSource;
   /** Whether the entry was checked through its model CLI or by a request to OpenRouter. */
   route: Route;
+  /** Whether the configuration named that route, or it is the default on this machine. */
+  route_source: RouteSource;
 }
 
 /** How a model's source reads beside its name. */
@@ -195,20 +219,21 @@ export async function preflight(ctx: SecondOpinionContext, opts: CommonOptions):
   const r = await resolve(ctx, opts, false);
   const results = await Promise.all(
     r.clis.map(async (cli): Promise<PreflightEntry> => {
-      const spec = FLAGS_USED[cli];
       const cell = lineupCell(ctx.source, ctx.lineup, r.tier, cli);
-      const asked = { model_asked: cell.model, model_source: cell.source, route: cell.route };
+      const asked = { model_asked: cell.model, model_source: cell.source, route: cell.route, route_source: cell.route_source };
       // A CLI that is down still names the model and its source: a refused model is the lineup's to fix.
-      const down = (detail: string): PreflightEntry => ({ cli, ok: false, detail: `${detail} [asked for ${cell.model}, ${SOURCE_LABEL[cell.source]}${routeNote(cell.route)}]`, ...asked });
+      const down = (detail: string): PreflightEntry => ({ cli, ok: false, detail: `${detail} [asked for ${cell.model}, ${SOURCE_LABEL[cell.source]}${routeNote(cell)}]`, ...asked });
       if (cell.route === 'openrouter') {
         // No help text to check and no process to confine: the ping, with the tier's slug, is the whole check.
         const pong = await ask(ctx, r, cli, cell, 'say PONG only', Math.min(r.timeout, 60), null);
         if (!pong.ok) return down(pong.cause ?? 'failed');
         if (!/pong/i.test(pong.text)) return down(`unexpected reply: ${firstLines(pong.text, 2)}`);
-        return { cli, ok: true, detail: `PONG (${cell.model}, ${SOURCE_LABEL[cell.source]}${routeNote(cell.route)})`, ...asked };
+        return { cli, ok: true, detail: `PONG (${cell.model}, ${SOURCE_LABEL[cell.source]}${routeNote(cell)})`, ...asked };
       }
+      if (!hasTool(cli)) return down(`${cli} has no command-line tool`);
+      const spec = FLAGS_USED[cli];
       const confine = confinedRun(ctx, r, cli);
-      const help = await runCli(cli, spec.helpArgs, '', 30, r.env, confine);
+      const help = await runCli(CRITIC_TOOL[cli], spec.helpArgs, '', 30, r.env, confine);
       if (!help.ok) return down(help.cause ?? 'failed');
       const helpText = help.stdout + help.stderr;
       const missing = spec.flags.filter((f) => !helpText.includes(f));
@@ -328,6 +353,8 @@ export interface CritiqueEntry {
   model_source: LineupSource;
   /** Whether the critic ran through its model CLI or was answered by OpenRouter. */
   route: Route;
+  /** Whether the configuration named that route, or it is the default on this machine. */
+  route_source: RouteSource;
   model_reported: string | null;
   status: 'valid' | 'blind' | 'failed';
   cause: string | null;
@@ -398,6 +425,7 @@ export async function critique(ctx: SecondOpinionContext, opts: CritiqueOptions)
       model_asked: x.asked.model,
       model_source: x.asked.source,
       route: x.asked.route,
+      route_source: x.asked.route_source,
       model_reported: x.model,
       status: x.status,
       cause: x.cause,
@@ -429,7 +457,7 @@ export async function critique(ctx: SecondOpinionContext, opts: CritiqueOptions)
   const sorted = [...letters].sort((a, b) => a.letter.localeCompare(b.letter));
   for (const x of sorted) lines.push('', `===== critique-${x.letter} =====`, x.text);
   lines.push('', '===== letters (write the synthesis before reading on) =====');
-  for (const x of sorted) lines.push(`  ${x.letter}  ${x.role}  ${x.cli}  model=${x.model ?? 'not reported'}${routeNote(x.asked.route)}`);
+  for (const x of sorted) lines.push(`  ${x.letter}  ${x.role}  ${x.cli}  model=${x.model ?? 'not reported'}${routeNote(x.asked)}`);
   return { out: null, manifest, texts: Object.fromEntries(sorted.map((x) => [x.letter, x.text])), lines };
 }
 
@@ -457,6 +485,8 @@ export interface PollAnswer {
   model_source: LineupSource;
   /** Whether the answer came through the model CLI or from OpenRouter. */
   route: Route;
+  /** Whether the configuration named that route, or it is the default on this machine. */
+  route_source: RouteSource;
 }
 
 export interface PollManifest {
@@ -490,7 +520,7 @@ export async function poll(ctx: SecondOpinionContext, opts: PollOptions): Promis
   const runs = await Promise.all(
     r.clis.map(async (cli) => {
       const cell = lineupCell(ctx.source, ctx.lineup, r.tier, cli);
-      const asked = { model_asked: cell.model, model_source: cell.source, route: cell.route };
+      const asked = { model_asked: cell.model, model_source: cell.source, route: cell.route, route_source: cell.route_source };
       const raw = await ask(ctx, r, cli, cell, prompt, r.timeout, `prompt exceeds the ${MAX_ARGV_BYTES}-byte argument limit`);
       if (dir !== null) writeFileSync(path.join(dir, 'raw', `poll-${cli}.txt`), raw.rawFile);
       if (!raw.ok) return { cli, status: 'failed' as const, cause: raw.cause, model: raw.model, ...asked, text: '' };

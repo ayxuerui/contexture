@@ -797,23 +797,22 @@ export function buildProgram(env: RunEnv): { program: Command; state: { result: 
   // store's lineup (second-opinion-lineup-in-store-config D4); outside one it runs on the shipped lineup.
   const secondOpinionGroup = program
     .command('second-opinion')
-    .description('a cross-model second opinion: the same plan or question sent to three model families in parallel, each through its command-line tool or, where the lineup names an OpenRouter model for it, through OpenRouter')
+    .description('a cross-model second opinion: the same plan or question sent to several model families in parallel (claude, gpt, gemini and, through OpenRouter, grok), each through its command-line tool or through OpenRouter as the lineup says')
     // second-opinion-through-openrouter: the route's variables are the operator's, so the help names them.
     .addHelpText(
       'after',
       [
         '',
         'Environment:',
-        '  CTXR_SECOND_OPINION_<CLAUDE|CODEX|AGY>_MODEL       run that critic\'s CLI with this model, for this run',
-        '  CTXR_SECOND_OPINION_<CLAUDE|CODEX|AGY>_OPENROUTER  answer that critic through OpenRouter with this model slug, for this run',
-        '  OPENROUTER_API_KEY                                 the key for a critic answered through OpenRouter; never read from contexture.yaml',
+        '  CTXR_SECOND_OPINION_<CLAUDE|GPT|GEMINI>_MODEL       run that critic\'s tool with this model, for this run; refused for a critic that goes through OpenRouter',
+        '  OPENROUTER_API_KEY                                 the key for a critic answered through OpenRouter; where it is set, a critic with no via in the configuration goes through OpenRouter',
         '  CTXR_SECOND_OPINION_OPENROUTER_URL                 an address to use in place of OpenRouter\'s own',
       ].join('\n'),
     );
   const commonSecondOpinionOptions = (sub: Command): Command =>
     sub
       .option('--tier <tier>', 'strong (each family\'s frontier model, the default) or fast (each family\'s workhorse)')
-      .option('--only <clis>', 'comma-separated model CLIs to use (claude, codex, agy); a critique or poll needs at least two')
+      .option('--only <critics>', 'comma-separated critics to use, of those in the lineup (claude, gpt, gemini, grok); a critique or poll needs at least two')
       .option('--timeout <seconds>', 'per-CLI time limit in seconds (default 600)')
       .option('--require-confinement', 'stop before any model CLI starts unless each can run confined to a fresh home of its own; a run answered wholly through OpenRouter starts none');
 
@@ -825,7 +824,7 @@ export function buildProgram(env: RunEnv): { program: Command; state: { result: 
   });
 
   commonSecondOpinionOptions(
-    secondOpinionGroup.command('critique').description('send a written plan to three critic roles, each on a different model family, and write anonymised letters and a manifest'),
+    secondOpinionGroup.command('critique').description('send a written plan to the critics, each with a role of its own and on a different model family, and write anonymised letters and a manifest'),
   )
     .option('--plan-file <path>', 'the plan to critique (default: read from stdin)')
     .option('--out <dir>', 'where to write the critiques and the manifest (default: a new temporary directory)')
