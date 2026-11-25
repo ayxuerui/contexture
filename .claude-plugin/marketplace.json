@@ -13,9 +13,9 @@
       "description": "contexture's skills for working in a contexture store from Claude: capture, file into notes, find connections, keep rollups and the mission current, and submit a change for approval. Add your store's connector separately."
     },
     {
-      "name": "second-opinion",
-      "source": "./plugins/second-opinion",
-      "description": "A second opinion from three AI models of different families: a critique of a written plan, or a poll on one question. One skill, no store needed. Add a second-opinion connector separately. Install it only without the contexture plugin."
+      "name": "contexture-second-opinion",
+      "source": "./plugins/contexture-second-opinion",
+      "description": "A second opinion from several AI models of different families: a critique of a written plan, or a poll on one question. One skill, no store needed. Add a second-opinion connector separately. Install it only without the contexture plugin."
     }
   ]
 }
