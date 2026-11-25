@@ -95,7 +95,7 @@ async function authorize(url: string, email: string): Promise<{ status: number; 
   const consent = await http(new URL(`/authorize?${params.toString()}`, url).toString(), { headers: { [HEADER]: assertion(email) } });
   if (consent.status !== 200) return { status: consent.status };
   // The consent page names the one scope this server grants.
-  expect(consent.body.toString('utf8')).toContain('three AI models');
+  expect(consent.body.toString('utf8')).toContain('several AI models');
   expect(consent.body.toString('utf8')).not.toContain('search and read');
   params.set('decision', 'allow');
   const confirmed = await http(new URL('/authorize', url).toString(), {
@@ -153,9 +153,9 @@ describe('the second-opinion server\'s file', () => {
   });
 
   it('takes a store\'s lineup block', async () => {
-    const config = await load(fileText('second_opinion: { strong: { agy: { openrouter: vendor/model-x } } }\n'));
-    expect(config.second_opinion.strong.agy.openrouter).toBe('vendor/model-x');
-    expect(config.second_opinion.strong.claude).toEqual(SHIPPED_DEFAULTS.second_opinion.strong.claude);
+    const config = await load(fileText('second_opinion: { gemini: { via: openrouter, strong: vendor/model-x } }\n'));
+    expect(config.second_opinion.gemini).toEqual({ via: 'openrouter', strong: 'vendor/model-x' });
+    expect(config.second_opinion.claude).toEqual({});
   });
 
   it.each([
@@ -165,7 +165,7 @@ describe('the second-opinion server\'s file', () => {
     ['an address with a path', fileText().replace(BASE, 'https://ctx-a.example/opinion'), 'base_url: must be an http(s) origin with no path'],
     ['no member', fileText('', '[]'), 'members: name at least one member'],
     ['a member that is not an email', fileText('', '["everyone"]'), 'members.0: must be an email address or an @domain entry'],
-    ['a route with an address', fileText('second_opinion: { strong: { agy: { openrouter: vendor/m, url: "http://127.0.0.1:9" } } }\n'), 'url'],
+    ['a route with an address', fileText('second_opinion: { gemini: { via: openrouter, url: "http://127.0.0.1:9" } }\n'), 'url'],
   ])('refuses %s, naming it', async (_name, text, named) => {
     const error = await load(text).catch((err: unknown) => err as Error);
     expect(error).toBeInstanceOf(Error);
@@ -363,9 +363,9 @@ describe('ctxr second-opinion serve (real CLI, real signatures, stub model CLIs)
   });
 
   it('runs a critique on the file\'s lineup, through OpenRouter where the file says, and leaves a store nearby out of it', async () => {
-    // A store around the working directory routes another critic; the file routes agy.
-    writeFileSync(path.join(cwd, 'contexture.yaml'), 'schema_version: 1\nsecond_opinion: { strong: { codex: { openrouter: vendor/from-the-store } } }\n');
-    writeFileSync(configFile, fileText('second_opinion: { strong: { agy: { openrouter: vendor/model-x }, claude: { model: m-file } } }\n'));
+    // A store around the working directory routes another critic; the file routes gemini.
+    writeFileSync(path.join(cwd, 'contexture.yaml'), 'schema_version: 1\nsecond_opinion: { gpt: { via: openrouter, strong: vendor/from-the-store } }\n');
+    writeFileSync(configFile, fileText('second_opinion: { claude: { via: cli, strong: m-file }, gpt: { via: cli }, gemini: { via: openrouter, strong: vendor/model-x }, grok: { via: off } }\n'));
     const server = await start(serverEnv({ OPENROUTER_API_KEY: STUB_KEY, CTXR_SECOND_OPINION_OPENROUTER_URL: stub.url }));
     const { token } = await authorize(server.url, MEMBER);
     const result = await callTool(server.url, token!, 'second_opinion_critique', { plan: PLAN, seed: 3 });

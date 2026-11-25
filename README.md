@@ -107,39 +107,43 @@ Every harness loads this file on every turn, so it is kept short. contexture's o
 
 **The skills**, installed as full copies at `.agents/skills/ctxr-<name>/SKILL.md`. That path is the cross-harness canonical location; a harness that reads its own branded directory instead gets that directory bridged to it (`.claude/skills/` is a symlink), so skill auto-discovery works with no wrapper and no second copy. A harness without auto-discovery reaches the same file by path from `AGENTS.md`. They're contexture-owned — refreshed by `ctxr update`, never hand-edited — and they're written against *your* store's configured taxonomy, so no shipped profile's layer names leak into them. Your own skills live alongside, untouched by sync. An owned skill may carry files beside its `SKILL.md` — `ctxr-capture-circleback` ships the script that retrieves its meetings — and update keeps that whole directory matching the package. `ctxr-second-opinion` drives `ctxr second-opinion preflight | critique | poll | result`, the one command that invokes a model CLI (`claude`, `codex`, `agy`, each with an allowlisted environment) or, for a critic a store routes that way, calls a model through OpenRouter; it is never on the write path and no other command depends on it. Each CLI runs in a new folder that is its home and holds a copy of its own login and nothing else; where `setpriv` can apply Landlock (Linux with util-linux 2.40 or later), the kernel lets it read only the system directories, its own install directory and that folder, so it cannot read your notes, your keys or the rest of your home. A login the CLI refreshes during the run is copied back. Elsewhere, macOS included, it runs in a scratch directory with your real home, and `ctxr second-opinion preflight` reports `confined: no` with the reason.
 
-**The second opinion's lineup** is the store's configuration, with every model a shipped default:
-
-| | `strong` (the default tier) | `fast` |
-|---|---|---|
-| `claude` | `fable` | `opus` |
-| `codex` | `gpt-6-astra`, effort `low` | `gpt-6.1-sol`, effort `low` |
-| `agy` | `Gemini 3.8 Flash (High)` | `Gemini 3.8 Flash (High)` |
-
-`agy` lists models by the account's plan, so its default is the one every account is offered. A store whose account offers a stronger one, or is not offered a default, names its own in `contexture.yaml`, and records nothing else:
+**The second opinion's lineup** is the store's configuration, keyed by model family. Under each family, `via` says how that critic is reached:
 
 ```yaml
 second_opinion:
-  strong:
-    agy:
-      model: Gemini 4 Argon (Medium)
+  gemini:
+    via: openrouter
 ```
 
-`claude` and `codex` also take `effort`; `claude` ships none, so Claude Code applies its own. A misspelled tier or CLI fails when the configuration loads. For one run, `CTXR_SECOND_OPINION_{CLAUDE,CODEX,AGY}_MODEL` and `CTXR_SECOND_OPINION_{CLAUDE,CODEX}_EFFORT` win over the store, in both tiers. Outside a store the command runs on the shipped lineup. `preflight` and the manifest name the model each CLI was asked for and whether the environment, the store or the shipped default chose it. A CLI that refuses its model is a failed critic; no other model is tried.
+| Critic | Its tool (`via: cli`) | Through OpenRouter | Role in a critique |
+|---|---|---|---|
+| `claude` | Claude Code | yes | architect |
+| `gpt` | Codex | yes | skeptic |
+| `gemini` | agy | yes | pragmatist |
+| `grok` | none | yes | verifier |
 
-**A critic can run through OpenRouter in place of its CLI.** An account may not be offered a family's frontier model through its CLI; OpenRouter has no such limit. A store names a model slug for that critic, at that tier:
+`via` is `cli`, `openrouter` or `off` (the critic is in no run). **With no `via` written, the route is the machine's default:** each critic's tool where no `OPENROUTER_API_KEY` is set, which leaves Grok out and runs three; and OpenRouter for all four where the key is set. A written `via` always wins, so `via: cli` keeps a critic on its tool on a machine that holds a key. A run needs at least two critics.
+
+**The model is not written.** Each release ships a model for every family, route and tier (`strong`, the default, and `fast`), and a store follows them from release to release. `ctxr second-opinion preflight` prints the model each critic will be asked for and whether it is a shipped default. A weekly check in this repository reports a shipped OpenRouter slug that OpenRouter no longer lists. To fix a model, write it for its tier beside `via`:
 
 ```yaml
 second_opinion:
-  strong:
-    agy:
-      openrouter: <vendor>/<model>
+  gemini:
+    via: openrouter
+    strong: <vendor>/<model>
 ```
 
-The entry name is the critic's seat, not its route: `agy` here is still the third critic, and its CLI is not started. Nothing ships a slug, so a store that names none runs as before. The key is read from `OPENROUTER_API_KEY` in the command's environment and from nowhere else: it is never written in `contexture.yaml`, never passed to a model CLI (naming it in the pass-through variable is refused), and never written to a manifest, an answer or a run's folder. `ctxr serve` passes it to `second-opinion` commands only. With no key set, that critic fails naming the variable and the other two still run.
+Through OpenRouter a model is a slug; for a tool it is a name the tool lists (agy lists models by the account's plan, so the shipped `gemini` tool model is one every account is offered). A model with no `via` beside it is refused, since a model name belongs to one route. `claude` and `gpt` also take `effort` for their tools; `claude` ships none, so Claude Code applies its own. A misspelled family or field fails when the configuration loads. Outside a store the command runs with nothing written.
+
+For one run, `CTXR_SECOND_OPINION_{CLAUDE,GPT,GEMINI}_MODEL` and `CTXR_SECOND_OPINION_{CLAUDE,GPT}_EFFORT` name a tool's model and effort over the store's, in both tiers. **The route is never chosen for one run:** no variable or option sends a critic through OpenRouter or puts it back on its tool, and a `_MODEL` variable for a critic that goes through OpenRouter is refused, since it names a model for a tool that will not start. `preflight` and the manifest name each critic's route, whether the configuration or the default chose it, the model asked for and where that came from. A critic that fails, on either route, is a failed critic; nothing else is tried in its place.
+
+**The OpenRouter key** is read from `OPENROUTER_API_KEY` in the command's environment and from nowhere else: it is never written in `contexture.yaml`, never passed to a model CLI (naming it in the pass-through variable is refused), and never written to a manifest, an answer or a run's folder. `ctxr serve` passes it to `second-opinion` commands only. A critic written as `via: openrouter` on a machine with no key fails naming the variable, and the others still run.
 
 Each such critic is one request carrying its prompt and no tools, so it cannot act and needs no confinement: `--require-confinement` refuses a run only when a model CLI would start. The request asks OpenRouter to route only to providers that do not collect the prompt, and sends no header naming the caller. The plan still goes to OpenRouter and the provider behind it, which the CLI route does not involve; `preflight` and the manifest name each critic's route. A refused slug, an error, a timeout or an empty answer is a failed critic, and its CLI is not tried in its place.
 
-For one run, `CTXR_SECOND_OPINION_{CLAUDE,CODEX,AGY}_OPENROUTER` names a slug and wins over the store, and a `_MODEL` variable for the same critic puts it back on its CLI; setting both is refused. `CTXR_SECOND_OPINION_OPENROUTER_URL` names an address to use in place of OpenRouter's own. Behind a proxy, start the command with `NODE_USE_ENV_PROXY=1`, since the runtime otherwise ignores the proxy variables. An earlier `ctxr` refuses a configuration that carries the key, so update every host before a store sets it.
+`CTXR_SECOND_OPINION_OPENROUTER_URL` names an address to use in place of OpenRouter's own. Behind a proxy, start the command with `NODE_USE_ENV_PROXY=1`, since the runtime otherwise ignores the proxy variables.
+
+**Coming from 0.45.0:** the lineup there had the tier first (`second_opinion.strong.<critic>`), named two critics for their tools (`codex`, `agy`), and routed with an `openrouter` key or a `CTXR_SECOND_OPINION_*_OPENROUTER` variable. Each of those is now refused with the new spelling: the old keys when the configuration loads, and an old name in `--only` or a set old variable before a run starts. A host that holds an OpenRouter key and wrote no route sends every critic through OpenRouter after the update. An older `ctxr` refuses a store that writes the new keys, so update every host first.
 
 | Skill | What it decides |
 | --- | --- |
@@ -563,9 +567,8 @@ identity:                                  # as a store's change_approval.identi
   jwks_url: https://example.cloudflareaccess.com/cdn-cgi/access/certs
 members: ["@example.com"]                  # who may sign in: emails or @domain entries
 second_opinion:                            # optional: the lineup, as a store's block
-  strong:
-    agy:
-      openrouter: <vendor>/<model>
+  claude:
+    via: cli
 ```
 
 The file is strict: an unknown key stops the start, naming the key. It holds no secret. `OPENROUTER_API_KEY` and the `CTXR_SECOND_OPINION_*` variables stay in the server's environment, where they still win over the file. Everyone in `members` holds the `second-opinion` scope and no other. The server re-reads the file when it changes, so someone removed from it is refused on their next call; a file that no longer loads leaves the last good one in force and is reported once on stderr.
@@ -638,7 +641,7 @@ To pin a value against a future default change, declare it. Nothing rewrites wha
 | `adapters generate` | Regenerate harness outputs (`ctxr update` does this too) |
 | `serve` | Read the store in a browser |
 | `plugin build [--out <dir>]` | Build contexture's two Claude plugins (no store needed) and, in a store with `mcp`, its ChatGPT plugin with its connector |
-| `second-opinion preflight \| critique \| poll \| result` | The same plan or question sent to three model families, with their answers |
+| `second-opinion preflight \| critique \| poll \| result` | The same plan or question sent to several model families, with their answers |
 | `second-opinion serve --config <file>` | Serve the second opinion to chat apps, without a store |
 | `update` | Bring contexture-owned files up to the installed version |
 | `version [--check]` | Report the installed version; `--check` compares it against the latest published release |

@@ -182,7 +182,7 @@ describe('mcp ctxr and ctxr_write', () => {
     // In ctxr serve the served store decides the lineup, whatever the server's environment holds.
     expect(served.CONTEXTURE_SECOND_OPINION_LINEUP).toBeUndefined();
 
-    const lineup = SecondOpinionSchema.parse({ strong: { agy: { openrouter: 'vendor/model-x' } } });
+    const lineup = SecondOpinionSchema.parse({ gemini: { via: 'openrouter', strong: 'vendor/model-x' } });
     const standalone = secondOpinionEnv({ ...server, CONTEXTURE_STORE_ROOT: '/elsewhere' }, { lineup }, '/tmp/call', 'a@example.com');
     expect(standalone.CONTEXTURE_STORE_ROOT).toBeUndefined();
     expect(JSON.parse(standalone.CONTEXTURE_SECOND_OPINION_LINEUP!)).toEqual(lineup);

@@ -59,7 +59,7 @@ export interface SecondOpinionToolContext {
 }
 
 const tierField = { type: 'string', enum: ['strong', 'fast'], description: "strong (each family's frontier model, the default) or fast (each family's workhorse)." } as const;
-const onlyField = { type: 'string', description: 'Comma-separated critics to use, of claude, codex and agy. A critique or poll needs at least two.' } as const;
+const onlyField = { type: 'string', description: 'Comma-separated critics to use, of claude, gpt, gemini and grok. A critique or poll needs at least two.' } as const;
 const timeoutField = { type: 'integer', minimum: 1, maximum: SECOND_OPINION_CLI_TIMEOUT_SECONDS, description: `Each critic's own time limit in seconds, at most ${SECOND_OPINION_CLI_TIMEOUT_SECONDS} (the default).` } as const;
 
 export const SECOND_OPINION_PREFLIGHT_INPUT_SCHEMA = {

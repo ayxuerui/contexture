@@ -7,7 +7,7 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_VENDORED_SKILLS, SHIPPED_DEFAULTS } from '../../src/config/defaults.js';
+import { DEFAULT_VENDORED_SKILLS, OPENROUTER_FAMILY_MODELS, SHIPPED_DEFAULTS } from '../../src/config/defaults.js';
 import type { StoreConfig } from '../../src/config/schema.js';
 import {
   activeSkillSeeds,
@@ -1063,16 +1063,17 @@ describe('the second-opinion skill', () => {
     const s = skill();
     expect(s).toContain('failed-check status');
     expect(s).toContain('usage status');
-    for (const name of ['CLAUDE_MODEL', 'CLAUDE_EFFORT', 'CODEX_MODEL', 'CODEX_EFFORT', 'AGY_MODEL', 'PASS_ENV']) expect(s).toContain(`CTXR_SECOND_OPINION_${name}`);
+    for (const name of ['CLAUDE_MODEL', 'CLAUDE_EFFORT', 'GPT_MODEL', 'GPT_EFFORT', 'GEMINI_MODEL', 'PASS_ENV']) expect(s).toContain(`CTXR_SECOND_OPINION_${name}`);
   });
 
   // second-opinion-through-openrouter D8 (harness-portability requirement "The second-opinion skill explains
   // the OpenRouter route"): conventions the command cannot make for the agent, asserted on the text.
   it('explains the OpenRouter route: the lineup key, the variables, where the key lives, where the plan goes', () => {
     const s = skill();
-    expect(rendered()['ctxr-second-opinion']).toContain('      agy:\n        openrouter: <vendor>/<model>\n');
-    for (const cli of ['CLAUDE', 'CODEX', 'AGY']) expect(s).toContain(`CTXR_SECOND_OPINION_${cli}_OPENROUTER`);
-    expect(s).toContain('Do not set both for one critic');
+    expect(rendered()['ctxr-second-opinion']).toContain('    gemini:\n      via: openrouter\n');
+    // ship-default-openrouter-models D9: the route is the configuration's, and no variable chooses it.
+    expect(s).not.toMatch(/CTXR_SECOND_OPINION_[A-Z]+_OPENROUTER\b/);
+    expect(s).toContain('The route is never chosen for one run.');
     expect(s).toContain('Set it in the environment of the command. Do not write it in the store.');
     expect(s).toContain('`OPENROUTER_API_KEY is not set` means the key is missing');
     expect(s).toContain('went to OpenRouter and to the provider behind it');
@@ -1082,9 +1083,39 @@ describe('the second-opinion skill', () => {
     expect(s).toContain('`NODE_USE_ENV_PROXY=1`');
   });
 
+  // ship-default-openrouter-models D7 (harness-portability requirement "The second-opinion skill explains the
+  // lineup"): the layout and the default route are the contract; the models are the release's, so none is printed.
+  it('explains the lineup: family first, via, the default route with and without a key, and prints no shipped model', () => {
+    const s = skill();
+    expect(s).toContain('It is keyed by model family: `claude`, `gpt`, `gemini` and `grok`.');
+    expect(s).toContain('`via` is `cli` (the family\'s own tool), `openrouter`, or `off` (the critic is in no run).');
+    expect(s).toContain('A family with no `via` takes the default of the machine.');
+    expect(s).toContain('A machine that has the key sends all four through OpenRouter.');
+    expect(s).toContain('Write `via: cli` for a critic that must stay on its tool where a key is set.');
+    expect(s).toContain('The model is not written.');
+    expect(s).toContain('Run the preflight to see the model in use');
+    expect(s).toContain('A model with no `via` beside it is refused when the configuration loads.');
+    expect(s).toContain('`route_source` as `default`');
+    for (const slug of Object.values(OPENROUTER_FAMILY_MODELS).flatMap((tiers) => Object.values(tiers))) expect(s, slug).not.toContain(slug);
+    // No tier-first layout survives in an example.
+    expect(rendered()['ctxr-second-opinion']).not.toMatch(/^\s+(strong|fast):\n/m);
+  });
+
+  // ship-default-openrouter-models D8: a critic is named for its family, and the skill says which tool runs it.
+  it('names the critics by family, says which tool each runs, and names no retired variable', () => {
+    const s = skill();
+    expect(s).toContain('The critics are `claude`, `gpt` and `gemini`.');
+    expect(s).toContain('`claude` runs Claude Code, `gpt` runs Codex and `gemini` runs agy');
+    expect(s).toContain('`--only claude,gpt`');
+    expect(s).toContain('`gpt` was named `codex` and `gemini` was named `agy`');
+    expect(s).toContain('when Grok is in the lineup, how anyone will know the plan worked');
+    expect(s).not.toMatch(/CTXR_SECOND_OPINION_(CODEX|AGY)_/);
+    expect(s).not.toMatch(/^\s+(agy|codex):$/m);
+  });
+
   it('keeps a critic answered through OpenRouter in a run on someone else\'s plan, and replaces no failed one', () => {
     const s = skill();
-    expect(s).toContain('Keep agy in that run when its preflight line ends with `through OpenRouter`');
+    expect(s).toContain('Keep `gemini` in that run when its preflight line ends with `through OpenRouter`');
     expect(s).toContain('so it cannot act');
     expect(s).toContain('The command does not start its tool in its place');
     // No model slug is spelled out: the example is a placeholder a release cannot make stale.

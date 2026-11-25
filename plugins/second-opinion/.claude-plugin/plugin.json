@@ -2,7 +2,7 @@
   "name": "second-opinion",
   "displayName": "second opinion",
   "version": "0.45.0",
-  "description": "A second opinion from three AI models of different families: a critique of a written plan, or a poll on one question. It carries one skill and needs no contexture store. Add a second-opinion connector separately. Install it only without the contexture plugin, which carries the same skill.",
+  "description": "A second opinion from several AI models of different families: a critique of a written plan, or a poll on one question. It carries one skill and needs no contexture store. Add a second-opinion connector separately. Install it only without the contexture plugin, which carries the same skill.",
   "author": {
     "name": "contexture",
     "url": "https://github.com/ayxuerui/contexture"

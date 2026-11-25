@@ -119,7 +119,7 @@ describe('mcp second-opinion tools', () => {
   });
 
   it('checks the critics with preflight, confined', async () => {
-    const result = await tool('preflight', { tier: 'fast', only: 'claude,codex' });
+    const result = await tool('preflight', { tier: 'fast', only: 'claude,gpt' });
     expect(result.command).toBe('second-opinion preflight');
     expect(result.stdout + result.stderr).toMatch(/confined/);
     expect(calls('agy')).toEqual([]);
@@ -130,7 +130,7 @@ describe('mcp second-opinion tools', () => {
     const result = await tool('critique', { plan: PLAN, timeout: 1 });
     expect(result.timed_out).toBe(false);
     expect(result.exit_code).toBe(ExitCode.CheckFailed);
-    expect(result.stdout).toMatch(/failed\s+agy\s+timed out after 1s/);
+    expect(result.stdout).toMatch(/failed\s+gemini\s+timed out after 1s/);
     expect(result.stdout).toContain('===== critique-A =====');
   });
 
@@ -236,7 +236,7 @@ describe('mcp second-opinion tools', () => {
     const critiqueCall = () => tool('critique', { plan: PLAN });
 
     it('reaches a chat member', async () => {
-      await serveLineup('second_opinion: { strong: { agy: { model: m-served } } }');
+      await serveLineup('second_opinion: { gemini: { via: cli, strong: m-served } }');
       const result = await critiqueCall();
       expect(result.exit_code, result.stdout + result.stderr).toBe(ExitCode.Ok);
       expect(modelAsked('agy')).toBe('m-served');
@@ -244,9 +244,9 @@ describe('mcp second-opinion tools', () => {
     });
 
     it('is not a session\'s unreviewed working copy', async () => {
-      await serveLineup('second_opinion: { strong: { agy: { model: m-served } } }');
+      await serveLineup('second_opinion: { gemini: { via: cli, strong: m-served } }');
       const { session } = await f.start('lineup');
-      appendFileSync(path.join(f.store.root, '.worktrees', session, 'contexture.yaml'), 'second_opinion: { strong: { codex: { model: m-session } } }\n');
+      appendFileSync(path.join(f.store.root, '.worktrees', session, 'contexture.yaml'), 'second_opinion: { gpt: { via: cli, strong: m-session } }\n');
       // No second-opinion tool reads a session at all, so there is no way to name this one.
       await expect(tool('critique', { plan: PLAN, session })).rejects.toMatchObject({ code: 'mcp.invalid_arguments' });
       const result = await critiqueCall();
@@ -256,8 +256,8 @@ describe('mcp second-opinion tools', () => {
     });
 
     it('gives way to the server\'s own environment', async () => {
-      await serveLineup('second_opinion: { strong: { agy: { model: m-served } } }');
-      serverEnv({ CTXR_SECOND_OPINION_AGY_MODEL: 'm-operator' });
+      await serveLineup('second_opinion: { gemini: { via: cli, strong: m-served } }');
+      serverEnv({ CTXR_SECOND_OPINION_GEMINI_MODEL: 'm-operator' });
       const result = await critiqueCall();
       expect(result.exit_code, result.stdout + result.stderr).toBe(ExitCode.Ok);
       expect(modelAsked('agy')).toBe('m-operator');
@@ -285,7 +285,7 @@ describe('mcp second-opinion tools', () => {
     afterEach(() => stub.stop());
 
     it('reaches OpenRouter with the server\'s key, which no tool result carries', async () => {
-      await serveLineup('second_opinion: { strong: { agy: { openrouter: vendor/model-x } } }');
+      await serveLineup('second_opinion: { claude: { via: cli }, gpt: { via: cli }, gemini: { via: openrouter, strong: vendor/model-x }, grok: { via: off } }');
       serverEnv(operator());
       const result = await tool('critique', { plan: PLAN });
       expect(result.exit_code, result.stdout + result.stderr).toBe(ExitCode.Ok);
@@ -317,8 +317,11 @@ describe('mcp second-opinion tools', () => {
     });
 
     it('is not chosen by a session\'s unreviewed working copy', async () => {
+      // The served store keeps every critic on its tool, although the server holds a key.
+      await serveLineup('second_opinion: { claude: { via: cli }, gpt: { via: cli }, gemini: { via: cli }, grok: { via: off } }');
       const { session } = await f.start('route');
-      appendFileSync(path.join(f.store.root, '.worktrees', session, 'contexture.yaml'), 'second_opinion: { strong: { agy: { openrouter: vendor/model-session } } }\n');
+      const copy = path.join(f.store.root, '.worktrees', session, 'contexture.yaml');
+      writeFileSync(copy, readFileSync(copy, 'utf8').replace('gemini: { via: cli }', 'gemini: { via: openrouter, strong: vendor/model-session }'));
       serverEnv(operator());
       const result = await tool('critique', { plan: PLAN });
       expect(result.exit_code, result.stdout + result.stderr).toBe(ExitCode.Ok);

@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { isStrictlyUnderPrefix } from '../core/fs/prefix.js';
 import { slugifySegment } from '../core/slug.js';
-import { SHIPPED_DEFAULTS } from './defaults.js';
+import { isOpenRouterSlug, SHIPPED_DEFAULTS } from './defaults.js';
 
 /**
  * store-lifecycle spec: schema_version versions STORE STATE (config shape +
@@ -281,48 +281,60 @@ const UpdateCheckSchema = z.object({
 });
 
 /**
- * second-opinion-through-openrouter D1: an entry's OpenRouter model slug. The
- * one key is both the switch and the slug, so it cannot be half set. An opt-in
- * key with no shipped default: absent means the entry runs its CLI, and `init`
- * never writes it. The entry's name is the critic's seat (its role, its
- * `--only` name), not the route.
- */
-const openRouterSlug = z.string().min(1).optional();
-
-/**
- * harness-portability spec (second-opinion-lineup-in-store-config D1): the
- * second opinion's lineup, tier first and then model CLI. Every model, and
- * codex's effort, defaults to the shipped lineup, so a store records only the
- * cell that differs and follows a changed default on upgrade.
+ * harness-portability spec (ship-default-openrouter-models D10): the second
+ * opinion's lineup. Model family first, and under each family how it is
+ * reached and, optionally, the model at a tier.
  *
- * Strict at every level, unlike the pass-through root: a misspelled tier, CLI
- * or field fails here, at load, and not as a model CLI's refusal minutes
- * later. `claude.effort` is optional with no default, because its absence
- * means "Claude Code's own default for the model". `agy` has no effort key:
- * its effort is part of the model name.
+ *  - `via` is `cli` (the family's command-line tool), `openrouter`, or `off`
+ *    (the critic is left out of every run). Absent, the route is the tool, or
+ *    OpenRouter on a machine where an OpenRouter key is set; `lineup.ts`
+ *    resolves it. `grok` has no tool, so it takes no `cli`.
+ *  - `strong` and `fast` name a model for that tier in place of the one this
+ *    release ships. A model name belongs to one route (a tool's own name, or
+ *    an OpenRouter slug), so a model needs `via` written beside it.
+ *  - `effort` is the tool's reasoning effort, for the two tools that take one.
+ *
+ * Nothing here has a default, so a store records only what differs and
+ * follows the shipped models from release to release. Strict at every level:
+ * a misspelled family or field fails at load, and not as a refusal minutes
+ * later.
  */
-const secondOpinionTier = (tier: 'strong' | 'fast') =>
-  z.strictObject({
-    claude: z
-      .strictObject({
-        model: z.string().min(1).default(SHIPPED_DEFAULTS.second_opinion[tier].claude.model),
-        effort: z.string().min(1).optional(),
-        openrouter: openRouterSlug,
-      })
-      .prefault({}),
-    codex: z
-      .strictObject({
-        model: z.string().min(1).default(SHIPPED_DEFAULTS.second_opinion[tier].codex.model),
-        effort: z.string().min(1).default(SHIPPED_DEFAULTS.second_opinion[tier].codex.effort),
-        openrouter: openRouterSlug,
-      })
-      .prefault({}),
-    agy: z.strictObject({ model: z.string().min(1).default(SHIPPED_DEFAULTS.second_opinion[tier].agy.model), openrouter: openRouterSlug }).prefault({}),
-  });
+const CRITIC_ROUTES = ['cli', 'openrouter', 'off'] as const;
+const modelName = z.string().min(1).optional();
+const critic = <const T extends boolean>(options: { tool: boolean; effort: T }) =>
+  z
+    .strictObject({
+      via: z.enum(options.tool ? CRITIC_ROUTES : (['openrouter', 'off'] as const), { error: options.tool ? 'via is cli, openrouter or off' : 'via is openrouter or off: this family has no command-line tool' }).optional(),
+      strong: modelName,
+      fast: modelName,
+      ...(options.effort ? { effort: z.string().min(1).optional() } : {}),
+    })
+    .superRefine((value, ctx) => {
+      for (const tier of ['strong', 'fast'] as const) {
+        const model = value[tier];
+        if (model === undefined) continue;
+        if (value.via !== 'cli' && value.via !== 'openrouter') {
+          ctx.addIssue({ code: 'custom', path: [tier], message: 'a model needs via written beside it (cli or openrouter): a model name belongs to one route' });
+        } else if (value.via === 'openrouter' && !isOpenRouterSlug(model)) {
+          ctx.addIssue({ code: 'custom', path: [tier], message: 'through OpenRouter a model is a slug of the form <vendor>/<model>' });
+        }
+      }
+    })
+    .prefault({});
+
+/** A key the lineup had through 0.45.0. It fails the load with what replaces it, and is never read. */
+const retiredKey = (message: string) => z.never({ error: message }).optional();
+const TIER_FIRST = 'the lineup is now keyed by model family: write second_opinion.<family>.via, and a model as second_opinion.<family>.strong or .fast';
 
 export const SecondOpinionSchema = z.strictObject({
-  strong: secondOpinionTier('strong').prefault({}),
-  fast: secondOpinionTier('fast').prefault({}),
+  claude: critic({ tool: true, effort: true }),
+  gpt: critic({ tool: true, effort: true }),
+  gemini: critic({ tool: true, effort: false }),
+  grok: critic({ tool: false, effort: false }),
+  strong: retiredKey(TIER_FIRST),
+  fast: retiredKey(TIER_FIRST),
+  codex: retiredKey('this critic is now named gpt; rename the key'),
+  agy: retiredKey('this critic is now named gemini; rename the key'),
 });
 export type SecondOpinionLineup = z.infer<typeof SecondOpinionSchema>;
 

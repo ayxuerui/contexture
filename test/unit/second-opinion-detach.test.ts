@@ -212,14 +212,14 @@ describe('a detached run with a critic answered through OpenRouter', () => {
     const stub = await startOpenRouterStub(logDir);
     try {
       stub.behave({ kind: 'ok', text: critique('pragmatist') });
-      const env = { CTXR_SECOND_OPINION_OPENROUTER_URL: stub.url, OPENROUTER_API_KEY: STUB_KEY, CTXR_SECOND_OPINION_AGY_OPENROUTER: 'vendor/model-x' };
+      const env = { CTXR_SECOND_OPINION_OPENROUTER_URL: stub.url, OPENROUTER_API_KEY: STUB_KEY, CONTEXTURE_SECOND_OPINION_LINEUP: JSON.stringify({ claude: { via: 'cli' }, gpt: { via: 'cli' }, gemini: { via: 'openrouter', strong: 'vendor/model-x' }, grok: { via: 'off' } }) };
       const started = run(['second-opinion', 'critique', '--plan-file', 'plan.md', '--detach'], {}, env);
       expect(started.status, started.output).toBe(ExitCode.Ok);
       const id = /^run: ([a-z2-7]{26})$/m.exec(started.stdout)![1]!;
       const r = run(['second-opinion', 'result', id, '--wait', '30'], {}, env);
       expect(r.status, r.output).toBe(ExitCode.Ok);
       expect(r.stdout).toContain('MARK-pragmatist');
-      expect(r.stdout).toMatch(/pragmatist {2}agy {2}model=stub\/answered, through OpenRouter/);
+      expect(r.stdout).toMatch(/pragmatist {2}gemini {2}model=stub\/answered, through OpenRouter/);
       expect(stub.requests()).toHaveLength(1);
       expect(stub.requests()[0]!.headers.authorization).toBe(`Bearer ${STUB_KEY}`);
       expect(started.output + r.output).not.toContain(STUB_KEY);

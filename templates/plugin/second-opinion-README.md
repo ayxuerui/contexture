@@ -1,7 +1,7 @@
 # __DISPLAY_NAME__
 
-A second opinion from three AI models of different families. You give Claude a written plan, or one
-question, and the skill sends it to the three models, then compares what they say. Nothing here reads or
+A second opinion from several AI models of different families. You give Claude a written plan, or one
+question, and the skill sends it to those models, then compares what they say. Nothing here reads or
 changes a contexture store.
 
 ## Install this plugin or `__OTHER_PLUGIN__`, not both

@@ -4,7 +4,7 @@ import { hostname } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { SHIPPED_DEFAULTS } from '../../src/config/defaults.js';
+import { OPENROUTER_FAMILY_MODELS, SECOND_OPINION_TOOL_MODELS } from '../../src/config/defaults.js';
 import { SUPPORTED_SCHEMA_VERSION } from '../../src/config/schema.js';
 import { ExitCode } from '../../src/core/exit-codes.js';
 import { CONFIG_FILE_NAME } from '../../src/core/root.js';
@@ -34,7 +34,9 @@ function critique(role: string, evidence = 'S1', verdict = 'APPROVE_WITH_CHANGES
   return `## Role: ${role}\n\n## Verdict: ${verdict}\n\n## Findings\n\n### F1 [${severity}] confidence=0.7\nEvidence: ${evidence}\nIssue: ${role} marker MARK-${role}.\nChange: reword S1.\n\n## Suggested changes\n- reword\n\n## What you would NOT change\n- S2\n`;
 }
 
+/** By tool name, which is how the stubs are addressed; `ROLE_OF_CRITIC` is by the name the command reports. */
 const ROLE_OF: Record<string, string> = { claude: 'architect', codex: 'skeptic', agy: 'pragmatist' };
+const ROLE_OF_CRITIC: Record<string, string> = { claude: 'architect', gpt: 'skeptic', gemini: 'pragmatist' };
 const PONG = { claude: { kind: 'ok', text: 'PONG' }, codex: { kind: 'ok', text: 'PONG' }, agy: { kind: 'ok', text: 'PONG' } } as const;
 
 let tmp: TmpDir;
@@ -177,7 +179,7 @@ describe('critique: model and effort defaults', () => {
   it('passes codex its catalog default, low, explicitly, because leaving it off can resolve to no reasoning', () => {
     run(critiqueArgs());
     expect(codexEffort(calls('codex')[0]!.args)).toBe('model_reasoning_effort=low');
-    run(['critique', '--plan-file', planFile(), '--out', path.join(tmp.root, 'deep')], {}, { env: { CTXR_SECOND_OPINION_CODEX_EFFORT: 'xhigh' } });
+    run(['critique', '--plan-file', planFile(), '--out', path.join(tmp.root, 'deep')], {}, { env: { CTXR_SECOND_OPINION_GPT_EFFORT: 'xhigh' } });
     expect(codexEffort(calls('codex')[1]!.args)).toBe('model_reasoning_effort=xhigh');
   });
 
@@ -190,7 +192,7 @@ describe('critique: model and effort defaults', () => {
   });
 
   it('takes the codex model from the environment', () => {
-    run(critiqueArgs(), {}, { env: { CTXR_SECOND_OPINION_CODEX_MODEL: 'gpt-6-sol' } });
+    run(critiqueArgs(), {}, { env: { CTXR_SECOND_OPINION_GPT_MODEL: 'gpt-6-sol' } });
     const codex = calls('codex')[0]!.args;
     expect(codex[codex.indexOf('--model') + 1]).toBe('gpt-6-sol');
   });
@@ -225,16 +227,16 @@ describe('critique: anonymizing and the manifest', () => {
     const r = run(critiqueArgs(['--seed', '3']));
     expect(r.status).toBe(ExitCode.Ok);
     expect(readdirSync(outDir).filter((f) => f.startsWith('critique-')).sort()).toEqual(['critique-A.md', 'critique-B.md', 'critique-C.md']);
-    expect(r.stdout).not.toMatch(/architect|skeptic|pragmatist|claude|codex|agy|gpt-stub/);
+    expect(r.stdout).not.toMatch(/architect|skeptic|pragmatist|claude|codex|agy|gpt|gemini/);
     const m = manifest();
     expect(m.critiques).toHaveLength(3);
     for (const c of m.critiques) {
       const text = readFileSync(path.join(outDir, `critique-${c.letter}.md`), 'utf8');
       expect(text).toContain(`## Role: ${c.role}`);
-      expect(c.role).toBe(ROLE_OF[c.cli]);
+      expect(c.role).toBe(ROLE_OF_CRITIC[c.cli]);
     }
     const models = Object.fromEntries(m.critiques.map((c: { cli: string; model_reported: string | null }) => [c.cli, c.model_reported]));
-    expect(models).toEqual({ claude: 'claude-stub-1', codex: 'gpt-stub', agy: null });
+    expect(models).toEqual({ claude: 'claude-stub-1', gpt: 'gpt-stub', gemini: null });
   });
 
   it('assigns letters independent of the roster order, and reproducibly for one seed', () => {
@@ -251,11 +253,11 @@ describe('critique: anonymizing and the manifest', () => {
   it('strips the codex banner and trailer, and keeps the raw output beside it', () => {
     run(critiqueArgs());
     const m = manifest();
-    const codexEntry = m.critiques.find((c: { cli: string }) => c.cli === 'codex');
+    const codexEntry = m.critiques.find((c: { cli: string }) => c.cli === 'gpt');
     const stripped = readFileSync(path.join(outDir, `critique-${codexEntry.letter}.md`), 'utf8');
     expect(stripped.startsWith('## Role: skeptic')).toBe(true);
     expect(stripped).not.toMatch(/tokens used|OpenAI Codex|prompt echo/);
-    expect(readFileSync(path.join(outDir, 'raw', 'skeptic-codex.txt'), 'utf8')).toMatch(/tokens used/);
+    expect(readFileSync(path.join(outDir, 'raw', 'skeptic-gpt.txt'), 'utf8')).toMatch(/tokens used/);
   });
 
   it('--json carries the manifest in the standard envelope, and stdout holds nothing else', () => {
@@ -273,14 +275,14 @@ describe('critique: failure, blindness, quorum', () => {
     const r = run(critiqueArgs(['--timeout', '2']), { codex: { kind: 'exit', code: 3, stderr: 'auth expired' }, agy: { kind: 'hang' } });
     expect(r.status).toBe(ExitCode.CheckFailed);
     const byCli = Object.fromEntries(manifest().critiques.map((c: { cli: string }) => [c.cli, c]));
-    expect(byCli.codex).toMatchObject({ status: 'failed', letter: null });
-    expect(byCli.codex.cause).toMatch(/exit 3.*auth expired/);
-    expect(byCli.agy).toMatchObject({ status: 'failed', letter: null });
-    expect(byCli.agy.cause).toMatch(/timed out after 2s/);
+    expect(byCli.gpt).toMatchObject({ status: 'failed', letter: null });
+    expect(byCli.gpt.cause).toMatch(/exit 3.*auth expired/);
+    expect(byCli.gemini).toMatchObject({ status: 'failed', letter: null });
+    expect(byCli.gemini.cause).toMatch(/timed out after 2s/);
     expect(calls('claude')).toHaveLength(1);
     expect(calls('codex')).toHaveLength(1);
     expect(calls('agy')).toHaveLength(1);
-    expect(r.stdout).toMatch(/failed\s+codex\s+exit 3/);
+    expect(r.stdout).toMatch(/failed\s+gpt\s+exit 3/);
     expect(r.stdout).toMatch(/PARTIAL/);
   });
 
@@ -299,38 +301,38 @@ describe('critique: failure, blindness, quorum', () => {
     const r = run(critiqueArgs(), { agy: { kind: 'ok', text: critique('pragmatist', 'S9 and "a sentence the plan never contained"') } });
     expect(r.status).toBe(ExitCode.Ok); // two valid critiques still meet the quorum
     const m = manifest();
-    expect(m.critiques.find((c: { cli: string }) => c.cli === 'agy')).toMatchObject({ status: 'blind' });
+    expect(m.critiques.find((c: { cli: string }) => c.cli === 'gemini')).toMatchObject({ status: 'blind' });
     expect(m.valid).toBe(2);
     expect(r.stdout).toMatch(/blind: 1/);
   });
 
   it('accepts a verbatim quotation from the plan as evidence', () => {
     run(critiqueArgs(), { agy: { kind: 'ok', text: critique('pragmatist', '"Delete the old module once nothing imports it"') } });
-    expect(manifest().critiques.find((c: { cli: string }) => c.cli === 'agy').status).toBe('valid');
+    expect(manifest().critiques.find((c: { cli: string }) => c.cli === 'gemini').status).toBe('valid');
   });
 
   it('an APPROVE with no findings is valid, not blind', () => {
     const approve = '## Role: pragmatist\n\n## Verdict: APPROVE\n\n## Findings\nNone. The plan is minimal.\n\n## Suggested changes\n- None.\n\n## What you would NOT change\n- S1\n';
     run(critiqueArgs(), { agy: { kind: 'ok', text: approve } });
-    expect(manifest().critiques.find((c: { cli: string }) => c.cli === 'agy')).toMatchObject({ status: 'valid', verdict: 'APPROVE', findings: 0 });
+    expect(manifest().critiques.find((c: { cli: string }) => c.cli === 'gemini')).toMatchObject({ status: 'valid', verdict: 'APPROVE', findings: 0 });
   });
 
   it('a verdict of REJECT or APPROVE_WITH_CHANGES with no parseable findings is failed', () => {
     const empty = '## Role: pragmatist\n\n## Verdict: REJECT\n\nThis is bad.\n';
     run(critiqueArgs(), { agy: { kind: 'ok', text: empty } });
-    expect(manifest().critiques.find((c: { cli: string }) => c.cli === 'agy')).toMatchObject({ status: 'failed' });
+    expect(manifest().critiques.find((c: { cli: string }) => c.cli === 'gemini')).toMatchObject({ status: 'failed' });
   });
 
   it('output with no verdict line is failed', () => {
     run(critiqueArgs(), { agy: { kind: 'ok', text: 'Looks fine to me.' } });
-    const agy = manifest().critiques.find((c: { cli: string }) => c.cli === 'agy');
+    const agy = manifest().critiques.find((c: { cli: string }) => c.cli === 'gemini');
     expect(agy.status).toBe('failed');
     expect(agy.cause).toMatch(/Verdict/);
   });
 
   it('flags a REJECT carrying a resolved critical finding as a veto', () => {
     run(critiqueArgs(), { codex: { kind: 'ok', text: critique('skeptic', 'S2', 'REJECT', 'critical') } });
-    const codex = manifest().critiques.find((c: { cli: string }) => c.cli === 'codex');
+    const codex = manifest().critiques.find((c: { cli: string }) => c.cli === 'gpt');
     expect(codex).toMatchObject({ status: 'valid', verdict: 'REJECT', veto: true });
   });
 
@@ -339,7 +341,7 @@ describe('critique: failure, blindness, quorum', () => {
     const unbracketed = critique('skeptic', 'S2', 'REJECT', 'critical').replace('[critical] confidence=0.7', 'critical confidence=0.9');
     expect(unbracketed).toContain('### F1 critical confidence=0.9');
     run(critiqueArgs(), { codex: { kind: 'ok', text: unbracketed } });
-    expect(manifest().critiques.find((c: { cli: string }) => c.cli === 'codex')).toMatchObject({ status: 'valid', verdict: 'REJECT', veto: true });
+    expect(manifest().critiques.find((c: { cli: string }) => c.cli === 'gpt')).toMatchObject({ status: 'valid', verdict: 'REJECT', veto: true });
   });
 
   it('exits with the failed-check code when fewer than two critiques are valid, distinct from success and usage', () => {
@@ -361,7 +363,7 @@ describe('critique: failure, blindness, quorum', () => {
   });
 
   it('--only restricts the critics to the named CLIs', () => {
-    const two = run(critiqueArgs(['--only', 'claude,codex']));
+    const two = run(critiqueArgs(['--only', 'claude,gpt']));
     expect(two.status).toBe(ExitCode.Ok);
     expect(calls('agy')).toHaveLength(0);
     expect(manifest().critiques.map((c: { role: string }) => c.role).sort()).toEqual(['architect', 'skeptic']);
@@ -392,7 +394,7 @@ describe('poll', () => {
     expect(r.status).toBe(ExitCode.Ok);
     expect(calls('claude')[0]!.stdin).toContain('Which name is better: Alpha or Beta?');
     expect(calls('claude')[0]!.stdin).toContain('Your pick or ranking');
-    expect(readdirSync(outDir).filter((f) => f.startsWith('poll-')).sort()).toEqual(['poll-agy.md', 'poll-claude.md', 'poll-codex.md']);
+    expect(readdirSync(outDir).filter((f) => f.startsWith('poll-')).sort()).toEqual(['poll-claude.md', 'poll-gemini.md', 'poll-gpt.md']);
   });
 
   it('--no-wrap sends the question exactly as written', () => {
@@ -461,10 +463,23 @@ describe('usage and preflight', () => {
 
   it('refuses an unknown argument, an unknown CLI, an unknown tier and a bad timeout', () => {
     expect(run(['critique', '--nope']).status).toBe(ExitCode.Usage);
-    expect(run(['preflight', '--only', 'gemini']).status).toBe(ExitCode.Usage);
+    expect(run(['preflight', '--only', 'mistral']).status).toBe(ExitCode.Usage);
     expect(run(['preflight', '--tier', 'huge']).status).toBe(ExitCode.Usage);
     expect(run(['preflight', '--timeout', '0']).status).toBe(ExitCode.Usage);
     expect(allCalls()).toHaveLength(0);
+  });
+
+  // ship-default-openrouter-models D8: two critics were named for their tools through 0.45.0.
+  it('refuses a retired critic name in --only and a retired variable, each with its new name, before anything runs', () => {
+    const only = run(['preflight', '--only', 'claude,agy']);
+    expect(only.status).toBe(ExitCode.Usage);
+    expect(only.output).toContain('agy, which is now gemini');
+    const variable = run(critiqueArgs(), {}, { env: { CTXR_SECOND_OPINION_CODEX_MODEL: 'm-env' } });
+    expect(variable.status).toBe(ExitCode.Usage);
+    expect(variable.output).toContain('CTXR_SECOND_OPINION_CODEX_MODEL is no longer read; use CTXR_SECOND_OPINION_GPT_MODEL');
+    expect(allCalls()).toEqual([]);
+    // An empty one is unset, which is how a deployment passes a variable it did not set.
+    expect(run(['preflight'], PONG, { env: { CTXR_SECOND_OPINION_AGY_OPENROUTER: '' } }).status).toBe(ExitCode.Ok);
   });
 
   it('preflight passes when every CLI answers PONG and still lists the flags the command passes', () => {
@@ -493,16 +508,16 @@ describe('usage and preflight', () => {
     });
     expect(r.status).toBe(ExitCode.CheckFailed);
     expect(r.stdout).toMatch(/\[DOWN\] claude\s+exit 1.*Not logged in/);
-    expect(r.stdout).toMatch(/\[DOWN\] codex\s+answers, but its --help no longer lists: .*--ephemeral/);
-    expect(r.stdout).toMatch(/\[OK {2}\] agy/);
+    expect(r.stdout).toMatch(/\[DOWN\] gpt\s+answers, but its --help no longer lists: .*--ephemeral/);
+    expect(r.stdout).toMatch(/\[OK {2}\] gemini/);
   });
 
   it('preflight --json carries each CLI in the envelope', () => {
-    const r = run(['preflight', '--json', '--only', 'claude,agy'], PONG);
+    const r = run(['preflight', '--json', '--only', 'claude,gemini'], PONG);
     expect(r.status).toBe(ExitCode.Ok);
     const envelope = JSON.parse(r.stdout);
     expect(envelope).toMatchObject({ command: 'second-opinion.preflight', status: 'ok' });
-    expect(envelope.data.clis.map((c: { cli: string; ok: boolean }) => [c.cli, c.ok])).toEqual([['claude', true], ['agy', true]]);
+    expect(envelope.data.clis.map((c: { cli: string; ok: boolean }) => [c.cli, c.ok])).toEqual([['claude', true], ['gemini', true]]);
     expect(envelope.data.withheld).toBeUndefined();
   });
 });
@@ -740,7 +755,7 @@ describe('--print', () => {
  * for from the call itself.
  */
 describe('the lineup is the store\'s configuration, with shipped defaults', () => {
-  const SHIPPED = SHIPPED_DEFAULTS.second_opinion;
+  const TOOL = SECOND_OPINION_TOOL_MODELS;
   const modelOf = (cli: string): string | undefined => {
     const args = calls(cli).filter((c) => c.args.includes('--model')).at(-1)?.args;
     return args?.[args.indexOf('--model') + 1];
@@ -762,31 +777,31 @@ describe('the lineup is the store\'s configuration, with shipped defaults', () =
   }
 
   it('a store names one model and keeps the rest, at that tier only', () => {
-    const cwd = store('second_opinion: { strong: { agy: { model: m-alt } } }');
+    const cwd = store('second_opinion: { gemini: { via: cli, strong: m-alt } }');
     expect(run(critiqueArgs(), {}, { cwd }).status).toBe(ExitCode.Ok);
-    expect(asked()).toEqual({ claude: SHIPPED.strong.claude.model, codex: SHIPPED.strong.codex.model, agy: 'm-alt' });
+    expect(asked()).toEqual({ claude: TOOL.claude.strong, codex: TOOL.gpt.strong, agy: 'm-alt' });
     expect(sources(manifest())).toEqual({
-      claude: [SHIPPED.strong.claude.model, 'default'],
-      codex: [SHIPPED.strong.codex.model, 'default'],
-      agy: ['m-alt', 'store'],
+      claude: [TOOL.claude.strong, 'default'],
+      gpt: [TOOL.gpt.strong, 'default'],
+      gemini: ['m-alt', 'store'],
     });
 
     rmSync(outDir, { recursive: true });
     expect(run(critiqueArgs(['--tier', 'fast']), {}, { cwd }).status).toBe(ExitCode.Ok);
-    expect(asked()).toEqual({ claude: SHIPPED.fast.claude.model, codex: SHIPPED.fast.codex.model, agy: SHIPPED.fast.agy.model });
+    expect(asked()).toEqual({ claude: TOOL.claude.fast, codex: TOOL.gpt.fast, agy: TOOL.gemini.fast });
   });
 
   it('a store that names nothing, and a directory outside any store, both run on the shipped lineup', () => {
     for (const cwd of [store(''), tmp.root]) {
       const r = run(['preflight'], PONG, { cwd });
       expect(r.status, r.output).toBe(ExitCode.Ok);
-      expect(asked()).toEqual({ claude: SHIPPED.strong.claude.model, codex: SHIPPED.strong.codex.model, agy: SHIPPED.strong.agy.model });
+      expect(asked()).toEqual({ claude: TOOL.claude.strong, codex: TOOL.gpt.strong, agy: TOOL.gemini.strong });
       expect(r.stdout.match(/, shipped default\)/g)).toHaveLength(3);
     }
   });
 
   it('carries a configured effort to the CLI that takes one', () => {
-    const cwd = store('second_opinion: { strong: { claude: { effort: high }, codex: { effort: medium } } }');
+    const cwd = store('second_opinion: { claude: { effort: high }, gpt: { effort: medium } }');
     expect(run(critiqueArgs(), {}, { cwd }).status).toBe(ExitCode.Ok);
     const claude = calls('claude').at(-1)!.args;
     expect(claude[claude.indexOf('--effort') + 1]).toBe('high');
@@ -794,53 +809,53 @@ describe('the lineup is the store\'s configuration, with shipped defaults', () =
   });
 
   it('the environment wins over the store for one run, in both tiers, and is named as the source', () => {
-    const cwd = store('second_opinion: { strong: { agy: { model: m-alt } }, fast: { agy: { model: m-alt-fast } } }');
-    const env = { CTXR_SECOND_OPINION_AGY_MODEL: 'm-env' };
+    const cwd = store('second_opinion: { gemini: { via: cli, strong: m-alt, fast: m-alt-fast } }');
+    const env = { CTXR_SECOND_OPINION_GEMINI_MODEL: 'm-env' };
     for (const tier of ['strong', 'fast']) {
       const r = run(['preflight', '--tier', tier, '--json'], PONG, { cwd, env });
       expect(r.status, r.output).toBe(ExitCode.Ok);
       expect(modelOf('agy')).toBe('m-env');
-      const agy = JSON.parse(r.stdout).data.clis.find((c: { cli: string }) => c.cli === 'agy');
+      const agy = JSON.parse(r.stdout).data.clis.find((c: { cli: string }) => c.cli === 'gemini');
       expect(agy).toMatchObject({ model_asked: 'm-env', model_source: 'environment' });
     }
     // An empty variable is unset: that is how a deployment passes one it did not set.
-    const blank = run(['preflight'], PONG, { cwd, env: { CTXR_SECOND_OPINION_AGY_MODEL: '' } });
+    const blank = run(['preflight'], PONG, { cwd, env: { CTXR_SECOND_OPINION_GEMINI_MODEL: '' } });
     expect(blank.stdout).toContain('PONG (m-alt, store configuration)');
   });
 
   it('a poll records the model each CLI was asked for and its source', () => {
-    const cwd = store('second_opinion: { strong: { codex: { model: m-alt } } }');
+    const cwd = store('second_opinion: { gpt: { via: cli, strong: m-alt } }');
     const r = run(['poll', '--prompt-file', planFile('Which name? A or B.'), '--out', outDir], { claude: { kind: 'ok', text: 'A' }, codex: { kind: 'ok', text: 'B' }, agy: { kind: 'ok', text: 'A' } }, { cwd });
     expect(r.status, r.output).toBe(ExitCode.Ok);
     const answers = Object.fromEntries(manifest().answers.map((a: { cli: string; model_asked: string; model_source: string }) => [a.cli, [a.model_asked, a.model_source]]));
-    expect(answers).toEqual({ claude: [SHIPPED.strong.claude.model, 'default'], codex: ['m-alt', 'store'], agy: [SHIPPED.strong.agy.model, 'default'] });
+    expect(answers).toEqual({ claude: [TOOL.claude.strong, 'default'], gpt: ['m-alt', 'store'], gemini: [TOOL.gemini.strong, 'default'] });
   });
 
   it('a refused model is a failed critic: no other model is asked for', () => {
-    const cwd = store('second_opinion: { strong: { agy: { model: m-gone } } }');
+    const cwd = store('second_opinion: { gemini: { via: cli, strong: m-gone } }');
     const refusal = { kind: 'exit', code: 1, stderr: 'error: invalid model selection' };
     const r = run(critiqueArgs(), { agy: refusal }, { cwd });
     expect(r.status).toBe(ExitCode.Ok);
-    const agy = manifest().critiques.find((c: { cli: string }) => c.cli === 'agy');
+    const agy = manifest().critiques.find((c: { cli: string }) => c.cli === 'gemini');
     expect(agy).toMatchObject({ status: 'failed', model_asked: 'm-gone', model_source: 'store' });
     expect(agy.cause).toContain('invalid model selection');
     expect(calls('agy').filter((c) => c.args.includes('--model')).map((c) => c.args[c.args.indexOf('--model') + 1])).toEqual(['m-gone']);
 
     const pre = run(['preflight'], { ...PONG, agy: refusal }, { cwd });
     expect(pre.status).toBe(ExitCode.CheckFailed);
-    expect(pre.stdout).toMatch(/\[DOWN\] agy\s+.*invalid model selection.*\[asked for m-gone, store configuration\]/);
+    expect(pre.stdout).toMatch(/\[DOWN\] gemini\s+.*invalid model selection.*\[asked for m-gone, store configuration\]/);
   });
 
   it('an unknown CLI in the lineup is refused at load, before any model CLI starts', () => {
-    const cwd = store('second_opinion: { strong: { gemini: { model: m-alt } } }');
+    const cwd = store('second_opinion: { mistral: { via: cli } }');
     const r = run(critiqueArgs(), {}, { cwd });
     expect(r.status).not.toBe(ExitCode.Ok);
-    expect(r.output).toContain('gemini');
+    expect(r.output).toContain('mistral');
     expect(allCalls()).toEqual([]);
   });
 
   it('no model name is spelled under src/core/second-opinion/', () => {
-    const names = Object.values(SHIPPED).flatMap((tier) => Object.values(tier).map((cli) => cli.model));
+    const names = [...new Set([TOOL, OPENROUTER_FAMILY_MODELS].flatMap((table) => Object.values(table).flatMap((tiers) => Object.values(tiers))))];
     expect(names.length).toBeGreaterThan(0); // anti-vacuity
     for (const file of sourceFilesUnder(path.join(SRC, 'core/second-opinion'))) {
       const code = readFileSync(file, 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
@@ -850,19 +865,20 @@ describe('the lineup is the store\'s configuration, with shipped defaults', () =
 });
 
 /**
- * second-opinion-through-openrouter: harness-portability requirements "A
- * lineup entry may name an OpenRouter model", "The environment routes one
- * entry for one run", "An OpenRouter critic receives its prompt and nothing
- * else", "A failed OpenRouter critic is never replaced", "The OpenRouter key
- * is read from the environment and appears nowhere else", "The OpenRouter key
- * never reaches a model CLI", "An OpenRouter request declines data
- * collection", "Preflight and the manifest name each critic's route" and "The
- * OpenRouter address can be named in the environment"; and the cli-contract
- * requirement "`--require-confinement` refuses only a run that would start a
- * model CLI". The stub endpoint is a process of its own on localhost.
+ * second-opinion-through-openrouter and ship-default-openrouter-models:
+ * harness-portability requirements on the lineup's routes ("The lineup is
+ * keyed by model family, and each family names how it is reached", "A critic
+ * with no route written takes the machine's default", "The route is never
+ * chosen for one run", "Grok is a fourth critic, reached through OpenRouter"),
+ * on the request ("An OpenRouter critic receives its prompt and nothing
+ * else", "A failed OpenRouter critic is never replaced", "An OpenRouter
+ * request declines data collection"), on the key ("The OpenRouter key is read
+ * from the environment and appears nowhere else", "The OpenRouter key never
+ * reaches a model CLI"), and the cli-contract requirement that
+ * `--require-confinement` refuses only a run that would start a model CLI.
  */
-describe('a lineup entry routed through OpenRouter', () => {
-  const SHIPPED = SHIPPED_DEFAULTS.second_opinion;
+describe('critics reached through OpenRouter', () => {
+  const TOOL = SECOND_OPINION_TOOL_MODELS;
   const SLUG = 'vendor/model-x';
   let stub: OpenRouterStub;
   let routed: Record<string, string>;
@@ -884,7 +900,9 @@ describe('a lineup entry routed through OpenRouter', () => {
     );
     return root;
   }
-  const agyStore = () => store(`second_opinion: { strong: { agy: { openrouter: ${SLUG} } } }`);
+  /** One critic through OpenRouter with a written model, two on their tools, and grok left out: every route is written. */
+  const MIXED = `second_opinion: { claude: { via: cli }, gpt: { via: cli }, gemini: { via: openrouter, strong: ${SLUG} }, grok: { via: off } }`;
+  const mixedStore = () => store(MIXED);
   const modelOf = (cli: string): string | undefined => {
     const args = calls(cli).filter((c) => c.args.includes('--model')).at(-1)?.args;
     return args?.[args.indexOf('--model') + 1];
@@ -893,35 +911,89 @@ describe('a lineup entry routed through OpenRouter', () => {
   const filesUnder = (dir: string): string[] =>
     readdirSync(dir, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? filesUnder(path.join(dir, e.name)) : [path.join(dir, e.name)]));
 
-  it('one entry is routed and the others are not, at that tier only', () => {
-    const cwd = agyStore();
+  it('each critic goes the way the configuration says, and a written model applies at its tier only', () => {
+    const cwd = mixedStore();
     const r = run(critiqueArgs(), {}, { cwd, env: routed });
     expect(r.status, r.output).toBe(ExitCode.Ok);
+    expect(manifest().critiques).toHaveLength(3);
     expect(stub.requests().map((q) => q.body!.model)).toEqual([SLUG]);
     expect(calls('agy')).toEqual([]);
-    expect(modelOf('claude')).toBe(SHIPPED.strong.claude.model);
-    expect(modelOf('codex')).toBe(SHIPPED.strong.codex.model);
-    expect(critic('agy')).toMatchObject({ status: 'valid', route: 'openrouter', model_asked: SLUG, model_source: 'store', model_reported: 'stub/answered' });
-    expect(critic('claude')).toMatchObject({ route: 'cli', model_source: 'default' });
-    expect(critic('codex')).toMatchObject({ route: 'cli', model_source: 'default' });
+    expect(modelOf('claude')).toBe(TOOL.claude.strong);
+    expect(modelOf('codex')).toBe(TOOL.gpt.strong);
+    expect(critic('gemini')).toMatchObject({ status: 'valid', route: 'openrouter', route_source: 'store', model_asked: SLUG, model_source: 'store', model_reported: 'stub/answered' });
+    expect(critic('claude')).toMatchObject({ route: 'cli', route_source: 'store', model_source: 'default' });
+    expect(critic('gpt')).toMatchObject({ route: 'cli', route_source: 'store', model_source: 'default' });
     // The raw file is the response body: no request, so no header.
-    expect(readFileSync(path.join(outDir, 'raw', 'pragmatist-agy.txt'), 'utf8')).toContain('"stub/answered"');
+    expect(readFileSync(path.join(outDir, 'raw', 'pragmatist-gemini.txt'), 'utf8')).toContain('"stub/answered"');
 
     rmSync(outDir, { recursive: true });
     const fast = run(critiqueArgs(['--tier', 'fast']), {}, { cwd, env: routed });
     expect(fast.status, fast.output).toBe(ExitCode.Ok);
-    expect(stub.requests()).toHaveLength(1);
-    expect(modelOf('agy')).toBe(SHIPPED.fast.agy.model);
+    // The route holds at both tiers; the fast tier names no model, so it is the shipped one.
+    expect(stub.requests().map((q) => q.body!.model)).toEqual([SLUG, OPENROUTER_FAMILY_MODELS.gemini.fast]);
+    expect(critic('gemini')).toMatchObject({ route: 'openrouter', model_source: 'default' });
+    expect(calls('agy')).toEqual([]);
   });
 
-  it('a store that names no slug makes no request', () => {
-    expect(run(critiqueArgs(), {}, { cwd: store(''), env: routed }).status).toBe(ExitCode.Ok);
+  it('with no key and nothing written, three critics run their tools and no request is made', () => {
+    const r = run(critiqueArgs(), {}, { cwd: store(''), env: { CTXR_SECOND_OPINION_OPENROUTER_URL: stub.url } });
+    expect(r.status, r.output).toBe(ExitCode.Ok);
     expect(stub.requests()).toEqual([]);
+    expect(manifest().critiques.map((c: { cli: string }) => c.cli).sort()).toEqual(['claude', 'gemini', 'gpt']);
+    for (const c of manifest().critiques) expect(c).toMatchObject({ route: 'cli', route_source: 'default' });
     expect(allCalls().filter((c) => c.args.includes('--model') || c.args.includes('-p'))).toHaveLength(3);
   });
 
+  it('with a key set and nothing written, all four critics go through OpenRouter with the shipped models, and no tool starts', () => {
+    const r = run(critiqueArgs(), {}, { cwd: store(''), env: routed });
+    expect(r.status, r.output).toBe(ExitCode.Ok);
+    expect(allCalls()).toEqual([]);
+    expect(stub.requests().map((q) => q.body!.model).sort()).toEqual(Object.values(OPENROUTER_FAMILY_MODELS).map((tiers) => tiers.strong).sort());
+    const byCli = Object.fromEntries(manifest().critiques.map((c: { cli: string; role: string; route: string; route_source: string; model_source: string }) => [c.cli, [c.role, c.route, c.route_source, c.model_source]]));
+    expect(byCli).toEqual({
+      claude: ['architect', 'openrouter', 'default', 'default'],
+      gpt: ['skeptic', 'openrouter', 'default', 'default'],
+      gemini: ['pragmatist', 'openrouter', 'default', 'default'],
+      grok: ['verifier', 'openrouter', 'default', 'default'],
+    });
+    expect(readdirSync(outDir).filter((f) => f.startsWith('critique-')).sort()).toEqual(['critique-A.md', 'critique-B.md', 'critique-C.md', 'critique-D.md']);
+    // Each critic is sent its own persona, grok's among them.
+    const personas = stub.requests().map((q) => /\n## (architect|skeptic|pragmatist|verifier)\n/.exec(q.body!.messages![0]!.content)?.[1]).sort();
+    expect(personas).toEqual(['architect', 'pragmatist', 'skeptic', 'verifier']);
+    expect(readFileSync(path.join(outDir, 'raw', 'verifier-grok.txt'), 'utf8')).toContain('"stub/answered"');
+  });
+
+  it('grok is not in the lineup without a key, joins when its route is written, and is refused by name in --only when it is out', () => {
+    const noKey = { CTXR_SECOND_OPINION_OPENROUTER_URL: stub.url };
+    const only = run(['preflight', '--only', 'claude,grok'], PONG, { env: noKey });
+    expect(only.status).toBe(ExitCode.Usage);
+    expect(only.output).toContain('grok runs through OpenRouter only, and no OPENROUTER_API_KEY is set');
+    const off = run(['preflight', '--only', 'claude,grok'], PONG, { cwd: mixedStore(), env: routed });
+    expect(off.status).toBe(ExitCode.Usage);
+    expect(off.output).toContain('grok is off in the configuration');
+    expect(allCalls()).toEqual([]);
+    expect(stub.requests()).toEqual([]);
+  });
+
+  it('a written route to OpenRouter holds without a key: that critic fails naming the variable, and the rest run', () => {
+    const cwd = store('second_opinion: { grok: { via: openrouter } }');
+    const r = run(critiqueArgs(), {}, { cwd, env: { CTXR_SECOND_OPINION_OPENROUTER_URL: stub.url, OPENROUTER_API_KEY: '' } });
+    expect(r.status, r.output).toBe(ExitCode.Ok);
+    expect(critic('grok')).toMatchObject({ status: 'failed', route: 'openrouter', route_source: 'store', cause: 'OPENROUTER_API_KEY is not set' });
+    expect(manifest().valid).toBe(3);
+    expect(stub.requests()).toEqual([]);
+  });
+
+  it('a lineup with fewer than two critics on is refused before anything starts', () => {
+    const cwd = store('second_opinion: { claude: { via: off }, gpt: { via: off } }');
+    const r = run(critiqueArgs(), {}, { cwd });
+    expect(r.status).toBe(ExitCode.Usage);
+    expect(r.output).toContain('the lineup here has 1 critic');
+    expect(allCalls()).toEqual([]);
+  });
+
   it('the request holds that critic\'s prompt as its one message, no tools, the refusal of data collection, and nothing naming the store', () => {
-    const cwd = agyStore();
+    const cwd = mixedStore();
     expect(run(critiqueArgs(), {}, { cwd, env: routed }).status).toBe(ExitCode.Ok);
     const [request] = stub.requests();
     expect(Object.keys(request!.body!).sort()).toEqual(['messages', 'model', 'provider', 'stream']);
@@ -939,60 +1011,60 @@ describe('a lineup entry routed through OpenRouter', () => {
     expect(Object.keys(request!.headers).filter((h) => /referer|title|categor/i.test(h))).toEqual([]);
   });
 
-  it('the environment routes an entry the store does not, and is named as the source', () => {
-    const r = run(critiqueArgs(), {}, { env: { ...routed, CTXR_SECOND_OPINION_AGY_OPENROUTER: 'vendor/model-env' } });
-    expect(r.status, r.output).toBe(ExitCode.Ok);
-    expect(stub.requests().map((q) => q.body!.model)).toEqual(['vendor/model-env']);
-    expect(calls('agy')).toEqual([]);
-    expect(critic('agy')).toMatchObject({ route: 'openrouter', model_asked: 'vendor/model-env', model_source: 'environment' });
-  });
-
-  it('the environment puts an entry back on its CLI over the store\'s slug', () => {
-    const r = run(critiqueArgs(), {}, { cwd: agyStore(), env: { ...routed, CTXR_SECOND_OPINION_AGY_MODEL: 'm-env' } });
-    expect(r.status, r.output).toBe(ExitCode.Ok);
-    expect(stub.requests()).toEqual([]);
-    expect(modelOf('agy')).toBe('m-env');
-    expect(critic('agy')).toMatchObject({ route: 'cli', model_asked: 'm-env', model_source: 'environment' });
-  });
-
-  it('both variables for one entry are refused before anything starts', () => {
-    const r = run(critiqueArgs(), {}, { env: { ...routed, CTXR_SECOND_OPINION_AGY_OPENROUTER: SLUG, CTXR_SECOND_OPINION_AGY_MODEL: 'm-env' } });
-    expect(r.status).toBe(ExitCode.Usage);
-    expect(r.output).toContain('CTXR_SECOND_OPINION_AGY_OPENROUTER');
-    expect(r.output).toContain('CTXR_SECOND_OPINION_AGY_MODEL');
+  // ship-default-openrouter-models D9: no variable chooses a route for one run.
+  it('refuses the variable that used to route an entry, under any name it had, and names the configuration key', () => {
+    for (const [variable, critic] of [['CTXR_SECOND_OPINION_GEMINI_OPENROUTER', 'gemini'], ['CTXR_SECOND_OPINION_AGY_OPENROUTER', 'gemini'], ['CTXR_SECOND_OPINION_CLAUDE_OPENROUTER', 'claude']] as const) {
+      const r = run(critiqueArgs(), {}, { env: { ...routed, [variable]: 'vendor/model-env' } });
+      expect(r.status, variable).toBe(ExitCode.Usage);
+      expect(r.output).toContain(`${variable} is no longer read; use second_opinion.${critic}.via in the configuration`);
+    }
     expect(allCalls()).toEqual([]);
     expect(stub.requests()).toEqual([]);
   });
 
+  it('a tool model named in the environment for a critic that goes through OpenRouter is refused before anything starts', () => {
+    const cwd = mixedStore();
+    const r = run(critiqueArgs(), {}, { cwd, env: { ...routed, CTXR_SECOND_OPINION_GEMINI_MODEL: 'm-env' } });
+    expect(r.status).toBe(ExitCode.Usage);
+    expect(r.output).toContain('CTXR_SECOND_OPINION_GEMINI_MODEL is set, and gemini goes through OpenRouter here');
+    expect(allCalls()).toEqual([]);
+    expect(stub.requests()).toEqual([]);
+    // For a critic on its tool the variable applies as before.
+    const tool = run(critiqueArgs(), {}, { cwd, env: { ...routed, CTXR_SECOND_OPINION_GPT_MODEL: 'm-env' } });
+    expect(tool.status, tool.output).toBe(ExitCode.Ok);
+    expect(modelOf('codex')).toBe('m-env');
+    expect(critic('gpt')).toMatchObject({ route: 'cli', model_asked: 'm-env', model_source: 'environment' });
+  });
+
   it('a refused slug is a failed critic: its CLI is not started and no second request is made', () => {
     stub.behave({ kind: 'status', code: 404, message: 'No endpoints found for vendor/model-x.' });
-    const r = run(critiqueArgs(), {}, { cwd: agyStore(), env: routed });
+    const r = run(critiqueArgs(), {}, { cwd: mixedStore(), env: routed });
     expect(r.status, r.output).toBe(ExitCode.Ok); // the two CLIs still make a quorum
-    expect(critic('agy')).toMatchObject({ status: 'failed', route: 'openrouter', model_asked: SLUG, cause: 'OpenRouter answered 404: No endpoints found for vendor/model-x.' });
+    expect(critic('gemini')).toMatchObject({ status: 'failed', route: 'openrouter', model_asked: SLUG, cause: 'OpenRouter answered 404: No endpoints found for vendor/model-x.' });
     expect(stub.requests()).toHaveLength(1);
     expect(calls('agy')).toEqual([]);
-    expect(r.stdout).toMatch(/failed {2}agy {2}OpenRouter answered 404/);
+    expect(r.stdout).toMatch(/failed {2}gemini {2}OpenRouter answered 404/);
   });
 
   it('a request that outlasts the timeout fails, and the other critics are kept', () => {
     stub.behave({ kind: 'hang' });
-    const r = run(critiqueArgs(['--timeout', '1']), {}, { cwd: agyStore(), env: routed });
+    const r = run(critiqueArgs(['--timeout', '1']), {}, { cwd: mixedStore(), env: routed });
     expect(r.status, r.output).toBe(ExitCode.Ok);
-    expect(critic('agy')).toMatchObject({ status: 'failed', cause: 'timed out after 1s' });
+    expect(critic('gemini')).toMatchObject({ status: 'failed', cause: 'timed out after 1s' });
     expect(manifest().valid).toBe(2);
   });
 
   it('a blind answer from OpenRouter does not count', () => {
     stub.behave({ kind: 'ok', text: critique('pragmatist', 'S9 which the plan does not have') });
-    expect(run(critiqueArgs(), {}, { cwd: agyStore(), env: routed }).status).toBe(ExitCode.Ok);
-    expect(critic('agy')).toMatchObject({ status: 'blind', route: 'openrouter' });
+    expect(run(critiqueArgs(), {}, { cwd: mixedStore(), env: routed }).status).toBe(ExitCode.Ok);
+    expect(critic('gemini')).toMatchObject({ status: 'blind', route: 'openrouter' });
     expect(manifest().valid).toBe(2);
   });
 
   it('a missing key fails that critic only, names the variable, and makes no request', () => {
-    const r = run(critiqueArgs(), {}, { cwd: agyStore(), env: { CTXR_SECOND_OPINION_OPENROUTER_URL: stub.url, OPENROUTER_API_KEY: '' } });
+    const r = run(critiqueArgs(), {}, { cwd: mixedStore(), env: { CTXR_SECOND_OPINION_OPENROUTER_URL: stub.url, OPENROUTER_API_KEY: '' } });
     expect(r.status, r.output).toBe(ExitCode.Ok);
-    expect(critic('agy')).toMatchObject({ status: 'failed', cause: 'OPENROUTER_API_KEY is not set' });
+    expect(critic('gemini')).toMatchObject({ status: 'failed', cause: 'OPENROUTER_API_KEY is not set' });
     expect(stub.requests()).toEqual([]);
     expect(calls('claude')).toHaveLength(1);
     expect(calls('codex')).toHaveLength(1);
@@ -1000,9 +1072,10 @@ describe('a lineup entry routed through OpenRouter', () => {
   });
 
   it('the key reaches the endpoint and nothing else: no CLI, no file, no line of output', () => {
-    const r = run(critiqueArgs(), {}, { cwd: agyStore(), env: routed });
+    const r = run(critiqueArgs(), {}, { cwd: mixedStore(), env: routed });
     expect(r.status, r.output).toBe(ExitCode.Ok);
     expect(stub.requests()[0]!.headers.authorization).toBe(`Bearer ${STUB_KEY}`);
+    expect(allCalls().length).toBeGreaterThan(0); // anti-vacuity: two tools did start
     for (const c of allCalls()) {
       expect(Object.keys(c.env).filter((name) => name.startsWith('OPENROUTER_'))).toEqual([]);
       expect(JSON.stringify(c)).not.toContain(STUB_KEY);
@@ -1017,7 +1090,7 @@ describe('a lineup entry routed through OpenRouter', () => {
   });
 
   it('the pass-through cannot name the key', () => {
-    const r = run(critiqueArgs(), {}, { cwd: agyStore(), env: { ...routed, CTXR_SECOND_OPINION_PASS_ENV: 'OPENROUTER_API_KEY' } });
+    const r = run(critiqueArgs(), {}, { cwd: mixedStore(), env: { ...routed, CTXR_SECOND_OPINION_PASS_ENV: 'OPENROUTER_API_KEY' } });
     expect(r.status).toBe(ExitCode.Usage);
     expect(r.output).toContain('OPENROUTER_API_KEY');
     expect(r.output).not.toContain(STUB_KEY);
@@ -1025,61 +1098,71 @@ describe('a lineup entry routed through OpenRouter', () => {
     expect(stub.requests()).toEqual([]);
   });
 
-  it('a poll asks the routed entry through OpenRouter, declining data collection, and records the route', () => {
+  it('a poll asks the routed critic through OpenRouter, declining data collection, and records the route', () => {
     stub.behave({ kind: 'ok', text: 'A, because it is shorter.' });
-    const r = run(['poll', '--prompt-file', planFile('Which name? A or B.'), '--out', outDir], { claude: { kind: 'ok', text: 'A' }, codex: { kind: 'ok', text: 'B' } }, { cwd: agyStore(), env: routed });
+    const r = run(['poll', '--prompt-file', planFile('Which name? A or B.'), '--out', outDir], { claude: { kind: 'ok', text: 'A' }, codex: { kind: 'ok', text: 'B' } }, { cwd: mixedStore(), env: routed });
     expect(r.status, r.output).toBe(ExitCode.Ok);
     expect(stub.requests()).toHaveLength(1);
     expect(stub.requests()[0]!.body!.provider).toEqual({ data_collection: 'deny' });
     const answers = Object.fromEntries(manifest().answers.map((a: { cli: string; route: string; model_asked: string }) => [a.cli, [a.route, a.model_asked]]));
-    expect(answers).toEqual({ claude: ['cli', SHIPPED.strong.claude.model], codex: ['cli', SHIPPED.strong.codex.model], agy: ['openrouter', SLUG] });
-    expect(readFileSync(path.join(outDir, 'poll-agy.md'), 'utf8')).toBe('A, because it is shorter.\n');
+    expect(answers).toEqual({ claude: ['cli', TOOL.claude.strong], gpt: ['cli', TOOL.gpt.strong], gemini: ['openrouter', SLUG] });
+    expect(readFileSync(path.join(outDir, 'poll-gemini.md'), 'utf8')).toBe('A, because it is shorter.\n');
     expect(calls('agy')).toEqual([]);
   });
 
-  it('an agy entry answered by OpenRouter is not held to agy\'s argument-size limit', () => {
+  it('a gemini critic answered by OpenRouter is not held to agy\'s argument-size limit', () => {
     const big = `${PLAN}\n${'padding line that makes the plan long.\n'.repeat(4000)}`;
     expect(Buffer.byteLength(big)).toBeGreaterThan(120_000);
-    const r = run(['critique', '--plan-file', planFile(big), '--out', outDir], {}, { cwd: agyStore(), env: routed });
+    const r = run(['critique', '--plan-file', planFile(big), '--out', outDir], {}, { cwd: mixedStore(), env: routed });
     expect(r.status, r.output).toBe(ExitCode.Ok);
-    expect(critic('agy')).toMatchObject({ status: 'valid', route: 'openrouter' });
+    expect(critic('gemini')).toMatchObject({ status: 'valid', route: 'openrouter' });
     expect(stub.requests()[0]!.body!.messages![0]!.content).toContain(big);
   });
 
-  it('preflight pings the tier\'s slug and reports the route', () => {
+  it('preflight pings each routed critic with the tier\'s model and reports the route', () => {
     stub.behave({ kind: 'ok', text: 'PONG' });
-    const cwd = agyStore();
+    const cwd = mixedStore();
     const r = run(['preflight', '--tier', 'strong'], PONG, { cwd, env: routed });
     expect(r.status, r.output).toBe(ExitCode.Ok);
     expect(stub.requests().map((q) => q.body!.model)).toEqual([SLUG]);
-    expect(r.stdout).toMatch(/\[OK {2}\] agy\s+PONG \(vendor\/model-x, store configuration, through OpenRouter\)/);
+    expect(r.stdout).toMatch(/\[OK {2}\] gemini\s+PONG \(vendor\/model-x, store configuration, through OpenRouter\)/);
     expect(r.stdout.match(/, shipped default\)/g)).toHaveLength(2);
-    // No help text is asked of a CLI that is not going to run.
+    expect(r.stdout).not.toMatch(/grok/);
+    // No help text is asked of a tool that is not going to run.
     expect(calls('agy')).toEqual([]);
     const json = JSON.parse(run(['preflight', '--json'], PONG, { cwd, env: routed }).stdout).data.clis;
-    expect(Object.fromEntries(json.map((c: { cli: string; route: string }) => [c.cli, c.route]))).toEqual({ claude: 'cli', codex: 'cli', agy: 'openrouter' });
+    expect(Object.fromEntries(json.map((c: { cli: string; route: string; route_source: string }) => [c.cli, [c.route, c.route_source]]))).toEqual({ claude: ['cli', 'store'], gpt: ['cli', 'store'], gemini: ['openrouter', 'store'] });
 
     const fast = run(['preflight', '--tier', 'fast'], PONG, { cwd, env: routed });
     expect(fast.status, fast.output).toBe(ExitCode.Ok);
-    expect(stub.requests()).toHaveLength(2); // the fast tier named no slug, so it asked the CLI
+    expect(fast.stdout).toContain(`PONG (${OPENROUTER_FAMILY_MODELS.gemini.fast}, shipped default, through OpenRouter)`);
+  });
+
+  it('preflight with a key and nothing written checks four critics through OpenRouter and starts no tool', () => {
+    stub.behave({ kind: 'ok', text: 'PONG' });
+    const r = run(['preflight'], PONG, { cwd: store(''), env: routed });
+    expect(r.status, r.output).toBe(ExitCode.Ok);
+    expect(r.stdout.match(/, shipped default, through OpenRouter\)/g)).toHaveLength(4);
+    expect(r.stdout).toMatch(/\[OK {2}\] grok\s+PONG \(/);
+    expect(allCalls()).toEqual([]);
   });
 
   it('preflight reports a missing key, and a refused slug, as down', () => {
-    const cwd = agyStore();
+    const cwd = mixedStore();
     const noKey = run(['preflight'], PONG, { cwd, env: { CTXR_SECOND_OPINION_OPENROUTER_URL: stub.url, OPENROUTER_API_KEY: '' } });
     expect(noKey.status).toBe(ExitCode.CheckFailed);
-    expect(noKey.stdout).toMatch(/\[DOWN\] agy\s+OPENROUTER_API_KEY is not set \[asked for vendor\/model-x, store configuration, through OpenRouter\]/);
+    expect(noKey.stdout).toMatch(/\[DOWN\] gemini\s+OPENROUTER_API_KEY is not set \[asked for vendor\/model-x, store configuration, through OpenRouter\]/);
     stub.behave({ kind: 'status', code: 404, message: 'No endpoints found for vendor/model-x.' });
     const refused = run(['preflight'], PONG, { cwd, env: routed });
     expect(refused.status).toBe(ExitCode.CheckFailed);
-    expect(refused.stdout).toMatch(/\[DOWN\] agy\s+OpenRouter answered 404: No endpoints found/);
+    expect(refused.stdout).toMatch(/\[DOWN\] gemini\s+OpenRouter answered 404: No endpoints found/);
     expect(refused.output).not.toContain(STUB_KEY);
   });
 
   it('--require-confinement lets a run with no model CLI proceed where the machine cannot confine', () => {
     stub.behave({ kind: 'ok', text: critique('architect') });
-    const env = { ...routed, CTXR_SECOND_OPINION_CLAUDE_OPENROUTER: 'vendor/model-a', CTXR_SECOND_OPINION_CODEX_OPENROUTER: 'vendor/model-b' };
-    const r = run(critiqueArgs(['--require-confinement', '--only', 'claude,codex']), {}, { env });
+    const cwd = store('second_opinion: { claude: { via: openrouter, strong: vendor/model-a }, gpt: { via: openrouter, strong: vendor/model-b } }');
+    const r = run(critiqueArgs(['--require-confinement', '--only', 'claude,gpt']), {}, { cwd, env: routed });
     // Both critics get the architect's text from the one stub, so the skeptic's role line is wrong but its verdict parses.
     expect(r.status, r.output).toBe(ExitCode.Ok);
     expect(stub.requests().map((q) => q.body!.model).sort()).toEqual(['vendor/model-a', 'vendor/model-b']);
@@ -1088,9 +1171,9 @@ describe('a lineup entry routed through OpenRouter', () => {
     expect(manifest().confinement_reason).toMatch(/Landlock/);
   });
 
-  it('--require-confinement still refuses when one requested entry would start its CLI', () => {
-    const env = { ...routed, CTXR_SECOND_OPINION_CLAUDE_OPENROUTER: 'vendor/model-a' };
-    const r = run(critiqueArgs(['--require-confinement', '--only', 'claude,codex']), {}, { env });
+  it('--require-confinement still refuses when one requested critic would start its tool', () => {
+    const cwd = store('second_opinion: { claude: { via: openrouter }, gpt: { via: cli } }');
+    const r = run(critiqueArgs(['--require-confinement', '--only', 'claude,gpt']), {}, { cwd, env: routed });
     expect(r.status, r.output).toBe(ExitCode.CheckFailed);
     expect(r.output).toMatch(/cannot confine the model CLIs here/);
     expect(allCalls()).toEqual([]);

@@ -22,7 +22,7 @@ const SCOPE_TEXT: Readonly<Record<McpScope, string>> = {
   read: 'search and read the store’s notes',
   capture: 'save material into the store’s inbox, where it waits for approval before it lands',
   edit: 'edit and create notes in a draft that lands only once someone approves it',
-  'second-opinion': 'send a plan or a question you give it to three AI models for review; it reads no notes and changes nothing',
+  'second-opinion': 'send a plan or a question you give it to several AI models for review; it reads no notes and changes nothing',
 };
 
 export async function renderConsentPage(storeName: string, view: ConsentPageView): Promise<string> {

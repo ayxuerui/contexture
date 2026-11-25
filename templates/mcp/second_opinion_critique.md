@@ -1,4 +1,4 @@
-Sends a written plan to three critics, each on a different model family, as `ctxr second-opinion critique` does. It returns the lettered critiques and the table that says which critic wrote each letter.
+Sends a written plan to three or four critics, each on a different model family, as `ctxr second-opinion critique` does. It returns the lettered critiques and the table that says which critic wrote each letter.
 
 - `plan` is the whole plan, as text. The critics see only this text. Write out everything they need: they read no file and no earlier message.
 - `tier`, `only` and `timeout` are the command's options. `seed` makes the letter assignment repeatable.

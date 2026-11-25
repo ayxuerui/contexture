@@ -296,48 +296,76 @@ export function serveSyncMinutes(config: { serve?: { sync_minutes?: number | und
 
 /**
  * harness-portability spec (second-opinion-lineup-in-store-config D1, D2): the
- * model each model CLI is asked for in a second opinion, per tier, and the
- * effort where contexture ships one. This is the one copy: the schema defaults
- * read it and `core/second-opinion/` holds no model name of its own.
+ * model each critic's command-line tool is asked for in a second opinion, per tier, and the
+ * effort where contexture ships one. This is the one copy: `core/second-opinion/`
+ * reads it and holds no model name of its own. No key of `contexture.yaml`
+ * defaults to it, so a store follows a changed model from release to release.
  *
  * The tiers name a class of model, not a price. `strong` is each family's
- * frontier model and `fast` its workhorse: claude `fable` and `opus`; codex
- * `gpt-6-astra` ("frontier intelligence") and `gpt-6.1-sol` ("latest
+ * frontier model and `fast` its workhorse: claude `fable` and `opus`; gpt
+ * (the codex tool) `gpt-6-astra` ("frontier intelligence") and `gpt-6.1-sol` ("latest
  * workhorse"), as codex's model catalog described them on 2026-10-15. The
  * tiers differ in model only.
  *
- * agy is `Gemini 3.8 Flash` in both tiers. agy lists models by the account's
+ * gemini (the agy tool) is `Gemini 3.8 Flash` in both tiers. agy lists models by the account's
  * plan: `Gemini 4 Argon` was the `strong` default from 2026-10-19, and an
  * account that is not offered it had agy refused on every default run (seen
  * 2026-11-13). A shipped default has to be a model every signed-in account
  * can run, so it is the Flash every account seen lists; a store whose account
- * offers a stronger one names it in `second_opinion.strong.agy.model`.
+ * offers a stronger one names it in `second_opinion.gemini.strong`, beside `via: cli`.
  *
  * Effort is each provider's own recommended default, not one contexture picked:
  *  - claude carries none, so Claude Code applies its own default for the model.
  *    `claude.effort` is optional with no shipped default for that reason.
- *  - codex: the default its model catalog declares (`default_reasoning_level`),
+ *  - gpt: the default codex's model catalog declares (`default_reasoning_level`),
  *    `low` for both models on 2026-10-15. It is shipped because the flag cannot
  *    be left off: with no pin in config.toml, codex resolves to
  *    `reasoning effort: none` on a ChatGPT login (seen 2026-10-05).
- *  - agy: the effort is part of the model name, `(High)` for Gemini 3.8 Flash.
+ *  - gemini: the effort is part of the model name, `(High)` for Gemini 3.8 Flash.
  *    agy rejects an unknown name, and `preflight` tests it.
  */
-export const DEFAULT_SECOND_OPINION_LINEUP = {
-  strong: {
-    claude: { model: 'fable' },
-    codex: { model: 'gpt-6-astra', effort: 'low' },
-    agy: { model: 'Gemini 3.8 Flash (High)' },
-  },
-  fast: {
-    claude: { model: 'opus' },
-    codex: { model: 'gpt-6.1-sol', effort: 'low' },
-    agy: { model: 'Gemini 3.8 Flash (High)' },
-  },
+export const SECOND_OPINION_TOOL_MODELS = {
+  claude: { strong: 'fable', fast: 'opus' },
+  gpt: { strong: 'gpt-6-astra', fast: 'gpt-6.1-sol' },
+  gemini: { strong: 'Gemini 3.8 Flash (High)', fast: 'Gemini 3.8 Flash (High)' },
 } as const;
+/** The effort a tool is given when the store names none. Only codex, the gpt critic's tool, ships one (see above). */
+export const SECOND_OPINION_TOOL_EFFORT = { gpt: 'low' } as const;
+
+/**
+ * ship-default-openrouter-models D2: the OpenRouter model each critic runs
+ * when it goes through OpenRouter and the store names no model, by family
+ * then tier. Package content, not configuration: no key of `contexture.yaml` holds it and `init`
+ * writes nothing from it, so it moves with releases.
+ *
+ * Reviewed 2026-11-25 against OpenRouter's public model list, by each model's
+ * own description there:
+ *  - claude, gpt: the families' counterparts of the shipped CLI lineup. The
+ *    plain GPT slugs, not `-pro`: those are the same models served in a
+ *    reasoning mode that spends far more per answer.
+ *  - gemini: Carbon is described as the frontier Gemini 4 model and Hydrogen
+ *    as the workhorse. Neon is newer and dearer but described as fast and
+ *    mid-priced.
+ *  - grok: one current model, at both tiers.
+ * `scripts/check-openrouter-models.mjs` reports a slug the list no longer holds.
+ */
+export const OPENROUTER_FAMILY_MODELS = {
+  claude: { strong: 'anthropic/claude-fable-5.2', fast: 'anthropic/claude-opus-5.5' },
+  gpt: { strong: 'openai/gpt-6.2-astra', fast: 'openai/gpt-6.2-sol' },
+  gemini: { strong: 'google/gemini-4-carbon', fast: 'google/gemini-4-hydrogen' },
+  grok: { strong: 'x-ai/grok-4.7', fast: 'x-ai/grok-4.7' },
+} as const satisfies Record<string, Record<'strong' | 'fast', `${string}/${string}`>>;
+export type OpenRouterFamily = keyof typeof OPENROUTER_FAMILY_MODELS;
+export const OPENROUTER_FAMILIES = Object.keys(OPENROUTER_FAMILY_MODELS) as OpenRouterFamily[];
+
+/** A slug is `<vendor>/<model>`. */
+export const isOpenRouterSlug = (value: string): boolean => /^[^/\s]+\/\S+$/.test(value);
 
 export const DEFAULT_UPDATE_CHECK_ENABLED = true;
 export const DEFAULT_UPDATE_CHECK_TTL_HOURS = 24;
+
+/** The lineup block with nothing written: every critic takes its default route and the shipped models. */
+export const DEFAULT_SECOND_OPINION_LINEUP = { claude: {}, gpt: {}, gemini: {}, grok: {} };
 
 export const SHIPPED_DEFAULTS = {
   derived: { paths: DEFAULT_DERIVED_PATHS },
