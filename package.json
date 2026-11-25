@@ -44,7 +44,7 @@
     "verify:phase0": "bash scripts/verify-phase0.sh",
     "eval:retrieval": "npm run build --silent && node scripts/eval-retrieval.mjs",
     "eval:second-opinion": "npm run build --silent && node scripts/eval-second-opinion.mjs",
-    "plugin": "npm run build --silent && CONTEXTURE_STORE_ROOT= node dist/bin.js plugin build --out plugins && rm -f plugins/contexture-claude.zip plugins/second-opinion-claude.zip"
+    "plugin": "npm run build --silent && CONTEXTURE_STORE_ROOT= node dist/bin.js plugin build --out plugins && rm -f plugins/contexture-claude.zip plugins/contexture-second-opinion-claude.zip"
   },
   "dependencies": {
     "@inquirer/prompts": "^8.7.0",

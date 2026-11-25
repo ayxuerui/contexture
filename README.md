@@ -532,7 +532,7 @@ The plugin carries no connector, because one plugin serves every store. Its skil
 
 **The connect page.** `serve` answers `https://ctx.example.com/plugin/` with a page giving a member both steps: the marketplace and plugin for Claude, and this store's connector address with how to add it in each app. It also links the store's ChatGPT plugin, `contexture-<store>-chatgpt.zip`: ChatGPT has no marketplace on personal plans, so its plugin stays the store's own download, bundling the same skills and the store's connector. A workspace admin uploads it for the whole workspace; without an admin, turn on developer mode and upload it there. ChatGPT does not update an uploaded plugin, so download it again after a release. The page and the download need the same verified identity as the approval page, and only people the `mcp` block admits get them, so keep `/plugin/` behind the access proxy, outside the Bypass list above. Someone who uploaded an earlier `contexture-<store>` plugin to Claude removes it once they install `contexture`, and keeps their connector.
 
-Someone whose only scope is `second-opinion` is shown a different page at the same address: the `second-opinion` plugin in place of `contexture`, and a ChatGPT download that carries that one skill, `second-opinion-<store>-chatgpt.zip`.
+Someone whose only scope is `second-opinion` is shown a different page at the same address: the `contexture-second-opinion` plugin in place of `contexture`, and a ChatGPT download that carries that one skill, `contexture-second-opinion-<store>-chatgpt.zip`.
 
 To build the plugins yourself:
 
@@ -542,7 +542,7 @@ ctxr plugin build                # inside a store with mcp: also its ChatGPT plu
 ctxr plugin build --out dist/    # somewhere else
 ```
 
-Each plugin is written as a directory (`contexture/`, `second-opinion/`, `chatgpt/`) and a zip beside it. A store without an `mcp` block gets the Claude plugins alone, with a notice. If the marketplace ever has to be withdrawn, members can upload `contexture-claude.zip` from a build instead, and keep their store connector; an uploaded plugin does not update itself. In this repository, `npm run plugin` regenerates `plugins/contexture/` and `plugins/second-opinion/`, and a test fails any change whose committed plugins differ from a fresh build.
+Each plugin is written as a directory (`contexture/`, `contexture-second-opinion/`, `chatgpt/`) and a zip beside it. A store without an `mcp` block gets the Claude plugins alone, with a notice. If the marketplace ever has to be withdrawn, members can upload `contexture-claude.zip` from a build instead, and keep their store connector; an uploaded plugin does not update itself. In this repository, `npm run plugin` regenerates `plugins/contexture/` and `plugins/second-opinion/`, and a test fails any change whose committed plugins differ from a fresh build.
 
 **Where reads come from.** Reads come from a checkout `serve` keeps for itself under `.contexture/cache/mcp/view`, brought up to date from `origin` at most once a minute. It never touches the checkout your agents work in. Each MCP request writes one line to `serve`'s stderr, naming the person, the method and the tool, but never the arguments or the results.
 
@@ -550,7 +550,7 @@ Each plugin is written as a directory (`contexture/`, `second-opinion/`, `chatgp
 
 Someone with no store can still use the second opinion. Two pieces make that possible, and neither needs the other.
 
-**The `second-opinion` plugin** carries the `ctxr-second-opinion` skill and one command, `/second-opinion:ask`. It is listed in the same marketplace, at [`plugins/second-opinion/`](plugins/second-opinion/). Install it only without `contexture`, which carries the same skill: with both, Claude is offered the skill twice.
+**The `contexture-second-opinion` plugin** carries the `ctxr-second-opinion` skill and one command, `/contexture-second-opinion:ask`. It is listed in the same marketplace, at [`plugins/contexture-second-opinion/`](plugins/contexture-second-opinion/). Install it only without `contexture`, which carries the same skill: with both, Claude is offered the skill twice.
 
 **`ctxr second-opinion serve`** is a server that offers the second opinion and nothing else:
 

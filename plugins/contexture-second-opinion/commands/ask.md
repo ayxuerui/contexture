@@ -1,5 +1,5 @@
 ---
-description: Typed shortcut for /second-opinion:ask, which opens the ctxr-second-opinion skill. A request in words loads ctxr-second-opinion itself.
+description: Typed shortcut for /contexture-second-opinion:ask, which opens the ctxr-second-opinion skill. A request in words loads ctxr-second-opinion itself.
 ---
 
 <!-- Owned by contexture — written by `ctxr init`, refreshed by `ctxr update`. Do not edit; add your own skills alongside. -->
@@ -391,4 +391,4 @@ include your own family, say so.
   detached run keeps its plan and answers in a folder only its user can read. The folder is removed one hour
   after the run ends.
 
-What the person typed after /second-opinion:ask, to start from: $ARGUMENTS
+What the person typed after /contexture-second-opinion:ask, to start from: $ARGUMENTS

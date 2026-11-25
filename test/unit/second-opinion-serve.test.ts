@@ -457,15 +457,15 @@ describe('ctxr second-opinion serve (real CLI, real signatures, stub model CLIs)
     expect(html.status).toBe(200);
     const body = html.body.toString('utf8');
     expect(body).toContain('<code>ayxuerui/contexture</code>');
-    expect(body).toContain('Install the <strong>second-opinion</strong> plugin');
+    expect(body).toContain('Install the <strong>contexture-second-opinion</strong> plugin');
     expect(body).toContain(`<code>${BASE}/mcp</code>`);
-    expect(body).toContain('href="/plugin/second-opinion-opinion-example-test-chatgpt.zip"');
+    expect(body).toContain('href="/plugin/contexture-second-opinion-opinion-example-test-chatgpt.zip"');
     expect(body).not.toMatch(/__[A-Z_]+__/);
     expect((await http(new URL('/plugin', server.url).toString(), { headers: member })).status).toBe(200);
     expect((await http(new URL('/plugin/contexture-store-chatgpt.zip', server.url).toString(), { headers: member })).status).toBe(404);
     expect((await http(page, { method: 'POST', headers: member, body: '' })).status).toBe(405);
 
-    const zip = await http(new URL('/plugin/second-opinion-opinion-example-test-chatgpt.zip', server.url).toString(), { headers: member });
+    const zip = await http(new URL('/plugin/contexture-second-opinion-opinion-example-test-chatgpt.zip', server.url).toString(), { headers: member });
     expect(zip.status).toBe(200);
     expect(zip.headers['content-type']).toBe('application/zip');
     const file = path.join(tmp.root, 'downloaded.zip');

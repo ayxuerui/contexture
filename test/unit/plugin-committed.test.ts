@@ -52,7 +52,7 @@ describe('the committed plugin', () => {
     expect(marketplace.owner.name).toBe('contexture');
     expect(marketplace.plugins.map((p) => [p.name, p.source])).toEqual(PLUGIN_DEFINITIONS.map((d) => [d.name, `./plugins/${d.name}`]));
     expect(marketplace.plugins[0]).toMatchObject({ name: CLAUDE_PLUGIN_NAME, source: `./plugins/${CLAUDE_PLUGIN_NAME}` });
-    expect(marketplace.plugins[1]).toMatchObject({ name: 'second-opinion', source: './plugins/second-opinion' });
+    expect(marketplace.plugins[1]).toMatchObject({ name: 'contexture-second-opinion', source: './plugins/contexture-second-opinion' });
     // A version here would be read before plugin.json's only when that one is missing; one place keeps them from disagreeing.
     for (const plugin of marketplace.plugins) expect(plugin).not.toHaveProperty('version');
   });
@@ -101,7 +101,7 @@ describe('the freshness comparison', () => {
   });
 
   it('fails naming the second plugin\'s skill file when the skill changes and that plugin is not regenerated', async () => {
-    const second = path.join(tmp.root, 'second-opinion');
+    const second = path.join(tmp.root, 'contexture-second-opinion');
     await rm(second, { recursive: true, force: true });
     await cp(path.join(REPO, 'plugins', SECOND_OPINION_PLUGIN.name), second, { recursive: true });
     expect(await firstDifference(buildClaudePlugin(CLI_VERSION, SECOND_OPINION_PLUGIN), second)).toBeNull();

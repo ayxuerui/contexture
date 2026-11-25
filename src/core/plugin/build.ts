@@ -291,7 +291,7 @@ export function buildClaudePlugin(cliVersion: string, definition: PluginDefiniti
 /**
  * A definition's ChatGPT plugin for one server: its skills and one remote MCP
  * server entry at the server's `/mcp`. A store's carries every shared skill
- * (serve-the-session-lifecycle-to-chat-apps D7); the `second-opinion`
+ * (serve-the-session-lifecycle-to-chat-apps D7); the `contexture-second-opinion`
  * definition's carries that skill alone, for a member who may only ask for a
  * review and for the server with no store (offer-the-second-opinion-on-its-own D4, D6).
  */

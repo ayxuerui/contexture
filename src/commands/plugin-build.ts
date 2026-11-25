@@ -21,7 +21,7 @@ export const DEFAULT_GENERAL_PLUGIN_OUT = 'contexture-plugin';
 /**
  * Where each plugin's directory goes under `--out`. A Claude plugin's is its
  * name, so `--out plugins` in contexture's repository writes the marketplace's
- * `plugins/contexture/` and `plugins/second-opinion/` (publish-one-contexture-plugin
+ * `plugins/contexture/` and `plugins/contexture-second-opinion/` (publish-one-contexture-plugin
  * revision 9, offer-the-second-opinion-on-its-own D6).
  */
 export const pluginDirectory = (plugin: Pick<BuiltPlugin, 'target' | 'name'>): string => (plugin.target === 'claude' ? plugin.name : 'chatgpt');
