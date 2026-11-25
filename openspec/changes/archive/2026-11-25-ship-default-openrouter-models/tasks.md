@@ -65,4 +65,4 @@ The design changed three times while this was being built: the critics were rena
 
 - **Release note:** the new block and what refuses the old one; that a machine holding a key now sends every critic through OpenRouter and adds Grok; each family's slugs; and to update `ctxr` on every host before a store writes the new block.
 - **contexture-images:** rename the model and effort variables the compose file passes to `serve` (`_CODEX_` to `_GPT_`, `_AGY_` to `_GEMINI_`), drop the three `_OPENROUTER` ones, and update the README.
-- **Sync order:** `second-opinion-lineup-in-store-config` and `second-opinion-through-openrouter` sync into the main specs before this change does. Their requirements on the tier-first lineup, the `openrouter` key, the route variable and "no shipped slug" are then dropped or reworded by this one.
+- **Sync order (done at archive, 2026-11-25):** the five earlier second-opinion changes and `publish-one-contexture-plugin` were synced first, in merge order. This change's delta then removes three of their requirements (the tier-first lineup, the `openrouter` key, the route variable) and rewords five others.
