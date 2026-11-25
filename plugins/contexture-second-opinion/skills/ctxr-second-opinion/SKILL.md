@@ -190,9 +190,12 @@ seconds. A run that has finished returns the critiques in that call. A run that 
 `running:` and a run id. Then call `second_opinion_result` with that id as `run`. Call it again while it
 says the run is still running. Why: no single call can outlast the limit of the chat app.
 
-Each reviewer reads the plan alone, with a stance of its own: structure and ordering, failure modes and trust
-boundaries, simplicity and cost, and, when Grok is in the lineup, how anyone will know the plan worked. None sees another's answer. That is deliberate: reviewers who read each other converge
-on whoever spoke first, and a correct one gets talked out of it. Do not add a second round.
+Each reviewer reads the plan alone. Each reviews it in four roles and answers in four sections: structure and
+ordering, failure modes and trust boundaries, simplicity and cost, and how anyone will know the plan worked.
+No role belongs to one reviewer. Why: a defect is often seen by one model only, so every role needs every
+model. A run with two reviewers still covers the four roles. The sections come in a different order for each
+reviewer, and a section may say `None.`. None sees another's answer. That is deliberate: reviewers who read
+each other converge on whoever spoke first, and a correct one gets talked out of it. Do not add a second round.
 
 The command prints the letters it wrote, whether each is valid or blind, and any reviewer that failed. It
 never prints which model wrote which letter. With `ctxr second-opinion critique --json` the same result, with
@@ -212,8 +215,8 @@ Each reviewer runs at its provider's own recommended default effort, not one thi
 effort setting, so Claude Code applies its default for the model. Codex gets the default its model catalog
 declares, which the command passes explicitly. Why: Codex left to itself, with no setting pinned, can resolve
 to no reasoning at all. Gemini's effort is part of its model name, and the command names each model at its
-default level. Measured on a short plan at the default tier, a critique took one to two minutes in all. Claude
-(Fable) took 80 to 120 seconds, and Codex (GPT-6-Astra) about 15. The fast tier is
+default level. Measured through OpenRouter at the default tier, a critique took as long as its
+slowest reviewer: Grok took 190 to 210 seconds, Gemini about 105, Claude 55 to 65, and GPT about 30. The fast tier is
 quicker and costs less. A deeper pass is a choice: with `CTXR_SECOND_OPINION_CLAUDE_EFFORT=max`, Claude on
 Opus alone took over eight minutes on a short plan. That is close to the command's ten-minute limit per tool,
 and Fable is slower than Opus; raise it with `ctxr second-opinion critique --timeout <seconds>` for such a
@@ -228,20 +231,25 @@ Read the `critique-A`, `critique-B` and `critique-C` files and write your synthe
 `manifest.json`. When the critiques were printed, write your synthesis before you read the letter table
 below them. You share a model family with one of the reviewers, and models rate their own family's
 writing higher. Reading letters first is what keeps that from steering you. Then open the manifest and
-attach roles and models to the letters in the final report.
+attach critics and models to the letters in the final report.
 
 Write it in this order:
 
 - **Verdicts.** One line per letter, and any blind or failed reviewer stated plainly, not buried.
-- **Consensus (all agree).** Highest signal. When every reviewer independently flags the same simplification,
-  take it whole; do not keep a reduced version of complexity they all called wrong.
+- **Defects, grouped.** Group the findings by the defect they name, across letters and across roles. Why: the
+  same defect often sits under different roles in different letters. Count each defect once. List the letters
+  that raised it.
+- **Consensus (all agree).** Look here first. When every reviewer independently flags the same simplification,
+  take it whole; do not keep a reduced version of complexity they all called wrong. Agreement between letters
+  is not proof. Why: models from different labs make the same mistakes.
 - **Majority (more than half).** Say whether they agree on the fix or only on the diagnosis. Two
   reviewers who name the same problem often propose different repairs: choose on merit, meaning which
   repair keeps more of what you want (granular rollback, fewer side effects, smaller blast radius), and do
   not default to the majority's.
-- **Evidence-backed dissent.** A lone finding that cites the plan gets its own section and stays there. The
-  minority is right often enough that overruling it on your own authority is a net loss. Overrule only by
-  showing what the dissent missed.
+- **Evidence-backed dissent.** A finding that one letter alone raised gets its own section and stays there.
+  Check it against the plan. Say whether it holds. Why: most real defects in a review by several models are
+  raised by one model only, so dropping lone findings loses the most. Overrule one only by showing what it
+  missed.
 - **Vetoes.** A REJECT that carries a critical finding is stated as a veto, first, with its evidence.
 - **Revised plan**, and **what changed and why**: each change tied to the letter and finding that drove it.
 - **Recommendation**: proceed with the revision, revise further, or stop.

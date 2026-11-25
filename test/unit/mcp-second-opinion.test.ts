@@ -21,7 +21,7 @@ import { installSecondOpinionStubs } from '../helpers/second-opinion-stubs.js';
 const PLAN = '# Plan: rename the thing\n\n## Steps\nS1. Rename the module and update its callers.\nS2. Delete the old module once nothing imports it.\n';
 
 function critique(role: string): string {
-  return `## Role: ${role}\n\n## Verdict: APPROVE_WITH_CHANGES\n\n## Findings\n\n### F1 [major] confidence=0.7\nEvidence: S1\nIssue: ${role} sees a gap.\nChange: reword S1.\n\n## Suggested changes\n- reword\n\n## What you would NOT change\n- S2\n`;
+  return `## Verdict: APPROVE_WITH_CHANGES\n\n## Role: architect\n\n### F1 [major] confidence=0.7\nEvidence: S1\nIssue: ${role} sees a gap.\nChange: reword S1.\n\n## Role: skeptic\nNone. Nothing to add.\n\n## Role: pragmatist\nNone. Nothing to add.\n\n## Role: verifier\nNone. Nothing to add.\n\n## Suggested changes\n- reword\n\n## What you would NOT change\n- S2\n`;
 }
 const ROLE_OF: Record<string, string> = { claude: 'architect', codex: 'skeptic', agy: 'pragmatist' };
 

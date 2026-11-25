@@ -188,3 +188,125 @@ Commands that run inside an installed git hook, and commands that guarantee offl
 #### Scenario: One CLI is not a second opinion
 - **WHEN** `ctxr second-opinion critique --only claude --plan-file plan.md` is run
 - **THEN** it exits with the usage code and no CLI is invoked
+
+### Requirement: `ctxr second-opinion --print` returns the answers on stdout
+`ctxr second-opinion critique --print` and `ctxr second-opinion poll --print` SHALL write no output directory and SHALL print each answer's text on stdout: a critique's under its letter, in letter order, followed by the table attaching each letter to its role and the model reported; a poll's under its model. Exit codes SHALL be those of the same run without `--print`. With `--json` the envelope SHALL carry the texts beside the manifest. `--print` together with `--out` SHALL be a usage error.
+
+#### Scenario: A printed critique leaves no files
+- **WHEN** `ctxr second-opinion critique --print --plan-file plan.md` completes with three valid critiques
+- **THEN** stdout carries critiques A, B and C in that order and then the letter table, it exits `0`, and no `ctxr-second-opinion-out-*` directory was created
+
+#### Scenario: Print and out together are refused
+- **WHEN** `ctxr second-opinion poll --print --out answers --prompt-file q.md` is run
+- **THEN** it exits with the usage code and no model CLI is invoked
+
+### Requirement: `ctxr second-opinion --require-confinement` refuses an unconfined run
+With `--require-confinement`, `ctxr second-opinion preflight`, `critique` and `poll` SHALL exit with the failed-check code, naming the reason, before any model CLI starts, where the run cannot be confined.
+
+#### Scenario: Confinement can be required
+- **WHEN** `ctxr second-opinion critique --require-confinement --plan-file plan.md` runs where `setpriv` has no Landlock support
+- **THEN** it exits with the failed-check code naming the reason, and no model CLI is invoked
+
+### Requirement: `ctxr second-opinion --detach` starts a run and returns its id
+With `--detach`, `ctxr second-opinion critique` and `ctxr second-opinion poll` SHALL make every refusal the same run would make without it, then start the run in the background and exit `0` at once, printing a run id. The run SHALL carry on after the command exits. `--detach` together with `--out` SHALL be a usage error, and `preflight` SHALL NOT accept `--detach`.
+
+#### Scenario: A detached critique returns before any answer
+- **WHEN** `ctxr second-opinion critique --detach --plan-file plan.md` is run where the model CLIs take two minutes to answer
+- **THEN** it exits `0` within a few seconds, printing a run id, and the three model CLIs keep running
+
+#### Scenario: A detached run is refused like a blocking one
+- **WHEN** `ctxr second-opinion critique --detach --only claude --plan-file plan.md` is run
+- **THEN** it exits with the usage code, prints no run id, and no model CLI is invoked
+
+#### Scenario: Detach and out together are refused
+- **WHEN** `ctxr second-opinion poll --detach --out answers --prompt-file q.md` is run
+- **THEN** it exits with the usage code and no model CLI is invoked
+
+### Requirement: `ctxr second-opinion result` fetches a run within a bounded wait
+`ctxr second-opinion result <run>` SHALL wait up to `--wait` seconds (default 45) for the run to finish. A finished run SHALL be printed as `--print` prints it, with that run's exit code. An unfinished one SHALL be reported as running, with its elapsed time, and exit `0`. With `--json` the envelope SHALL carry the run's state, one of `running`, `finished` or `stopped`. Fetching a finished run again SHALL print the same answers.
+
+#### Scenario: A finished run prints as a blocking run would
+- **WHEN** `ctxr second-opinion result <run>` is called for a detached critique that finished with three valid critiques
+- **THEN** stdout carries critiques A, B and C and then the letter table, and it exits `0`
+
+#### Scenario: A partial run keeps its failed-check code
+- **WHEN** `ctxr second-opinion result <run>` is called for a detached critique that finished with one valid critique of three
+- **THEN** it exits with the failed-check code, as the same run without `--detach` would have
+
+#### Scenario: An unfinished run says so within the wait
+- **WHEN** `ctxr second-opinion result <run> --wait 5` is called while that run's model CLIs are still answering
+- **THEN** it exits `0` within about five seconds, stating that the run is still running and how long it has run, with `state: running` under `--json`
+
+#### Scenario: A lost response can be fetched again
+- **WHEN** `ctxr second-opinion result <run>` is called twice for the same finished run
+- **THEN** both calls print the same answers
+
+### Requirement: A detached run that ends without finishing is reported as stopped
+`ctxr second-opinion result` SHALL report a run whose process ended without recording a finish as `stopped` and exit with the failed-check code. It SHALL NOT report such a run as running. A run id that names no run, including one already removed, SHALL be a usage error.
+
+#### Scenario: A killed run is not shown as running
+- **WHEN** a detached run's process is killed and then `ctxr second-opinion result <run>` is called
+- **THEN** it reports the run as stopped and exits with the failed-check code
+
+#### Scenario: An unknown run id is a usage error
+- **WHEN** `ctxr second-opinion result` is called with an id that names no run
+- **THEN** it exits with the usage code naming the id
+
+### Requirement: One detached second opinion runs at a time per machine user
+While a detached run of the same machine user is running, `ctxr second-opinion critique --detach` and `poll --detach` SHALL exit with the failed-check code, before any model CLI starts, naming the running run's id so it can be fetched. A stopped run SHALL NOT block a new one.
+
+#### Scenario: A second detached run names the first
+- **WHEN** `ctxr second-opinion critique --detach --plan-file plan.md` is run while another detached run of the same user is running
+- **THEN** it exits with the failed-check code, names the running run's id, and starts no model CLI
+
+#### Scenario: A stopped run does not hold the machine
+- **WHEN** a detached run's process was killed and a new `ctxr second-opinion critique --detach` is run
+- **THEN** the new run starts and prints its own id
+
+### Requirement: A detached run's files are private and removed an hour after it finishes
+A detached run's plan or question, state and answers SHALL be kept in a folder readable only by the user who started it, outside any store checkout. The folder SHALL be removed one hour after the run finishes or is found stopped. Removal SHALL happen when a later `second-opinion` command starts.
+
+#### Scenario: An old run is cleaned up
+- **WHEN** a detached run finished more than one hour ago and `ctxr second-opinion critique --detach` is run
+- **THEN** the old run's folder no longer exists, and `ctxr second-opinion result` for the old run's id exits with the usage code
+
+### Requirement: `--require-confinement` refuses only a run that would start a model CLI
+With `--require-confinement` on a machine that cannot confine, `ctxr second-opinion preflight`, `critique` and `poll` SHALL proceed when every requested lineup entry resolves to OpenRouter, since no model CLI starts, and SHALL exit with the failed-check code naming the reason, before any critic starts or any request is made, when at least one requested entry resolves to its model CLI. The command's own check before launch enforces this, and a test covers both with stub CLIs and a stub endpoint.
+
+#### Scenario: A run with no model CLI proceeds unconfined
+- **WHEN** `ctxr second-opinion critique --require-confinement --only claude,gpt --plan-file plan.md` runs where `setpriv` has no Landlock support, and both entries resolve to OpenRouter
+- **THEN** both critics are answered through the stub endpoint, no model CLI is started, and the manifest still reports the machine as not confined with the reason
+
+#### Scenario: One model CLI in the run is enough to refuse it
+- **WHEN** the same command runs with one of the two entries resolving to its model CLI
+- **THEN** it exits with the failed-check code naming the reason, no model CLI is started and no request is made
+
+### Requirement: `ctxr second-opinion serve` starts a server without a store
+`ctxr second-opinion serve` SHALL take `--config <file>`, `--port`, `--host` and `--state-dir`, and SHALL bind to loopback when `--host` is not given. It SHALL need no store, and a store nearby SHALL NOT change what it serves. It SHALL report its address once it listens, as `ctxr serve` does, and SHALL exit with the usage code, without listening, when the file is missing or does not load.
+
+#### Scenario: It starts from a file alone
+- **WHEN** the command runs in an empty directory with `--config` naming a valid file and `--json`
+- **THEN** it prints one envelope carrying its address once it listens, and keeps running
+
+#### Scenario: A missing file is a usage error
+- **WHEN** the command runs with `--config` naming a file that does not exist
+- **THEN** it exits with the usage code naming the file, and nothing listens
+
+#### Scenario: A store nearby is ignored
+- **WHEN** the command runs inside a store whose `contexture.yaml` routes a lineup entry through OpenRouter, with a file that names no route
+- **THEN** a run it starts resolves every entry to its CLI, as the file says
+
+### Requirement: The second-opinion server's file is strict and holds no secret
+The file SHALL hold `base_url`, an origin with no path; `identity`, with the keys a store's `change_approval.identity` takes; `members`, a non-empty list of emails or `@domain` suffixes; and optionally `second_opinion`, a store's lineup block with its shipped defaults. An unknown key SHALL fail the load, naming the key. The schema defines no key for a secret, so writing one fails the same way.
+
+#### Scenario: A minimal file loads
+- **WHEN** a file holds `base_url`, `identity` and `members` and no `second_opinion`
+- **THEN** it loads, and a run resolves every lineup entry to its shipped default
+
+#### Scenario: A key in the file is refused
+- **WHEN** a file adds `openrouter_api_key` at its top level
+- **THEN** the load fails naming `openrouter_api_key`
+
+#### Scenario: An address with a path is refused
+- **WHEN** `base_url` is `https://ctx-a.example/opinion`
+- **THEN** the load fails naming `base_url`, since sign-in is served at the root of the origin

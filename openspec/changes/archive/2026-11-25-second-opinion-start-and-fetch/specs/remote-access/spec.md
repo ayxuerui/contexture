@@ -18,6 +18,10 @@ Every `ctxr` tool call for a `second-opinion` command SHALL return within its ow
 - **WHEN** a member calls `ctxr` with `["second-opinion", "result", <run>, "--wait", "600"]` for a run that is still running
 - **THEN** the call returns within the bound, reporting the run as running
 
+#### Scenario: A slow model is a partial result, not a lost one
+- **WHEN** one model CLI does not answer within the per-CLI timeout the server passes
+- **THEN** the run still ends, and the call that carries its result returns within the bound with that CLI named as failed and the critiques that did answer
+
 #### Scenario: A larger timeout is refused
 - **WHEN** a member calls `ctxr` with `["second-opinion", "critique", "--timeout", "1200", "--plan-file", "@input", "--detach"]`
 - **THEN** the call is refused naming the largest timeout the server allows, and nothing runs

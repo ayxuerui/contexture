@@ -1,0 +1,45 @@
+{
+  "date": "2026-11-25",
+  "package_version": "0.46.0 plus review-a-plan-in-every-role",
+  "tier": "strong",
+  "models": {
+    "claude": "anthropic/claude-fable-5.2",
+    "gpt": "openai/gpt-6.2-astra",
+    "gemini": "google/gemini-4-carbon",
+    "grok": "x-ai/grok-4.7"
+  },
+  "setups": [
+    "shipped"
+  ],
+  "plans": 12,
+  "repetitions": 3,
+  "planted_defects": 112,
+  "findings_limit_per_role": 5,
+  "recall": {
+    "all critics together": 1,
+    "claude": 1,
+    "gpt": 0.962,
+    "gemini": 0.995,
+    "grok": 0.955
+  },
+  "recall_by_role": {
+    "architect": 0.992,
+    "skeptic": 0.99,
+    "pragmatist": 0.956,
+    "verifier": 0.975
+  },
+  "findings_per_answer": 11.924,
+  "matched": 0.759,
+  "other_valid": 0.217,
+  "weak": 0.023,
+  "wrong": 0.001,
+  "filed_under_planted_role": 0.9,
+  "recall_by_section_position": [
+    0.951,
+    0.878,
+    0.895,
+    0.881
+  ],
+  "judge_agreement": 0.97,
+  "note": "Information for the next reader, not a gate. The single-role comparison was not run this time. The same plans at three findings per role, before this change: 10.4 findings per answer, 1.3% judged weak or wrong, all critics together 100%."
+}
