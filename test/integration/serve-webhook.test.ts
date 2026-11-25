@@ -143,3 +143,48 @@ describe('ctxr serve accepts signed GitHub webhook deliveries (real CLI, fake fo
     }
   });
 });
+
+describe('ctxr serve on a GitLab store exposes only the GitLab webhook route (support-gitlab-as-a-forge D8)', { timeout: 90_000 }, () => {
+  const gitlabPost = (url: string, event: string, payload: unknown, token: string | null): Promise<number> =>
+    post(new URL('/hooks/gitlab', url).toString(), JSON.stringify(payload), { 'X-Gitlab-Event': event, ...(token === null ? {} : { 'X-Gitlab-Token': token }) });
+
+  /** The store's origin named as a gitlab.com URL, which git rewrites back to the bare repository it really is. */
+  async function onGitLab(store: ApprovalStore): Promise<void> {
+    const url = 'https://gitlab.com/ctx-a/team/work.git';
+    await store.git(['config', `url.${store.origin}.insteadOf`, url]);
+    await store.git(['config', 'remote.origin.url', url]);
+  }
+
+  it('verifies X-Gitlab-Token, starts a run on a push to the default branch, and has no GitHub route', async () => {
+    const store = await makeApprovalStore({ noApproval: true });
+    try {
+      await onGitLab(store);
+      const merged = await store.advanceMain({ 'projects/merged.md': '# Merged\n' }, 'merge elsewhere');
+      await withServe(store, { CONTEXTURE_WEBHOOK_SECRET: SECRET }, async (url, stderr) => {
+        const push = { object_kind: 'push', ref: 'refs/heads/main', project: { path_with_namespace: 'ctx-a/team/work' } };
+        expect(await gitlabPost(url, 'Push Hook', push, null)).toBe(401);
+        expect(await gitlabPost(url, 'Push Hook', push, 'wrong')).toBe(401);
+        // A correctly signed GitHub delivery finds no route here.
+        expect(await delivery(url, 'push', { ref: 'refs/heads/main' }, SECRET)).toBe(405);
+        expect(await store.git(['rev-parse', 'HEAD'])).not.toBe(merged);
+        expect(await gitlabPost(url, 'Push Hook', push, SECRET)).toBe(202);
+        expect(await until(async () => (await store.git(['rev-parse', 'HEAD'])) === merged, 9_000), stderr()).toBe(true);
+        expect(stderr()).toContain('serve: webhook: main changed on ctx-a/team/work; starting a store-update run');
+      });
+    } finally {
+      await store.tmp.cleanup();
+    }
+  });
+
+  it('a GitHub store has no GitLab route', async () => {
+    const store = await makeApprovalStore({ noApproval: true });
+    try {
+      await withServe(store, { CONTEXTURE_WEBHOOK_SECRET: SECRET }, async (url) => {
+        expect(await gitlabPost(url, 'Push Hook', { ref: 'refs/heads/main' }, SECRET)).toBe(405);
+      });
+    } finally {
+      await store.tmp.cleanup();
+    }
+  });
+});
+

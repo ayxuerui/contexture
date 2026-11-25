@@ -10,6 +10,8 @@ import {
   APP_REPOSITORY_VAR,
   credentialsFor,
   githubOwnerOf,
+  GITLAB_TOKEN_FILE_VAR,
+  GITLAB_TOKEN_VAR,
   OWNER_TOKENS_DIR_VAR,
   runRemoteGit,
   type CredentialKind,
@@ -103,6 +105,10 @@ const REFUSED = /\b40[13]\b|Authentication failed|Repository not found|could not
  */
 function failureReason(step: 'clone' | 'fetch', result: GitResult, mount: MountState, credentials: ForgeCredentials): string {
   const reason = `git ${step} failed: ${result.stderr.trim().split('\n')[0] ?? ''}`;
+  if (credentials.gitlab !== undefined) {
+    if (!REFUSED.test(result.stderr)) return reason;
+    return `${reason}; GitLab (${credentials.gitlab.host}) refused the credential for ${credentials.gitlab.project}. A token that can read it goes in ${GITLAB_TOKEN_VAR} or the file ${GITLAB_TOKEN_FILE_VAR} names.`;
+  }
   const owner = credentials.owner ?? githubOwnerOf(mount.url);
   if (owner === null || !REFUSED.test(result.stderr)) return reason;
   return `${reason}; the forge refused the ${credentials.kind} credential for GitHub owner ${owner}. A token for ${owner} goes in a file named ${owner} in the directory ${OWNER_TOKENS_DIR_VAR} names.`;

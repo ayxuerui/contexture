@@ -3,7 +3,7 @@ import type { RunEnv } from '../core/env.js';
 import { SessionRefusedError } from '../core/errors.js';
 import { ExitCode } from '../core/exit-codes.js';
 import { credentialsFor, type CredentialKind } from '../core/forge/credentials.js';
-import { createGhForgeClient } from '../core/forge/github.js';
+import { forgeClientFor } from '../core/forge/client.js';
 import { resolveSession } from '../core/session/resolve.js';
 import { readBodyFile, submitSession, type SubmitResult } from '../core/session/submit.js';
 import type { Store } from '../core/store.js';
@@ -42,7 +42,7 @@ export async function execute(env: RunEnv, store: Store, opts: SessionSubmitOpti
   const body = opts.body ?? (await readBodyFile(env.cwd, opts.bodyFile!));
   const session = await resolveSession(env.git, store.root, store.config, opts.session, env.cwd);
   const credentials = await credentialsFor(env, session.path);
-  const forge = createGhForgeClient(session.path, credentials);
+  const forge = forgeClientFor(session.path, credentials);
   const result = await submitSession({ git: env.git, config: store.config, credentials, forge, env: env.env }, session, {
     branch: opts.branch,
     message: opts.message,

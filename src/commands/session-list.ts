@@ -3,7 +3,8 @@ import type { RunEnv } from '../core/env.js';
 import type { Finding } from '../core/envelope.js';
 import { ExitCode } from '../core/exit-codes.js';
 import { credentialsFor, type CredentialKind } from '../core/forge/credentials.js';
-import { createGhForgeClient, type ForgeClient } from '../core/forge/github.js';
+import { forgeClientFor } from '../core/forge/client.js';
+import type { ForgeClient } from '../core/forge/github.js';
 import { listSessions, type SessionListEntry } from '../core/session/list.js';
 import type { Store } from '../core/store.js';
 
@@ -33,7 +34,7 @@ export interface SessionListOptions {
 export async function execute(env: RunEnv, store: Store, opts: SessionListOptions = {}, forge?: ForgeClient): Promise<CommandOutcome<SessionListData>> {
   let review: { forge: ForgeClient; recordingLogin: string | null } | undefined;
   if (opts.review === true) {
-    const client = forge ?? createGhForgeClient(store.root, await credentialsFor(env, store.root));
+    const client = forge ?? forgeClientFor(store.root, await credentialsFor(env, store.root));
     review = { forge: client, recordingLogin: store.config.change_approval?.recording_login ?? null };
   }
   const list = await listSessions(env.git, store.root, store.config, { review });
