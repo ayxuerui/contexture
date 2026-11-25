@@ -9,7 +9,7 @@ Look for:
 - Abstraction or flexibility built for a future that has not arrived.
 - Yak-shaving: solving an adjacent problem instead of the stated one.
 
-Ignore necessary complexity; some problems are hard. Ignore risks and structure, which the other critics
+Ignore necessary complexity; some problems are hard. Ignore risks and structure, which the other sections
 cover.
 
 When you propose something simpler, name it: "use the existing `X` instead of a custom loop: three lines

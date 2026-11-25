@@ -10,7 +10,7 @@ Look for:
 - The unverified handoff: work declared complete at the point where it is hardest to inspect.
 - Stated numbers and facts the plan relies on, and where each came from.
 
-Ignore structure, risk and simplicity, which the other critics cover, and checks that cost more than the
+Ignore structure, risk and simplicity, which the other sections cover, and checks that cost more than the
 failure they would catch.
 
 Be specific: "step 4 says the migration is verified, and nothing in the plan reads the migrated rows" is a

@@ -21,7 +21,7 @@ const PLAN = '# Plan: rename the thing\n\n## Steps\nS1. Rename the module and up
 const ROLE_OF: Record<string, string> = { claude: 'architect', codex: 'skeptic', agy: 'pragmatist' };
 
 function critique(role: string): string {
-  return `## Role: ${role}\n\n## Verdict: APPROVE_WITH_CHANGES\n\n## Findings\n\n### F1 [major] confidence=0.7\nEvidence: S1\nIssue: ${role} marker MARK-${role}.\nChange: reword S1.\n\n## Suggested changes\n- reword\n\n## What you would NOT change\n- S1\n`;
+  return `## Verdict: APPROVE_WITH_CHANGES\n\n## Role: architect\n\n### F1 [major] confidence=0.7\nEvidence: S1\nIssue: ${role} marker MARK-${role}.\nChange: reword S1.\n\n## Role: skeptic\nNone. Nothing to add.\n\n## Role: pragmatist\nNone. Nothing to add.\n\n## Role: verifier\nNone. Nothing to add.\n\n## Suggested changes\n- reword\n\n## What you would NOT change\n- S1\n`;
 }
 
 let tmp: TmpDir;
@@ -219,7 +219,7 @@ describe('a detached run with a critic answered through OpenRouter', () => {
       const r = run(['second-opinion', 'result', id, '--wait', '30'], {}, env);
       expect(r.status, r.output).toBe(ExitCode.Ok);
       expect(r.stdout).toContain('MARK-pragmatist');
-      expect(r.stdout).toMatch(/pragmatist {2}gemini {2}model=stub\/answered, through OpenRouter/);
+      expect(r.stdout).toMatch(/[A-C] {2}gemini {2}model=stub\/answered, through OpenRouter/);
       expect(stub.requests()).toHaveLength(1);
       expect(stub.requests()[0]!.headers.authorization).toBe(`Bearer ${STUB_KEY}`);
       expect(started.output + r.output).not.toContain(STUB_KEY);
