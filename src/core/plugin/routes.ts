@@ -53,7 +53,7 @@ const archive = (plugin: StorePlugin): PluginReply => ({
  * offer-the-second-opinion-on-its-own D4, D6 (remote-access spec, *The
  * second-opinion server's connect page names its plugin and connector*): the
  * connect page and the ChatGPT archive for someone who may only ask for a
- * second opinion. It names the `second-opinion` plugin and links an archive
+ * second opinion. It names the `contexture-second-opinion` plugin and links an archive
  * whose only skill is that one. The caller has verified the member already.
  * `ctxr serve` answers a member whose one scope is `second-opinion` with it,
  * and it is every connect page of the server with no store.

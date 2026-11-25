@@ -416,15 +416,15 @@ describe('the MCP surface of ctxr serve (real CLI, fake forge, real signatures)'
         const member = { [HEADER]: assertion('o@elsewhere.example') };
         const html = await http(new URL('/plugin/', url).toString(), { headers: member });
         expect(html.status).toBe(200);
-        expect(html.body).toContain('Install the <strong>second-opinion</strong> plugin');
+        expect(html.body).toContain('Install the <strong>contexture-second-opinion</strong> plugin');
         expect(html.body).toContain('<code>ayxuerui/contexture</code>');
         expect(html.body).toContain(`<code>${BASE}/mcp</code>`);
-        expect(html.body).toContain('href="/plugin/second-opinion-store-chatgpt.zip"');
+        expect(html.body).toContain('href="/plugin/contexture-second-opinion-store-chatgpt.zip"');
         expect(html.body).not.toContain('contexture-store-chatgpt.zip');
         // The store's own archive carries every skill for a store: not this member's to fetch.
         expect((await http(new URL('/plugin/contexture-store-chatgpt.zip', url).toString(), { headers: member })).status).toBe(404);
 
-        const zip = await download(new URL('/plugin/second-opinion-store-chatgpt.zip', url).toString(), member);
+        const zip = await download(new URL('/plugin/contexture-second-opinion-store-chatgpt.zip', url).toString(), member);
         expect(zip.status).toBe(200);
         const file = path.join(store.tmp.root, 'second-opinion.zip');
         await writeFile(file, zip.body);
@@ -432,7 +432,7 @@ describe('the MCP surface of ctxr serve (real CLI, fake forge, real signatures)'
         const listed = (await exec('unzip', ['-Z1', file])).stdout.trim().split('\n').sort();
         expect(listed).toEqual(['README.md', 'mcp.json', 'plugin.json', 'skills/ctxr-second-opinion/SKILL.md']);
         const mcp = JSON.parse((await exec('unzip', ['-p', file, 'mcp.json'])).stdout) as { mcpServers: Record<string, Record<string, unknown>> };
-        expect(mcp.mcpServers['second-opinion-store']).toMatchObject({ type: 'streamable-http', url: `${BASE}/mcp` });
+        expect(mcp.mcpServers['contexture-second-opinion-store']).toMatchObject({ type: 'streamable-http', url: `${BASE}/mcp` });
 
         // A reader is still shown contexture's plugin and the store's archive.
         const reader = await http(new URL('/plugin/', url).toString(), { headers: { [HEADER]: assertion('a@example.com') } });

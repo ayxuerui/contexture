@@ -7,7 +7,7 @@ changes a contexture store.
 ## Install this plugin or `contexture`, not both
 
 The `contexture` plugin carries the same skill, with the skills for working in a store. Install
-`second-opinion` only if you do not use `contexture`. With both installed, Claude is offered the skill twice.
+`contexture-second-opinion` only if you do not use `contexture`. With both installed, Claude is offered the skill twice.
 
 ## What you need
 
@@ -21,13 +21,13 @@ check which ones before you send anything.
 
 ## Commands
 
-- `/second-opinion:ask` opens `ctxr-second-opinion`
+- `/contexture-second-opinion:ask` opens `ctxr-second-opinion`
 
-Text after the command is what the skill starts from, as in `/second-opinion:ask` followed by the plan.
+Text after the command is what the skill starts from, as in `/contexture-second-opinion:ask` followed by the plan.
 
 ## Updates
 
-Install `second-opinion` from the `ayxuerui/contexture` marketplace with **Sync automatically** on, and Claude installs
+Install `contexture-second-opinion` from the `ayxuerui/contexture` marketplace with **Sync automatically** on, and Claude installs
 each new release on its own. This is version 0.46.0, which matches the ctxr release it was built from.
 If the skill names a tool your connector does not offer, the server runs an older ctxr.
 
