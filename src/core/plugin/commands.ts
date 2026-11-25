@@ -58,16 +58,16 @@ export const CONTEXTURE_PLUGIN: PluginDefinition = {
   chatgptName: (slug) => `contexture-${slug}`,
 };
 
-/** The one skill the `second-opinion` plugin carries. */
+/** The one skill the `contexture-second-opinion` plugin carries. */
 export const SECOND_OPINION_SKILL = 'ctxr-second-opinion';
 
 /**
  * D6: for a person with no store. One skill and one command, `ask`, so
- * `/second-opinion:ask` opens the skill: `/second-opinion:second-opinion`
- * repeats itself, and `critique` would misname a poll.
+ * `/contexture-second-opinion:ask` opens the skill: a command named
+ * `second-opinion` would repeat the plugin's name, and `critique` would misname a poll.
  */
 export const SECOND_OPINION_PLUGIN: PluginDefinition = {
-  name: 'second-opinion',
+  name: 'contexture-second-opinion',
   displayName: 'second opinion',
   skills: [SECOND_OPINION_SKILL],
   commands: { ask: SECOND_OPINION_SKILL },
@@ -78,7 +78,7 @@ export const SECOND_OPINION_PLUGIN: PluginDefinition = {
     chatgptManifest: 'second-opinion-chatgpt-plugin.json',
     chatgptReadme: 'second-opinion-chatgpt-README.md',
   },
-  chatgptName: (slug) => `second-opinion-${slug}`,
+  chatgptName: (slug) => `contexture-second-opinion-${slug}`,
 };
 
 /** Every Claude plugin `ctxr plugin build` writes and the marketplace lists, in that order. */
