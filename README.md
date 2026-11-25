@@ -115,12 +115,14 @@ second_opinion:
     via: openrouter
 ```
 
-| Critic | Its tool (`via: cli`) | Through OpenRouter | Role in a critique |
-|---|---|---|---|
-| `claude` | Claude Code | yes | architect |
-| `gpt` | Codex | yes | skeptic |
-| `gemini` | agy | yes | pragmatist |
-| `grok` | none | yes | verifier |
+| Critic | Its tool (`via: cli`) | Through OpenRouter |
+|---|---|---|
+| `claude` | Claude Code | yes |
+| `gpt` | Codex | yes |
+| `gemini` | agy | yes |
+| `grok` | none | yes |
+
+In a critique every critic reviews the plan in four roles (architect, skeptic, pragmatist and verifier) and answers in one section for each, with up to five findings a role. No role belongs to a critic, so a run of two critics still covers all four.
 
 `via` is `cli`, `openrouter` or `off` (the critic is in no run). **With no `via` written, the route is the machine's default:** each critic's tool where no `OPENROUTER_API_KEY` is set, which leaves Grok out and runs three; and OpenRouter for all four where the key is set. A written `via` always wins, so `via: cli` keeps a critic on its tool on a machine that holds a key. A run needs at least two critics.
 

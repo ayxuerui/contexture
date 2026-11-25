@@ -1,6 +1,7 @@
+import { createHash } from 'node:crypto';
 import { SecondOpinionUsageError } from '../errors.js';
 import { packagedTemplate, substituteBlock } from '../templates.js';
-import type { Role } from './lineup.js';
+import { ROLES, type Cli, type Role } from './lineup.js';
 
 /**
  * run-the-second-opinion-from-the-cli D4: the critic contract, the persona
@@ -10,8 +11,21 @@ import type { Role } from './lineup.js';
  */
 const template = (name: string): string => packagedTemplate('second-opinion', name);
 
-export function critiquePrompt(role: Role, plan: string): string {
-  return `${template('critic-contract').trimEnd()}\n\n---\n${template(`personas/${role}`).trimEnd()}\n\nPLAN:\n${plan}\n`;
+/**
+ * review-a-plan-in-every-role D4: the order in which one critic is given the
+ * four roles, and must answer them. A rotation of the roster, so each role
+ * takes each position equally often, chosen from the plan and the critic's
+ * name: the same plan asks the same critic the same thing on every run.
+ */
+export function roleOrder(plan: string, critic: Cli): Role[] {
+  const shift = createHash('sha256').update(plan).update(critic).digest()[0]! % ROLES.length;
+  return ROLES.map((_, i) => ROLES[(i + shift) % ROLES.length]!);
+}
+
+/** The contract, the four role texts in this critic's order, and the plan (D1). */
+export function critiquePrompt(critic: Cli, plan: string): string {
+  const roles = roleOrder(plan, critic).map((role) => template(`personas/${role}`).trimEnd());
+  return `${template('critic-contract').trimEnd()}\n\n---\n${roles.join('\n\n')}\n\nPLAN:\n${plan}\n`;
 }
 
 /** The built-in lenses, by name, from the roster's `- **name** — description` lines. */

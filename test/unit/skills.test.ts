@@ -1108,9 +1108,22 @@ describe('the second-opinion skill', () => {
     expect(s).toContain('`claude` runs Claude Code, `gpt` runs Codex and `gemini` runs agy');
     expect(s).toContain('`--only claude,gpt`');
     expect(s).toContain('`gpt` was named `codex` and `gemini` was named `agy`');
-    expect(s).toContain('when Grok is in the lineup, how anyone will know the plan worked');
+    expect(s).toContain('Grok has no tool');
+    // review-a-plan-in-every-role: no role is paired with a critic.
+    expect(s).toContain('No role belongs to one reviewer.');
+    expect(s).not.toMatch(/\b(Claude|GPT|Gemini|Grok|`claude`|`gpt`|`gemini`|`grok`)[^.\n]{0,40}\b(architect|skeptic|pragmatist|verifier)\b/);
     expect(s).not.toMatch(/CTXR_SECOND_OPINION_(CODEX|AGY)_/);
     expect(s).not.toMatch(/^\s+(agy|codex):$/m);
+  });
+
+  // review-a-plan-in-every-role D7 (harness-portability requirement "The second-opinion skill tells the agent how
+  // to weigh findings across critics"): conventions the command cannot enforce.
+  it('has each reviewer answer in four role sections, and tells the agent how to weigh findings across letters', () => {
+    const s = skill();
+    expect(s).toContain('Each reviews it in four roles and answers in four sections');
+    expect(s).toContain('Group the findings by the defect they name, across letters and across roles.');
+    expect(s).toContain('A finding that one letter alone raised gets its own section and stays there. Check it against the plan. Say whether it holds.');
+    expect(s).toContain('Agreement between letters is not proof.');
   });
 
   it('keeps a critic answered through OpenRouter in a run on someone else\'s plan, and replaces no failed one', () => {
