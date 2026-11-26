@@ -30,7 +30,7 @@ import { mainWorktreePath } from '../git/worktree.js';
 import { randomUUID } from 'node:crypto';
 import { ForgeUnreachableError } from '../errors.js';
 import type { ForgeCredentials } from '../forge/credentials.js';
-import type { ForgeClient, PullRequest } from '../forge/github.js';
+import type { ForgeClient, PullRequest, ReviewRecorded } from '../forge/github.js';
 import { ForgeRequestError } from '../forge/github.js';
 import type { GitRunner } from '../git/exec.js';
 import { storePrefix } from '../graph/tree.js';
@@ -464,8 +464,9 @@ async function decide(store: Store, server: ApprovalServer, makeKit: () => Promi
   if (decision === 'request-changes' && comment === '') return renderChangePage(store, server, await makeKit(), name, { status: 400, message: copy('comment-required') });
 
   const kind: DecisionKind = decision;
+  let recorded: ReviewRecorded | void;
   try {
-    await server.forge.createReview(located.pull.number, {
+    recorded = await server.forge.createReview(located.pull.number, {
       event: kind === 'approve' ? 'APPROVE' : 'REQUEST_CHANGES',
       commitId: head,
       body: decisionBody({ decision: kind, head, by: email, at: server.now().toISOString(), carriedFrom: null, comment: kind === 'approve' ? null : comment }),
@@ -473,6 +474,11 @@ async function decide(store: Store, server: ApprovalServer, makeKit: () => Promi
   } catch (err) {
     if (!(err instanceof ForgeRequestError)) throw err;
     return renderChangePage(store, server, await makeKit(), name, { status: 502, message: copy('record-failed') });
+  }
+  // support-gitlab-as-a-forge D5: the decision stands; the page says the forge's own approval does not show it, and why.
+  if (recorded?.notMirrored) {
+    const reply = await renderChangePage(store, server, await makeKit(), name, { status: 200, message: copy('not-mirrored').replace('__REASON__', () => recorded!.notMirrored!) });
+    return { ...reply, landingRequested: kind === 'approve' };
   }
   // Post/redirect/get: the page the decider lands on reads the recorded state back from the forge.
   return {
@@ -514,6 +520,7 @@ async function readSessionView(store: Store, server: ApprovalServer, fresh: bool
     server.git,
     { root: store.root, canonical, config: store.config, forge: server.forge, credentials: server.credentials },
     forgeForOf(server),
+    server.env ?? {},
   );
   if (reach === null) return null;
   const listings = await listOpen(reach, fresh ? undefined : () => openPulls(server));
@@ -689,13 +696,15 @@ async function decideSession(store: Store, server: ApprovalServer, makeKit: () =
   const parts: PartRef[] = group.parts.map((p) => ({ store: p.store.slug, number: p.pull.number, head: p.pull.headSha }));
   const session: SessionDecision = { id: randomUUID(), session: group.identity, parts };
   const record = recordPartOf(session);
+  const notMirrored: string[] = [];
   const post = async (ref: PartRef): Promise<void> => {
     const part = group.parts.find((p) => p.store.slug === ref.store && p.pull.number === ref.number)!;
-    await part.store.forge.createReview(ref.number, {
+    const recorded = await part.store.forge.createReview(ref.number, {
       event: kind === 'approve' ? 'APPROVE' : 'REQUEST_CHANGES',
       commitId: ref.head,
       body: decisionBody({ decision: kind, head: ref.head, by: email, at, carriedFrom: null, comment: kind === 'approve' ? null : comment, session }),
     });
+    if (recorded?.notMirrored) notMirrored.push(`${ref.store}#${ref.number}: ${recorded.notMirrored}`);
   };
   try {
     await post(record);
@@ -715,6 +724,10 @@ async function decideSession(store: Store, server: ApprovalServer, makeKit: () =
   }
   if (missing.length > 0) {
     const reply = await page({ status: 200, message: copy('copies-missing').replace('__PARTS__', missing.join(', ')) });
+    return { ...reply, landingRequested: kind === 'approve' };
+  }
+  if (notMirrored.length > 0) {
+    const reply = await page({ status: 200, message: copy('not-mirrored').replace('__REASON__', () => notMirrored.join('; ')) });
     return { ...reply, landingRequested: kind === 'approve' };
   }
   return {

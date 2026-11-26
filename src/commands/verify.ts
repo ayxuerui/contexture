@@ -23,6 +23,7 @@ import { scanSkills } from '../core/skills.js';
 import { sanctionedPath } from '../core/write-lifecycle/path-gate.js';
 import type { RunEnv } from '../core/env.js';
 import { NoCommitToVerifyError } from '../core/errors.js';
+import { forgeOf } from '../core/forge/credentials.js';
 import { runIsolatedVerify } from '../core/harness/isolated-run.js';
 import { resolveHead } from '../core/git/worktree.js';
 import type { Store } from '../core/store.js';
@@ -193,6 +194,12 @@ export async function execute(env: RunEnv, store: Store, flags: VerifyFlags = {}
 
   // 8. The external tooling the shipped write-path skills invoke. Presence
   // only — nothing is executed, and no tool name comes from configuration.
+  // support-gitlab-as-a-forge: a store on GitLab is reached over HTTP, so no forge CLI is a prerequisite there.
+  const origin = await env.git.run(['config', '--get', 'remote.origin.url'], { cwd: store.root, allowFailure: true });
+  if (origin.exitCode === 0 && forgeOf(origin.stdout, env.env)?.kind === 'gitlab') {
+    steps.push({ operation: `write-path prerequisite "${WRITE_PATH_TOOL}" on PATH`, status: 'skip', detail: 'this store is on GitLab, which ctxr calls without a forge CLI' });
+    return finish(store, steps);
+  }
   const resolved = await resolveOnPath(WRITE_PATH_TOOL, env.env);
   if (resolved === null) {
     steps.push({

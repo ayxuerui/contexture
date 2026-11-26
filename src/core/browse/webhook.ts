@@ -17,6 +17,8 @@ import { WebhookSecretError } from '../errors.js';
  * on-demand fetching stay, because GitHub does not retry a failed delivery.
  */
 export const WEBHOOK_ROUTE = '/hooks/github';
+/** support-gitlab-as-a-forge D8: a GitLab store's webhook route; a server has this one or the GitHub one, never both. */
+export const GITLAB_WEBHOOK_ROUTE = '/hooks/gitlab';
 export const WEBHOOK_SECRET_VAR = 'CONTEXTURE_WEBHOOK_SECRET';
 export const WEBHOOK_SECRET_FILE_VAR = 'CONTEXTURE_WEBHOOK_SECRET_FILE';
 
@@ -54,6 +56,14 @@ export function signatureValid(secret: Buffer, body: Buffer, header: string | st
   return timingSafeEqual(given, expected);
 }
 
+/** GitLab's `X-Gitlab-Token` is the secret itself; compared in constant time, and never by length alone. */
+export function tokenValid(secret: Buffer, header: string | string[] | undefined): boolean {
+  if (typeof header !== 'string' || header === '') return false;
+  // Hashing both sides gives equal lengths without revealing the secret's.
+  const digest = (value: Buffer): Buffer => createHmac('sha256', 'ctxr-webhook-token').update(value).digest();
+  return timingSafeEqual(digest(Buffer.from(header, 'utf8')), digest(secret));
+}
+
 /** What a verified delivery asks for: a store-update run, a branch fetched for its preview, or nothing. */
 export type WebhookHint =
   | { kind: 'default-branch'; repository: string | null }
@@ -82,6 +92,29 @@ export function hintOf(event: string | string[] | undefined, body: Buffer, defau
     const head = (record.pull_request as { head?: { ref?: unknown } } | undefined)?.head?.ref;
     branch = typeof head === 'string' && head !== '' ? head : null;
   } else return { kind: 'ignored', reason: `a ${typeof event === 'string' ? event : 'unnamed'} event` };
+  if (branch === null) return { kind: 'ignored', reason: 'no branch named' };
+  if (branch === defaultBranch) return { kind: 'default-branch', repository };
+  return { kind: 'branch', branch, repository };
+}
+
+/** The same hint from a verified GitLab delivery: the event, the project's path (for the log) and the branch. */
+export function gitlabHintOf(event: string | string[] | undefined, body: Buffer, defaultBranch: string): WebhookHint {
+  if (event !== 'Push Hook' && event !== 'Merge Request Hook') return { kind: 'ignored', reason: `a ${typeof event === 'string' ? event : 'unnamed'} event` };
+  let payload: unknown;
+  try {
+    payload = JSON.parse(body.toString('utf8'));
+  } catch {
+    return { kind: 'ignored', reason: 'the body is not JSON' };
+  }
+  const record = (typeof payload === 'object' && payload !== null ? payload : {}) as Record<string, unknown>;
+  const project = (record.project as { path_with_namespace?: unknown } | undefined)?.path_with_namespace;
+  const repository = typeof project === 'string' ? project : null;
+  let branch: string | null;
+  if (event === 'Push Hook') branch = branchOf(record.ref);
+  else {
+    const source = (record.object_attributes as { source_branch?: unknown } | undefined)?.source_branch;
+    branch = typeof source === 'string' && source !== '' ? source : null;
+  }
   if (branch === null) return { kind: 'ignored', reason: 'no branch named' };
   if (branch === defaultBranch) return { kind: 'default-branch', repository };
   return { kind: 'branch', branch, repository };

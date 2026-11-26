@@ -760,7 +760,8 @@ export class ForgeUnreachableError extends ContextureError {
     super(ExitCode.Usage, {
       code: 'forge.unreachable',
       severity: 'error',
-      message: `The forge could not be reached through "gh": ${detail}`,
+      // support-gitlab-as-a-forge: a GitLab call names GitLab and its host itself, and is not described as `gh`'s.
+      message: detail.startsWith('GitLab ') ? `The forge could not be reached: ${detail}` : `The forge could not be reached through "gh": ${detail}`,
       details: { detail },
     });
   }
@@ -801,6 +802,18 @@ export class LandBusyError extends ContextureError {
 export class LandFlagsError extends ContextureError {
   constructor(message: string) {
     super(ExitCode.Usage, { code: 'land.flags', severity: 'error', message });
+  }
+}
+
+/** change-approval spec (support-gitlab-as-a-forge D6): GitLab chooses fast-forward per project, so a request cannot ask for a rebase merge. */
+export class MergeMethodUnsupportedError extends ContextureError {
+  constructor() {
+    super(ExitCode.Usage, {
+      code: 'change_approval.merge_method',
+      severity: 'error',
+      message: 'change_approval.merge_method is "rebase", which a store on GitLab cannot use; set it to "squash" or "merge".',
+      details: { merge_method: 'rebase', accepted: ['squash', 'merge'] },
+    });
   }
 }
 

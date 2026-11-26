@@ -1,3 +1,4 @@
+import { forgeOf } from '../forge/credentials.js';
 import type { GitResult, GitRunner } from '../git/exec.js';
 
 /**
@@ -22,7 +23,10 @@ export interface CommitOptions {
 export async function committerEnv(git: GitRunner, cwd: string, env: Readonly<Record<string, string | undefined>>, login: string): Promise<Record<string, string>> {
   const email = (await git.run(['config', '--get', 'user.email'], { cwd, allowFailure: true })).stdout.trim();
   if (email !== '' || env.GIT_COMMITTER_EMAIL || env.EMAIL) return {};
-  const address = `${login.replace(/\[bot\]$/, '')}@users.noreply.github.com`;
+  // support-gitlab-as-a-forge: the noreply address is on the repository's own forge host.
+  const origin = await git.run(['config', '--get', 'remote.origin.url'], { cwd, allowFailure: true });
+  const forge = origin.exitCode === 0 ? forgeOf(origin.stdout, env) : null;
+  const address = `${login.replace(/\[bot\]$/, '')}@users.noreply.${forge?.kind === 'gitlab' ? forge.host : 'github.com'}`;
   return { GIT_COMMITTER_NAME: login, GIT_COMMITTER_EMAIL: address };
 }
 

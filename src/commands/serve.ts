@@ -6,7 +6,7 @@ import { buildLinkResolver } from '../core/browse/link-resolver.js';
 import { renderIndexBody, renderNav } from '../core/browse/nav.js';
 import { parsePullPreviewPath, PREVIEW_ROUTE_PREFIX, PUBLISH_ROUTE_PREFIX, REVIEW_HEAD_PARAM, REVIEW_ROUTE_PREFIX } from '../core/browse/page-url.js';
 import { PullPreviews } from '../core/browse/pull-preview.js';
-import { hintOf, readBody, readWebhookSecret, signatureValid, WEBHOOK_ROUTE } from '../core/browse/webhook.js';
+import { GITLAB_WEBHOOK_ROUTE, gitlabHintOf, hintOf, readBody, readWebhookSecret, signatureValid, tokenValid, WEBHOOK_ROUTE } from '../core/browse/webhook.js';
 import { hardenGit } from '../core/git/hardened.js';
 import type { ForgeCredentials } from '../core/forge/credentials.js';
 import type { ForgeClient } from '../core/forge/github.js';
@@ -30,10 +30,11 @@ import type { Store } from '../core/store.js';
 import { renderReview } from '../core/browse/review.js';
 import { handleApprove, isApprovePath, isDecisionRoute, type ApprovalServer, type PageKit } from '../core/browse/approve.js';
 import { createIdentityVerifier } from '../core/approval/identity.js';
-import { ForgeUnreachableError, RecordingLoginMismatchError } from '../core/errors.js';
-import { credentialsFor, type CredentialKind } from '../core/forge/credentials.js';
+import { ForgeUnreachableError, MergeMethodUnsupportedError, RecordingLoginMismatchError } from '../core/errors.js';
+import { credentialsFor, forgeOf, type CredentialKind } from '../core/forge/credentials.js';
 import { storeForges } from '../core/approval/store-forges.js';
-import { createGhForgeClient, ForgeRequestError } from '../core/forge/github.js';
+import { forgeClientFor } from '../core/forge/client.js';
+import { ForgeRequestError } from '../core/forge/github.js';
 import { isMcpPath, McpSurface } from '../core/mcp/surface.js';
 import { isPluginPath, PluginDownloads } from '../core/plugin/routes.js';
 
@@ -143,6 +144,7 @@ async function handleRequest(
   stderr: NodeJS.WritableStream,
   pulls: PullPreviews,
   webhookSecret: Buffer | null,
+  webhookGitLab: boolean,
   req: IncomingMessage,
   res: ServerResponse,
 ): Promise<void> {
@@ -163,14 +165,15 @@ async function handleRequest(
   // context-browsing spec: the one exception to read-only is a POST to the decision route of a store that declares change approval.
   const decisionPost = method === 'POST' && (approval !== null || approvalError !== null) && isDecisionRoute(pathname);
   // serve-keeps-its-clone-current D9: and a POST to the webhook, which exists only with a secret in the environment.
-  const webhookPost = method === 'POST' && webhookSecret !== null && pathname === WEBHOOK_ROUTE;
+  // support-gitlab-as-a-forge D8: only the route of the store's own forge exists.
+  const webhookPost = method === 'POST' && webhookSecret !== null && pathname === (webhookGitLab ? GITLAB_WEBHOOK_ROUTE : WEBHOOK_ROUTE);
   if (method !== 'GET' && method !== 'HEAD' && !decisionPost && !webhookPost) {
     send(res, method, 405, 'text/plain; charset=utf-8', 'method not allowed\n');
     return;
   }
 
   if (webhookPost) {
-    await handleWebhook(store, landing, pulls, webhookSecret, stderr, req, res);
+    await handleWebhook(store, landing, pulls, webhookSecret, webhookGitLab, stderr, req, res);
     return;
   }
 
@@ -361,6 +364,7 @@ async function handleWebhook(
   landing: StoreUpdateControl,
   pulls: PullPreviews,
   secret: Buffer,
+  gitlab: boolean,
   stderr: NodeJS.WritableStream,
   req: IncomingMessage,
   res: ServerResponse,
@@ -370,12 +374,15 @@ async function handleWebhook(
     send(res, 'POST', 413, 'text/plain; charset=utf-8', 'delivery too large\n');
     return;
   }
-  if (!signatureValid(secret, body, req.headers['x-hub-signature-256'])) {
+  // GitLab sends the secret itself in a header; GitHub signs the body with it.
+  if (gitlab ? !tokenValid(secret, req.headers['x-gitlab-token']) : !signatureValid(secret, body, req.headers['x-hub-signature-256'])) {
     stderr.write('serve: webhook: a delivery without a valid signature was refused\n');
     send(res, 'POST', 401, 'text/plain; charset=utf-8', 'signature does not verify\n');
     return;
   }
-  const hint = hintOf(req.headers['x-github-event'], body, store.config.git.default_branch);
+  const hint = gitlab
+    ? gitlabHintOf(req.headers['x-gitlab-event'], body, store.config.git.default_branch)
+    : hintOf(req.headers['x-github-event'], body, store.config.git.default_branch);
   send(res, 'POST', 202, 'text/plain; charset=utf-8', hint.kind === 'ignored' ? `ignored: ${hint.reason}\n` : 'accepted\n');
   if (hint.kind === 'default-branch') {
     stderr.write(`serve: webhook: ${store.config.git.default_branch} changed${hint.repository === null ? '' : ` on ${hint.repository}`}; starting a store-update run\n`);
@@ -406,7 +413,8 @@ async function approvalServer(env: RunEnv, store: Store): Promise<ApprovalServer
   const approval = store.config.change_approval;
   if (approval === undefined) return null;
   const credentials = await credentialsFor(env, store.root);
-  const forge = createGhForgeClient(store.root, credentials);
+  const forge = forgeClientFor(store.root, credentials);
+  if (forge.kind === 'gitlab' && approval.merge_method === 'rebase') throw new MergeMethodUnsupportedError();
   let login: string;
   try {
     login = await forge.login();
@@ -488,7 +496,7 @@ function storeForge(env: RunEnv): (store: Store) => Promise<{ forge: ForgeClient
   let formed: Promise<{ forge: ForgeClient; credentials: ForgeCredentials }> | null = null;
   return (store) => {
     formed ??= credentialsFor(env, store.root)
-      .then((credentials) => ({ forge: createGhForgeClient(store.root, credentials), credentials }))
+      .then((credentials) => ({ forge: forgeClientFor(store.root, credentials), credentials }))
       .catch((err: unknown) => {
         formed = null;
         throw err;
@@ -501,6 +509,8 @@ export async function execute(env: RunEnv, store: Store, flags: ServeFlags): Pro
   // Startup still fails fast on a recording-login mismatch or an unreachable forge; only later changes degrade.
   // An ambiguous or unreadable webhook secret fails it too: a store that asked for the webhook should not run without it.
   const webhookSecret = await readWebhookSecret(env.env);
+  const origin = await env.git.run(['config', '--get', 'remote.origin.url'], { cwd: store.root, allowFailure: true });
+  const webhookGitLab = origin.exitCode === 0 && forgeOf(origin.stdout, env.env)?.kind === 'gitlab';
   const approval = await approvalServer(env, store);
   const holder = await createServingState({
     initial: store,
@@ -522,7 +532,7 @@ export async function execute(env: RunEnv, store: Store, flags: ServeFlags): Pro
   process.once('SIGTERM', shutdown);
   process.once('SIGINT', shutdown);
   const server = createServer((req, res) => {
-    handleRequest(holder, landing, mcp, plugins, routeGit, env.io.stderr, pulls, webhookSecret, req, res).catch((err: unknown) => {
+    handleRequest(holder, landing, mcp, plugins, routeGit, env.io.stderr, pulls, webhookSecret, webhookGitLab, req, res).catch((err: unknown) => {
       env.io.stderr.write(`serve: ${err instanceof Error ? err.message : String(err)}\n`);
       if (!res.headersSent) send(res, req.method ?? 'GET', 500, 'text/plain; charset=utf-8', 'internal error\n');
       else res.end();

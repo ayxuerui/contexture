@@ -11,8 +11,10 @@ whole session, as step 4 says. Why: this store lands the session's parts in orde
    `__DEFAULT_BRANCH__`, which has no session to infer, as the session itself. Never land
    `__DEFAULT_BRANCH__` itself; a pull request whose head is `__DEFAULT_BRANCH__` is refused too.
    Run every step from outside the worktree being removed. Why: no command can remove the directory it runs from.
-2. Read state before any side effect. Run `gh pr view <target> --json number,url,title,state,headRefName`.
-   A closed pull request stops here. Report it, and do nothing more.
+2. Read state before any side effect. Run `ctxr session list --review`. Find the row whose branch or
+   pull-request number is the target. A row with no open pull request stops here. Report it, and do nothing
+   more. A target with no row is not a session of this checkout: `ctxr land` reads its state itself and
+   refuses a pull request that is not open.
    When this store declares `change_approval`, also run `ctxr review list`. Find the row for this pull request.
    Why: a decision made on the approval page is recorded there, with the person who made it.
 3. Gate. Landing is an external side effect, and plan consent is not fire consent.
@@ -36,7 +38,7 @@ whole session, as step 4 says. Why: this store lands the session's parts in orde
      removes a note before its copy lands.
    The command catches the branch up with `__DEFAULT_BRANCH__` and merges. It re-reads state to confirm that
    the forge reports the pull request merged. It fast-forwards the canonical clone, removes the worktree and
-   its branch, and records the landing. Do not run `gh pr merge` yourself. Why: the command holds the consent
+   its branch, and records the landing. Do not merge the pull request yourself, with a forge's command-line tool or on its site. Why: the command holds the consent
    check, and it never trusts a merge command's exit code alone.
 5. Act on the outcome the command reports. For a session, the command also reports the session's state, the
    part that stopped it, and the parts it did not try.

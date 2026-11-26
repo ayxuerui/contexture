@@ -81,4 +81,34 @@ describe('session decision marker', () => {
     const body = decisionBody({ decision: 'approve', head: H2, by: 'a@example.com', at: 'now', carriedFrom: null, comment: null, session });
     expect(parseDecision(body.replace('parts=', 'parts=junk,'))).toBeNull();
   });
+
+  const prefix = 'session/';
+
+  it('keeps a GitLab subgroup path whole, in the slug and in a joined worktree name (support-gitlab-as-a-forge D7)', () => {
+    expect(forgeSlugOf('https://gitlab.com/ctx-a/team/work.git')).toBe('ctx-a/team/work');
+    expect(forgeSlugOf('git@gitlab.com:ctx-a/work.git')).toBe('ctx-a/work');
+    // A host nobody named is not GitLab: the last two segments, as before.
+    expect(forgeSlugOf('https://gitlab.example.com/ctx-a/team/work.git')).toBe('team/work');
+    expect(forgeSlugOf('https://gitlab.example.com/ctx-a/team/work.git', { CONTEXTURE_GITLAB_HOST: 'gitlab.example.com' })).toBe('ctx-a/team/work');
+
+    const home = { home: 'ctx-a/team/work', branch: 'session/20261023-070000-ctx-move' };
+    expect(parseSessionMarker(`Why.\n\n${sessionMarker(home)}`)).toEqual(home);
+    const name = joinedWorktreeName(prefix, home, prefix);
+    expect(name).toBe('session-ctx-a--team--work--20261023-070000-ctx-move');
+    expect(sessionIdentityFor({ prefix, homePrefix: prefix, ownSlug: 'ctx-a/team/notes', worktreeName: name, branch: 'notes/move', nestedHome: true })).toEqual(home);
+  });
+
+  it('still splits a GitHub repository name that holds -- as one name', () => {
+    const home = { home: 'example/ctx--a', branch: 'session/20261023-070000-ctx-move' };
+    const name = joinedWorktreeName(prefix, home, prefix);
+    expect(sessionIdentityFor({ prefix, homePrefix: prefix, ownSlug: 'example/ctx-b', worktreeName: name, branch: 'notes/move' })).toEqual(home);
+  });
+
+  it('a session decision names parts by a slug of any depth', () => {
+    const head = 'a'.repeat(40);
+    const session = { id: 'd-1', session: { home: 'ctx-a/team/work', branch: 'session/x' }, parts: [{ store: 'ctx-a/team/notes', number: 3, head }, { store: 'ctx-a/team/work', number: 7, head }] };
+    const parsed = parseDecision(decisionBody({ decision: 'approve', head, by: 'a@example.com', at: '2026-10-23T07:00:00.000Z', carriedFrom: null, comment: null, session }));
+    expect(parsed?.session).toEqual(session);
+    expect(recordPartOf(parsed!.session!)).toEqual(session.parts[1]);
+  });
 });

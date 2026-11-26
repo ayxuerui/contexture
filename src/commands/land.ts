@@ -14,11 +14,12 @@ import { readConfig } from '../config/load.js';
 import type { CommandOutcome, CommandRequires } from '../core/command.js';
 import type { Finding } from '../core/envelope.js';
 import type { RunEnv } from '../core/env.js';
-import { ChangeApprovalNotDeclaredError, ContextureError, ForgeUnreachableError, LandBusyError, LandFlagsError, LandRefusedError } from '../core/errors.js';
+import { ChangeApprovalNotDeclaredError, ContextureError, ForgeUnreachableError, LandBusyError, LandFlagsError, LandRefusedError, MergeMethodUnsupportedError } from '../core/errors.js';
 import { acquireLandLock } from '../core/git/land-lock.js';
 import { ExitCode } from '../core/exit-codes.js';
 import { credentialsFor, ghCredentials, runRemoteGit, type CredentialKind, type ForgeCredentials } from '../core/forge/credentials.js';
-import { createGhForgeClient, ForgeRequestError, type ForgeClient, type MergeMethod, type PullRequest } from '../core/forge/github.js';
+import { forgeClientFor } from '../core/forge/client.js';
+import { ForgeRequestError, type ForgeClient, type MergeMethod, type PullRequest } from '../core/forge/github.js';
 import { storePrefix } from '../core/graph/tree.js';
 import { addDetachedWorktree, mainWorktreePath, pruneWorktrees, removeWorktree } from '../core/git/worktree.js';
 import { openStore, type Store } from '../core/store.js';
@@ -142,7 +143,7 @@ async function remoteGit(ctx: Context, args: readonly string[], cwd: string, all
 }
 
 /** write-lifecycle spec: a record goes on the pull request only under the recording login; otherwise only into the envelope. */
-async function record(ctx: Context, result: LandResult, label: string, post: () => Promise<void>): Promise<void> {
+async function record(ctx: Context, result: LandResult, label: string, post: () => Promise<unknown>): Promise<void> {
   if (!ctx.canRecord) {
     result.records_reported_only.push(label);
     return;
@@ -532,7 +533,9 @@ async function landHoldingLock(
   forge: ForgeClient | undefined,
 ): Promise<CommandOutcome<LandData>> {
   const credentials = forge === undefined ? await credentialsFor(env, store.root) : ghCredentials(env.env);
-  const client = forge ?? createGhForgeClient(store.root, credentials);
+  const client = forge ?? forgeClientFor(store.root, credentials);
+  // support-gitlab-as-a-forge D6: refused before any forge write.
+  if (client.kind === 'gitlab' && approval?.merge_method === 'rebase') throw new MergeMethodUnsupportedError();
   const canonical = await mainWorktreePath(env.git, store.root);
   const prefix = await storePrefix(env.git, store.root);
   const defaultBranch = store.config.git.default_branch;
@@ -560,7 +563,7 @@ async function landHoldingLock(
   if (flags.pending) {
     await remoteGit(ctx, ['fetch', '--quiet', 'origin'], canonical, true);
     // A pull request carrying a session marker is its session's: landed below when homed here, left to its home otherwise.
-    const reach = await storeReach(env.git, { root: store.root, canonical, config: store.config, forge: client, credentials }, storeForges(env, forge));
+    const reach = await storeReach(env.git, { root: store.root, canonical, config: store.config, forge: client, credentials }, storeForges(env, forge), env.env);
     reached = reach;
     const approved = (await sessionPulls(env.git, canonical, store.config, client, recordingLogin!)).filter(
       (p) => p.review.state === 'approved' && !readAsSessionPart(p.pull, reach?.home.slug ?? null, store.config),
@@ -651,6 +654,9 @@ async function mountContext(home: Context, store: SessionStore): Promise<{ ctx: 
   } catch (err) {
     if (!(err instanceof ForgeRequestError)) throw err;
     return { reason: `the mount's forge could not be read: ${err.message}` };
+  }
+  if (store.forge.kind === 'gitlab' && approval?.merge_method === 'rebase') {
+    return { reason: 'the mount sets change_approval.merge_method to "rebase", which a store on GitLab cannot use' };
   }
   return {
     ctx: {
@@ -848,13 +854,13 @@ function heldResult(part: string, outcome: LandOutcome, reason: string): LandRes
 
 /** `--session`: the session named by its worktree name or branch in this store, landed whole on `--confirm`. */
 async function landSessionByName(ctx: Context, name: string, forge: ForgeClient | undefined, results: LandResult[], noteReach: (reach: StoreReach) => void): Promise<SessionLandResult> {
-  const reach = await storeReach(ctx.env.git, { root: ctx.store.root, canonical: ctx.canonical, config: ctx.store.config, forge: ctx.forge, credentials: ctx.credentials }, storeForges(ctx.env, forge));
+  const reach = await storeReach(ctx.env.git, { root: ctx.store.root, canonical: ctx.canonical, config: ctx.store.config, forge: ctx.forge, credentials: ctx.credentials }, storeForges(ctx.env, forge), ctx.env.env);
   if (reach !== null) noteReach(reach);
   if (reach === null) throw new LandRefusedError('session_not_found', 'This store has no "origin" remote to name a session by.', { session: name });
   const worktree = (await sessionWorktrees(ctx.env.git, ctx.canonical, ctx.store.config)).find((w) => w.name === name || w.branch === name);
   const identity: SessionIdentity | null =
     worktree !== undefined
-      ? await identityOfWorktree(ctx.env.git, ctx.store.config, worktree.path, worktree.name, worktree.branch)
+      ? await identityOfWorktree(ctx.env.git, ctx.store.config, worktree.path, worktree.name, worktree.branch, ctx.env.env)
       : { home: reach.home.slug, branch: name };
   if (identity === null || identity.home !== reach.home.slug) {
     throw new LandRefusedError('session_homed_elsewhere', `The session "${name}" is homed in ${identity?.home ?? 'another store'}; it is landed from there.`, { session: name });

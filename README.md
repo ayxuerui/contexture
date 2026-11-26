@@ -486,6 +486,27 @@ CONTEXTURE_GITHUB_OWNER_TOKENS_DIR=/home/agent/.config/contexture/owner-tokens  
 
 For a repository whose owner has a file there (`origin`'s owner, or a mount's declared URL before it is cloned; names compared without regard to case), `ctxr` hands that token to `gh` and to git for that one command: `shared-stores sync`, `session start`, `session submit`, `review list`, `land` and `update` alike. It is never written to a remote URL, a git configuration file, the store, or any output. A repository whose owner has no file keeps `gh`'s own credential, and with the variable unset nothing changes. An unreadable directory, an empty or unreadable file, or two files whose names differ only by case stop the command before any forge call. The organization's token needs **Contents** and **Pull requests** read and write and **Metadata** read on the mounted repositories, and nothing else. In App mode the directory is not read. Envelopes report `credential: owner-token` with `credential_owner`, `ctxr shared-stores status` names each mount's credential without a network call, and a clone or fetch the forge refuses names the owner. Only commands `ctxr` runs use the token: a bare `git fetch` in a mount still uses git's own credential.
 
+### A store on GitLab
+
+A store whose `origin` is on gitlab.com, or on one GitLab host you run yourself, works the same way: sessions open merge requests, mounts sync, the approval page records decisions, `ctxr land` merges, and the webhook keeps `serve` current. Which forge a repository is on is read from its URL, so nothing goes in `contexture.yaml`, and a store on GitHub can mount one on GitLab. No `glab` or `gh` is needed for a GitLab store.
+
+```sh
+CONTEXTURE_GITLAB_HOST=gitlab.example.com        # only for a host other than gitlab.com
+CONTEXTURE_GITLAB_TOKEN_FILE=/run/secrets/gitlab-token   # or CONTEXTURE_GITLAB_TOKEN=<the token>
+```
+
+The token needs the `api` scope, which also covers git over https. `ctxr` sends it only to that host, hands it to git for one command at a time, and reports `credential: gitlab-token`, never the token. With neither variable set, git uses whatever credential it already has (an ssh key, say), and a command that needs GitLab's API stops and names both variables. Setting both is refused.
+
+**Which token.** An agent uses the token of the person it works for. `serve` uses the recording identity's: set `recording_login` to that user's GitLab username, and `serve` refuses to start when the token belongs to anyone else. A project or group access token gives a bot user that exists only for that project or group (on gitlab.com these need Premium or Ultimate; on a host you run, any license). A dedicated account's personal access token works everywhere. Either way the token expires, within a year by default, so note the date. As with the App key, the `serve` token belongs only in `serve`'s environment, never where an agent runs commands.
+
+**How a decision is recorded.** GitLab has no review that carries a body, so a decision is a note on the merge request by the recording identity, and only such a note counts. An approval is also shown as that user's approval in GitLab, and a request for changes withdraws it, so GitLab's own page and an approval rule naming that user agree with the approval page. If GitLab refuses that second step the decision still stands, and the approval page says so. Approving a merge request in GitLab's own interface is not a decision.
+
+**Merging.** `merge_method` may be `squash` (the default) or `merge`. `rebase` is refused on a GitLab store, where fast-forward is a project setting and not something a request can ask for.
+
+**The webhook.** With a webhook secret set, a GitLab store's `serve` accepts `POST /hooks/gitlab` instead of `/hooks/github`. In the project's **Settings → Webhooks**: URL `https://ctx.example.com/hooks/gitlab`, the same secret as the **Secret token**, and the **Push events** and **Merge request events** triggers. GitLab sends the secret in the `X-Gitlab-Token` header, so the route must be reached over https only. The access-proxy bypass is for exactly `/hooks/gitlab`.
+
+**Limits.** One GitLab host per deployment. An instance served under a URL subpath is not supported. A session cannot have parts on two forges: `ctxr session start --joins` refuses it. There is no per-group token directory, because one GitLab token reaches every project its user can.
+
 GitHub Free cannot protect a private repository on a personal account, so such a store has no required-review rule; `ctxr land`'s consent check is what gates the merge either way. Where branch protection is available, require one approving review and leave **"Require approval of the most recent reviewable push"** off: the runner pushes a rebase and then approves the carry-over as the same identity.
 
 ## Connecting chat apps (MCP)
