@@ -7,9 +7,9 @@ import { onPath, type Confinement, type ConfinedRun } from './confine.js';
 import { childEnvironment, PASS_ENV_VARIABLE, protectedPassThroughNames, type SourceEnv } from './environment.js';
 import { judgeCritique } from './judge.js';
 import { firstLines, runCli, type CliResult } from './launch.js';
-import { ALL_CLIS, buildInvocation, FLAGS_USED, INSTALL_LEVELS, LOGIN_FILES, MAX_ARGV_BYTES, normalize, QUORUM, ROLE_CLI, ROLES, TIERS, lineupCell, CRITIC_TOOL, hasTool, lineupCritics, RETIRED_CRITIC_NAMES, retiredVariables, routeConflicts, type Cli, type CliModel, type LineupSource, type Role, type Route, type RouteSource, type Tier, type ToolCritic } from './lineup.js';
+import { ALL_CLIS, buildInvocation, FLAGS_USED, INSTALL_LEVELS, LOGIN_FILES, MAX_ARGV_BYTES, normalize, QUORUM, ROLES, TIERS, lineupCell, CRITIC_TOOL, hasTool, lineupCritics, RETIRED_CRITIC_NAMES, retiredVariables, routeConflicts, type Cli, type CliModel, type LineupSource, type Role, type Route, type RouteSource, type Tier, type ToolCritic } from './lineup.js';
 import { askOpenRouter, OPENROUTER_KEY_VARIABLE, openRouterBase } from './openrouter.js';
-import { critiquePrompt, pollPrompt } from './prompts.js';
+import { critiquePrompt, pollPrompt, roleOrder } from './prompts.js';
 
 /**
  * run-the-second-opinion-from-the-cli: the three modes of `ctxr second-opinion`,
@@ -346,8 +346,9 @@ export interface CritiqueOptions extends CommonOptions {
 
 export interface CritiqueEntry {
   letter: string | null;
-  role: Role;
   cli: Cli;
+  /** The four roles in the order this critic was given them (review-a-plan-in-every-role D4). */
+  role_order: Role[];
   /** The model the CLI was asked for, and whether the environment, the store or the shipped lineup named it. */
   model_asked: string;
   model_source: LineupSource;
@@ -360,6 +361,8 @@ export interface CritiqueEntry {
   cause: string | null;
   verdict: string | null;
   findings: number;
+  /** How many findings each role's section holds. */
+  findings_by_role: Record<Role, number>;
   veto: boolean;
   duration_ms: number;
 }
@@ -389,22 +392,21 @@ export async function critique(ctx: SecondOpinionContext, opts: CritiqueOptions)
   const dir = outDir(ctx, opts.out, opts.print);
   const r = await resolve(ctx, opts, true);
   const seed = opts.seed === undefined ? null : Number(opts.seed);
-  const roles = ROLES.filter((role) => r.clis.includes(ROLE_CLI[role]));
-  ctx.progress(`plan: ${plan.length} characters (about ${Math.ceil(plan.length / 4)} tokens) · tier: ${r.tier} · critics: ${roles.length} · each may take 1-3 minutes`);
+  const noFindings = Object.fromEntries(ROLES.map((role) => [role, 0])) as Record<Role, number>;
+  ctx.progress(`plan: ${plan.length} characters (about ${Math.ceil(plan.length / 4)} tokens) · tier: ${r.tier} · critics: ${r.clis.length} · each reviews in ${ROLES.length} roles and may take 1-4 minutes`);
 
   const runs = await Promise.all(
-    roles.map(async (role) => {
-      const cli = ROLE_CLI[role];
-      const prompt = critiquePrompt(role, plan);
+    r.clis.map(async (cli) => {
+      const prompt = critiquePrompt(cli, plan);
       const cell = lineupCell(ctx.source, ctx.lineup, r.tier, cli);
       const started = Date.now();
       const raw = await ask(ctx, r, cli, cell, prompt, r.timeout, `prompt is ${Buffer.byteLength(prompt)} bytes; agy takes it as one argument and the limit is ${MAX_ARGV_BYTES}`);
-      if (dir !== null) writeFileSync(path.join(dir, 'raw', `${role}-${cli}.txt`), raw.rawFile);
-      const base = { role, cli, asked: cell, duration_ms: Date.now() - started };
-      if (!raw.ok) return { ...base, status: 'failed' as const, cause: raw.cause, model: raw.model, text: '', verdict: null, findings: 0, veto: false };
+      if (dir !== null) writeFileSync(path.join(dir, 'raw', `${cli}.txt`), raw.rawFile);
+      const base = { cli, role_order: roleOrder(plan, cli), asked: cell, duration_ms: Date.now() - started };
+      if (!raw.ok) return { ...base, status: 'failed' as const, cause: raw.cause, model: raw.model, text: '', verdict: null, findings: 0, findings_by_role: noFindings, veto: false };
       const { text, model } = raw;
       const judged = judgeCritique(text, plan);
-      return { ...base, status: judged.status, cause: judged.cause, model, text, verdict: judged.verdict, findings: judged.findings.length, veto: judged.veto };
+      return { ...base, status: judged.status, cause: judged.cause, model, text, verdict: judged.verdict, findings: judged.findings.length, findings_by_role: judged.findings_by_role, veto: judged.veto };
     }),
   );
 
@@ -419,9 +421,9 @@ export async function critique(ctx: SecondOpinionContext, opts: CritiqueOptions)
     tier: r.tier,
     quorum: QUORUM,
     critiques: runs.map((x) => ({
-      letter: letters.find((l) => l.role === x.role)?.letter ?? null,
-      role: x.role,
+      letter: letters.find((l) => l.cli === x.cli)?.letter ?? null,
       cli: x.cli,
+      role_order: x.role_order,
       model_asked: x.asked.model,
       model_source: x.asked.source,
       route: x.asked.route,
@@ -431,6 +433,7 @@ export async function critique(ctx: SecondOpinionContext, opts: CritiqueOptions)
       cause: x.cause,
       verdict: x.verdict,
       findings: x.findings,
+      findings_by_role: x.findings_by_role,
       veto: x.veto,
       duration_ms: x.duration_ms,
     })),
@@ -441,7 +444,7 @@ export async function critique(ctx: SecondOpinionContext, opts: CritiqueOptions)
   };
   if (dir !== null) writeFileSync(path.join(dir, 'manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`);
 
-  // stdout names letters, never roles or models; a failed critic has no letter and is named by CLI, since that is what to fix.
+  // stdout names letters, never critics or models; a failed critic has no letter and is named by CLI, since that is what to fix.
   const lines = [...(dir !== null ? [`out: ${dir}`] : []), `valid: ${valid}  blind: ${runs.filter((x) => x.status === 'blind').length}  failed: ${runs.filter((x) => x.status === 'failed').length}`];
   for (const x of [...letters].sort((a, b) => a.letter.localeCompare(b.letter))) {
     lines.push(`  ${x.letter}  ${x.status}  ${x.verdict ?? '-'}  findings=${x.findings}${x.veto ? '  veto' : ''}`);
@@ -457,7 +460,7 @@ export async function critique(ctx: SecondOpinionContext, opts: CritiqueOptions)
   const sorted = [...letters].sort((a, b) => a.letter.localeCompare(b.letter));
   for (const x of sorted) lines.push('', `===== critique-${x.letter} =====`, x.text);
   lines.push('', '===== letters (write the synthesis before reading on) =====');
-  for (const x of sorted) lines.push(`  ${x.letter}  ${x.role}  ${x.cli}  model=${x.model ?? 'not reported'}${routeNote(x.asked)}`);
+  for (const x of sorted) lines.push(`  ${x.letter}  ${x.cli}  model=${x.model ?? 'not reported'}${routeNote(x.asked)}`);
   return { out: null, manifest, texts: Object.fromEntries(sorted.map((x) => [x.letter, x.text])), lines };
 }
 

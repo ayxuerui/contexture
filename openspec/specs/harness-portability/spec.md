@@ -753,18 +753,18 @@ A contexture-owned skill SHALL be able to ship packaged files beside its `SKILL.
 - **THEN** that harness's copy of the skill directory contains the same supporting files as the canonical one
 
 ### Requirement: The second-opinion skill is an owned skill over external model CLIs
-contexture SHALL ship `ctxr-second-opinion` as a contexture-owned skill delivered by init and update, carrying no supporting files and driving the `ctxr second-opinion` command group. The command SHALL offer two modes: *critique*, in which a written plan is sent to three critic roles — structure and coherence, failure modes and trust boundaries, and simplicity and cost — each backed by a different model family's command-line tool; and *poll*, in which one question is sent to the same model families, optionally asking each to answer through two or three named taste lenses; and a *preflight* that checks each tool before anything is spent. `ctxr second-opinion` SHALL be the only `ctxr` command that invokes a model CLI. No other command's behavior SHALL depend on it or on those CLIs being present, it SHALL NOT be invoked by any command on the write path, and `ctxr verify` SHALL NOT report the CLIs. The critic contract, persona mandates and lens roster SHALL be shipped as package templates.
+contexture SHALL ship `ctxr-second-opinion` as a contexture-owned skill delivered by init and update, carrying no supporting files and driving the `ctxr second-opinion` command group. The command SHALL offer two modes: *critique*, in which a written plan is sent to the critic roles — structure and coherence, failure modes and trust boundaries, simplicity and cost, and, where a fourth family is in the lineup, how the result will be checked — each backed by a different model family, reached through that family's command-line tool or through OpenRouter, as the lineup and the machine's default give; and *poll*, in which one question is sent to the same model families, optionally asking each to answer through two or three named taste lenses; and a *preflight* that checks each tool before anything is spent. `ctxr second-opinion` SHALL be the only `ctxr` command that invokes a model CLI or calls a model API. No other command's behavior SHALL depend on it or on those CLIs being present, it SHALL NOT be invoked by any command on the write path, and `ctxr verify` SHALL NOT report the CLIs. The critic contract, persona mandates and lens roster SHALL be shipped as package templates.
 
 The command is the enforcing mechanism for the following, each covered by a test that runs it against stub CLIs on the executable search path:
 
-- It SHALL run the critics concurrently, each in its own process and each given only the plan and its own role — never another critic's output.
+- It SHALL run the critics concurrently, each model CLI in its own process, and each critic given only the plan and its own role — never another critic's output.
 - It SHALL pass prompt content to each CLI on standard input or as a single argument vector element, never through a shell.
 - It SHALL invoke each CLI with that tool's read-only or no-tools mode where one exists, and in an empty scratch directory as its working directory in every case.
 - It SHALL give each CLI an environment built from a declared allowlist — the executable search path, home, locale and terminal variables, the model CLIs' own variable prefixes, proxy and certificate variables, its own `CTXR_SECOND_OPINION_` variables, and any names an operator lists in a declared pass-through variable, except the forge and contexture prefixes, which the pass-through cannot name — and no other variable of its own environment.
 - It SHALL bound each critic by a timeout and record a critic that times out, exits non-zero, or returns output lacking the required verdict as failed, with the cause.
 - It SHALL write each critique under a letter assigned in an order independent of the critic roster, record the letter-to-role-and-model mapping in a separate manifest, and record in that manifest the model each CLI reports having run where the CLI reports one.
 - It SHALL mark a critique whose findings cite nothing the plan contains — no step it numbers and no text quoted from it — as blind and exclude it from the count of valid critiques, while a critique that approves with no findings SHALL remain valid.
-- It SHALL exit with the failed-check status when fewer than two critiques are valid, so a partial result cannot be mistaken for a complete one, and with the usage status for invalid arguments or fewer than two requested CLIs.
+- It SHALL exit with the failed-check status when fewer than two critiques are valid, so a partial result cannot be mistaken for a complete one, and with the usage status for invalid arguments or fewer than two requested critics.
 
 The skill SHALL state when to critique, when to poll, and when to answer directly; SHALL instruct synthesis on the anonymized letters before the manifest is read; SHALL instruct that a dissent backed by cited evidence, and a rejection carrying a critical finding, are surfaced in their own sections rather than outvoted; SHALL disclose that a critic sharing the orchestrating agent's model family is a bias to name; and SHALL end in a hand-off that executes no step of the plan it critiqued. Those instructions are skill-markdown conventions, asserted by a test over the rendered skill, not guarantees the command can make.
 
@@ -1255,31 +1255,389 @@ contexture SHALL ship `ctxr-submit` and `ctxr-land` as contexture-owned skills d
 - **WHEN** `CTXR_SECOND_OPINION_PASS_ENV=CORP_CONFIG` and `CORP_CONFIG` are set
 - **THEN** each stub saw `CORP_CONFIG`
 
-### Requirement: Owned skills render for the MCP surface from the same source
-The owned skills SHALL render for a second target, the MCP surface, alongside the CLI render, which SHALL be unchanged by it. The MCP render SHALL include a declared subset of the owned skills; every included skill SHALL render from its CLI template, unchanged, with one shared preamble naming how each command and git step maps to the surface's tools. The upgrade, Circleback and second-opinion skills, which run local programs, the land skill and the derived-artifacts skill SHALL NOT be included.
-
-#### Scenario: The CLI render is unchanged
-- **WHEN** the owned skills are rendered for the CLI on a store before and after this rendering exists
-- **THEN** the two renders are byte-identical
-
-#### Scenario: A capture skill reaches the chat app
-- **WHEN** the owned skills are rendered for the MCP surface
-- **THEN** the capture skill is included with the shared preamble, the submit skill's text equals the CLI render's under the preamble, and the upgrade, second-opinion and land skills are absent
-
 ### Requirement: An MCP-rendered skill names only what the surface offers
-A test over the MCP render SHALL fail, naming the skill and the term, when an included skill names a tool the surface does not register, a `ctxr` command the surface's command-to-tool mapping does not map, or a `git` or `gh` command the shared preamble does not map. The tool names and allowlists SHALL be read from the same definitions the server uses.
+A test over the shared skills SHALL fail, naming the skill and the term, when one names a tool the surface does not register, a `ctxr` command the surface's command-to-tool mapping neither routes nor marks unavailable, or a `git` or `gh` step whose sentence does not also name the tool that does it through the store's server. The tool names, allowlists and unavailable commands SHALL be read from the same definitions the server uses.
 
 #### Scenario: An unmapped git step fails the check
-- **WHEN** an included skill instructs `git rebase -i`
+- **WHEN** a shared skill instructs `git rebase -i` with no tool named beside it
 - **THEN** the check exits non-zero naming that skill and the command
 
-### Requirement: `ctxr plugin build` writes the store's chat-app plugins
-`ctxr plugin build` SHALL write, under an output directory that defaults to a path under the store's derived cache, a Claude plugin and a ChatGPT plugin, each as a directory and as an archive. Each SHALL carry the MCP render of the owned skills as `skills/<name>/SKILL.md` and an MCP server entry whose address is `serve.base_url` followed by `/mcp`, in that vendor's manifest format; neither SHALL carry a credential, a variable in the address, a hook, a local server or a top-level `bin/` directory. Manifest and readme text SHALL come from shipped templates. The plugin's name SHALL derive from the store's name and its version from the CLI's version and the rendered commit. The command SHALL exit with the configuration error code, writing nothing, when the store declares no `mcp` block.
+### Requirement: contexture publishes one plugin for every store
+contexture's repository SHALL carry the Claude plugin `contexture` under `plugins/contexture/`, generated from the MCP render and listed by `.claude-plugin/marketplace.json` at its root. Its `version` SHALL equal the CLI's, and it SHALL carry no MCP server entry, credential, hook, local server or top-level `bin/` directory. `ctxr plugin build` SHALL write it without reading a store, and in a store that declares `mcp` also that store's ChatGPT plugin, with its connector.
 
-#### Scenario: Both plugins are built
-- **WHEN** `ctxr plugin build` runs on a store declaring `mcp` and `serve.base_url: https://ctx-a.example.test`
-- **THEN** the output holds a Claude plugin whose `.mcp.json` names `https://ctx-a.example.test/mcp`, a ChatGPT plugin whose `mcp.json` names the same address with OAuth, both carrying the rendered skills, and an archive of each
+#### Scenario: The plugin carries no connector
+- **WHEN** `ctxr plugin build` runs outside any store
+- **THEN** it writes the Claude plugin with the rendered skills and no MCP server entry, its version is the CLI's version, and no ChatGPT plugin is written
 
-#### Scenario: A store without the MCP surface has no plugin
-- **WHEN** `ctxr plugin build` runs on a store with no `mcp` block
-- **THEN** it exits with the configuration error code and writes nothing
+### Requirement: The committed plugin is checked against the render
+A test SHALL fail, naming the first differing file, when the committed `plugins/contexture/` or `plugins/second-opinion/` differs from what `ctxr plugin build` writes, or when either's version differs from the package's, so a skill change cannot merge without the plugins it changes.
+
+#### Scenario: The committed plugin is current
+- **WHEN** the test suite runs on a commit whose skills, preamble and version match the committed `plugins/contexture/` and `plugins/second-opinion/`
+- **THEN** the freshness test passes
+
+#### Scenario: A skill change without a regenerated plugin fails
+- **WHEN** a skill template changes and `plugins/contexture/` is not regenerated
+- **THEN** the freshness test fails naming the differing skill file
+
+#### Scenario: The second plugin is checked too
+- **WHEN** the second-opinion skill's template changes and `plugins/second-opinion/` is not regenerated
+- **THEN** the freshness test fails naming that plugin's skill file
+
+### Requirement: The plugin's commands open its skills
+The plugin SHALL carry a command for each entry of a declared map from command name to included skill. Each command's body SHALL be its skill's MCP render followed by the person's arguments; and its description SHALL mark it as a typed shortcut. A test SHALL fail, naming the command, when its skill is not one the plugin carries or its body differs from that skill's render.
+
+#### Scenario: A command opens its skill
+- **WHEN** the plugin is built
+- **THEN** `commands/submit.md` carries the `ctxr-submit` render and a description beginning as a typed shortcut, and no frontmatter key beyond `description`
+
+#### Scenario: A command naming a missing skill fails
+- **WHEN** the command map names a skill the plugin does not include
+- **THEN** the check fails naming that command
+
+### Requirement: The shared skills are one text on both surfaces
+The owned skills the plugin carries SHALL be one text, from one template, that an agent follows in a shell running `ctxr` or through the store's server's tools. Each SHALL open with one shared section saying how to tell the two apart and how a `ctxr` step, a path and a commit are done through the server. A store's copy and the plugin's copy SHALL differ only in store values, which the plugin names by placeholders. The second-opinion skill SHALL be one of them, since the store's server runs `ctxr second-opinion`. The upgrade and Circleback skills, which run other local programs, and the land and derived-artifacts skills SHALL stay out of it.
+
+#### Scenario: A store's copy and the plugin's copy differ only in values
+- **WHEN** a shared skill is rendered for a store and for the plugin
+- **THEN** replacing each of the store's values in the store's copy by its placeholder yields the plugin's copy
+
+#### Scenario: The plugin carries no shell-only skill
+- **WHEN** the plugin is built
+- **THEN** it carries the capture and second-opinion skills with the shared section, and not the upgrade or land skills
+
+### Requirement: The plugin opens a second opinion by a typed command
+The plugin's command map SHALL map `second-opinion` to `ctxr-second-opinion`, so `/contexture:second-opinion` opens that skill's render through the same check as every other command.
+
+#### Scenario: The second-opinion command opens its skill
+- **WHEN** the plugin is built
+- **THEN** `commands/second-opinion.md` carries the `ctxr-second-opinion` render followed by the person's arguments
+
+### Requirement: Each model CLI runs from a fresh home holding only its login
+Where its run is confined (next requirement), `ctxr second-opinion` SHALL run each model CLI with a fresh temporary folder as both its `HOME` and its working directory, holding at the start only a copy of that CLI's declared login files, and SHALL remove the folder when the run ends. A login file the run changed SHALL be copied back over the original only when the original is unchanged since it was copied.
+
+#### Scenario: A critic starts with only its login
+- **WHEN** a confined critique runs with stub CLIs that list their `HOME`
+- **THEN** each stub's `HOME` held only its own declared login file, it was the stub's working directory, and it no longer exists after the run
+
+#### Scenario: A refreshed login is kept
+- **WHEN** the stub `codex` rewrites its `auth.json` during a confined run, and the original was not changed meanwhile
+- **THEN** the original `auth.json` holds the stub's rewrite after the run
+
+### Requirement: A model CLI's run is confined to its folder where the kernel allows
+Where `setpriv` applies Landlock rules, `ctxr second-opinion` SHALL wrap each model CLI so that it can read only the declared system paths, the CLI's install directory and its folder, and write only its folder. Where it cannot, the run SHALL use the real `HOME` and a scratch working directory as before. `preflight` SHALL run each CLI as a critique would, confinement included, and report whether it was confined and, if not, why.
+
+#### Scenario: A confined critic cannot read outside its folder
+- **WHEN** a critique runs on a machine whose `setpriv` supports Landlock, and the stub `codex` tries to read a file outside its folder
+- **THEN** the read fails with a permission error, the stub reports it, and the critique completes
+
+#### Scenario: An unconfined machine says so
+- **WHEN** `ctxr second-opinion preflight` runs where `setpriv` has no Landlock support
+- **THEN** it reports each CLI as not confined, with the reason, and its exit code is unaffected by that alone
+
+### Requirement: The environment overrides the lineup for one run, and the source is reported
+For a critic that runs its tool, a model or effort named in the command's own `CTXR_SECOND_OPINION_` environment variables SHALL win over the store's configuration for that run, in both tiers. `preflight`, and the manifest of a critique or a poll, SHALL name for each critic the model asked for and its source: the environment, the store's configuration, or the shipped default. A test runs the command against stub CLIs that record their arguments.
+
+#### Scenario: The environment wins for one run
+- **WHEN** store `ctx-a` writes the tool as a critic's route and a model for it, and the run's environment names a different model for that critic
+- **THEN** the tool is asked for the environment's model, and the report names the environment as its source
+
+#### Scenario: The report says where a model came from
+- **WHEN** a critique completes in a store that writes the tool and a model for one critic, with no key and no lineup variable in the environment
+- **THEN** the manifest records the store's configuration as that model's source and the shipped default as the source of the other two
+
+### Requirement: An invalid lineup fails and is never substituted
+The command SHALL NOT ask for another model when a CLI refuses the one resolved for it: that CLI is a failed critic, recorded with the CLI's own reason. A configuration naming a family or a route that contexture does not have SHALL fail to load, by the configuration schema, before any model CLI starts. A test covers each with stub CLIs.
+
+#### Scenario: A refused model is a failed critic
+- **WHEN** a stub CLI rejects the model the store configured for it
+- **THEN** that critic is recorded as failed with the CLI's reason, and no other model is asked for
+
+#### Scenario: An unknown CLI in the lineup is refused at load
+- **WHEN** a store's configuration names a lineup entry for a family contexture does not have
+- **THEN** loading the configuration fails naming that key, and no model CLI starts
+
+### Requirement: An OpenRouter critic receives its prompt and nothing else
+A request to OpenRouter SHALL carry the slug, the critic's own prompt as its only message, no tool definition, and no header or field naming the store, its operator or the machine. It SHALL be bounded by the same per-critic timeout as a model CLI. The answer's text and the model OpenRouter reports SHALL enter the manifest, the letters and the blind check exactly as a CLI's do. A test inspects the request a stub endpoint recorded.
+
+#### Scenario: The request holds one prompt and no tools
+- **WHEN** a critique routes one entry through a stub endpoint that records the request
+- **THEN** the recorded body holds that critic's prompt as its single message and no tool definition, and it contains no text produced by another critic
+
+#### Scenario: Nothing identifies the store
+- **WHEN** the same request is recorded for a critique run in store `ctx-a`
+- **THEN** no header and no body field other than the prompt carries the store's name, its path or the host's name
+
+#### Scenario: A blind answer from OpenRouter does not count
+- **WHEN** the stub endpoint returns a well-formed verdict whose findings cite nothing in the plan
+- **THEN** that critique is marked blind in the manifest and excluded from the valid count
+
+### Requirement: A failed OpenRouter critic is never replaced
+A request that times out, cannot connect, is answered with an error status, or returns no text SHALL be recorded as a failed critic with its cause, taken from OpenRouter's own message where there is one. The command SHALL NOT start that entry's model CLI or ask for another slug in its place. A test covers each cause with a stub endpoint.
+
+#### Scenario: A refused slug is a failed critic
+- **WHEN** the stub endpoint answers a request with an error naming an unknown model
+- **THEN** that critic is recorded as failed with the endpoint's message, that entry's stub CLI is never started, and no second request is made
+
+#### Scenario: A request that outlasts the timeout fails
+- **WHEN** the stub endpoint does not answer within the run's `--timeout`
+- **THEN** that critic is recorded as failed naming the timeout, and the other critics' results are kept
+
+### Requirement: The OpenRouter key is read from the environment and appears nowhere else
+The command SHALL read the key from `OPENROUTER_API_KEY` in its own environment and from nowhere else, and SHALL place it only in the request's authorization header. No manifest, answer file, raw file, output stream or detached run's folder SHALL contain it. An entry routed through OpenRouter with no key set SHALL be a failed critic whose cause names the variable. A test searches everything a run wrote and printed for the stub key.
+
+#### Scenario: The key reaches the endpoint and nothing else
+- **WHEN** a detached critique routes one entry through a stub endpoint with a stub key set, and its result is fetched
+- **THEN** the recorded request carries the key in its authorization header, and no file in the run's folder and no line the commands printed contains it
+
+#### Scenario: A missing key fails that critic only
+- **WHEN** store `ctx-a` routes one entry through OpenRouter and the environment sets no key
+- **THEN** that critic is recorded as failed naming `OPENROUTER_API_KEY`, no request is made, and the two model CLIs still run
+
+### Requirement: The OpenRouter key never reaches a model CLI
+The environment allowlist SHALL withhold every `OPENROUTER_` variable from a model CLI, and the pass-through variable SHALL NOT be able to name one: naming it SHALL end the command with the usage code before any critic starts. The allowlist is the mechanism, and a test runs stub CLIs that record their environment.
+
+#### Scenario: A CLI critic does not see the key
+- **WHEN** a critique runs with `OPENROUTER_API_KEY` set, one entry routed through OpenRouter and two stub CLIs that record their environment
+- **THEN** neither stub saw `OPENROUTER_API_KEY`
+
+#### Scenario: The pass-through cannot name the key
+- **WHEN** `CTXR_SECOND_OPINION_PASS_ENV=OPENROUTER_API_KEY` is set
+- **THEN** the command exits with the usage code naming `OPENROUTER_API_KEY`, no CLI is started and no request is made
+
+### Requirement: An OpenRouter request declines data collection
+Every request to OpenRouter SHALL ask it to route only to providers that do not collect the prompt. A request OpenRouter refuses for that reason SHALL be a failed critic carrying OpenRouter's message. The request body is the mechanism, and a test inspects it at a stub endpoint.
+
+#### Scenario: The request carries the refusal
+- **WHEN** a poll routes one entry through a stub endpoint that records the request
+- **THEN** the recorded body asks for providers that do not collect data
+
+### Requirement: Preflight and the manifest name each critic's route
+`preflight`, and the manifest of a critique or a poll, SHALL say for each critic whether it ran through its model CLI or through OpenRouter, beside the model asked for and its source. `preflight` SHALL check an OpenRouter entry by one request for the tier's slug, and SHALL report it down, naming the cause, when the key is missing or the request fails. A test covers both with a stub endpoint.
+
+#### Scenario: The manifest records the route
+- **WHEN** a critique completes in store `ctx-a`, which routes one entry through OpenRouter
+- **THEN** the manifest records OpenRouter as that critic's route with its slug and the store's configuration as the source, and the model CLI as the route of the other two
+
+#### Scenario: Preflight pings the tier's slug
+- **WHEN** `ctxr second-opinion preflight --tier strong` runs in the same store with a stub endpoint
+- **THEN** the endpoint receives one request naming the `strong` slug, and that entry is reported up, through OpenRouter, with the slug and its source
+
+#### Scenario: Preflight reports a missing key
+- **WHEN** the same preflight runs with no key set
+- **THEN** that entry is reported down naming `OPENROUTER_API_KEY`, and the command exits with the failed-check code
+
+### Requirement: The OpenRouter address can be named in the environment
+When `CTXR_SECOND_OPINION_OPENROUTER_URL` is set, requests SHALL go to that address in place of OpenRouter's own, unchanged in shape. The address SHALL NOT be read from the store's configuration. A test sets it to a stub endpoint.
+
+#### Scenario: The environment names the address
+- **WHEN** the variable names a stub endpoint and a critique routes one entry through OpenRouter
+- **THEN** the stub endpoint receives the request and no request goes to OpenRouter's own address
+
+#### Scenario: The configuration cannot name the address
+- **WHEN** a store's configuration carries an address key in its second-opinion lineup
+- **THEN** loading the configuration fails naming that key, and no critic starts
+
+### Requirement: The second-opinion skill explains the OpenRouter route
+The rendered `ctxr-second-opinion` skill SHALL state how a store routes a critic through OpenRouter, in its configuration and nowhere else; that the key is set in the environment and never in the store; that a plan sent this way goes to OpenRouter and the provider behind it, which the report names; and that such a critic cannot act, so it stays in a run on a plan from someone else. These are skill-markdown conventions, asserted by a test over the rendered skill.
+
+#### Scenario: The rendered skill covers the route
+- **WHEN** the skill is rendered for a store
+- **THEN** it names the lineup key for a critic's route, names `OPENROUTER_API_KEY` as an environment variable, says where a routed plan goes, and says a routed critic need not be left out of a run on someone else's plan
+
+### Requirement: contexture publishes a plugin that carries only the second opinion
+contexture's repository SHALL carry the Claude plugin `second-opinion` under `plugins/second-opinion/`, listed in the marketplace beside `contexture`. It SHALL carry the `ctxr-second-opinion` skill, as the `contexture` plugin carries it, one command `ask` that opens it, and no other skill, MCP server entry, credential or hook. `ctxr plugin build` SHALL write both plugins from one declared list, without reading a store.
+
+#### Scenario: The plugin carries one skill
+- **WHEN** `ctxr plugin build` runs outside any store
+- **THEN** it writes `second-opinion/` with `skills/ctxr-second-opinion/SKILL.md` and `commands/ask.md`, no other skill, no MCP server entry, and the CLI's version
+
+#### Scenario: A command that opens a missing skill fails
+- **WHEN** the declared list gives the `second-opinion` plugin a command that opens `ctxr-capture`
+- **THEN** the plugin-build check fails naming that plugin and command
+
+#### Scenario: Both plugins carry the same skill text
+- **WHEN** both plugins are built
+- **THEN** `ctxr-second-opinion/SKILL.md` is byte-identical in the two
+
+#### Scenario: The marketplace lists both
+- **WHEN** the marketplace file is read
+- **THEN** it lists `contexture` at `./plugins/contexture` and `second-opinion` at `./plugins/second-opinion`
+
+### Requirement: The second-opinion skill names the server's tools
+The rendered `ctxr-second-opinion` skill SHALL say which tool runs each `ctxr second-opinion` step through a server, that the plan goes in `plan` and the question in `prompt`, and that a run not ready in time returns an id which `second_opinion_result` fetches. The skill's own text SHALL NOT mention `@input` or an `input` field, and the shared opening section SHALL give them to `ctxr_write` alone. These are skill-markdown conventions, asserted by a test over the render and by the drift check.
+
+#### Scenario: The rendered skill covers the tools
+- **WHEN** the skill is rendered for the plugin
+- **THEN** it names `second_opinion_preflight`, `second_opinion_critique`, `second_opinion_poll` and `second_opinion_result`, names the `plan` and `prompt` fields, and mentions `@input` once, in the opening section's sentence about `ctxr_write`
+
+#### Scenario: The drift check passes on the move
+- **WHEN** the drift check runs over the plugin's render of the second-opinion skill
+- **THEN** it reports no finding: every `ctxr second-opinion` command the skill names is routed to a tool
+
+### Requirement: The lineup is keyed by model family, and each family names how it is reached
+The store's second-opinion lineup SHALL be keyed by the families `claude`, `gpt`, `gemini` and `grok`. Each family SHALL accept an optional route, `via`, whose values are the family's command-line tool, OpenRouter, or off. No key of the lineup has a default, and `ctxr init` writes none. The configuration schema refuses an unknown family, an unknown route and an unknown field when the configuration loads, naming the key. A test loads each case.
+
+#### Scenario: A store writes one route
+- **WHEN** store `ctx-a` writes OpenRouter as the route of `gemini` and nothing else
+- **THEN** the loaded lineup holds that route for `gemini` and nothing for the other three families
+
+#### Scenario: A written configuration carries no lineup
+- **WHEN** `ctxr init` completes with every convention accepted
+- **THEN** the written `contexture.yaml` holds no second-opinion lineup and no model from the shipped tables
+
+#### Scenario: An unknown family or route fails the load
+- **WHEN** store `ctx-b` writes a family the lineup does not have, or a route that is none of the three
+- **THEN** any `ctxr` command that loads the configuration fails naming that key
+
+### Requirement: A critic with no route written takes the machine's default
+For a family with no route written, `ctxr second-opinion` SHALL send the critic through OpenRouter when the OpenRouter key variable is set and not empty in the command's environment, and SHALL run the family's tool otherwise. A family with no tool and no route is not in the lineup where no key is set. A written route SHALL win over the default in both directions. A test runs the command with stub tools and a stub endpoint, with and without the key.
+
+#### Scenario: No key and nothing written
+- **WHEN** a critique runs in a store that writes no lineup, with no key set
+- **THEN** `claude`, `gpt` and `gemini` each run their tool, `grok` is not in the run, and the endpoint receives no request
+
+#### Scenario: A key and nothing written
+- **WHEN** the same critique runs with the key set
+- **THEN** all four critics are answered through the endpoint, each with the model shipped for its family at the run's tier, and no tool is started
+
+#### Scenario: A written route wins over the default
+- **WHEN** store `ctx-a` writes the tool as the route of two families and OpenRouter for a third, and a critique runs with the key set
+- **THEN** the two run their tools and the third is answered through the endpoint
+
+#### Scenario: Outside a store the command still runs
+- **WHEN** `ctxr second-opinion poll` runs in a directory that is not inside a store, with no key set
+- **THEN** it asks each of the three tools for its shipped model and completes
+
+#### Scenario: A written route to OpenRouter holds without a key
+- **WHEN** store `ctx-a` writes OpenRouter as a family's route and a critique runs with no key set
+- **THEN** that critic fails naming the key variable, the endpoint receives no request, and the other critics run
+
+### Requirement: A critic that is off is in no run
+A family whose route is written as off SHALL be left out of every run, and naming it in `--only` SHALL make the command exit with the usage code, saying it is off, before any tool starts or any request is made. A run whose lineup holds fewer than two critics SHALL be refused the same way. A test covers both.
+
+#### Scenario: An off critic is named in `--only`
+- **WHEN** store `ctx-a` writes off for `grok` and a preflight runs with `--only claude,grok`
+- **THEN** it exits with the usage code saying `grok` is off, and no tool is started
+
+#### Scenario: Too few critics are on
+- **WHEN** store `ctx-b` writes off for two of the three families that have a tool, and a critique runs with no key set
+- **THEN** it exits with the usage code naming the number of critics in the lineup, and no tool is started
+
+### Requirement: The critics are named for their model families
+The critics SHALL be named `claude`, `gpt`, `gemini` and `grok` wherever contexture names one: the lineup's keys, the values of `--only`, the per-critic environment variables, the manifest, `preflight` and the files a run writes. The tool that runs a critic keeps its vendor's name, used only to start it or in a message about the tool itself. A test reads a run's manifest and files with stub tools.
+
+#### Scenario: A run reports its critics by family
+- **WHEN** a critique completes with nothing written and no key set
+- **THEN** the manifest names the critics `claude`, `gpt` and `gemini`, and the raw files are named for them
+
+### Requirement: The spellings of release 0.45.0 are refused with their replacement
+The lineup's tier-first keys, the critic names `codex` and `agy`, and the per-critic OpenRouter variable SHALL be refused and never read. The configuration schema refuses the old keys when the configuration loads. The command exits with the usage code, before any tool starts or any request is made, for an old critic name in `--only` and for a non-empty per-critic variable under an old name or of the removed kind. Each refusal names the replacement. A test covers each.
+
+#### Scenario: The configuration is tier first
+- **WHEN** store `ctx-a` writes a lineup with a tier as its first key
+- **THEN** any `ctxr` command that loads the configuration fails, saying the lineup is keyed by model family
+
+#### Scenario: The configuration uses an old critic name
+- **WHEN** store `ctx-a` writes a lineup entry under `agy`
+- **THEN** the load fails naming `gemini` as its name now
+
+#### Scenario: The command line uses an old name
+- **WHEN** `ctxr second-opinion preflight --only claude,agy` runs
+- **THEN** it exits with the usage code naming `agy` and `gemini`, and no tool is started
+
+#### Scenario: The environment uses an old variable
+- **WHEN** a critique runs with a non-empty model variable under the name `codex`
+- **THEN** it exits with the usage code naming that variable and its replacement, and no tool is started
+
+#### Scenario: An old variable passed through empty is ignored
+- **WHEN** a preflight runs with an old variable set to the empty string
+- **THEN** the preflight runs as if the variable were absent
+
+### Requirement: Grok is a fourth critic, reached through OpenRouter
+`grok` SHALL be a critic with a role of its own in a critique, `verifier`, whose persona is a package template. It has no command-line tool: the configuration schema refuses the tool as its route, and naming it in `--only` where it is not in the lineup makes the command exit with the usage code, saying why. A critique needs two valid answers whatever the number of critics. A test runs four critics against a stub endpoint.
+
+#### Scenario: Four critics answer
+- **WHEN** a critique runs with the key set and nothing written
+- **THEN** the manifest holds four critiques with the roles architect, skeptic, pragmatist and verifier, four lettered files are written, and each request carries that critic's own persona
+
+#### Scenario: The tool is refused as Grok's route
+- **WHEN** store `ctx-a` writes the tool as the route of `grok`
+- **THEN** the load fails saying that family has no command-line tool
+
+#### Scenario: Grok is named where it is not in the lineup
+- **WHEN** a preflight runs with `--only claude,grok`, no key set and nothing written
+- **THEN** it exits with the usage code saying `grok` runs through OpenRouter only and naming the key variable
+
+### Requirement: contexture ships a model for every family, route and tier
+The package SHALL carry a model for each family that has a tool, at each tier, and an OpenRouter model slug for each of the four families at each tier. Both tables are package content: no key of `contexture.yaml` defaults to them. A critic for which the store names no model SHALL be asked for the shipped one for its route and the run's tier. A unit test fails when a family lacks a tier or a slug lacks the `<vendor>/<model>` form.
+
+#### Scenario: Every family has a model at every tier
+- **WHEN** the tables are read
+- **THEN** each of the four families gives one OpenRouter slug of the form `<vendor>/<model>` for each tier, and each family with a tool gives one tool model for each tier
+
+#### Scenario: The shipped model follows the tier
+- **WHEN** store `ctx-a` writes OpenRouter as a family's route and no model, and a critique runs at the default tier and again with `--tier fast`
+- **THEN** the endpoint receives that family's shipped slug for each run's tier, and the manifest names the shipped default as the model's source
+
+### Requirement: A written model applies at its tier, on the route written beside it
+A family MAY name a model for a tier. A written model SHALL be asked for at that tier only, and the other tier keeps the shipped one. The configuration schema SHALL refuse, when the configuration loads, a model with no tool or OpenRouter route written beside it, and a model for the OpenRouter route that lacks the `<vendor>/<model>` form. A test covers each.
+
+#### Scenario: A model is written for one tier
+- **WHEN** store `ctx-a` writes OpenRouter as a family's route and a slug for the `strong` tier, and a critique runs at each tier
+- **THEN** the endpoint receives the written slug at `strong` and the shipped slug at `fast`, and the manifest names the store's configuration as the source of the first
+
+#### Scenario: A model is written with no route
+- **WHEN** store `ctx-b` writes a model for a family and no route
+- **THEN** the load fails naming that key and saying a model needs its route written beside it
+
+#### Scenario: A model through OpenRouter is not a slug
+- **WHEN** store `ctx-b` writes OpenRouter as a family's route and a model with no `/`
+- **THEN** the load fails naming that key and the slug's form
+
+### Requirement: The route is never chosen for one run
+No environment variable and no option SHALL choose a critic's route for one run. A non-empty model variable for a critic that goes through OpenRouter, whether its route was written or is the default, SHALL make the command exit with the usage code before any tool starts or any request is made, naming the variable. For a critic that runs its tool, that variable SHALL name the tool's model as before. A test covers both with stub tools and a stub endpoint.
+
+#### Scenario: A model variable cannot put a critic back on its tool
+- **WHEN** store `ctx-a` writes OpenRouter as the route of `gemini`, and a critique runs there with that critic's model variable set
+- **THEN** it exits with the usage code naming the variable, no tool is started and the endpoint receives no request
+
+#### Scenario: The model variable still applies to a tool
+- **WHEN** the same store writes the tool as the route of `gpt`, and a critique runs with that critic's model variable set
+- **THEN** that tool is asked for the variable's model, and the manifest names the environment as the model's source
+
+### Requirement: Reports say which route a critic took and what chose it
+`preflight`, and the manifest of a critique or a poll, SHALL give for each critic its route, whether the configuration or the default chose that route, the model asked for, and whether the environment, the configuration or the shipped tables named that model. A test reads both reports after runs against stub tools and a stub endpoint.
+
+#### Scenario: The manifest records what chose each route
+- **WHEN** a critique completes in store `ctx-a`, which writes a route for some families, with the key set
+- **THEN** the manifest records the configuration as the source of each written route and the default as the source of each of the others
+
+#### Scenario: Preflight shows the model in use
+- **WHEN** `ctxr second-opinion preflight` runs with the key set and nothing written
+- **THEN** each of the four lines shows the shipped slug, that it is a shipped default, and that it ran through OpenRouter
+
+### Requirement: A scheduled check reports a shipped slug that OpenRouter no longer lists
+The repository SHALL carry a script that reads OpenRouter's public model list, with no key and no header naming the caller, and exits non-zero naming each shipped OpenRouter slug that the list does not hold. A scheduled workflow SHALL run it and keep one tracking issue open while it fails. The script SHALL NOT run as part of the test suite, which makes no network request.
+
+#### Scenario: Every shipped slug is listed
+- **WHEN** the script runs against a model list that holds every shipped slug
+- **THEN** it exits 0
+
+#### Scenario: A shipped slug is missing
+- **WHEN** the script runs against a model list that lacks one shipped slug
+- **THEN** it exits non-zero and names that slug and its family and tier
+
+### Requirement: The second-opinion skill explains the lineup
+The rendered `ctxr-second-opinion` skill SHALL name the four families and the three routes, state the default route with and without a key, state that a model is not written and where the one in use is shown, and print no model from the shipped OpenRouter table. These are skill-markdown conventions, asserted by a test over the rendered skill.
+
+#### Scenario: The rendered skill covers the lineup
+- **WHEN** the skill is rendered for a store
+- **THEN** it names the four families, the three values of the route, what a family with no route does on a machine with a key and on one without, and `preflight` as where the model in use is shown, and it contains no slug from the shipped table
+
+### Requirement: The second-opinion skill names the critics and their tools
+The rendered `ctxr-second-opinion` skill SHALL say which tool each critic runs, name the fourth critic's stance, tell the agent to report a route that the default chose, and name no per-critic variable under a retired name or of the removed kind. These are skill-markdown conventions, asserted by a test over the rendered skill.
+
+#### Scenario: The rendered skill names the critics and their tools
+- **WHEN** the skill is rendered for a store
+- **THEN** it says which tool `claude`, `gpt` and `gemini` each run, describes the stance Grok takes, names the report field that says the default chose a route, and names no per-critic OpenRouter variable and no variable under `codex` or `agy`

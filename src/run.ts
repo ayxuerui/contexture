@@ -824,7 +824,7 @@ export function buildProgram(env: RunEnv): { program: Command; state: { result: 
   });
 
   commonSecondOpinionOptions(
-    secondOpinionGroup.command('critique').description('send a written plan to the critics, each with a role of its own and on a different model family, and write anonymised letters and a manifest'),
+    secondOpinionGroup.command('critique').description('send a written plan to the critics, each on a different model family and reviewing in four roles, and write anonymised letters and a manifest'),
   )
     .option('--plan-file <path>', 'the plan to critique (default: read from stdin)')
     .option('--out <dir>', 'where to write the critiques and the manifest (default: a new temporary directory)')

@@ -14,6 +14,20 @@ npm run typecheck
 
 Behavior changes are specified before they're implemented: see `openspec/specs/` for the capability specs and `openspec/changes/` for in-flight proposals. Prose that ships into a store — skill bodies, `AGENTS.md` sections — is authored as markdown under `templates/`, never as string literals in TypeScript.
 
+## Measuring the second opinion
+
+`npm run eval:second-opinion` measures a critique against the seeded plans under `test/fixtures/second-opinion-eval/plans/`. Each plan carries an answer key of planted defects. The script sends every plan to the four model families through OpenRouter under the shipped critique prompt and under a comparison of one request for each role, has three families judge each finding against the key, and reports the share of planted defects found.
+
+Run it when a shipped model or the critique prompt changes. It is not part of `npm test`: it needs `OPENROUTER_API_KEY`, and a full run of three repetitions cost about 46 US dollars of answers, with the judging on top, in November 2026.
+
+```bash
+npm run eval:second-opinion -- run --reps 3
+npm run eval:second-opinion -- judge
+npm run eval:second-opinion -- report
+```
+
+Answers and judgements are kept under `--out` (a folder in the system's temporary directory by default), so an interrupted run resumes. `--plans p1,h2` limits the plans. Record a run worth keeping in `test/fixtures/second-opinion-eval/recorded.json`. To add a plan, add one file: the plan in the skill's shape, a line `=====KEY=====`, then one line for each planted defect as `id | role | step | what counts as finding it`.
+
 ## Changing the store's shape
 
 A change that renames, moves or removes a key a store may have recorded in `contexture.yaml` raises

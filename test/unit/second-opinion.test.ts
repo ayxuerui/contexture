@@ -8,6 +8,9 @@ import { OPENROUTER_FAMILY_MODELS, SECOND_OPINION_TOOL_MODELS } from '../../src/
 import { SUPPORTED_SCHEMA_VERSION } from '../../src/config/schema.js';
 import { ExitCode } from '../../src/core/exit-codes.js';
 import { CONFIG_FILE_NAME } from '../../src/core/root.js';
+import { judgeCritique } from '../../src/core/second-opinion/judge.js';
+import { ALL_CLIS, ROLES } from '../../src/core/second-opinion/lineup.js';
+import { critiquePrompt, roleOrder } from '../../src/core/second-opinion/prompts.js';
 import { DIST_BIN } from '../helpers/dist-bin.js';
 import { startOpenRouterStub, STUB_KEY, type OpenRouterStub } from '../helpers/openrouter-stub.js';
 import { installSecondOpinionStubs } from '../helpers/second-opinion-stubs.js';
@@ -31,7 +34,7 @@ const SRC = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../sr
 const PLAN = '# Plan: rename the thing\n\n## Steps\nS1. Rename the module and update its callers.\nS2. Delete the old module once nothing imports it.\n\n## Reversibility\nIrreversible: S2.\n';
 
 function critique(role: string, evidence = 'S1', verdict = 'APPROVE_WITH_CHANGES', severity = 'major'): string {
-  return `## Role: ${role}\n\n## Verdict: ${verdict}\n\n## Findings\n\n### F1 [${severity}] confidence=0.7\nEvidence: ${evidence}\nIssue: ${role} marker MARK-${role}.\nChange: reword S1.\n\n## Suggested changes\n- reword\n\n## What you would NOT change\n- S2\n`;
+  return `## Verdict: ${verdict}\n\n## Role: architect\n\n### F1 [${severity}] confidence=0.7\nEvidence: ${evidence}\nIssue: ${role} marker MARK-${role}.\nChange: reword S1.\n\n## Role: skeptic\nNone. Nothing to add.\n\n## Role: pragmatist\nNone. Nothing to add.\n\n## Role: verifier\nNone. Nothing to add.\n\n## Suggested changes\n- reword\n\n## What you would NOT change\n- S2\n`;
 }
 
 /** By tool name, which is how the stubs are addressed; `ROLE_OF_CRITIC` is by the name the command reports. */
@@ -96,7 +99,7 @@ function sourceFilesUnder(dir: string): string[] {
 }
 
 describe('critique: isolation and delivery', () => {
-  it('critics never see each other: each receives the plan and exactly one role', () => {
+  it('critics never see each other: each receives the plan and the four roles', () => {
     const r = run(critiqueArgs());
     expect(r.status).toBe(ExitCode.Ok);
     const inputs: Record<string, string> = {
@@ -106,10 +109,9 @@ describe('critique: isolation and delivery', () => {
     };
     for (const [cli, input] of Object.entries(inputs)) {
       expect(input, cli).toContain(PLAN);
-      for (const [other, role] of Object.entries(ROLE_OF)) {
-        if (other === cli) expect(input, `${cli} has its own role`).toContain(`\n## ${role}\n`);
-        else expect(input, `${cli} must not carry ${role}`).not.toContain(`\n## ${role}\n`);
-        if (other !== cli) expect(input, `${cli} saw ${other}'s output`).not.toContain(`MARK-${role}`);
+      for (const role of ROLES) expect(input, `${cli} is given ${role}`).toContain(`\n## ${role}\n`);
+      for (const [other, tag] of Object.entries(ROLE_OF)) {
+        if (other !== cli) expect(input, `${cli} saw ${other}'s output`).not.toContain(`MARK-${tag}`);
       }
     }
   });
@@ -223,17 +225,21 @@ describe('critique: model and effort defaults', () => {
 });
 
 describe('critique: anonymizing and the manifest', () => {
-  it('names files by letter, keeps roles and models out of stdout, and maps letters only in the manifest', () => {
+  it('names files by letter, keeps critics and models out of stdout, and maps letters only in the manifest', () => {
     const r = run(critiqueArgs(['--seed', '3']));
     expect(r.status).toBe(ExitCode.Ok);
     expect(readdirSync(outDir).filter((f) => f.startsWith('critique-')).sort()).toEqual(['critique-A.md', 'critique-B.md', 'critique-C.md']);
-    expect(r.stdout).not.toMatch(/architect|skeptic|pragmatist|claude|codex|agy|gpt|gemini/);
+    expect(r.stdout).not.toMatch(/claude|codex|agy|gpt|gemini/);
     const m = manifest();
     expect(m.critiques).toHaveLength(3);
     for (const c of m.critiques) {
       const text = readFileSync(path.join(outDir, `critique-${c.letter}.md`), 'utf8');
-      expect(text).toContain(`## Role: ${c.role}`);
-      expect(c.role).toBe(ROLE_OF_CRITIC[c.cli]);
+      // The stubs tag their one finding, which is how a letter is traced to its critic here; the command writes no name.
+      expect(text).toContain(`MARK-${ROLE_OF_CRITIC[c.cli]}`);
+      expect(text).not.toMatch(/claude|codex|agy|gpt|gemini/);
+      expect(c.role).toBeUndefined();
+      expect([...c.role_order].sort()).toEqual([...ROLES].sort());
+      expect(c.findings_by_role).toEqual({ architect: 1, skeptic: 0, pragmatist: 0, verifier: 0 });
     }
     const models = Object.fromEntries(m.critiques.map((c: { cli: string; model_reported: string | null }) => [c.cli, c.model_reported]));
     expect(models).toEqual({ claude: 'claude-stub-1', gpt: 'gpt-stub', gemini: null });
@@ -242,7 +248,7 @@ describe('critique: anonymizing and the manifest', () => {
   it('assigns letters independent of the roster order, and reproducibly for one seed', () => {
     const mapping = (seed: number, dir: string) => {
       run(['critique', '--plan-file', planFile(), '--out', dir, '--seed', String(seed)]);
-      return JSON.stringify(JSON.parse(readFileSync(path.join(dir, 'manifest.json'), 'utf8')).critiques.map((c: { role: string; letter: string }) => `${c.role}=${c.letter}`));
+      return JSON.stringify(JSON.parse(readFileSync(path.join(dir, 'manifest.json'), 'utf8')).critiques.map((c: { cli: string; letter: string }) => `${c.cli}=${c.letter}`));
     };
     const seen = new Set<string>();
     for (let seed = 1; seed <= 8; seed++) seen.add(mapping(seed, path.join(tmp.root, `o${seed}`)));
@@ -255,9 +261,9 @@ describe('critique: anonymizing and the manifest', () => {
     const m = manifest();
     const codexEntry = m.critiques.find((c: { cli: string }) => c.cli === 'gpt');
     const stripped = readFileSync(path.join(outDir, `critique-${codexEntry.letter}.md`), 'utf8');
-    expect(stripped.startsWith('## Role: skeptic')).toBe(true);
+    expect(stripped.startsWith('## Verdict:')).toBe(true);
     expect(stripped).not.toMatch(/tokens used|OpenAI Codex|prompt echo/);
-    expect(readFileSync(path.join(outDir, 'raw', 'skeptic-gpt.txt'), 'utf8')).toMatch(/tokens used/);
+    expect(readFileSync(path.join(outDir, 'raw', 'gpt.txt'), 'utf8')).toMatch(/tokens used/);
   });
 
   it('--json carries the manifest in the standard envelope, and stdout holds nothing else', () => {
@@ -312,13 +318,13 @@ describe('critique: failure, blindness, quorum', () => {
   });
 
   it('an APPROVE with no findings is valid, not blind', () => {
-    const approve = '## Role: pragmatist\n\n## Verdict: APPROVE\n\n## Findings\nNone. The plan is minimal.\n\n## Suggested changes\n- None.\n\n## What you would NOT change\n- S1\n';
+    const approve = '## Verdict: APPROVE\n\n## Role: architect\nNone. It holds together.\n\n## Role: skeptic\nNone. Nothing can go wrong.\n\n## Role: pragmatist\nNone. The plan is minimal.\n\n## Role: verifier\nNone. Each step is checked.\n\n## Suggested changes\n- None.\n\n## What you would NOT change\n- S1\n';
     run(critiqueArgs(), { agy: { kind: 'ok', text: approve } });
     expect(manifest().critiques.find((c: { cli: string }) => c.cli === 'gemini')).toMatchObject({ status: 'valid', verdict: 'APPROVE', findings: 0 });
   });
 
   it('a verdict of REJECT or APPROVE_WITH_CHANGES with no parseable findings is failed', () => {
-    const empty = '## Role: pragmatist\n\n## Verdict: REJECT\n\nThis is bad.\n';
+    const empty = '## Verdict: REJECT\n\n## Role: architect\nThis is bad.\n\n## Role: skeptic\nNone.\n\n## Role: pragmatist\nNone.\n\n## Role: verifier\nNone.\n';
     run(critiqueArgs(), { agy: { kind: 'ok', text: empty } });
     expect(manifest().critiques.find((c: { cli: string }) => c.cli === 'gemini')).toMatchObject({ status: 'failed' });
   });
@@ -366,7 +372,9 @@ describe('critique: failure, blindness, quorum', () => {
     const two = run(critiqueArgs(['--only', 'claude,gpt']));
     expect(two.status).toBe(ExitCode.Ok);
     expect(calls('agy')).toHaveLength(0);
-    expect(manifest().critiques.map((c: { role: string }) => c.role).sort()).toEqual(['architect', 'skeptic']);
+    expect(manifest().critiques.map((c: { cli: string }) => c.cli).sort()).toEqual(['claude', 'gpt']);
+    // Two critics still cover the four roles.
+    for (const call of [calls('claude')[0]!.stdin, calls('codex')[0]!.stdin]) for (const role of ROLES) expect(call).toContain(`\n## ${role}\n`);
   });
 
   it('one CLI is not a second opinion: the usage code, and no CLI is invoked', () => {
@@ -718,7 +726,7 @@ describe('--print', () => {
     expect(b).toBeLessThan(c);
     expect(c).toBeLessThan(table);
     expect(r.stdout.slice(0, a)).not.toMatch(/claude|codex|agy/);
-    expect(r.stdout.slice(table)).toMatch(/architect\s+claude/);
+    expect(r.stdout.slice(table)).toMatch(/[A-C]\s+claude\s+model=/);
     expect(r.stdout).not.toContain('out: ');
     expect(readdirSync(path.dirname(tmp.root)).filter((d) => d.startsWith('ctxr-second-opinion-out-')).length).toBe(before);
     const json = run(['critique', '--plan-file', planFile(), '--print', '--json']);
@@ -924,7 +932,7 @@ describe('critics reached through OpenRouter', () => {
     expect(critic('claude')).toMatchObject({ route: 'cli', route_source: 'store', model_source: 'default' });
     expect(critic('gpt')).toMatchObject({ route: 'cli', route_source: 'store', model_source: 'default' });
     // The raw file is the response body: no request, so no header.
-    expect(readFileSync(path.join(outDir, 'raw', 'pragmatist-gemini.txt'), 'utf8')).toContain('"stub/answered"');
+    expect(readFileSync(path.join(outDir, 'raw', 'gemini.txt'), 'utf8')).toContain('"stub/answered"');
 
     rmSync(outDir, { recursive: true });
     const fast = run(critiqueArgs(['--tier', 'fast']), {}, { cwd, env: routed });
@@ -949,18 +957,24 @@ describe('critics reached through OpenRouter', () => {
     expect(r.status, r.output).toBe(ExitCode.Ok);
     expect(allCalls()).toEqual([]);
     expect(stub.requests().map((q) => q.body!.model).sort()).toEqual(Object.values(OPENROUTER_FAMILY_MODELS).map((tiers) => tiers.strong).sort());
-    const byCli = Object.fromEntries(manifest().critiques.map((c: { cli: string; role: string; route: string; route_source: string; model_source: string }) => [c.cli, [c.role, c.route, c.route_source, c.model_source]]));
+    const byCli = Object.fromEntries(manifest().critiques.map((c: { cli: string; route: string; route_source: string; model_source: string }) => [c.cli, [c.route, c.route_source, c.model_source]]));
     expect(byCli).toEqual({
-      claude: ['architect', 'openrouter', 'default', 'default'],
-      gpt: ['skeptic', 'openrouter', 'default', 'default'],
-      gemini: ['pragmatist', 'openrouter', 'default', 'default'],
-      grok: ['verifier', 'openrouter', 'default', 'default'],
+      claude: ['openrouter', 'default', 'default'],
+      gpt: ['openrouter', 'default', 'default'],
+      gemini: ['openrouter', 'default', 'default'],
+      grok: ['openrouter', 'default', 'default'],
     });
+    for (const c of manifest().critiques) expect(c.role, 'no critic has a role of its own').toBeUndefined();
     expect(readdirSync(outDir).filter((f) => f.startsWith('critique-')).sort()).toEqual(['critique-A.md', 'critique-B.md', 'critique-C.md', 'critique-D.md']);
-    // Each critic is sent its own persona, grok's among them.
-    const personas = stub.requests().map((q) => /\n## (architect|skeptic|pragmatist|verifier)\n/.exec(q.body!.messages![0]!.content)?.[1]).sort();
-    expect(personas).toEqual(['architect', 'pragmatist', 'skeptic', 'verifier']);
-    expect(readFileSync(path.join(outDir, 'raw', 'verifier-grok.txt'), 'utf8')).toContain('"stub/answered"');
+    // Every critic is sent the four roles, in the order the manifest records for it.
+    for (const q of stub.requests()) {
+      const prompt = q.body!.messages![0]!.content;
+      const asked = [...prompt.matchAll(/\n## (architect|skeptic|pragmatist|verifier)\n/g)].map((m) => m[1]);
+      expect([...asked].sort()).toEqual([...ROLES].sort());
+      const critic = Object.entries(OPENROUTER_FAMILY_MODELS).find(([, tiers]) => tiers.strong === q.body!.model)![0];
+      expect(manifest().critiques.find((c: { cli: string }) => c.cli === critic).role_order).toEqual(asked);
+    }
+    expect(readFileSync(path.join(outDir, 'raw', 'grok.txt'), 'utf8')).toContain('"stub/answered"');
   });
 
   it('grok is not in the lineup without a key, joins when its route is written, and is refused by name in --only when it is out', () => {
@@ -1001,11 +1015,8 @@ describe('critics reached through OpenRouter', () => {
     expect(request!.body!.messages).toHaveLength(1);
     const prompt = request!.body!.messages![0]!.content;
     expect(prompt).toContain(PLAN);
-    expect(prompt).toContain('\n## pragmatist\n');
-    for (const other of ['architect', 'skeptic']) {
-      expect(prompt).not.toContain(`\n## ${other}\n`);
-      expect(prompt).not.toContain(`MARK-${other}`);
-    }
+    expect(prompt).toBe(critiquePrompt('gemini', PLAN));
+    for (const other of ['architect', 'skeptic']) expect(prompt).not.toContain(`MARK-${other}`);
     const sent = JSON.stringify({ headers: request!.headers, body: { ...request!.body, messages: undefined } });
     for (const identifying of ['ctx-a', tmp.root, hostname()]) expect(sent).not.toContain(identifying);
     expect(Object.keys(request!.headers).filter((h) => /referer|title|categor/i.test(h))).toEqual([]);
@@ -1163,7 +1174,6 @@ describe('critics reached through OpenRouter', () => {
     stub.behave({ kind: 'ok', text: critique('architect') });
     const cwd = store('second_opinion: { claude: { via: openrouter, strong: vendor/model-a }, gpt: { via: openrouter, strong: vendor/model-b } }');
     const r = run(critiqueArgs(['--require-confinement', '--only', 'claude,gpt']), {}, { cwd, env: routed });
-    // Both critics get the architect's text from the one stub, so the skeptic's role line is wrong but its verdict parses.
     expect(r.status, r.output).toBe(ExitCode.Ok);
     expect(stub.requests().map((q) => q.body!.model).sort()).toEqual(['vendor/model-a', 'vendor/model-b']);
     expect(allCalls()).toEqual([]);
@@ -1178,5 +1188,72 @@ describe('critics reached through OpenRouter', () => {
     expect(r.output).toMatch(/cannot confine the model CLIs here/);
     expect(allCalls()).toEqual([]);
     expect(stub.requests()).toEqual([]);
+  });
+});
+
+/** review-a-plan-in-every-role: one answer in four role sections, from every critic. */
+describe('critique: every critic reviews in the four roles', () => {
+  const section = (role: string, body: string): string => `## Role: ${role}\n${body}\n\n`;
+  const finding = (n: number, evidence = 'S1', severity = 'major'): string => `### F${n} [${severity}] confidence=0.6\nEvidence: ${evidence}\nIssue: a gap.\nChange: reword.\n`;
+
+  it('the order of the roles is a rotation of the roster, and the same for the same plan and critic', () => {
+    const plans = Array.from({ length: 12 }, (_, i) => `${PLAN}\nvariant ${i}\n`);
+    const first = new Set<string>();
+    for (const plan of plans) {
+      for (const critic of ALL_CLIS) {
+        const order = roleOrder(plan, critic);
+        const shift = ROLES.indexOf(order[0]!);
+        expect(order).toEqual(ROLES.map((_, i) => ROLES[(i + shift) % ROLES.length]));
+        expect(roleOrder(plan, critic)).toEqual(order);
+        first.add(order[0]!);
+      }
+    }
+    expect([...first].sort()).toEqual([...ROLES].sort());
+  });
+
+  it('the prompt gives the four roles in that order, the limit of five in each, and None as a valid answer', () => {
+    for (const critic of ALL_CLIS) {
+      const prompt = critiquePrompt(critic, PLAN);
+      const asked = [...prompt.matchAll(/\n## (architect|skeptic|pragmatist|verifier)\n/g)].map((m) => m[1]);
+      expect(asked).toEqual(roleOrder(PLAN, critic));
+      expect(prompt).toMatch(/At most five in each role/);
+      expect(prompt).toMatch(/`None\.` is a good answer for a role/);
+      expect(prompt).toMatch(/Prefer one strong finding over several weak ones/);
+      expect(prompt.endsWith(`PLAN:\n${PLAN}\n`)).toBe(true);
+    }
+  });
+
+  it('counts the findings of each role, whatever the order of the sections and the form of the heading', () => {
+    const text = `## Verdict: APPROVE_WITH_CHANGES\n\n${section('verifier', finding(1) + finding(2))}${section('**Skeptic**', 'None. Nothing breaks.')}${section('architect', finding(1))}${section('pragmatist', 'None. It is minimal.')}## Suggested changes\n- None.\n`;
+    expect(judgeCritique(text, PLAN)).toMatchObject({ status: 'valid', findings_by_role: { architect: 1, skeptic: 0, pragmatist: 0, verifier: 2 } });
+  });
+
+  it('an answer that skips a role is failed, naming the role', () => {
+    const text = `## Verdict: APPROVE_WITH_CHANGES\n\n${section('architect', finding(1))}${section('skeptic', 'None.')}${section('pragmatist', 'None.')}`;
+    expect(judgeCritique(text, PLAN)).toMatchObject({ status: 'failed', cause: 'output has no "## Role: verifier" section' });
+    const r = run(critiqueArgs(), { agy: { kind: 'ok', text } });
+    expect(r.status, r.output).toBe(ExitCode.Ok);
+    const gemini = manifest().critiques.find((c: { cli: string }) => c.cli === 'gemini');
+    expect(gemini).toMatchObject({ status: 'failed', letter: null });
+    expect(gemini.cause).toContain('verifier');
+    expect(manifest()).toMatchObject({ valid: 2, partial: false });
+  });
+
+  it('a critical finding that cites the plan under a rejection is a veto, in whichever role it sits', () => {
+    const text = `## Verdict: REJECT\n\n${section('architect', 'None.')}${section('skeptic', finding(1, 'S2', 'critical'))}${section('pragmatist', 'None.')}${section('verifier', 'None.')}`;
+    expect(judgeCritique(text, PLAN)).toMatchObject({ status: 'valid', veto: true });
+  });
+
+  it('findings that cite nothing in the plan make the critique blind', () => {
+    const text = `## Verdict: APPROVE_WITH_CHANGES\n\n${section('architect', finding(1, 'S9'))}${section('skeptic', 'None.')}${section('pragmatist', 'None.')}${section('verifier', finding(1, 'the plan in general'))}`;
+    expect(judgeCritique(text, PLAN)).toMatchObject({ status: 'blind' });
+  });
+
+  it('the letter table of a printed critique names a critic and a model for each letter, and no role', () => {
+    const r = run(['critique', '--plan-file', planFile(), '--print']);
+    expect(r.status, r.output).toBe(ExitCode.Ok);
+    const table = r.stdout.slice(r.stdout.indexOf('===== letters'));
+    expect(table).toMatch(/\n  A  (claude|gpt|gemini)  model=/);
+    expect(table).not.toMatch(/architect|skeptic|pragmatist|verifier/);
   });
 });

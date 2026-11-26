@@ -191,6 +191,10 @@ Every call to a second-opinion tool SHALL return within its own declared bound, 
 - **WHEN** a member calls `second_opinion_result` with a `wait` of `600` for a run that is still running
 - **THEN** the call returns within the bound, reporting the run as running
 
+#### Scenario: A slow model is a partial result, not a lost one
+- **WHEN** one critic does not answer within the per-critic timeout the server passes
+- **THEN** the run still ends, and the call that carries its result returns within the bound with that critic named as failed and the critiques that did answer
+
 #### Scenario: A larger timeout is refused
 - **WHEN** a member calls `second_opinion_critique` with a `timeout` of `1200`
 - **THEN** the call is refused naming the largest timeout the server allows, and nothing runs

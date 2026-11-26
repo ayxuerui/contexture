@@ -53,13 +53,12 @@ export const TIERS = ['strong', 'fast'] as const;
 export type Tier = (typeof TIERS)[number];
 
 /**
- * Each critic's stance in a critique. `verifier` is grok's, added with it
- * (ship-default-openrouter-models D4): the other three cover structure, risk
- * and simplicity, and it covers whether anyone could tell the plan worked.
+ * review-a-plan-in-every-role D1: the four roles of a critique. Every critic
+ * reviews the plan in all of them, in one answer with a section for each, so
+ * no role belongs to a model family. Each has a persona template of its name.
  */
-export const ROLE_CLI = { architect: 'claude', skeptic: 'gpt', pragmatist: 'gemini', verifier: 'grok' } as const satisfies Record<string, Cli>;
-export type Role = keyof typeof ROLE_CLI;
-export const ROLES = Object.keys(ROLE_CLI) as Role[];
+export const ROLES = ['architect', 'skeptic', 'pragmatist', 'verifier'] as const;
+export type Role = (typeof ROLES)[number];
 
 /** A second opinion needs at least this many valid answers, and this many critics requested. */
 export const QUORUM = 2;
