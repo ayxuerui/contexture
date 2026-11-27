@@ -30,6 +30,7 @@ import type { Store } from '../core/store.js';
 import { renderReview } from '../core/browse/review.js';
 import { handleApprove, isApprovePath, isDecisionRoute, type ApprovalServer, type PageKit } from '../core/browse/approve.js';
 import { createIdentityVerifier } from '../core/approval/identity.js';
+import { GATE_REFUSAL, IdentityGate, isLoopbackAddress } from '../core/browse/identity-gate.js';
 import { ForgeUnreachableError, MergeMethodUnsupportedError, RecordingLoginMismatchError } from '../core/errors.js';
 import { credentialsFor, forgeOf, type CredentialKind } from '../core/forge/credentials.js';
 import { storeForges } from '../core/approval/store-forges.js';
@@ -61,9 +62,11 @@ export interface ServeData {
  * behavior exactly. `--host` exists for an operator who has deliberately
  * decided to put something else (a reverse proxy, a tunnel sharing this
  * process's network namespace) in front and knows what binding wider than
- * loopback exposes — this command still applies no requester filtering of
- * its own regardless of bind address; that judgment is entirely the
- * caller's.
+ * loopback exposes — this command still filters nothing by requester
+ * regardless of bind address; that judgment is entirely the caller's. The
+ * one thing a wider bind changes is in a store that declares change
+ * approval: every route then requires the access proxy's verified assertion
+ * (`IdentityGate`).
  */
 export const DEFAULT_HOST = '127.0.0.1';
 
@@ -145,6 +148,7 @@ async function handleRequest(
   pulls: PullPreviews,
   webhookSecret: Buffer | null,
   webhookGitLab: boolean,
+  gate: IdentityGate,
   req: IncomingMessage,
   res: ServerResponse,
 ): Promise<void> {
@@ -175,6 +179,23 @@ async function handleRequest(
   if (webhookPost) {
     await handleWebhook(store, landing, pulls, webhookSecret, webhookGitLab, stderr, req, res);
     return;
+  }
+
+  /**
+   * context-browsing spec ("A widened bind admits only verified requests when
+   * the store declares an identity"): everything from here down reads the
+   * store or serves its pages, so a request that came around the access proxy
+   * stops here. The MCP paths and the webhook above have a control of their
+   * own; the approval and plugin routes verify the same assertion themselves
+   * and then apply their lists, so they keep their own answers.
+   */
+  if (!isApprovePath(pathname) && !isPluginPath(pathname)) {
+    const verdict = await gate.check(store.config, req);
+    if (!verdict.admitted) {
+      stderr.write(`serve: ${pathname} refused: ${verdict.reason}\n`);
+      send(res, method, 401, 'text/plain; charset=utf-8', GATE_REFUSAL, { 'Cache-Control': 'no-store' });
+      return;
+    }
   }
 
   // serve-the-session-lifecycle-to-chat-apps D7: the plugin downloads, behind the approval routes' identity check.
@@ -531,8 +552,11 @@ export async function execute(env: RunEnv, store: Store, flags: ServeFlags): Pro
   };
   process.once('SIGTERM', shutdown);
   process.once('SIGINT', shutdown);
+  // Known once the listener is bound; no request arrives before that.
+  let boundToLoopback = false;
+  const gate = new IdentityGate(() => boundToLoopback);
   const server = createServer((req, res) => {
-    handleRequest(holder, landing, mcp, plugins, routeGit, env.io.stderr, pulls, webhookSecret, webhookGitLab, req, res).catch((err: unknown) => {
+    handleRequest(holder, landing, mcp, plugins, routeGit, env.io.stderr, pulls, webhookSecret, webhookGitLab, gate, req, res).catch((err: unknown) => {
       env.io.stderr.write(`serve: ${err instanceof Error ? err.message : String(err)}\n`);
       if (!res.headersSent) send(res, req.method ?? 'GET', 500, 'text/plain; charset=utf-8', 'internal error\n');
       else res.end();
@@ -547,6 +571,7 @@ export async function execute(env: RunEnv, store: Store, flags: ServeFlags): Pro
 
   const address = server.address();
   const port = typeof address === 'object' && address !== null ? address.port : flags.port;
+  boundToLoopback = typeof address === 'object' && address !== null && isLoopbackAddress(address.address);
   const url = `http://${host}:${port}/`;
 
   return {

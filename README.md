@@ -384,7 +384,15 @@ A page has one of two lifespans, read from where it is filed. A **permanent** pa
 ctxr serve
 ```
 
-Renders notes, catalog sections, the graph document, and published pages as cross-linked HTML. It binds loopback (`127.0.0.1`) by default. `--host` widens that, but note what it does not change: `serve` applies **no per-requester filtering at any bind address**. Widening it exposes the whole store to whatever can reach that address, so only do it behind a front end you've arranged yourself. The one exception is the approval page below, which verifies who is asking before it shows or records anything.
+Renders notes, catalog sections, the graph document, and published pages as cross-linked HTML. It binds loopback (`127.0.0.1`) by default. `--host` widens that, but note what it does not change: `serve` applies **no per-requester filtering at any bind address**. Widening it exposes the whole store to whatever can reach that address, so only do it behind a front end you've arranged yourself.
+
+A store that declares [change approval](#approving-changes-from-a-page) gets one check from `serve` itself. Bound to anything other than loopback, every route requires the signed assertion your access proxy forwards, verified the way the approval page verifies it, and answers `401` without one. A request that reaches the port around the proxy (the origin's own public address, another workload on the same network) then reads nothing. A verified assertion is enough: who may read is still your proxy's policy, and everyone it admits reads the same store. The routes with a control of their own are left to it: the MCP paths, `/hooks/github`, and the approval and connect pages, which also check their lists. A loopback bind asks for nothing, so `ctxr serve` on your own machine works as before. Check it from outside, at the origin's own address and not the proxy's:
+
+```sh
+curl -i http://<origin address>:<port>/notes/<any note>   # 401: a verified identity assertion is required
+```
+
+If your proxy lets a browsing path through without logging in (a bypass for public `/publish/` pages, say), that path now answers `401` too.
 
 A published page's navigation label follows its own declared `<title>`, falling back to its folder name when it declares none. A folder group is labelled with the declared name of the taxonomy layer whose path it matches — so a store's own words for its top-level folders reach the sidebar — and with the bare directory name otherwise; either way a group sits where its directory name sorts, not where its label does. The header's light/dark/system links choose a display theme, and the ☰ control shows and hides the navigation — both persist across pages via cookies, and neither requires client-side script. A published page itself is still served byte-verbatim, so neither the theme nor the navigation reaches into it; `ctxr publish new`'s scaffold instead follows the viewer's own system preference on its own.
 
@@ -443,7 +451,7 @@ change_approval:
   resolver: ["claude", "-p"]      # optional: who resolves a conflict
 ```
 
-Identity comes from the proxy in front of `serve` (Cloudflare Access, Google IAP, oauth2-proxy): every `/approve/` request must carry its signed assertion, verified against the key set, issuer, audience and expiry, or it gets `401`. A request that reaches the port around the proxy carries none.
+Identity comes from the proxy in front of `serve` (Cloudflare Access, Google IAP, oauth2-proxy): every `/approve/` request must carry its signed assertion, verified against the key set, issuer, audience and expiry, or it gets `401`. A request that reaches the port around the proxy carries none. When `serve` is bound wider than loopback, the same assertion is required on every browsing route as well, so `audience` must be the one of the proxy application that covers the hostname.
 
 Then the system does the rest, inside `ctxr serve` itself — no scheduler. Right after an Approve, and as its store-update run every `serve.sync_minutes` minutes (five by default; once ten seconds after startup, for approvals made while it was down), `serve` runs `ctxr land --pending` as a child process. That lands every pull request whose current head carries an approval — rebasing it onto the default branch when it is behind, merging, syncing the canonical clone, and removing the worktree. A clean rebase keeps the approval only when every commit's patch is unchanged, and the carry-over is recorded on the pull request. A rebase that conflicts goes to the configured resolver; its result is checked (clean, rebased, `ctxr doctor` passes), pushed, and handed back to the page for a new decision, because nobody has read an agent's merge of two sides. With no resolver, the change is marked blocked. Requested changes and blocked landings reach the next agent session through `ctxr review list`.
 
