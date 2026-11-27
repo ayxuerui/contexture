@@ -46,8 +46,8 @@ export interface StoreReach {
 export type ForgeFor = (root: string, mount: boolean) => Promise<{ forge: ForgeClient; credentials: ForgeCredentials | null }>;
 
 /** The home store and every present mount, each with its own forge client. */
-export async function storeReach(git: GitRunner, home: { root: string; canonical: string; config: StoreConfig; forge: ForgeClient; credentials?: ForgeCredentials | null }, forgeFor: ForgeFor): Promise<StoreReach | null> {
-  const homeSlug = await repositorySlug(git, home.canonical);
+export async function storeReach(git: GitRunner, home: { root: string; canonical: string; config: StoreConfig; forge: ForgeClient; credentials?: ForgeCredentials | null }, forgeFor: ForgeFor, env: Readonly<Record<string, string | undefined>> = {}): Promise<StoreReach | null> {
+  const homeSlug = await repositorySlug(git, home.canonical, env);
   if (homeSlug === null) return null;
   const mounts: SessionStore[] = [];
   const unavailable: { name: string; reason: string }[] = [];
@@ -56,7 +56,7 @@ export async function storeReach(git: GitRunner, home: { root: string; canonical
       unavailable.push({ name: mount.name, reason: mount.state === 'absent' ? 'not cloned' : mount.reason });
       continue;
     }
-    const slug = await repositorySlug(git, mount.root);
+    const slug = await repositorySlug(git, mount.root, env);
     if (slug === null) {
       unavailable.push({ name: mount.name, reason: 'its clone has no "origin" remote' });
       continue;

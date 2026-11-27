@@ -159,7 +159,7 @@ async function pullBody(session: SessionRef, base: string, body: string, identit
 async function sessionApprovalAddress(deps: SubmitDeps, session: SessionRef, identity: SessionIdentity | null): Promise<string | null> {
   if (identity !== null) {
     const mounting = await mountingStoreOf(session.path);
-    const ownSlug = await repositorySlug(deps.git, session.path);
+    const ownSlug = await repositorySlug(deps.git, session.path, deps.env);
     if (mounting !== null && identity.home !== ownSlug) return approvalAddress(mounting.config, sessionRouteName(identity));
   }
   return approvalAddress(deps.config, session.name);
@@ -233,7 +233,7 @@ export async function submitSession(deps: SubmitDeps, session: SessionRef, input
   }
   await checkBranchName(deps, session, input.branch);
   // Read before any rename: a session started on a generated or joined branch keeps that identity after it is renamed.
-  const identity = await identityOfWorktree(git, deps.config, session.path, session.name, session.branch);
+  const identity = await identityOfWorktree(git, deps.config, session.path, session.name, session.branch, deps.env);
 
   // Revision 2: the whole index, whoever staged it, is checked before anything is staged, so a refusal leaves it as it was.
   const prefix = (await git.run(['rev-parse', '--show-prefix'], { cwd: session.storeRoot })).stdout.trim();

@@ -55,7 +55,8 @@ export function recordPartOf(decision: SessionDecision): PartRef {
   return decision.parts.find((p) => p.store === decision.session.home) ?? decision.parts[0]!;
 }
 
-const PART = /^([^/#@,\s]+\/[^/#@,\s]+)#(\d+)@([0-9a-f]{40})$/;
+/** A slug has two or more segments: `owner/repo`, or a GitLab project's full path. */
+const PART = /^([^/#@,\s]+(?:\/[^/#@,\s]+)+)#(\d+)@([0-9a-f]{40})$/;
 const DECISION_ID = /^[A-Za-z0-9-]{1,64}$/;
 
 function sessionFields(session: SessionDecision): Record<string, string> {
@@ -75,7 +76,7 @@ function parseSessionFields(fields: Record<string, string>): SessionDecision | n
   if (at <= 0) return undefined;
   const home = session.slice(0, at);
   const branch = session.slice(at + 1);
-  if (!/^[^/\s]+\/[^/\s]+$/.test(home) || branch === '') return undefined;
+  if (!/^[^/\s]+(?:\/[^/\s]+)+$/.test(home) || branch === '') return undefined;
   const refs: PartRef[] = [];
   for (const entry of parts.split(',')) {
     const m = PART.exec(entry);

@@ -1,7 +1,7 @@
 import type { StoreConfig } from '../../config/schema.js';
 import type { GitRunner } from '../git/exec.js';
 import { mountingStoreOf } from '../shared-stores.js';
-import { githubRepositoryOf } from '../forge/credentials.js';
+import { forgeOf } from '../forge/credentials.js';
 import { worktreeDirNameFor } from '../session.js';
 import { marker, parseMarker } from './decision.js';
 
@@ -32,7 +32,10 @@ export interface SessionIdentity {
   branch: string;
 }
 
-const SLUG = /^[^/\s]+\/[^/\s]+$/;
+/** `owner/repo`, or a GitLab project's full path: two or more segments (support-gitlab-as-a-forge D7). */
+const SLUG = /^[^/\s]+(?:\/[^/\s]+)+$/;
+
+type Env = Readonly<Record<string, string | undefined>>;
 const NO_SPACE = /^\S+$/;
 
 /** One string per session, for grouping and comparison. Branches cannot contain `:`, so it is unambiguous. */
@@ -78,12 +81,13 @@ export function findSessionMarker(body: string): string | null {
 
 /**
  * The forge slug of a remote URL: GitHub's `owner/repo` for a github.com URL,
- * and otherwise the URL's last two path segments without `.git` — the same
- * shape for a mirror, a proxy, or a test's bare repository.
+ * a GitLab project's full path for a URL on the GitLab host `env` names, and
+ * otherwise the URL's last two path segments without `.git` — the same shape
+ * for a mirror, a proxy, or a test's bare repository.
  */
-export function forgeSlugOf(remoteUrl: string): string | null {
-  const github = githubRepositoryOf(remoteUrl);
-  if (github !== null) return github;
+export function forgeSlugOf(remoteUrl: string, env: Env = {}): string | null {
+  const forge = forgeOf(remoteUrl, env);
+  if (forge !== null) return SLUG.test(forge.slug) ? forge.slug : null;
   const segments = remoteUrl
     .trim()
     .replace(/\/+$/, '')
@@ -96,9 +100,15 @@ export function forgeSlugOf(remoteUrl: string): string | null {
 }
 
 /** The forge slug of the repository `cwd` is in, from its `origin`; null without one. */
-export async function repositorySlug(git: GitRunner, cwd: string): Promise<string | null> {
+export async function repositorySlug(git: GitRunner, cwd: string, env: Env = {}): Promise<string | null> {
   const remote = await git.run(['remote', 'get-url', 'origin'], { cwd, allowFailure: true });
-  return remote.exitCode === 0 ? forgeSlugOf(remote.stdout) : null;
+  return remote.exitCode === 0 ? forgeSlugOf(remote.stdout, env) : null;
+}
+
+/** Whether the repository `cwd` is in is on the GitLab host, where a slug can have more than two segments. */
+async function onGitLab(git: GitRunner, cwd: string, env: Env): Promise<boolean> {
+  const remote = await git.run(['remote', 'get-url', 'origin'], { cwd, allowFailure: true });
+  return remote.exitCode === 0 && forgeOf(remote.stdout, env)?.kind === 'gitlab';
 }
 
 function withoutPrefix(branch: string, prefix: string): string {
@@ -112,8 +122,8 @@ export function joinedBranchName(prefix: string, home: SessionIdentity, homePref
 
 /** The joined session's worktree directory name, which splits back into its home (see the module comment). */
 export function joinedWorktreeName(prefix: string, home: SessionIdentity, homePrefix: string): string {
-  const [owner, repo] = home.home.split('/') as [string, string];
-  return `${worktreeDirNameFor(prefix)}${owner}--${repo}--${worktreeDirNameFor(withoutPrefix(home.branch, homePrefix))}`;
+  // A GitLab path has no `--` in it (GitLab forbids consecutive special characters), so every `/` can become one.
+  return `${worktreeDirNameFor(prefix)}${home.home.split('/').join('--')}--${worktreeDirNameFor(withoutPrefix(home.branch, homePrefix))}`;
 }
 
 export interface IdentityInput {
@@ -127,6 +137,11 @@ export interface IdentityInput {
   worktreeName: string;
   /** The session's current branch. */
   branch: string;
+  /**
+   * True when the store is on GitLab, where the home slug in a joined worktree's name can have more than two
+   * segments and none of them holds `--`. Elsewhere the slug is `owner/repo` and the repository name may hold `--`.
+   */
+  nestedHome?: boolean;
 }
 
 /**
@@ -144,7 +159,8 @@ export function sessionIdentityFor(input: IdentityInput): SessionIdentity | null
     const first = rest.indexOf('--');
     const last = rest.lastIndexOf('--');
     if (first > 0 && last > first + 2 && last + 2 < rest.length) {
-      return { home: `${rest.slice(0, first)}/${rest.slice(first + 2, last)}`, branch: `${input.homePrefix}${rest.slice(last + 2)}` };
+      const home = input.nestedHome === true ? rest.slice(0, last).split('--').join('/') : `${rest.slice(0, first)}/${rest.slice(first + 2, last)}`;
+      return { home, branch: `${input.homePrefix}${rest.slice(last + 2)}` };
     }
     if (input.ownSlug === null) return null;
     return { home: input.ownSlug, branch: `${input.prefix}${rest}` };
@@ -158,14 +174,15 @@ export function sessionIdentityFor(input: IdentityInput): SessionIdentity | null
 }
 
 /** The identity of the session checked out in `worktreePath`, reading only its repository and, for a mount, the mounting store's configuration. */
-export async function identityOfWorktree(git: GitRunner, config: StoreConfig, worktreePath: string, worktreeName: string, branch: string): Promise<SessionIdentity | null> {
+export async function identityOfWorktree(git: GitRunner, config: StoreConfig, worktreePath: string, worktreeName: string, branch: string, env: Env = {}): Promise<SessionIdentity | null> {
   const mounting = await mountingStoreOf(worktreePath);
   return sessionIdentityFor({
     prefix: config.session.branch_prefix,
     homePrefix: mounting?.config.session.branch_prefix ?? config.session.branch_prefix,
-    ownSlug: await repositorySlug(git, worktreePath),
+    ownSlug: await repositorySlug(git, worktreePath, env),
     worktreeName,
     branch,
+    nestedHome: await onGitLab(git, worktreePath, env),
   });
 }
 

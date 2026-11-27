@@ -8,7 +8,8 @@ import type { Finding } from '../core/envelope.js';
 import { ChangeApprovalNotDeclaredError, ForgeUnreachableError } from '../core/errors.js';
 import { ExitCode } from '../core/exit-codes.js';
 import { credentialsFor, type CredentialKind } from '../core/forge/credentials.js';
-import { createGhForgeClient, type ForgeClient } from '../core/forge/github.js';
+import { forgeClientFor } from '../core/forge/client.js';
+import type { ForgeClient } from '../core/forge/github.js';
 import { mainWorktreePath } from '../core/git/worktree.js';
 import type { Store } from '../core/store.js';
 
@@ -62,11 +63,11 @@ export interface ReviewListData {
 export async function execute(env: RunEnv, store: Store, forge?: ForgeClient): Promise<CommandOutcome<ReviewListData>> {
   const approval = store.config.change_approval;
   if (approval === undefined) throw new ChangeApprovalNotDeclaredError('ctxr review list');
-  const client = forge ?? createGhForgeClient(store.root, await credentialsFor(env, store.root));
+  const client = forge ?? forgeClientFor(store.root, await credentialsFor(env, store.root));
   const open = await forgeRead(() => client.openPulls());
   const findings: Finding[] = [];
   const canonical = await mainWorktreePath(env.git, store.root);
-  const reach = await storeReach(env.git, { root: store.root, canonical, config: store.config, forge: client }, storeForges(env, forge));
+  const reach = await storeReach(env.git, { root: store.root, canonical, config: store.config, forge: client }, storeForges(env, forge), env.env);
   const pulls = (await sessionPulls(env.git, store.root, store.config, client, approval.recording_login, async () => open)).filter(
     (p) => !readAsSessionPart(p.pull, reach?.home.slug ?? null, store.config),
   );

@@ -192,14 +192,15 @@ function countingGit(url: string): GitRunner & { calls: string[][] } {
 const TOKEN_B = 'github_pat_11ctxBorgSECRETtokenvalue';
 
 describe('owner token credentials', () => {
-  it('reads no directory and asks git nothing when the variable is unset', async () => {
+  it('reads no directory, and asks git only for the origin URL the forge is recognized from, when the variable is unset', async () => {
     const git = countingGit('https://github.com/ctx-b-org/ctx-b.git');
     const env = { PATH: '/bin' };
     const credentials = await resolveForgeCredentials({ env, git, cwd: '/' });
     expect(credentials.kind).toBe('gh');
     expect(credentials.owner).toBeNull();
     expect(await credentials.env()).toBe(env);
-    expect(git.calls).toEqual([]);
+    // support-gitlab-as-a-forge D1: one read of the configured origin, to tell GitHub from GitLab; nothing else.
+    expect(git.calls).toEqual([['config', '--get', 'remote.origin.url']]);
   });
 
   it("uses the owner's file for gh and git alike, trimmed, keeping the rest of the environment", async () => {

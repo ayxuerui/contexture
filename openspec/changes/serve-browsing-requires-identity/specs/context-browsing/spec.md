@@ -58,7 +58,7 @@ list of readers is consulted.
 ### Requirement: The identity check leaves loopback, undeclared stores and self-controlled routes alone
 When the server is bound to loopback, or the loaded configuration declares no `change_approval`, the identity
 check on browsing SHALL NOT apply. It SHALL NOT be added to the routes with a control of their own: the MCP
-and OAuth paths `remote-access` defines, `/hooks/github`, `/approve/` and `/plugin/`. The check SHALL follow
+and OAuth paths `remote-access` defines, the webhook route (`/hooks/github` or `/hooks/gitlab`), `/approve/` and `/plugin/`. The check SHALL follow
 the configuration the server last loaded, whether or not the approval surface could be built.
 
 #### Scenario: A loopback bind asks for nothing
@@ -74,7 +74,7 @@ the configuration the server last loaded, whether or not the approval surface co
 #### Scenario: The routes with their own control are not gated
 - **WHEN** the widened server of a store that declares `change_approval`, with no `mcp` block and no webhook
   secret, is asked for `/.well-known/oauth-authorization-server` with no assertion, and receives a `POST` to
-  `/hooks/github`
+  the webhook route (`/hooks/github` or `/hooks/gitlab`)
 - **THEN** the first response is that surface's own `404` and the second is `405`, neither the identity
   check's `401`
 

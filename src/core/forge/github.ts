@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import type { CredentialKind, ForgeCredentials } from './credentials.js';
+import type { CredentialKind, ForgeCredentials, ForgeKind } from './credentials.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -48,7 +48,19 @@ export interface IssueComment {
 export type ReviewEvent = 'APPROVE' | 'REQUEST_CHANGES' | 'COMMENT';
 export type MergeMethod = 'squash' | 'merge' | 'rebase';
 
+/**
+ * support-gitlab-as-a-forge D5: what recording a decision left behind. On
+ * GitLab an approval is also mirrored as the recording identity's own
+ * approval; when the forge refuses that second call the decision stands, and
+ * `notMirrored` carries the forge's reason. Null everywhere else.
+ */
+export interface ReviewRecorded {
+  notMirrored: string | null;
+}
+
 export interface ForgeClient {
+  /** Which forge this client calls; absent means GitHub, the only forge there was. */
+  kind?: ForgeKind;
   /** The credential kind behind every call — reported by commands, never the credential itself. */
   credential: CredentialKind;
   /** For `owner-token`, the GitHub owner whose token it is (reach-each-owner-with-its-own-token D7); null otherwise. */
@@ -67,7 +79,11 @@ export interface ForgeClient {
   updatePull(number: number, input: { title?: string; body?: string; state?: 'open' | 'closed' }): Promise<PullRequest>;
   reviews(number: number): Promise<Review[]>;
   comments(number: number): Promise<IssueComment[]>;
-  createReview(number: number, input: { event: ReviewEvent; body: string; commitId: string }): Promise<void>;
+  /**
+   * Records a decision. On GitLab, where a review has no body, it is a note by the same identity, and `reviews`
+   * returns the notes (support-gitlab-as-a-forge D5).
+   */
+  createReview(number: number, input: { event: ReviewEvent; body: string; commitId: string }): Promise<ReviewRecorded | void>;
   createComment(number: number, body: string): Promise<void>;
   merge(number: number, input: { method: MergeMethod; sha: string }): Promise<void>;
   /**
@@ -77,11 +93,11 @@ export interface ForgeClient {
   fileAt(filePath: string, ref: string): Promise<string | null>;
 }
 
-/** A `gh api` call that did not succeed. `status` is the HTTP status when `gh` reported one. */
+/** A forge call that did not succeed. `status` is the HTTP status when there was one. `via` names a forge other than `gh`'s. */
 export class ForgeRequestError extends Error {
   readonly status: number | null;
-  constructor(endpoint: string, status: number | null, detail: string) {
-    super(`forge request ${endpoint} failed${status === null ? '' : ` (HTTP ${status})`}: ${detail}`);
+  constructor(endpoint: string, status: number | null, detail: string, via?: string) {
+    super(`${via === undefined ? 'forge' : via} request ${endpoint} failed${status === null ? '' : ` (HTTP ${status})`}: ${detail}`);
     this.name = 'ForgeRequestError';
     this.status = status;
   }

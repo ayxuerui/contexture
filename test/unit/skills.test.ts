@@ -326,7 +326,7 @@ describe('owned-skills-expansion: each skill carries its load-bearing rule (task
     // the target is named explicitly, never inferred from wherever the agent happens to stand
     expect(s).toContain('a branch name or a pull-request number');
     expect(s).toMatch(/rather than relying on whichever\s+checkout you happen to be standing in/);
-    const read = s.indexOf('`gh pr view');
+    const read = s.indexOf('`ctxr session list --review`');
     const review = s.indexOf('`ctxr review list`');
     const land = s.indexOf('`ctxr land <number>`');
     expect(read).toBeGreaterThan(-1); // state read before any side effect
@@ -337,13 +337,15 @@ describe('owned-skills-expansion: each skill carries its load-bearing rule (task
     expect(s).toContain('`ctxr land <number> --confirm`');
     expect(s).toMatch(/Use `--confirm` only after that go/);
     // the command, not the agent, merges and confirms the merge from the forge
-    expect(s).toMatch(/Do not run `gh pr merge` yourself/);
+    expect(s).toMatch(/Do not merge the pull request yourself/);
+    // support-gitlab-as-a-forge: the same skill works on any forge, so it names no forge's command-line tool
+    expect(s).not.toMatch(/`(?:gh|glab)\b/);
     expect(s).toContain('re-reads state');
     expect(s).toMatch(/from outside the worktree being removed/);
     expect(s).toContain('`needs-reapproval`');
     expect(s).toContain('the default action, not an optional extra');
     expect(s).toMatch(/nothing sweeps\s+up afterward/);
-    expect(new Set(ctxrFlagsIn(s))).toEqual(new Set(['--confirm', '--pending', '--session']));
+    expect(new Set(ctxrFlagsIn(s))).toEqual(new Set(['--review', '--confirm', '--pending', '--session']));
   });
 
   it('approve-sessions-across-stores: the lifecycle joins a session from a mount, submit marks every part, and land lands by session', () => {

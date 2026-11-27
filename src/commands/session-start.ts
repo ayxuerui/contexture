@@ -3,7 +3,7 @@ import type { CommandOutcome, CommandRequires } from '../core/command.js';
 import type { RunEnv } from '../core/env.js';
 import { ExitCode } from '../core/exit-codes.js';
 import { SessionRefusedError } from '../core/errors.js';
-import { credentialsFor } from '../core/forge/credentials.js';
+import { credentialsFor, forgeOf, type ForgeLocation } from '../core/forge/credentials.js';
 import { fetchOrigin, hasRemote } from '../core/git/worktree.js';
 import { sessionWorktrees } from '../core/approval/sessions.js';
 import { identityOfWorktree, joinedBranchName, joinedWorktreeName, type SessionIdentity } from '../core/approval/session-marker.js';
@@ -39,6 +39,11 @@ function refuse(reason: string, message: string, details: Record<string, unknown
   return new SessionRefusedError(ExitCode.Usage, reason, message, details);
 }
 
+async function forgeAt(env: RunEnv, cwd: string): Promise<ForgeLocation | null> {
+  const origin = await env.git.run(['config', '--get', 'remote.origin.url'], { cwd, allowFailure: true });
+  return origin.exitCode === 0 ? forgeOf(origin.stdout, env.env) : null;
+}
+
 /**
  * write-lifecycle spec ("A session can join a session in the store that mounts
  * this one"): the joined branch and worktree name, or a refusal naming why —
@@ -54,7 +59,17 @@ async function joinTarget(env: RunEnv, store: Store, joins: string): Promise<Joi
   if (target === undefined) {
     throw refuse('join_unknown_session', `The store at "${mounting.root}" has no live session named "${joins}"; \`ctxr session list\` there names them.`, { joins, store: mounting.root });
   }
-  const home = await identityOfWorktree(env.git, mounting.config, target.path, target.name, target.branch);
+  // support-gitlab-as-a-forge D7: one recording login cannot name a user on two forges, so a session stays on one.
+  const [here, there] = await Promise.all([forgeAt(env, store.root), forgeAt(env, mounting.root)]);
+  if ((here?.kind === 'gitlab' || there?.kind === 'gitlab') && (here?.kind !== there?.kind || here?.host !== there?.host)) {
+    const name = (forge: ForgeLocation | null): string => (forge === null ? 'no recognized forge' : `${forge.kind === 'gitlab' ? 'GitLab' : 'GitHub'} (${forge.host})`);
+    throw refuse('join_across_forges', `This store is on ${name(here)} and the store at "${mounting.root}" is on ${name(there)}; a session cannot span two forges.`, {
+      joins,
+      forge: here?.kind ?? null,
+      home_forge: there?.kind ?? null,
+    });
+  }
+  const home = await identityOfWorktree(env.git, mounting.config, target.path, target.name, target.branch, env.env);
   if (home === null) {
     throw refuse('join_no_home_slug', `The store at "${mounting.root}" has no "origin" remote to name it by, so a session cannot join it.`, { joins });
   }
@@ -94,7 +109,7 @@ export async function execute(
   );
   const { worktree: worktreeDir, branch, startPoint, fetched, label: labelSlug } = started;
 
-  const session = joined?.home ?? (await identityOfWorktree(env.git, store.config, worktreeDir, path.basename(worktreeDir), branch));
+  const session = joined?.home ?? (await identityOfWorktree(env.git, store.config, worktreeDir, path.basename(worktreeDir), branch, env.env));
 
   // cli-contract: the skill-path trigger for the release advisory — once per
   // session, at the command the lifecycle skill names first, on a command that

@@ -18,7 +18,19 @@ import type { GitResult, GitRunner } from '../git/exec.js';
  * `CONTEXTURE_GITHUB_OWNER_TOKENS_DIR` names, for that owner's repositories
  * only (design.md D1-D3).
  */
-export type CredentialKind = 'gh' | 'github-app' | 'owner-token' | 'broker';
+export type CredentialKind = 'gh' | 'github-app' | 'owner-token' | 'gitlab-token' | 'broker';
+
+/** support-gitlab-as-a-forge D4: what a GitLab client needs from the credential, beside the kind. */
+export interface GitLabAccess {
+  /** The GitLab host, as the environment or the default names it. */
+  host: string;
+  /** `https://<host>/api/v4`. */
+  apiUrl: string;
+  /** The project's full path, subgroups included. */
+  project: string;
+  /** The token, or a refusal naming the variables when none is set. Never logged or reported. */
+  token(): string;
+}
 
 export interface ForgeCredentials {
   kind: CredentialKind;
@@ -37,6 +49,8 @@ export interface ForgeCredentials {
    * which has no key to derive from. The key itself never leaves this module.
    */
   derivedSecret(info: string): Buffer | null;
+  /** Set for a repository on the GitLab host (support-gitlab-as-a-forge); absent for every other. */
+  gitlab?: GitLabAccess;
 }
 
 export const APP_ID_VAR = 'CONTEXTURE_GITHUB_APP_ID';
@@ -49,6 +63,13 @@ export const API_URL_VAR = 'CONTEXTURE_GITHUB_API_URL';
 /** reach-each-owner-with-its-own-token D1: a directory holding one token file per GitHub owner, named after the owner. */
 export const OWNER_TOKENS_DIR_VAR = 'CONTEXTURE_GITHUB_OWNER_TOKENS_DIR';
 
+/** support-gitlab-as-a-forge D2: the one GitLab host; `gitlab.com` when unset. */
+export const GITLAB_HOST_VAR = 'CONTEXTURE_GITLAB_HOST';
+/** support-gitlab-as-a-forge D4: the GitLab token, as text or as a file; setting both is refused. */
+export const GITLAB_TOKEN_VAR = 'CONTEXTURE_GITLAB_TOKEN';
+export const GITLAB_TOKEN_FILE_VAR = 'CONTEXTURE_GITLAB_TOKEN_FILE';
+const DEFAULT_GITLAB_HOST = 'gitlab.com';
+
 const DEFAULT_API_URL = 'https://api.github.com';
 /** design.md D3: a token is replaced once less than this much of its life remains. */
 const REFRESH_MARGIN_MS = 5 * 60 * 1000;
@@ -57,7 +78,7 @@ type Env = Readonly<Record<string, string | undefined>>;
 
 export type FetchLike = (
   url: string,
-  init: { method?: string; headers: Record<string, string> },
+  init: { method?: string; headers: Record<string, string>; body?: string },
 ) => Promise<{ ok: boolean; status: number; json(): Promise<unknown>; text(): Promise<string> }>;
 
 export interface ResolveOptions {
@@ -103,6 +124,11 @@ const set = (value: string | undefined): value is string => value !== undefined 
  * anything in between — never a guessed precedence (design.md D1).
  */
 export async function resolveForgeCredentials(opts: ResolveOptions): Promise<ForgeCredentials> {
+  // support-gitlab-as-a-forge D1: a repository on the GitLab host never reads the GitHub variables.
+  const declared = opts.url ?? (await originUrl(opts.git, opts.cwd));
+  const forge = declared === null ? null : forgeOf(declared, opts.env);
+  if (forge?.kind === 'gitlab') return gitlabCredentials(opts.env, forge);
+
   const appId = opts.env[APP_ID_VAR];
   const keyFile = opts.env[APP_KEY_FILE_VAR];
   const keyText = opts.env[APP_KEY_VAR];
@@ -176,6 +202,99 @@ export function githubRepositoryOf(remoteUrl: string): string | null {
     if (match !== null) return `${match[1]}/${match[2]}`;
   }
   return null;
+}
+
+/** The GitLab host this environment names, lower-cased; `gitlab.com` when it names none. */
+export function gitlabHostOf(env: Env): string {
+  const named = env[GITLAB_HOST_VAR];
+  return set(named) ? named.trim().toLowerCase() : DEFAULT_GITLAB_HOST;
+}
+
+export type ForgeKind = 'github' | 'gitlab';
+
+export interface ForgeLocation {
+  kind: ForgeKind;
+  host: string;
+  /** `owner/repo` on GitHub; the project's full path on GitLab. */
+  slug: string;
+}
+
+/** The host (with any port) and path of an https, ssh or scp-style remote URL; null for anything else, a local path included. */
+function hostAndPath(remoteUrl: string): { host: string; path: string } | null {
+  const url = remoteUrl.trim();
+  const full = /^(?:https|ssh):\/\/(?:[^@/]+@)?([^/]+)\/(.+)$/.exec(url);
+  const scp = full === null ? /^[^@/\s]+@([^:/\s]+):(?!\/)(.+)$/.exec(url) : null;
+  const match = full ?? scp;
+  if (match === null) return null;
+  const path = match[2]!.replace(/\/+$/, '').replace(/\.git$/, '');
+  return { host: match[1]!.toLowerCase(), path };
+}
+
+/**
+ * support-gitlab-as-a-forge D1: the forge a remote URL is on. `github.com` is
+ * GitHub; the GitLab host is GitLab, and its slug is the whole project path.
+ * Null for any other URL, which is then handled as it always was.
+ */
+export function forgeOf(remoteUrl: string, env: Env): ForgeLocation | null {
+  const github = githubRepositoryOf(remoteUrl);
+  if (github !== null) return { kind: 'github', host: 'github.com', slug: github };
+  const parsed = hostAndPath(remoteUrl);
+  if (parsed === null) return null;
+  const host = gitlabHostOf(env);
+  // An ssh URL may carry a port the https host does not, so the host name alone decides there.
+  if (parsed.host !== host && parsed.host.replace(/:\d+$/, '') !== host.replace(/:\d+$/, '')) return null;
+  const segments = parsed.path.split('/');
+  if (segments.length < 2 || segments.some((segment) => segment === '' || /\s/.test(segment))) return null;
+  return { kind: 'gitlab', host, slug: segments.join('/') };
+}
+
+/**
+ * support-gitlab-as-a-forge D4: the token in the file one variable names, or
+ * the text of the other. Both set, or a file that cannot be read or is empty,
+ * is refused naming the variables. Neither set is not refused here: git may
+ * reach the repository with its own credential, and only a call that needs
+ * GitLab's API asks for the token.
+ */
+async function gitlabCredentials(env: Env, forge: ForgeLocation): Promise<ForgeCredentials> {
+  const text = env[GITLAB_TOKEN_VAR];
+  const file = env[GITLAB_TOKEN_FILE_VAR];
+  if (set(text) && set(file)) {
+    throw new ForgeCredentialsError(`Both ${GITLAB_TOKEN_VAR} and ${GITLAB_TOKEN_FILE_VAR} are set; set one of them.`, [GITLAB_TOKEN_VAR, GITLAB_TOKEN_FILE_VAR]);
+  }
+  let token: string | null = set(text) ? text.trim() : null;
+  if (set(file)) {
+    try {
+      token = (await readFile(file, 'utf8')).trim();
+    } catch (err) {
+      throw new ForgeCredentialsError(`${GITLAB_TOKEN_FILE_VAR} names "${file}", which cannot be read (${(err as NodeJS.ErrnoException).code ?? 'error'}).`, [GITLAB_TOKEN_FILE_VAR]);
+    }
+    if (token === '') throw new ForgeCredentialsError(`${GITLAB_TOKEN_FILE_VAR} names "${file}", which is empty.`, [GITLAB_TOKEN_FILE_VAR]);
+  }
+  if (token === '') token = null;
+  const held = token;
+  return {
+    kind: 'gitlab-token',
+    owner: null,
+    env: async () => env,
+    botLogin: async () => null,
+    // GitLab takes the token as the password of an https request with any username, so `runRemoteGit`'s helper serves as it is.
+    gitToken: async () => held,
+    derivedSecret: (info) => (held === null ? null : Buffer.from(hkdfSync('sha256', Buffer.from(held, 'utf8'), Buffer.alloc(0), Buffer.from(info, 'utf8'), 32))),
+    gitlab: {
+      host: forge.host,
+      apiUrl: `https://${forge.host}/api/v4`,
+      project: forge.slug,
+      token() {
+        if (held === null) {
+          throw new ForgeCredentialsError(
+            `GitLab's API on ${forge.host} needs a token, and neither ${GITLAB_TOKEN_VAR} nor ${GITLAB_TOKEN_FILE_VAR} is set.`,
+            [GITLAB_TOKEN_VAR, GITLAB_TOKEN_FILE_VAR],
+          );
+        }
+        return held;
+      },
+    },
+  };
 }
 
 /** The owner of a github.com repository URL, as `githubRepositoryOf` reads it; null for any other URL (design.md D2). */
