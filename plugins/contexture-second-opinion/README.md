@@ -28,7 +28,7 @@ Text after the command is what the skill starts from, as in `/contexture-second-
 ## Updates
 
 Install `contexture-second-opinion` from the `ayxuerui/contexture` marketplace with **Sync automatically** on, and Claude installs
-each new release on its own. This is version 0.46.0, which matches the ctxr release it was built from.
+each new release on its own. This is version 0.47.0, which matches the ctxr release it was built from.
 If the skill names a tool your connector does not offer, the server runs an older ctxr.
 
 ## License
